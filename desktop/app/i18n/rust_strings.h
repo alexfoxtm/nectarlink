@@ -348,7 +348,7 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Obs", "OBS isn't reachable on port %1. Turn on its WebSocket server."), // desktop/app/src/obs.rs
     QT_TRANSLATE_NOOP("Obs", "OBS: %1"), // desktop/app/src/obs.rs
     QT_TRANSLATE_NOOP("Obs", "The service on that port isn't OBS."), // desktop/app/src/obs.rs
-    QT_TRANSLATE_NOOP("PcMirror", "Can't find the player's window. Play the video on this PC again, then turn on Play on phone."), // desktop/app/src/pc_mirror.rs
+    QT_TRANSLATE_NOOP("PcMirror", "Can't find the player's window. Play the video on this PC again, then turn on Play on phone."), // desktop/app/src/pc_mirror/windows.rs
     QT_TRANSLATE_NOOP("PhoneMic", "Tap Start on %1 to use its microphone."), // desktop/app/src/phone_mic.rs
     QT_TRANSLATE_NOOP("PhoneMic", "The microphone is turned off for this PC on %1."), // desktop/app/src/phone_mic.rs
     QT_TRANSLATE_NOOP("PhoneMic", "Update NectarLink on %1 to use its microphone."), // desktop/app/src/phone_mic.rs
@@ -365,12 +365,12 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Photos", "The phone isn't connected right now."), // desktop/app/src/photos.rs
     QT_TRANSLATE_NOOP("Photos", "The photo couldn't be copied to the clipboard."), // desktop/app/src/photos.rs
     QT_TRANSLATE_NOOP("Photos", "The photo couldn't be copied. It's in Downloads\\Nectarlink."), // desktop/app/src/photos.rs
-    QT_TRANSLATE_NOOP("PlayOnPhone", "Connect your phone to play on it."), // desktop/app/src/play_on_phone.rs
-    QT_TRANSLATE_NOOP("PlayOnPhone", "Media is turned off for %1."), // desktop/app/src/play_on_phone.rs
-    QT_TRANSLATE_NOOP("PlayOnPhone", "Opening in %1 on %2. Tap the notification there."), // desktop/app/src/play_on_phone.rs
-    QT_TRANSLATE_NOOP("PlayOnPhone", "Sent to %1. Tap the notification there."), // desktop/app/src/play_on_phone.rs
-    QT_TRANSLATE_NOOP("PlayOnPhone", "Tap the notification on %1 to watch."), // desktop/app/src/play_on_phone.rs
-    QT_TRANSLATE_NOOP("PlayOnPhone", "Update NectarLink on %1 to play on it."), // desktop/app/src/play_on_phone.rs
+    QT_TRANSLATE_NOOP("PlayOnPhone", "Connect your phone to play on it."), // desktop/app/src/play_on_phone/windows.rs
+    QT_TRANSLATE_NOOP("PlayOnPhone", "Media is turned off for %1."), // desktop/app/src/play_on_phone/windows.rs
+    QT_TRANSLATE_NOOP("PlayOnPhone", "Opening in %1 on %2. Tap the notification there."), // desktop/app/src/play_on_phone/windows.rs
+    QT_TRANSLATE_NOOP("PlayOnPhone", "Sent to %1. Tap the notification there."), // desktop/app/src/play_on_phone/windows.rs
+    QT_TRANSLATE_NOOP("PlayOnPhone", "Tap the notification on %1 to watch."), // desktop/app/src/play_on_phone/windows.rs
+    QT_TRANSLATE_NOOP("PlayOnPhone", "Update NectarLink on %1 to play on it."), // desktop/app/src/play_on_phone/windows.rs
     QT_TRANSLATE_NOOP("Prefs", "Connected to OBS."), // desktop/app/src/bridge/prefs.rs
     QT_TRANSLATE_NOOP("Recordings", "Recording from %1 saved"), // desktop/app/src/recordings.rs
     QT_TRANSLATE_NOOP("SendTo", "Copied to your phone's clipboard."), // desktop/app/src/send_to.rs

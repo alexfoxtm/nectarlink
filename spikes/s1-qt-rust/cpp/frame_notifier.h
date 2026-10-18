@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 #ifndef NL_FRAME_NOTIFIER_H
 #define NL_FRAME_NOTIFIER_H
