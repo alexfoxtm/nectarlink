@@ -27,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v7
       - name: Install the pinned Rust toolchain
@@ -128,6 +128,30 @@ jobs:
           name: nectarlink-windows-arm64
           path: target/package/*-setup.exe
           retention-days: 14
+
+  desktop-macos:
+    name: macOS app
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install the pinned Rust toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: mac
+          target: desktop
+          arch: clang_64
+          cache: true
+          aqtsource: git+https://github.com/miurahr/aqtinstall.git
+      - name: Clippy
+        run: cargo clippy --locked -p nectarlink-desktop --all-targets -- -D warnings
+      - name: Tests
+        run: cargo test --locked -p nectarlink-desktop
+      - name: Release build
+        run: cargo build --locked --release -p nectarlink-desktop
 
   android:
     name: Android app
