@@ -60,8 +60,10 @@ void trimD3DResources(QQuickWindow * /*window*/) {}
 NativeWindow::NativeWindow(QWindow *parent)
     : QQuickWindow(parent)
 {
-    // Qt removes the system title bar and lets content fill the window.
+#ifdef _WIN32
+    // Qt removes the system title bar and lets content fill the window on Windows.
     setFlags(flags() | Qt::ExpandedClientAreaHint);
+#endif
     setColor(Qt::transparent);
     // Drop the scene graph and D3D/RHI resources when the window is hidden or
     // closed to the tray instead of keeping GPU buffers in private commit.

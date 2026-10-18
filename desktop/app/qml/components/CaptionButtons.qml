@@ -12,6 +12,9 @@ Row {
     required property NativeWindow window
     readonly property bool maximized: window.visibility === Window.Maximized
 
+    visible: Qt.platform.os === "windows"
+    width: visible ? implicitWidth : 0
+
     // As tall as the top bar, like Windows 11's tall title bars, so the glyphs
     // line up with the page title and the logo.
     height: Theme.topBarHeight
