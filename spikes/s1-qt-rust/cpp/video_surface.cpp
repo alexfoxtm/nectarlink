@@ -24,9 +24,11 @@ namespace nl {
 
 namespace {
 
+#ifdef _WIN32
 constexpr quint32 kWidth = 1920;
 constexpr quint32 kHeight = 1080;
 constexpr quint32 kFps = 60;
+#endif
 
 // Owns the producer and the GPU resources on Qt's device. Lives on the render
 // thread, so the producer stops whenever the scene graph lets go of the node.

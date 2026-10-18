@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Spike S1: can Qt Quick + Rust deliver the NectarLink design within the
 //! performance budgets? See README.md for what is measured and the results.
+#![cfg_attr(not(windows), allow(unused))]
 
 mod bridge;
 mod mica;
