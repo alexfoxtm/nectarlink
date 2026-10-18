@@ -20,8 +20,9 @@
 //! `nectarlink-desktop.exe` by name, which would otherwise include these.
 
 use crate::i18n::tr;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 use std::{
-    os::windows::process::CommandExt,
     path::{Path, PathBuf},
     time::{Duration, Instant},
 };
@@ -58,12 +59,19 @@ pub struct Installed {
 }
 
 pub fn installed() -> Option<Installed> {
-    use windows::Win32::System::Registry::HKEY_LOCAL_MACHINE;
-    let dir = crate::win::reg_string(HKEY_LOCAL_MACHINE, UNINSTALL_KEY, "InstallLocation")?;
-    let version =
-        crate::win::reg_string(HKEY_LOCAL_MACHINE, UNINSTALL_KEY, "DisplayVersion").unwrap_or_default();
-    let dir = PathBuf::from(dir);
-    dir.join(APP_EXE).is_file().then_some(Installed { dir, version })
+    #[cfg(windows)]
+    {
+        use windows::Win32::System::Registry::HKEY_LOCAL_MACHINE;
+        let dir = crate::win::reg_string(HKEY_LOCAL_MACHINE, UNINSTALL_KEY, "InstallLocation")?;
+        let version =
+            crate::win::reg_string(HKEY_LOCAL_MACHINE, UNINSTALL_KEY, "DisplayVersion").unwrap_or_default();
+        let dir = PathBuf::from(dir);
+        dir.join(APP_EXE).is_file().then_some(Installed { dir, version })
+    }
+    #[cfg(not(windows))]
+    {
+        None
+    }
 }
 
 /// How this install relates to the copy already on the PC.
@@ -288,12 +296,19 @@ pub fn open_app(dir: &Path) -> Result<(), String> {
     if !app.is_file() {
         return Err(format!("{} is missing", app.display()));
     }
-    std::process::Command::new("explorer.exe")
-        .arg(&app)
-        .creation_flags(DETACHED_PROCESS)
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| e.to_string())
+    #[cfg(windows)]
+    {
+        std::process::Command::new("explorer.exe")
+            .arg(&app)
+            .creation_flags(DETACHED_PROCESS)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(not(windows))]
+    {
+        std::process::Command::new("open").arg(&app).spawn().map(|_| ()).map_err(|e| e.to_string())
+    }
 }
 
 /// For `--remove` started from the installed folder: carries on from a copy
@@ -333,11 +348,18 @@ pub fn delete_own_copy_later() {
     if !ours {
         return;
     }
-    let script = format!("/c ping -n 4 127.0.0.1 >nul & rmdir /s /q \"{}\"", dir.display());
-    let _ = std::process::Command::new("cmd.exe")
-        .raw_arg(script)
-        .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
-        .spawn();
+    #[cfg(windows)]
+    {
+        let script = format!("/c ping -n 4 127.0.0.1 >nul & rmdir /s /q \"{}\"", dir.display());
+        let _ = std::process::Command::new("cmd.exe")
+            .raw_arg(script)
+            .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
+            .spawn();
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }
 
 fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {

@@ -8,6 +8,7 @@
 
 #include <algorithm>
 
+#ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <d3d11.h>
@@ -50,6 +51,11 @@ void trimD3DResources(QQuickWindow *window)
 }
 
 } // namespace
+#else
+namespace {
+void trimD3DResources(QQuickWindow * /*window*/) {}
+} // namespace
+#endif
 
 NativeWindow::NativeWindow(QWindow *parent)
     : QQuickWindow(parent)
@@ -142,6 +148,7 @@ void NativeWindow::bringToFront()
         showNormal();
     raise();
     requestActivate();
+#ifdef _WIN32
     if (!handle())
         return;
     const HWND hwnd = hwndOf(this);
@@ -160,14 +167,19 @@ void NativeWindow::bringToFront()
     SetForegroundWindow(hwnd);
     if (attached)
         AttachThreadInput(thisThread, foregroundThread, FALSE);
+#endif
 }
 
 void NativeWindow::flash()
 {
+#ifdef _WIN32
     if (!handle())
         return;
     FLASHWINFO info { sizeof(FLASHWINFO), hwndOf(this), FLASHW_TRAY | FLASHW_TIMERNOFG, 0, 0 };
     FlashWindowEx(&info);
+#else
+    alert(0);
+#endif
 }
 
 void NativeWindow::releaseAndTeardown()
@@ -208,6 +220,7 @@ bool NativeWindow::event(QEvent *event)
 
 void NativeWindow::applyFrame()
 {
+#ifdef _WIN32
     if (!handle())
         return;
     const HWND hwnd = hwndOf(this);
@@ -222,6 +235,7 @@ void NativeWindow::applyFrame()
     DwmSetWindowAttribute(hwnd, kSystemBackdropType, &backdrop, sizeof(backdrop));
     const COLORREF none = kColorNone;
     DwmSetWindowAttribute(hwnd, kCaptionColor, &none, sizeof(none));
+#endif
 }
 
 bool NativeWindow::itemContains(const QQuickItem *item, const QPointF &scenePoint) const
@@ -233,6 +247,7 @@ bool NativeWindow::itemContains(const QQuickItem *item, const QPointF &scenePoin
 
 long NativeWindow::hitTest(int screenX, int screenY) const
 {
+#ifdef _WIN32
     const HWND hwnd = hwndOf(this);
     POINT pt { screenX, screenY };
     ScreenToClient(hwnd, &pt);
@@ -264,10 +279,16 @@ long NativeWindow::hitTest(int screenX, int screenY) const
             return HTCLIENT;
     }
     return HTCAPTION;
+#else
+    Q_UNUSED(screenX);
+    Q_UNUSED(screenY);
+    return 0;
+#endif
 }
 
 bool NativeWindow::nativeEvent(const QByteArray &eventType, void *message, qintptr *result)
 {
+#ifdef _WIN32
     if (eventType != "windows_generic_MSG")
         return QQuickWindow::nativeEvent(eventType, message, result);
     const MSG *msg = static_cast<const MSG *>(message);
@@ -325,5 +346,10 @@ bool NativeWindow::nativeEvent(const QByteArray &eventType, void *message, qintp
     default:
         break;
     }
+#else
+    Q_UNUSED(eventType);
+    Q_UNUSED(message);
+    Q_UNUSED(result);
+#endif
     return QQuickWindow::nativeEvent(eventType, message, result);
 }

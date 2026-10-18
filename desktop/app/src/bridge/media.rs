@@ -410,9 +410,11 @@ mod tests {
         assert_eq!(get("positionAt").value::<f64>(), Some(1_500.0));
         assert_eq!(get("canPause").value::<bool>(), Some(true));
         assert_eq!(get("canPlay").value::<bool>(), Some(false));
-        assert_eq!(
-            get("art").value::<QString>().map(|s| String::from(&s)),
-            Some("file:///C:/data/cache/art/a.jpg".into())
-        );
+        #[cfg(windows)]
+        let expected_art = "file:///C:/data/cache/art/a.jpg".to_string();
+        #[cfg(not(windows))]
+        let expected_art =
+            String::from(&QUrl::from_local_file(&QString::from(r"C:\data\cache\art\a.jpg")).to_qstring());
+        assert_eq!(get("art").value::<QString>().map(|s| String::from(&s)), Some(expected_art));
     }
 }

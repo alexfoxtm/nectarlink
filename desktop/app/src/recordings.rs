@@ -15,6 +15,7 @@ use std::{
 };
 
 use nectarlink_core::{RecordingMarker, Transfer, TransferState};
+#[cfg(windows)]
 use windows::{
     Win32::{
         Media::MediaFoundation::{
@@ -31,14 +32,13 @@ use windows::{
     core::{HSTRING, Interface},
 };
 
+#[cfg(windows)]
+use crate::win::h264::ensure_mf_started;
 use crate::{
     core_host,
     settings::{RecordingFormat, Settings},
     transfers::{ACTION_OPEN, ACTION_SHOW, TOAST_GROUP},
-    win::{
-        h264::ensure_mf_started,
-        toast::{self, Toast},
-    },
+    win::toast::{self, Toast},
 };
 
 #[derive(Debug, Default)]
@@ -109,10 +109,46 @@ pub fn format_recording_stem(year: u16, month: u16, day: u16, hour: u16, minute:
 }
 
 /// Base name for a recording saved right now, in local time.
+#[cfg(windows)]
 pub fn current_recording_stem() -> String {
     // SAFETY: GetLocalTime always succeeds and writes a SYSTEMTIME struct.
     let st = unsafe { GetLocalTime() };
     format_recording_stem(st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute)
+}
+
+#[cfg(not(windows))]
+pub fn current_recording_stem() -> String {
+    #[repr(C)]
+    struct Tm {
+        tm_sec: i32,
+        tm_min: i32,
+        tm_hour: i32,
+        tm_mday: i32,
+        tm_mon: i32,
+        tm_year: i32,
+        tm_wday: i32,
+        tm_yday: i32,
+        tm_isdst: i32,
+        tm_gmtoff: i64,
+        tm_zone: *const std::ffi::c_char,
+    }
+    unsafe extern "C" {
+        fn time(tloc: *mut i64) -> i64;
+        fn localtime_r(timep: *const i64, result: *mut Tm) -> *mut Tm;
+    }
+    unsafe {
+        let mut t: i64 = 0;
+        time(&mut t);
+        let mut tm = std::mem::zeroed::<Tm>();
+        localtime_r(&t, &mut tm);
+        format_recording_stem(
+            (tm.tm_year + 1900) as u16,
+            (tm.tm_mon + 1) as u16,
+            tm.tm_mday as u16,
+            tm.tm_hour as u16,
+            tm.tm_min as u16,
+        )
+    }
 }
 
 /// The name the phone gave a recording (`Recording 2026-10-07 14.32`, from
@@ -246,6 +282,12 @@ fn move_file(src: &Path, dest: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+#[cfg(not(windows))]
+pub fn convert_audio(_src: &Path, _dest: &Path, _format: RecordingFormat) -> Result<(), String> {
+    Err("audio conversion via Media Foundation is only supported on Windows".into())
+}
+
+#[cfg(windows)]
 /// Converts `src` (`.m4a`) to `dest` in `format` (`Mp3`, `Wav`, or `Flac`)
 /// using Windows Media Foundation.
 pub fn convert_audio(src: &Path, dest: &Path, format: RecordingFormat) -> windows::core::Result<()> {
@@ -285,6 +327,7 @@ pub fn convert_audio(src: &Path, dest: &Path, format: RecordingFormat) -> window
     }
 }
 
+#[cfg(windows)]
 unsafe fn write_decoded_wav(
     reader: &IMFSourceReader,
     stream_idx: u32,
@@ -340,6 +383,7 @@ unsafe fn write_decoded_wav(
     fs::write(dest, wav).map_err(|_| windows::core::Error::from_thread())
 }
 
+#[cfg(windows)]
 unsafe fn transcode_with_sink_writer(
     reader: &IMFSourceReader,
     stream_idx: u32,
@@ -390,6 +434,7 @@ unsafe fn transcode_with_sink_writer(
     Ok(())
 }
 
+#[cfg(windows)]
 unsafe fn choose_encoder_output_type(
     subtype: &windows::core::GUID,
     sample_rate: u32,
@@ -762,6 +807,7 @@ mod tests {
         assert_eq!(text, "00:01.250  Intro\n01:05.000  Marker 2\n01:01:01.005  Wrap-up\n");
     }
 
+    #[cfg(windows)]
     #[test]
     fn media_foundation_converts_m4a_to_m4a_mp3_wav_and_flac_with_markers() {
         let dir = tempfile::tempdir().unwrap();

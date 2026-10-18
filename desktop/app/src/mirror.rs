@@ -1455,6 +1455,7 @@ pub fn normalize_gamepad_state(raw: GamepadState) -> GamepadState {
     }
 }
 
+#[cfg(windows)]
 #[allow(unsafe_code)]
 fn poll_xinput_gamepad() -> Option<GamepadState> {
     use windows::Win32::UI::Input::XboxController::{XINPUT_STATE, XInputGetState};
@@ -1477,6 +1478,7 @@ fn poll_xinput_gamepad() -> Option<GamepadState> {
     None
 }
 
+#[cfg(windows)]
 fn poll_winrt_gamepad() -> Option<GamepadState> {
     use windows::Gaming::Input::{Gamepad, GamepadButtons};
     let gamepads = Gamepad::Gamepads().ok()?;
@@ -1542,8 +1544,14 @@ fn poll_winrt_gamepad() -> Option<GamepadState> {
     }))
 }
 
+#[cfg(windows)]
 fn poll_gamepad() -> Option<GamepadState> {
     poll_xinput_gamepad().or_else(poll_winrt_gamepad)
+}
+
+#[cfg(not(windows))]
+fn poll_gamepad() -> Option<GamepadState> {
+    None
 }
 
 fn ensure_gamepad_loop() {

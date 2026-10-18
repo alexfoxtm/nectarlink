@@ -19,6 +19,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[cfg(windows)]
 use windows::{
     Win32::{
         Foundation::{CloseHandle, E_FAIL, HANDLE, HMODULE, LUID, RECT, S_OK},
@@ -84,6 +85,7 @@ struct Counters {
     dropped: AtomicU64,
 }
 
+#[cfg(windows)]
 pub struct VideoSource {
     shared: HANDLE,
     counters: Arc<Counters>,
@@ -91,9 +93,11 @@ pub struct VideoSource {
     thread: Option<JoinHandle<()>>,
 }
 
+#[cfg(windows)]
 // SAFETY: the HANDLE is an owned NT handle, usable from any thread.
 unsafe impl Send for VideoSource {}
 
+#[cfg(windows)]
 impl VideoSource {
     fn shared_handle(&self) -> usize {
         self.shared.0 as usize
@@ -108,6 +112,7 @@ impl VideoSource {
     }
 }
 
+#[cfg(windows)]
 impl Drop for VideoSource {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
@@ -122,6 +127,7 @@ impl Drop for VideoSource {
     }
 }
 
+#[cfg(windows)]
 fn video_source_start(
     adapter_luid: i64,
     width: u32,
@@ -174,6 +180,57 @@ fn video_source_start(
     Ok(Box::new(VideoSource { shared, counters, stop, thread: Some(thread) }))
 }
 
+#[cfg(not(windows))]
+pub struct VideoSource {
+    counters: Arc<Counters>,
+    stop: Arc<AtomicBool>,
+    thread: Option<JoinHandle<()>>,
+}
+
+#[cfg(not(windows))]
+unsafe impl Send for VideoSource {}
+
+#[cfg(not(windows))]
+impl VideoSource {
+    fn shared_handle(&self) -> usize {
+        0
+    }
+
+    fn frames_published(&self) -> u64 {
+        self.counters.published.load(Ordering::Relaxed)
+    }
+
+    fn frames_dropped(&self) -> u64 {
+        self.counters.dropped.load(Ordering::Relaxed)
+    }
+}
+
+#[cfg(not(windows))]
+impl Drop for VideoSource {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn video_source_start(
+    _adapter_luid: i64,
+    _width: u32,
+    _height: u32,
+    _fps: u32,
+    _notifier: cxx::SharedPtr<ffi::FrameNotifier>,
+) -> Result<Box<VideoSource>, String> {
+    Ok(Box::new(VideoSource {
+        counters: Arc::new(Counters::default()),
+        stop: Arc::new(AtomicBool::new(false)),
+        thread: None,
+    }))
+}
+
+#[cfg(windows)]
 /// The producer's GPU state. Lives on the producer thread after creation.
 struct Gpu {
     context: ID3D11DeviceContext1,
@@ -185,10 +242,12 @@ struct Gpu {
     height: u32,
 }
 
+#[cfg(windows)]
 // SAFETY: the device is created without D3D11_CREATE_DEVICE_SINGLETHREADED and
 // the context is only ever used by one thread at a time (moved, never shared).
 unsafe impl Send for Gpu {}
 
+#[cfg(windows)]
 impl Gpu {
     fn new(luid: LUID, width: u32, height: u32) -> windows::core::Result<Self> {
         // SAFETY: plain D3D11/DXGI object creation; every out-pointer is a

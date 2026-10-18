@@ -281,9 +281,17 @@ fn main() {
         ])
         .build();
 
-    // The C++ window code calls DWM, Shell property store, and user32 directly.
-    println!("cargo:rustc-link-lib=dwmapi");
-    println!("cargo:rustc-link-lib=ole32");
-    println!("cargo:rustc-link-lib=shell32");
-    println!("cargo:rustc-link-lib=user32");
+    // The C++ window code calls DWM, Shell property store, and user32 directly on Windows.
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        println!("cargo:rustc-link-lib=dwmapi");
+        println!("cargo:rustc-link-lib=ole32");
+        println!("cargo:rustc-link-lib=shell32");
+        println!("cargo:rustc-link-lib=user32");
+    } else if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
+        println!("cargo:rustc-link-lib=framework=AppKit");
+        println!("cargo:rustc-link-lib=framework=CoreGraphics");
+        println!("cargo:rustc-link-lib=framework=CoreAudio");
+        println!("cargo:rustc-link-lib=framework=AudioToolbox");
+        println!("cargo:rustc-link-lib=framework=IOKit");
+    }
 }

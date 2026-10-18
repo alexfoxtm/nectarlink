@@ -25,8 +25,9 @@
 //! update didn't go through.
 
 use crate::i18n::tr;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 use std::{
-    os::windows::process::CommandExt,
     path::{Path, PathBuf},
     process::ExitCode,
     sync::{
@@ -305,13 +306,20 @@ fn quiet() -> bool {
 
 /// Whether the installer registered [`TASK`] on this PC.
 fn task_registered() -> bool {
-    std::process::Command::new("schtasks.exe")
-        .args(["/Query", "/TN", TASK])
-        .creation_flags(CREATE_NO_WINDOW)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .is_ok_and(|s| s.success())
+    #[cfg(windows)]
+    {
+        std::process::Command::new("schtasks.exe")
+            .args(["/Query", "/TN", TASK])
+            .creation_flags(CREATE_NO_WINDOW)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success())
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
 }
 
 /// Installs the update found: downloads it (reporting `progress(done,
@@ -445,48 +453,64 @@ pub fn stage(update: &Update, progress: impl FnMut(u64, u64)) -> Result<PathBuf,
 /// hidden relauncher opens the new version afterwards. `shown`: open its
 /// window again (the user asked for the update) rather than start in the tray.
 fn install_with_task(shown: bool) -> Result<(), String> {
-    let update = available().ok_or("no update")?;
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    spawn_relauncher(&exe, &update.version, shown)?;
-    let started = std::process::Command::new("schtasks.exe")
-        .args(["/Run", "/TN", TASK])
-        .creation_flags(CREATE_NO_WINDOW)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map_err(|e| e.to_string())?;
-    if !started.success() {
-        return Err(format!("schtasks /Run: {started}"));
+    #[cfg(windows)]
+    {
+        let update = available().ok_or("no update")?;
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        spawn_relauncher(&exe, &update.version, shown)?;
+        let started = std::process::Command::new("schtasks.exe")
+            .args(["/Run", "/TN", TASK])
+            .creation_flags(CREATE_NO_WINDOW)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map_err(|e| e.to_string())?;
+        if !started.success() {
+            return Err(format!("schtasks /Run: {started}"));
+        }
+        tracing::info!(version = update.version, "updating; quitting for the installer");
+        crate::bridge::app::request_quit();
+        Ok(())
     }
-    tracing::info!(version = update.version, "updating; quitting for the installer");
-    crate::bridge::app::request_quit();
-    Ok(())
+    #[cfg(not(windows))]
+    {
+        let _ = shown;
+        Err("scheduled update task is only supported on Windows".into())
+    }
 }
 
 /// A hidden PowerShell that waits (up to ten minutes) until `version` is
 /// installed and the installer has finished, then opens the app again.
 fn spawn_relauncher(exe: &Path, version: &str, shown: bool) -> Result<(), String> {
-    // Both come from this program (its own path, and a version the release
-    // check already parsed); checked again so they can't break out of the
-    // script's quotes.
-    let exe =
-        exe.to_str().filter(|e| !e.contains('\'') && !e.contains('\n')).ok_or("unusual install path")?;
-    if !version.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-')) {
-        return Err("unusual version".into());
+    #[cfg(windows)]
+    {
+        // Both come from this program (its own path, and a version the release
+        // check already parsed); checked again so they can't break out of the
+        // script's quotes.
+        let exe =
+            exe.to_str().filter(|e| !e.contains('\'') && !e.contains('\n')).ok_or("unusual install path")?;
+        if !version.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-')) {
+            return Err("unusual version".into());
+        }
+        let arguments = if shown { UPDATED_ARG.to_owned() } else { format!("--minimized {UPDATED_ARG}") };
+        let script = relauncher_script(exe, version, &arguments);
+        let encoded: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
+        std::process::Command::new("powershell.exe")
+            .args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-EncodedCommand"])
+            .arg(data_encoding::BASE64.encode(&encoded))
+            .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| format!("relauncher: {e}"))
     }
-    let arguments = if shown { UPDATED_ARG.to_owned() } else { format!("--minimized {UPDATED_ARG}") };
-    let script = relauncher_script(exe, version, &arguments);
-    let encoded: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
-    std::process::Command::new("powershell.exe")
-        .args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-EncodedCommand"])
-        .arg(data_encoding::BASE64.encode(&encoded))
-        .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| format!("relauncher: {e}"))
+    #[cfg(not(windows))]
+    {
+        let _ = (exe, version, shown);
+        Err("relauncher is not supported on non-Windows".into())
+    }
 }
 
 fn relauncher_script(exe: &str, version: &str, arguments: &str) -> String {
@@ -559,11 +583,13 @@ pub fn run_service() -> ExitCode {
         }
     };
     // Not waited for: the installer replaces this program, which must not be running.
-    match std::process::Command::new(&path)
-        .arg("/S")
-        .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
-        .spawn()
-    {
+    #[cfg(windows)]
+    let mut cmd = std::process::Command::new(&path);
+    #[cfg(windows)]
+    cmd.arg("/S").creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS);
+    #[cfg(not(windows))]
+    let mut cmd = std::process::Command::new(&path);
+    match cmd.spawn() {
         Ok(_) => {
             log(&format!("installing {}", update.version));
             ExitCode::SUCCESS

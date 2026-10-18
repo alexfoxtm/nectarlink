@@ -102,7 +102,6 @@ pub fn token_file_path() -> PathBuf {
 /// `None` if no secure source answered: the API then stays off rather than run with a
 /// guessable token.
 pub fn generate_token() -> Option<String> {
-    let mut bytes = [0u8; 32];
     crate::win::secure_random(&mut bytes).then(|| HEXLOWER.encode(&bytes))
 }
 
