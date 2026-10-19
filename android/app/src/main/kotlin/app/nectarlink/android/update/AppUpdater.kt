@@ -39,15 +39,18 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.net.HttpURLConnection
+import java.net.URI
+import java.net.URISyntaxException
 import java.net.URL
 import java.security.MessageDigest
 
 /**
- * Updates from GitHub releases: checks the latest release, and installs a
- * newer signed APK after checking it against the release's SHA-256 sums.
- * Android only installs it over this app when it's signed with the same
- * key, so only release builds update themselves (debug builds are signed
- * differently).
+ * Updates from the Nectar Android stable manifest on R2. The body is the
+ * GitHub release shape (`tag_name`, `html_url`, `draft`, `prerelease`,
+ * `assets`). A newer published release is installed only after its APK
+ * matches `SHA256SUMS.txt` and Android's installer accepts it for this
+ * package, which requires the same signing certificate. Debug builds are
+ * signed differently, so they do not update themselves.
  *
  * Downloads resume where they stopped: across a dropped or changed network
  * (it waits for one to come back), and across restarts of the app.
@@ -147,33 +150,13 @@ class AppUpdater(context: Context) {
 
     private fun latest(): Update? {
         val body = try {
-            get(LATEST, 1 shl 20)
+            get(MANIFEST_URL, MANIFEST_MAX)
         } catch (e: HttpStatus) {
-            // GitHub answers 404 until the first release is published: nothing newer.
-            if (e.code == 404) return null
-            throw e
+            // 404 is an unpublished manifest: nothing newer. Any other status
+            // stays a failed check, distinct from a missing release.
+            return manifestUpdate(e.code, "", BuildConfig.VERSION_NAME)
         }
-        val release = JSONObject(String(body))
-        if (release.optBoolean("draft") || release.optBoolean("prerelease")) return null
-        val version = release.getString("tag_name").removePrefix("v")
-        if (!isNewer(version, BuildConfig.VERSION_NAME)) return null
-        val assets = release.getJSONArray("assets")
-        var apk: JSONObject? = null
-        var sums: JSONObject? = null
-        for (i in 0 until assets.length()) {
-            val asset = assets.getJSONObject(i)
-            val name = asset.getString("name")
-            if (name.endsWith("-android.apk")) apk = asset
-            if (name == "SHA256SUMS.txt") sums = asset
-        }
-        if (apk == null || sums == null) return null
-        return Update(
-            version = version,
-            notesUrl = release.getString("html_url"),
-            apkUrl = apk.getString("browser_download_url"),
-            apkName = apk.getString("name"),
-            sumsUrl = sums.getString("browser_download_url"),
-        )
+        return manifestUpdate(200, String(body, Charsets.UTF_8), BuildConfig.VERSION_NAME)
     }
 
     /** Whether this app may install apps (the user allows it once, in Settings). */
@@ -353,6 +336,11 @@ class AppUpdater(context: Context) {
         _state.value = State.Downloading(update, done, maxOf(total, 0), waitingForNetwork = false)
     }
 
+    /**
+     * Hands the checked APK to Android's installer for this package. The OS
+     * installs it over the installed app only when the signatures match; a
+     * different signer fails and [InstallResult] reports that.
+     */
     private fun commit(apk: File) {
         val installer = context.packageManager.packageInstaller
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
@@ -478,7 +466,11 @@ class AppUpdater(context: Context) {
 
     companion object {
         private const val TAG = "AppUpdater"
-        private const val LATEST = "https://api.github.com/repos/thtbee/nectarlink/releases/latest"
+        private const val R2_HOST = "pub-a57457f4da43415ea6335550ee9e2983.r2.dev"
+        private const val R2_PREFIX = "/waypair/nectar/android/"
+
+        /** Stable manifest. Assets must use this origin and path prefix. */
+        internal const val MANIFEST_URL = "https://$R2_HOST${R2_PREFIX}stable/update.json"
         private const val LAST_CHECK = "lastCheck"
         private const val AUTO_INSTALL = "autoInstall"
         private const val LAST_AUTOMATIC = "lastAutomatic"
@@ -488,29 +480,153 @@ class AppUpdater(context: Context) {
         private const val UPDATED_ID = 0x0D48
         private const val CHECK_EVERY_MS = 24L * 3600 * 1000
         private const val MAX_APK = 300L * 1024 * 1024
+        private const val MANIFEST_MAX = 1 shl 20
+        private const val MAX_ASSETS = 32
+        private const val MAX_URL_CHARS = 2_048
+        private const val MAX_REDIRECTS = 3
         private const val MAX_ATTEMPTS = 6
         private const val NETWORK_WAIT_MS = 2L * 60 * 1000
         private const val PROGRESS_EVERY_MS = 150L
         private val BACKOFF_MS = longArrayOf(1_000, 2_000, 4_000, 8_000, 15_000, 30_000)
 
         /** A response other than the one expected. */
-        private class HttpStatus(val code: Int) : IOException("HTTP $code")
+        internal class HttpStatus(val code: Int) : IOException("HTTP $code")
 
-        /** A connection for `url`, asking for the bytes from `from` on when that's past 0. */
+        /**
+         * HTTPS on the Nectar Android R2 origin, under [R2_PREFIX] only.
+         * No userinfo, query, fragment, percent-encoding, or `..`.
+         */
+        internal fun allowedUpdateUrl(raw: String): Boolean {
+            if (raw.length !in 1..MAX_URL_CHARS || raw.any { it.isWhitespace() || it == '\\' }) return false
+            val uri = try {
+                URI(raw)
+            } catch (_: URISyntaxException) {
+                return false
+            }
+            if (uri.scheme != "https" || uri.userInfo != null || uri.host != R2_HOST) return false
+            if (uri.port != -1 && uri.port != 443) return false
+            if (uri.rawQuery != null || uri.rawFragment != null) return false
+            val rawPath = uri.rawPath ?: return false
+            if ('%' in rawPath || rawPath.contains("//")) return false
+            val path = uri.path ?: return false
+            return path.startsWith(R2_PREFIX) && ".." !in path
+        }
+
+        /**
+         * The next redirect, or null when [location] would leave this origin
+         * and path. Relative locations resolve against [current].
+         */
+        internal fun nextHop(current: String, location: String): String? {
+            if (!allowedUpdateUrl(current)) return null
+            if (location.length !in 1..MAX_URL_CHARS || location.any { it.isISOControl() || it.isWhitespace() }) return null
+            val resolved = try {
+                URI(current).resolve(location).toString()
+            } catch (_: URISyntaxException) {
+                return null
+            } catch (_: IllegalArgumentException) {
+                return null
+            }
+            return resolved.takeIf { allowedUpdateUrl(it) }
+        }
+
+        /**
+         * 404 is no release. Any other non-200 status is a failed check.
+         * A 200 body is an update only when [releaseFrom] accepts it.
+         */
+        internal fun manifestUpdate(status: Int, body: String, current: String): Update? {
+            if (status == 404) return null
+            if (status != 200) throw HttpStatus(status)
+            return releaseFrom(body, current)
+        }
+
+        /**
+         * A newer published release from a GitHub-shaped manifest, or null
+         * when it is not one we will install. Malformed JSON throws.
+         */
+        internal fun releaseFrom(body: String, current: String): Update? {
+            if (body.length > MANIFEST_MAX) return null
+            val release = JSONObject(body)
+            if (!release.has("draft") || !release.has("prerelease") || !release.has("tag_name") || !release.has("html_url")) {
+                return null
+            }
+            if (release.getBoolean("draft") || release.getBoolean("prerelease")) return null
+            val tag = release.getString("tag_name")
+            if (tag.length !in 1..64 || tag.any { it.isWhitespace() }) return null
+            val version = tag.removePrefix("v")
+            if (!isNewer(version, current)) return null
+            val notes = release.getString("html_url")
+            if (notes.length !in 1..MAX_URL_CHARS || !notes.startsWith("https://") || notes.any { it.isWhitespace() }) return null
+            val assets = release.optJSONArray("assets") ?: return null
+            if (assets.length() !in 1..MAX_ASSETS) return null
+            var apk: JSONObject? = null
+            var sums: JSONObject? = null
+            for (i in 0 until assets.length()) {
+                val asset = assets.optJSONObject(i) ?: return null
+                when (val name = asset.optString("name", "")) {
+                    "SHA256SUMS.txt" -> {
+                        if (sums != null) return null
+                        sums = asset
+                    }
+                    else -> if (androidApkName(name)) {
+                        if (apk != null) return null
+                        apk = asset
+                    }
+                }
+            }
+            val apkAsset = apk ?: return null
+            val sumsAsset = sums ?: return null
+            val apkName = apkAsset.getString("name")
+            val apkUrl = apkAsset.optString("browser_download_url", "")
+            val sumsUrl = sumsAsset.optString("browser_download_url", "")
+            if (!assetUrl(apkName, apkUrl) || !assetUrl("SHA256SUMS.txt", sumsUrl)) return null
+            return Update(version, notes, apkUrl, apkName, sumsUrl)
+        }
+
+        /** A single path segment whose name is the published `*-android.apk`. */
+        private fun androidApkName(name: String): Boolean {
+            if (name.length !in 12..128 || !name.endsWith("-android.apk") || ".." in name) return false
+            return name.all { it in 'A'..'Z' || it in 'a'..'z' || it in '0'..'9' || it == '-' || it == '.' || it == '_' }
+        }
+
+        /** [url] is on our R2 path and its last segment is exactly [name]. */
+        private fun assetUrl(name: String, url: String): Boolean {
+            if (!allowedUpdateUrl(url)) return false
+            return URI(url).path?.endsWith("/$name") == true
+        }
+
+        /**
+         * A connection for `url`, asking for the bytes from `from` on when that's past 0.
+         * Redirects are followed only while [nextHop] still allows the target.
+         */
         private fun connect(url: String, from: Long = 0): HttpURLConnection {
-            if (!url.startsWith("https://")) throw IOException("only https")
-            return (URL(url).openConnection() as HttpURLConnection).apply {
-                connectTimeout = 15_000
-                // A stalled connection fails soon, so the download resumes on a fresh one.
-                readTimeout = 20_000
-                instanceFollowRedirects = true
-                setRequestProperty("User-Agent", "Nectarlink/${BuildConfig.VERSION_NAME} (Android)")
-                setRequestProperty("Accept", "application/vnd.github+json, application/octet-stream")
-                if (from > 0) setRequestProperty("Range", "bytes=$from-")
-                // Redirects stay on https (HttpURLConnection never follows one to another
-                // protocol); checked again in case that ever changes.
-                responseCode
-                if (this.url.protocol != "https") throw IOException("only https")
+            var current = url
+            var hops = 0
+            while (true) {
+                if (!allowedUpdateUrl(current)) throw IOException("update url refused")
+                val connection = (URL(current).openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 15_000
+                    // A stalled connection fails soon, so the download resumes on a fresh one.
+                    readTimeout = 20_000
+                    instanceFollowRedirects = false
+                    setRequestProperty("User-Agent", "Nectarlink/${BuildConfig.VERSION_NAME} (Android)")
+                    setRequestProperty("Accept", "application/json, application/octet-stream")
+                    if (from > 0) setRequestProperty("Range", "bytes=$from-")
+                }
+                val code = try {
+                    connection.responseCode
+                } catch (e: IOException) {
+                    connection.disconnect()
+                    throw e
+                }
+                if (code in 300..399 && code != 304) {
+                    val location = connection.getHeaderField("Location")
+                    connection.disconnect()
+                    if (location.isNullOrEmpty() || hops >= MAX_REDIRECTS) throw IOException("redirect refused")
+                    hops += 1
+                    current = nextHop(current, location) ?: throw IOException("redirect refused")
+                    continue
+                }
+                return connection
             }
         }
 
