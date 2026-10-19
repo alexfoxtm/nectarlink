@@ -396,10 +396,10 @@ pub fn start(on_copy: impl Fn(Clip) + Send + Sync + 'static) {
                     MainOutcome::Completed(clip) => clip,
                     MainOutcome::NotStarted | MainOutcome::StartedTimeout => None,
                 };
-                if let Some(clip) = clip {
-                    if let Some(cb) = ON_COPY.get() {
-                        cb(clip);
-                    }
+                if let Some(clip) = clip
+                    && let Some(cb) = ON_COPY.get()
+                {
+                    cb(clip);
                 }
             }
         })
