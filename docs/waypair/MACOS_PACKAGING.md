@@ -29,13 +29,12 @@ microphone/camera usage keys are declared), runs
 `macdeployqt -no-codesign` (options confirmed against the installed
 `macdeployqt --help`) with `-qmldir` when QML sources exist to bundle Qt
 frameworks/plugins. Homebrew splits Qt into separate prefixes (`qtbase`,
-`qtdeclarative`, `qtsvg`) while `qmake6 -query QT_INSTALL_LIBS` is the one
-directory `/opt/homebrew/lib`. macdeployqt does not search that directory
-unless given `-libpath`, so a QML image plugin's
-`@rpath/QtSvg.framework/Versions/A/QtSvg` is printed as `ERROR:` and left
-unresolved even though macdeployqt exits 0. The script queries
-`QT_INSTALL_LIBS` from `qmake6` or `qmake` beside the discovered
-`macdeployqt` and passes `-libpath`. It also copies `LICENSE` + **all** of `LICENSES/` into
+`qtdeclarative`, `qtsvg`). The Mac build explicitly declares the Svg module
+so macdeployqt includes its runtime image plugin dependencies, and embeds
+`@executable_path/../Frameworks` for bundled transitive libraries. The
+packager also supplies qmake's unified library directory as an extra search
+hint; that hint alone does not repair macdeployqt's plugin-pass rpaths.
+The script copies `LICENSE` + **all** of `LICENSES/` into
 `Contents/Resources/`, failing on any copy error. App names are validated as
 a single filename component (no `/`, `.`/`..`, or control characters). Plist
 text is XML-escaped with `sed`, not bash `${var//pat/repl}`, so the same
@@ -45,9 +44,10 @@ the bundled executable must name at least one `Qt*.framework`, and each of
 those frameworks must exist under `Contents/Frameworks`. A directory that
 contains only `Sparkle.framework` does not pass. `macdeployqt` output that
 contains `ERROR:` fails the script even when the tool exits 0. A closure
-walk then rejects the bundle unless every Mach-O load command is a system
+conservative closure walk then checks every Mach-O load command for a system
 library (`/System`, `/usr/lib`, `/usr/libexec`) or resolves to a file inside
-the `.app`. `@executable_path` and `@loader_path` are resolved from the
+the `.app`. The source build supplies the main framework rpath explicitly;
+this check does not model every possible inherited dyld load chain. `@executable_path` and `@loader_path` are resolved from the
 nearest `.app`'s `Contents/MacOS` and from the loading image. `@rpath` is
 resolved with that image's `LC_RPATH` plus the nearest app executable's
 `LC_RPATH`, and the substituted file must lie inside the bundle — an

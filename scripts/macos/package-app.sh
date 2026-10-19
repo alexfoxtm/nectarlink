@@ -148,11 +148,8 @@ require_named_qt_frameworks() {
     done <<< "$names"
 }
 
-# Homebrew's qmake6 -query QT_INSTALL_LIBS is one directory (/opt/homebrew/lib)
-# even when frameworks live in split prefixes (qtbase, qtdeclarative, qtsvg).
-# macdeployqt does not search that directory unless -libpath is passed, so a
-# QML image plugin's @rpath/QtSvg.framework is reported as ERROR and left
-# unresolved while macdeployqt itself still exits 0.
+# Add a search hint for Homebrew's split Qt prefixes. This does not fix the
+# plugin pass on its own: build.rs declares Svg and the bundle framework rpath.
 qt_install_libs_from_deployqt() {
     local deployqt="$1"
     local bindir qmake libs candidate
@@ -583,9 +580,8 @@ fi
 
 # Bundle Qt frameworks/plugins. -no-codesign: this script never signs; any
 # production signature is applied later by Root's release process.
-# -libpath is the unified Qt prefix (qmake6 QT_INSTALL_LIBS). Without it,
-# Homebrew's split qtsvg prefix is invisible and macdeployqt prints
-# "Cannot resolve rpath @rpath/QtSvg.framework/..." while exiting 0.
+# The extra library search hint does not replace the executable's declared
+# Qt dependencies or bundle-relative framework rpath (both set in build.rs).
 DEPLOY_ARGS=("$APP_PATH" -no-codesign)
 qt_libs="$(qt_install_libs_from_deployqt "$MACDEPLOYQT")"
 if [[ -n "$qt_libs" ]]; then
