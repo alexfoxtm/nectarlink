@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! macOS status bar / tray integration stubs.
+//! macOS status bar / tray integration.
+//!
+//! There is no status bar item, no global hotkey and no window tracking on
+//! macOS yet. Creating the tray therefore fails (the app logs "no tray icon"
+//! and keeps no handle) instead of returning an invisible tray, and window
+//! focusing reports failure so Continuity Camera never claims it pasted.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrayEvent {
@@ -35,7 +40,7 @@ impl Tray {
         _labels: MenuLabels,
         _handler: impl Fn(TrayEvent) + 'static,
     ) -> Result<Tray, String> {
-        Ok(Tray)
+        Err("status bar item isn't implemented on macOS yet".into())
     }
 
     pub fn set_tooltip(&self, _text: &str) {}
@@ -49,8 +54,10 @@ pub fn record_foreground_window() {}
 
 pub fn apply_no_activate_style_by_title(_title: &str) {}
 
+/// No window is ever focused from here; `false` keeps the caller on its
+/// "image is on your clipboard" path instead of a false "pasted" message.
 pub fn focus_window(_hwnd: isize) -> bool {
-    true
+    false
 }
 
 pub fn is_window_alive_and_visible(_hwnd: isize) -> bool {

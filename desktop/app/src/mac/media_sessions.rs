@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! macOS media session integration stubs.
+//! macOS media session integration.
+//!
+//! macOS has no public API that reads or drives other apps' Now Playing
+//! state, so this Mac never reports players (`media.control` isn't
+//! advertised) and a command for one is refused as unsupported rather than
+//! acknowledged without acting.
 
 use nectarlink_core::{MediaAction, MediaError, MediaPlayer};
 
 pub fn start(_on_change: impl Fn(Vec<MediaPlayer>) + Send + Sync + 'static) {}
 
 pub fn command(_player: &str, _action: MediaAction, _pos: Option<u64>) -> Result<(), MediaError> {
-    Ok(())
+    Err(MediaError::Unsupported)
 }
 
 pub fn pause_for_call() {}

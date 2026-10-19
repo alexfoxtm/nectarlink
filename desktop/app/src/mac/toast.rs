@@ -51,6 +51,10 @@ pub struct Progress {
 type OnEvent = Box<dyn Fn(ToastEvent) + Send + Sync>;
 static ON_EVENT: OnceLock<Mutex<Option<OnEvent>>> = OnceLock::new();
 
+/// Whether the system lets this app notify. macOS offers no way to read that
+/// for an `osascript` banner, so, like Windows when its query fails, the
+/// answer is "not known to be off" rather than a false "off" (which would
+/// show a "Windows notifications are off" fix that doesn't apply here).
 pub fn enabled() -> bool {
     true
 }
@@ -63,6 +67,10 @@ pub fn start(_icon: PathBuf, on_event: impl Fn(ToastEvent) + Send + Sync + 'stat
     let _ = ON_EVENT.set(Mutex::new(Some(Box::new(on_event))));
 }
 
+/// Shows a plain banner. Actions, reply, icon, image and progress aren't
+/// representable through `display notification`; they're dropped here and
+/// the matching [`ToastEvent`]s never fire (the in-app views still offer
+/// them). A failed `osascript` is logged, not swallowed.
 pub fn show(toast: Toast) {
     let script = if toast.attribution.is_empty() {
         format!("display notification {:?} with title {:?}", toast.body, toast.title)
@@ -72,7 +80,23 @@ pub fn show(toast: Toast) {
             toast.body, toast.title, toast.attribution
         )
     };
-    let _ = std::process::Command::new("osascript").args(["-e", &script]).spawn();
+    if !toast.actions.is_empty() || toast.reply.is_some() || toast.call {
+        tracing::debug!(key = %toast.key, "notification actions aren't shown on macOS; banner only");
+    }
+    let spawned = std::thread::Builder::new().name("toast-osascript".into()).spawn(move || {
+        match std::process::Command::new("osascript").args(["-e", &script]).output() {
+            Ok(out) if out.status.success() => {}
+            Ok(out) => tracing::warn!(
+                status = %out.status,
+                stderr = %String::from_utf8_lossy(&out.stderr).trim(),
+                "notification wasn't shown"
+            ),
+            Err(e) => tracing::warn!(error = %e, "can't run osascript for a notification"),
+        }
+    });
+    if let Err(e) = spawned {
+        tracing::warn!(error = %e, "can't start the notification thread");
+    }
 }
 
 pub fn update_progress(_device: &str, _key: &str, _progress: Progress) {}
