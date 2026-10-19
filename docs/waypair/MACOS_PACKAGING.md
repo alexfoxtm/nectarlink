@@ -53,6 +53,15 @@ scripts/macos/package-app.sh \
   --qt-bin-dir <qt-6.12.0>/macos/bin
 ```
 
+## Name and logo (upstream TRADEMARKS.md)
+
+Per upstream `TRADEMARKS.md`, modified builds must not be distributed under
+the NectarLink name or logo: this port ships as **Waypair Link** with
+Waypair's own logo (default `--app-name "Waypair Link"`; no upstream icon is
+bundled by the script). Attribution is retained — the GPL/MPL license texts
+and upstream copyright notices travel in the bundle as described below, and
+"based on NectarLink" wording is acceptable where accurate.
+
 ## Licensing in the bundle (compliance, already authorized)
 
 Desktop/apps are GPL-3.0-or-later (with `LICENSES/APP-STORE-EXCEPTION.md`),
