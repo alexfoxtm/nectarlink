@@ -34,12 +34,12 @@
       "ref": "refs/pull/24/head",
       "head_repo": "saivinay1805/nectarlink",
       "head_ref": "feature/macos-port",
-      "sha": "e71dee4146619db00408825e0039bb00e0443627",
+      "sha": "9c0f13d7298296b63ba1bdfd39c09c7eb8f0d5f8",
       "author": "saivinay1805 <saivinayreddyvavilla@gmail.com>",
-      "subject": "fix(desktop): fix screen restoration, clipboard autorelease pools, and macOS tray fallbacks",
-      "state_at_record": "open, unmerged, 7 commits (e71dee41 is the direct child of the previous pin 96370de1); 0 check runs at record time",
+      "subject": "fix(desktop): fix clipboard race, updater platform gating, audio status, and download limits",
+      "state_at_record": "open, unmerged; one commit on top of the previous pin e71dee41 (the PR head was 7 commits at e71dee41); Signed-off-by the author (DCO 1.1)",
       "in_port": true,
-      "role": "Previous pin 96370de1 is the base commit of waypair/macos-port (every port commit sits on top of it); e71dee41 enters the port by merge commit ca80744cdb04df692626d79d744e79e210a0cd23 on alex.s/upstream-e71-20261019, preserving upstream parentage."
+      "role": "Previous pin 96370de1 is the base commit of waypair/macos-port (every port commit sits on top of it); e71dee41 enters the port by merge commit ca80744cdb04df692626d79d744e79e210a0cd23, and 9c0f13d7 by merge commit 435ffa2a482f7b04e22d6dbc1b00e595fda98b0f on alex.s/upstream-9c0-20261019, both preserving upstream parentage. Watch policy (Alex, 2026-10-19): always incorporate saivinay1805's macOS updates after review at an exact pinned SHA via merge; never auto-merge or take an unpinned fork branch."
     },
     {
       "id": "linux-pr12",
