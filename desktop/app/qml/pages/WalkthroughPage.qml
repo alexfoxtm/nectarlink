@@ -502,7 +502,7 @@ FocusScope {
                                 drawStyledHex(ctx, cx + 88, cy, 32, primarySoft, primaryHex, 2.0)
                                 drawPcGlyph(ctx, cx + 88, cy, primaryHex)
                             } else if (walkthrough.step === 1) {
-                                // Step 1: 3 interlocking security honeycomb cells (QUIC, DPAPI+Keystore, Local LAN)
+                                // Step 1: 3 interlocking security honeycomb cells (QUIC, platform key protection, Local LAN)
                                 let triad = [
                                     { x: cx - 54, y: cy + 6 },
                                     { x: cx, y: cy - 10 },
@@ -850,8 +850,10 @@ FocusScope {
                                     },
                                     {
                                         icon: Icons.shield,
-                                        title: qsTr("Hardware-backed device keys"),
-                                        body: "Device keys are protected by Windows DPAPI and the Android Keystore."
+                                        title: qsTr("Protected device keys"),
+                                        body: Qt.platform.os === "osx"
+                                            ? qsTr("Your phone’s keys are protected by Android Keystore, and your Mac’s keys by macOS Keychain.")
+                                            : qsTr("Device keys are protected by Windows DPAPI and the Android Keystore.")
                                     },
                                     {
                                         icon: Icons.wifi,
