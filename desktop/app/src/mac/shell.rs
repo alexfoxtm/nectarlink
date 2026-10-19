@@ -28,6 +28,7 @@ pub fn open_maps(address: &str) -> Result<(), String> {
 }
 
 /// Returns `true` if `scheme` is recognized.
+#[allow(dead_code)]
 pub fn is_url_scheme_registered(scheme: &str) -> bool {
     matches!(scheme.trim(), "http" | "https" | "mailto" | "maps")
 }
@@ -43,12 +44,25 @@ pub fn run(program: &Path, arguments: &str) -> Result<(), String> {
 
 /// Locks the Mac screen.
 pub fn lock() -> Result<(), String> {
-    let script = r#"tell application "System Events" to key code 12 using {control down, command down}"#;
-    std::process::Command::new("osascript")
-        .args(["-e", script])
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| e.to_string())
+    // CGSession -suspend locks the screen directly without accessibility prompts.
+    let status = std::process::Command::new(
+        "/System/Library/CoreServices/Menu Extras/User.menu/Contents/Resources/CGSession",
+    )
+    .arg("-suspend")
+    .status();
+    if status.is_ok_and(|s| s.success()) {
+        return Ok(());
+    }
+    // Fallback to osascript with status check
+    let output = std::process::Command::new("osascript")
+        .args(["-e", r#"tell application "System Events" to key code 12 using {control down, command down}"#])
+        .output()
+        .map_err(|e| e.to_string())?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+    }
 }
 
 /// Puts the Mac to sleep.

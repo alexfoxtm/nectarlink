@@ -10,6 +10,7 @@ use std::path::Path;
 use crate::i18n::tr;
 
 pub enum Error {
+    #[allow(dead_code)]
     Declined,
     Other(String),
 }

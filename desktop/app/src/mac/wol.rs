@@ -10,6 +10,7 @@ use nectarlink_core::PcWakeInfo;
 
 use crate::i18n::tr;
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WakeSupport {
     Enabled,
@@ -61,6 +62,7 @@ pub fn query_wake_status() -> WakeStatus {
 }
 
 /// Nothing is sent; callers get an error instead of a silent "woke it".
+#[allow(dead_code)]
 pub fn wake(_mac: &[u8]) -> Result<(), String> {
     Err(tr!("Wake", "Waking other PCs isn't available on macOS yet."))
 }

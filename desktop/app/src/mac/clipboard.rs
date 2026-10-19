@@ -85,6 +85,7 @@ const TRANSIENT_TYPE: &str = "org.nspasteboard.TransientType";
 /// pasteboard request before giving up instead of hanging.
 const MAIN_THREAD_TIMEOUT: Duration = Duration::from_secs(2);
 
+#[allow(dead_code)]
 #[derive(Clone, PartialEq, Eq)]
 pub enum Image {
     Png(Vec<u8>),
@@ -118,6 +119,7 @@ impl Image {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Clip {
     Text { text: String, html: Option<String>, rtf: Option<String> },
+    #[allow(dead_code)]
     Image(Image),
     Private,
     Empty,
@@ -541,18 +543,22 @@ pub fn write_image(mime: &str, bytes: &[u8]) -> Result<(), String> {
     }))
 }
 
+#[allow(dead_code)]
 pub fn build_dropfiles_payload(_paths: &[PathBuf]) -> Vec<u8> {
     Vec::new()
 }
 
+#[allow(dead_code)]
 pub fn parse_dropfiles_payload(_bytes: &[u8]) -> Option<Vec<PathBuf>> {
     None
 }
 
+#[allow(dead_code)]
 pub fn read_files() -> Option<Vec<PathBuf>> {
     None
 }
 
+#[allow(dead_code)]
 pub fn write_files(_paths: &[PathBuf]) -> bool {
     false
 }

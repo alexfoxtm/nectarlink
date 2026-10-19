@@ -105,7 +105,6 @@ pub fn compute_capabilities(
 ) -> Vec<String> {
     let mut caps = vec![
         "pc.power".into(),
-        nectarlink_core::PC_WAKE.into(),
         nectarlink_core::PHOTOS_SHOW.into(),
         nectarlink_core::CAMERA_CONTINUITY.into(),
         nectarlink_core::CALLS_SHOW.into(),
@@ -115,6 +114,7 @@ pub fn compute_capabilities(
     ];
     #[cfg(windows)]
     {
+        caps.push(nectarlink_core::PC_WAKE.into());
         caps.push("media.control".into());
         caps.push(nectarlink_core::STORAGE_MOUNT.into());
         caps.push(nectarlink_core::STORAGE_READ.into());
@@ -403,12 +403,11 @@ pub fn shutdown() {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "macos"))]
 mod tests {
     use super::*;
 
     #[test]
-    #[cfg(target_os = "macos")]
     fn macos_advertises_only_supported_capabilities() {
         let caps = compute_capabilities(None);
         // Ensure unsupported features on macOS are never advertised
@@ -442,10 +441,10 @@ mod tests {
             "macOS must not advertise media.stream"
         );
         assert!(!caps.contains(&nectarlink_core::MIC_LISTEN.into()), "macOS must not advertise mic.listen");
+        assert!(!caps.contains(&nectarlink_core::PC_WAKE.into()), "macOS must not advertise pc.wake");
 
         // Ensure supported features on macOS are advertised
         assert!(caps.contains(&"pc.power".into()));
-        assert!(caps.contains(&nectarlink_core::PC_WAKE.into()));
         assert!(caps.contains(&nectarlink_core::PHOTOS_SHOW.into()));
         assert!(caps.contains(&nectarlink_core::CAMERA_CONTINUITY.into()));
         assert!(caps.contains(&nectarlink_core::CALLS_SHOW.into()));

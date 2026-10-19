@@ -8,6 +8,7 @@ pub struct Colors {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct Picture {
     pub width: u32,
     pub height: u32,
@@ -51,6 +52,7 @@ pub fn to_bgrx(picture: &Picture, width: u32, height: u32) -> Vec<u8> {
     vec![0; w * h * 4]
 }
 
+#[allow(dead_code)]
 pub fn ensure_mf_started() -> Result<(), String> {
     Ok(())
 }

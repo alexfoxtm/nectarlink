@@ -106,6 +106,7 @@ pub fn open_firewall_settings() -> bool {
     }
 }
 
+#[allow(dead_code)]
 pub fn diagnose() -> Vec<(String, bool, String)> {
     Vec::new()
 }

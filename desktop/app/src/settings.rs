@@ -323,7 +323,7 @@ pub struct Settings {
     pub comb_motion: bool,
     /// Closing the window keeps NectarLink running in the tray.
     /// Off by default on macOS while the tray is a stub; on for Windows and Linux.
-    #[serde(alias = "close_to_tray")]
+    #[serde(default = "default_close_to_tray", alias = "close_to_tray")]
     pub close_to_tray: bool,
     /// Send what's copied on this PC to connected phones.
     #[serde(alias = "auto_clipboard", alias = "clipboard_sync")]
