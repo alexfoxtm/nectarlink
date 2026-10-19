@@ -7,6 +7,7 @@ import android.view.InputEvent
 import android.view.KeyCharacterMap
 import android.view.KeyEvent
 import android.view.MotionEvent
+import app.nectarlink.android.BuildConfig
 import java.lang.reflect.Method
 import java.net.InetAddress
 import java.net.ServerSocket
@@ -41,7 +42,7 @@ import java.security.MessageDigest
 object InputServer {
     private const val POWER_MODE_OFF = 0
     private const val POWER_MODE_NORMAL = 2
-    private const val PKG = "app.nectarlink"
+    private const val PKG = BuildConfig.APPLICATION_ID
 
     private val windows = java.util.Collections.synchronizedSet(LinkedHashSet<AppDisplay>())
     @Volatile private var serverSocket: ServerSocket? = null

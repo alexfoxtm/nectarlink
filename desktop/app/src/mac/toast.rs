@@ -7,7 +7,7 @@ use std::{
 };
 
 #[allow(dead_code)]
-pub const AUMID: &str = "com.thtbee.nectarlink";
+pub const AUMID: &str = "com.waypair.mac";
 pub const CALL_ANSWER: &str = "answer";
 pub const CALL_DECLINE: &str = "decline";
 pub const CALL_END: &str = "end";
@@ -91,7 +91,6 @@ pub fn show(toast: Toast) {
             Ok(out) if out.status.success() => {}
             Ok(out) => tracing::warn!(
                 status = %out.status,
-                stderr = %String::from_utf8_lossy(&out.stderr).trim(),
                 "notification wasn't shown"
             ),
             Err(e) => tracing::warn!(error = %e, "can't run osascript for a notification"),

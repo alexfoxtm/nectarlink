@@ -3,8 +3,8 @@
 
 use std::{io, path::Path};
 
-const LABEL: &str = "com.thtbee.nectarlink";
-const PLIST_NAME: &str = "com.thtbee.nectarlink.plist";
+const LABEL: &str = "com.waypair.link.nectar";
+const PLIST_NAME: &str = "com.waypair.link.nectar.plist";
 
 pub fn is_enabled() -> bool {
     dirs::home_dir().is_some_and(|dir| dir.join("Library/LaunchAgents").join(PLIST_NAME).exists())
@@ -12,15 +12,6 @@ pub fn is_enabled() -> bool {
 
 pub fn is_installed(_exe: &Path) -> bool {
     is_enabled()
-}
-
-pub fn set_enabled(enabled: bool) -> Result<(), String> {
-    if !enabled {
-        // Removal uses the home-directory plist, not the executable path.
-        return set(false, Path::new(""));
-    }
-    let exe = std::env::current_exe().map_err(|err| err.to_string())?;
-    set(true, &exe)
 }
 
 pub fn set(enabled: bool, exe: &Path) -> Result<(), String> {
