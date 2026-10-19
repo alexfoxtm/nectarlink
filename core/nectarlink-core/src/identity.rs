@@ -16,7 +16,8 @@ const FILE_NAME: &str = "identity.key";
 const MAGIC: &[u8; 4] = b"NLK1";
 
 /// Protects the device key at rest. Each platform provides one: DPAPI on
-/// Windows, Android Keystore wrapping on Android (injected by the app).
+/// Windows, the Keychain wrapping key on macOS (method 2), Android
+/// Keystore wrapping on Android (injected by the app).
 pub trait KeyProtector: Send + Sync {
     /// A stable one-byte identifier written into the key file.
     fn id(&self) -> u8;
@@ -43,15 +44,22 @@ impl KeyProtector for PlainKeyProtector {
 
 /// The best protector available on this platform.
 pub fn default_protector() -> Arc<dyn KeyProtector> {
+    #[cfg(target_os = "macos")]
+    {
+        Arc::new(macos::MacosKeyProtector::new())
+    }
     #[cfg(windows)]
     {
         Arc::new(dpapi::DpapiKeyProtector)
     }
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         Arc::new(PlainKeyProtector)
     }
 }
+
+#[cfg(target_os = "macos")]
+mod macos;
 
 /// Loads the device key from `dir`, creating and saving a new one on first
 /// launch.
@@ -224,20 +232,23 @@ pub fn install_id_from(platform_id: &str) -> Option<String> {
 mod tests {
     use super::*;
 
+    // Unit tests always use the explicit plain protector: the platform
+    // default (macOS Keychain, Windows DPAPI) must never be touched
+    // with a developer's real credentials from a test run.
     #[test]
     fn creates_then_reloads_the_same_key() {
         let dir = tempfile::tempdir().unwrap();
-        let protector = default_protector();
-        let first = load_or_create(dir.path(), protector.as_ref()).unwrap();
-        let second = load_or_create(dir.path(), protector.as_ref()).unwrap();
+        let protector = PlainKeyProtector;
+        let first = load_or_create(dir.path(), &protector).unwrap();
+        let second = load_or_create(dir.path(), &protector).unwrap();
         assert_eq!(first.public(), second.public());
     }
 
     #[test]
     fn key_file_does_not_contain_the_plain_key_when_protected() {
         let dir = tempfile::tempdir().unwrap();
-        let protector = default_protector();
-        let key = load_or_create(dir.path(), protector.as_ref()).unwrap();
+        let protector = PlainKeyProtector;
+        let key = load_or_create(dir.path(), &protector).unwrap();
         let file = fs::read(dir.path().join(FILE_NAME)).unwrap();
         if protector.id() != 0 {
             let raw = key.to_bytes();
@@ -274,8 +285,7 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
 
         let dir = tempfile::tempdir().unwrap();
-        let protector = default_protector();
-        load_or_create(dir.path(), protector.as_ref()).unwrap();
+        load_or_create(dir.path(), &PlainKeyProtector).unwrap();
         let meta = fs::metadata(dir.path().join(FILE_NAME)).unwrap();
         assert_eq!(meta.permissions().mode() & 0o777, 0o600);
     }
