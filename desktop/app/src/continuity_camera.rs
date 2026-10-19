@@ -97,7 +97,7 @@ fn decide_delivery_action(
         return DeliveryDecision::PromptMissingTarget {
             title: format!("{item_cap} ready on clipboard"),
             body: format!(
-                "“{target_name}” is no longer open, so NectarLink didn’t paste automatically. Switch to the window where you want your {item_lower} from {device_name} and click Paste into active window, or press Ctrl+V anywhere."
+                "“{target_name}” is no longer open, so Waypair Link didn’t paste automatically. Switch to the window where you want your {item_lower} from {device_name} and click Paste into active window, or press Ctrl+V anywhere."
             ),
             target_name,
         };

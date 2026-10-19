@@ -403,7 +403,7 @@ fn open_voice_recordings(device: DeviceId) {
         core_host::host().hub.read(|s| s.name_of(&device)).unwrap_or_else(|| "your phone".into());
     show_message(tr!(
         "CommandPalette",
-        "Opened Recordings folder. Start a voice note in NectarLink on %1 to send it here.",
+        "Opened Recordings folder. Start a voice note in Waypair Link on %1 to send it here.",
         phone_name
     ));
 }

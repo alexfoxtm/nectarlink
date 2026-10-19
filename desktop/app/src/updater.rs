@@ -266,9 +266,9 @@ pub fn check_now(told: bool) -> Option<String> {
             if new {
                 announce(&update);
             }
-            Some(tr!("Updater", "NectarLink %1 is available.", update.version))
+            Some(tr!("Updater", "Waypair Link %1 is available.", update.version))
         }
-        Ok(None) => told.then(|| tr!("Updater", "NectarLink is up to date.")),
+        Ok(None) => told.then(|| tr!("Updater", "Waypair Link is up to date.")),
         Err(e) => {
             tracing::info!(error = %e, "couldn't check for updates");
             told.then(|| tr!("Updater", "Couldn't check for updates. Check your internet connection."))
@@ -280,9 +280,9 @@ fn announce(update: &Update) {
     toast::show(toast::Toast {
         device: TOAST_GROUP.into(),
         key: update.version.clone(),
-        title: tr!("Updater", "NectarLink %1 is available", update.version),
+        title: tr!("Updater", "Waypair Link %1 is available", update.version),
         body: tr!("Updater", "Update now, or later from Settings."),
-        attribution: "NectarLink".into(),
+        attribution: "Waypair Link".into(),
         icon: None,
         image: None,
         actions: vec![(ACTION_UPDATE.into(), "Update".into())],
@@ -849,7 +849,7 @@ pub fn announce_update(previous: String, shown: bool) {
     tracing::info!(from = previous, to = current, "updated");
     after_start(
         shown,
-        tr!("Updater", "NectarLink is updated to %1", current),
+        tr!("Updater", "Waypair Link is updated to %1", current),
         tr!("Updater", "Your phone reconnects on its own."),
     );
 }
@@ -861,7 +861,7 @@ pub fn announce_update_failed(shown: bool) {
     after_start(
         shown,
         tr!("Updater", "The update didn't install"),
-        tr!("Updater", "NectarLink is still on the version you had. Try again from Settings."),
+        tr!("Updater", "Waypair Link is still on the version you had. Try again from Settings."),
     );
 }
 
@@ -877,7 +877,7 @@ fn after_start(shown: bool, title: String, body: String) {
             key: "updated".into(),
             title,
             body,
-            attribution: "NectarLink".into(),
+            attribution: "Waypair Link".into(),
             icon: None,
             image: None,
             actions: Vec::new(),

@@ -232,7 +232,7 @@ mod imp {
 
     fn failed(error: &Error, phone: &str) -> String {
         match error {
-            Error::Unsupported => tr!("PlayOnPhone", "Update NectarLink on %1 to play on it.", phone),
+            Error::Unsupported => tr!("PlayOnPhone", "Update Waypair Link on %1 to play on it.", phone),
             Error::Denied => tr!("PlayOnPhone", "Media is turned off for %1.", phone),
             other => describe(other),
         }

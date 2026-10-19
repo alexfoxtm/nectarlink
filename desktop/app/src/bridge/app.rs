@@ -323,6 +323,10 @@ pub mod qobject {
         /// The folder with the app's logs, as a file URL.
         #[qinvokable]
         fn logs_url(self: &AppController) -> QString;
+        /// The license texts shipped with the app, as a file URL, or the
+        /// source's license folder online when none are installed.
+        #[qinvokable]
+        fn licenses_url(self: &AppController) -> QString;
 
         /// Opens a paired phone's storage sync root in File Explorer.
         #[qinvokable]
@@ -1738,6 +1742,21 @@ impl qobject::AppController {
         QString::from(&format!("file:///{}", dir.to_string_lossy().replace('\\', "/")))
     }
 
+    pub fn licenses_url(&self) -> QString {
+        let installed = std::env::current_exe().ok().and_then(|exe| {
+            let dir = exe.parent()?;
+            let bundle = dir.parent().map(|contents| contents.join("Resources").join("LICENSES"));
+            bundle.into_iter().chain([dir.join("LICENSES"), dir.join("LICENSE.txt")]).find(|p| p.exists())
+        });
+        match installed {
+            Some(path) => {
+                let path = path.to_string_lossy().replace('\\', "/");
+                QString::from(&format!("file:///{}", path.trim_start_matches('/')))
+            }
+            None => QString::from("https://github.com/thtbee/nectarlink/tree/main/LICENSES"),
+        }
+    }
+
     pub fn open_phone_storage(&self, device: &QString) {
         let Some(id) = super::parse_device(device) else { return };
         if let Err(e) = crate::storage::open_in_explorer(id) {
@@ -1859,7 +1878,7 @@ impl qobject::AppController {
 
     pub fn style_shelf_window(&self) {
         win::tray::apply_no_activate_style_by_title("Waypair Link Shelf");
-        win::tray::apply_no_activate_style_by_title("Nectar Island");
+        win::tray::apply_no_activate_style_by_title("Waypair Link Island");
     }
 
     pub fn start_shelf_drag(&self, kind: &QString, id_or_path: &QString, text: &QString) -> bool {
@@ -2180,7 +2199,7 @@ fn load_guide_doc_content(raw_key: &str) -> (String, String) {
             tr!("Guide", "Install and first-time setup"),
             tr!(
                 "Guide",
-                "1. Install Waypair Link on your Windows 11 PC and your Android phone (Android 8.0 or newer).\n\
+                "1. Install Waypair Link on your Mac (macOS 14.4 or newer) or Windows 11 PC and on your Android phone (Android 8.0 or newer).\n\
              2. Connect both devices to the same Wi-Fi network, or plug your phone into your PC with a USB cable.\n\
              3. Open the Pair step in the setup walkthrough, or click + (Pair a new device) at the bottom of the left rail.\n\
              4. Scan the QR code from the Waypair Link Android app, or select your phone from the nearby devices list and confirm that the 6-digit code matches on both screens.\n\
@@ -2273,7 +2292,7 @@ fn load_guide_doc_content(raw_key: &str) -> (String, String) {
              Shows incoming and active phone calls on your PC with Answer, Decline, and Reject with SMS actions, plus browsable call history, contacts, and a dialpad.\n\n\
              Where to find it\n\
              - Left navigation rail › Calls.\n\
-             - Incoming call banner on Home and Nectar Island.\n\n\
+             - Incoming call banner on Home and Waypair Link Island.\n\n\
              What it needs\n\
              - Phone, Call Log, and Contacts permissions on your Android phone.\n\
              - Call audio stays on your phone (or a headset paired to your phone); Elevated mode on Android 12+ unlocks mute, speakerphone, hold, and keypad controls."
@@ -2466,15 +2485,15 @@ fn load_guide_doc_content(raw_key: &str) -> (String, String) {
             ),
         ),
         "nectar-island" => (
-            tr!("Guide", "Nectar Island"),
+            tr!("Guide", "Waypair Link Island"),
             tr!(
                 "Guide",
                 "What it does\n\
              Displays a compact pill at the top center of your primary monitor for incoming calls, live file transfer progress, media playback, and optional notification previews.\n\n\
              Where to find it\n\
-             - Settings › General › Nectar Island.\n\n\
+             - Settings › General › Waypair Link Island.\n\n\
              What it needs\n\
-             - Turn on Nectar Island in Settings › General and pick which events should appear."
+             - Turn on Waypair Link Island in Settings › General and pick which events should appear."
             ),
         ),
         "timeline" => (

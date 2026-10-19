@@ -290,9 +290,9 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                         width: 56; height: 56
                         radius: 14
-                        color: Theme.dark ? "#121214" : "#FFF8F3"
+                        color: "#000000"
                         border.width: 1
-                        border.color: Theme.dark ? Qt.rgba(1.0, 0.73, 0.37, 0.24) : Qt.rgba(0.54, 0.32, 0.0, 0.20)
+                        border.color: Theme.dark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.12)
                         HiveBackdrop {
                             anchors.fill: parent
                             corner: parent.radius
@@ -310,7 +310,7 @@ Item {
                             width: 22; height: 22
                             path: Icons.mark
                             stroke: 2.2
-                            color: Theme.dark ? "#FFB95F" : "#8A5100"
+                            color: "#FFFFFF"
                         }
                     }
                     Column {

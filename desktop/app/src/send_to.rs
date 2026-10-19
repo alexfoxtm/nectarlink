@@ -158,7 +158,7 @@ fn reconcile(dir: &Path, desired: &[(DeviceId, String)], exe: &Path) -> io::Resu
             Shortcut {
                 target: exe.to_owned(),
                 arguments: format!("{ARG} {id}"),
-                description: tr!("SendTo", "Send to %1 with NectarLink", name),
+                description: tr!("SendTo", "Send to %1 with Waypair Link", name),
             },
         ));
     }
@@ -239,7 +239,7 @@ fn share(files: Vec<PathBuf>, url: Option<String>, text: Option<String>) {
             request_activation();
         }
         let Some((device_id, device_name)) = target else {
-            failed("No phone paired", "Pair your phone in NectarLink to share with it.");
+            failed("No phone paired", "Pair your phone in Waypair Link to share with it.");
             return;
         };
         if !files.is_empty() {
@@ -261,7 +261,7 @@ fn share(files: Vec<PathBuf>, url: Option<String>, text: Option<String>) {
                             key: "share-text".into(),
                             title: tr!("SendTo", "Sent to %1", device_name),
                             body: tr!("SendTo", "Copied to your phone's clipboard."),
-                            attribution: "NectarLink".into(),
+                            attribution: "Waypair Link".into(),
                             icon: None,
                             image: None,
                             actions: Vec::new(),
@@ -363,7 +363,7 @@ fn send(device: String, paths: Vec<PathBuf>) {
             }
             Err(Error::Denied) => failed(
                 &tr!("SendTo", "Couldn't send to %1", name),
-                "Files are turned off for this device. Turn them on in NectarLink.",
+                "Files are turned off for this device. Turn them on in Waypair Link.",
             ),
             Err(e) => failed(&tr!("SendTo", "Couldn't send to %1", name), &describe(&e)),
         }
@@ -376,7 +376,7 @@ fn failed(title: &str, body: &str) {
         key: format!("failed-{title}"),
         title: title.into(),
         body: body.into(),
-        attribution: "NectarLink".into(),
+        attribution: "Waypair Link".into(),
         icon: None,
         image: None,
         actions: Vec::new(),
@@ -405,7 +405,7 @@ fn track(id: String, device_name: String) {
             key: id,
             title,
             body: format!("{device_name} is offline. Will send when it's back."),
-            attribution: "NectarLink".into(),
+            attribution: "Waypair Link".into(),
             icon: None,
             image: None,
             actions: vec![(ACTION_CANCEL.into(), "Cancel".into())],
@@ -435,7 +435,7 @@ fn update(map: &mut HashMap<String, Tracked>, transfer: &Transfer) {
         key: transfer.id.clone(),
         title,
         body,
-        attribution: "NectarLink".into(),
+        attribution: "Waypair Link".into(),
         icon: None,
         image: None,
         actions: Vec::new(),

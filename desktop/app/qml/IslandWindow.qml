@@ -13,7 +13,8 @@ import app.nectarlink
 Window {
     id: islandWin
 
-    title: qsTr("Nectar Island")
+    // bridge/app.rs finds this window by its title.
+    title: "Waypair Link Island"
     flags: Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.WindowDoesNotAcceptFocus
     color: "transparent"
 
@@ -225,8 +226,8 @@ Window {
         if (mode === "waiting")
             return qsTr("%1 waiting").arg(TransferList.waitingCount)
         return DeviceList.count > 0
-            ? qsTr("Nectar Island · %1").arg(DeviceList.deviceNameAt(0))
-            : qsTr("Nectar Island · Ready")
+            ? qsTr("Waypair Link Island · %1").arg(DeviceList.deviceNameAt(0))
+            : qsTr("Waypair Link Island · Ready")
     }
 
     readonly property string secondaryLabel: {

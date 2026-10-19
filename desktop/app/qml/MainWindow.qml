@@ -578,12 +578,12 @@ NativeWindow {
             y: (Theme.topBarHeight - height) / 2
             width: 38; height: 38
             radius: Theme.radiusSm
-            color: Theme.graphite ? Theme.surfaceContent : Theme.primary
+            color: "#000000"
             Icon {
                 anchors.centerIn: parent
                 path: Icons.mark
                 stroke: 2.4
-                color: Theme.graphite ? Theme.surface : Theme.primaryContent
+                color: "#FFFFFF"
             }
         }
         Column {

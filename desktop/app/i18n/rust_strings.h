@@ -13,15 +13,10 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("App", "Find my phone"), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("App", "My phone's colors"), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("App", "My phone's colors (%1)"), // desktop/app/src/bridge/app.rs
-    QT_TRANSLATE_NOOP("App", "NectarLink · %1"), // desktop/app/src/bridge/app.rs
-    QT_TRANSLATE_NOOP("App", "NectarLink · %1 devices connected"), // desktop/app/src/bridge/app.rs
-    QT_TRANSLATE_NOOP("App", "NectarLink · 1 device connected"), // desktop/app/src/bridge/app.rs
-    QT_TRANSLATE_NOOP("App", "NectarLink · no devices paired"), // desktop/app/src/bridge/app.rs
-    QT_TRANSLATE_NOOP("App", "NectarLink · not connected"), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("App", "No phone is paired yet."), // desktop/app/src/bridge/app.rs
-    QT_TRANSLATE_NOOP("App", "Open NectarLink"), // desktop/app/src/bridge/app.rs
+    QT_TRANSLATE_NOOP("App", "Open Waypair Link"), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("App", "Open copied link on phone"), // desktop/app/src/bridge/app.rs
-    QT_TRANSLATE_NOOP("App", "Quit NectarLink"), // desktop/app/src/bridge/app.rs
+    QT_TRANSLATE_NOOP("App", "Quit Waypair Link"), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("App", "Scan document with phone"), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("App", "Send cancelled"), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("App", "Sending to %1…"), // desktop/app/src/bridge/app.rs
@@ -33,6 +28,11 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("App", "The photo couldn't be copied to the clipboard."), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("App", "The received file history couldn't be cleared. Try again."), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("App", "Toggle Shelf"), // desktop/app/src/bridge/app.rs
+    QT_TRANSLATE_NOOP("App", "Waypair Link · %1"), // desktop/app/src/bridge/app.rs
+    QT_TRANSLATE_NOOP("App", "Waypair Link · %1 devices connected"), // desktop/app/src/bridge/app.rs
+    QT_TRANSLATE_NOOP("App", "Waypair Link · 1 device connected"), // desktop/app/src/bridge/app.rs
+    QT_TRANSLATE_NOOP("App", "Waypair Link · no devices paired"), // desktop/app/src/bridge/app.rs
+    QT_TRANSLATE_NOOP("App", "Waypair Link · not connected"), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("App", "Wi-Fi %1/4"), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("App", "Your phone"), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Automations", "Triggered by %1"), // desktop/app/src/automations.rs
@@ -58,7 +58,7 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Clipboard", "That's too much text to send at once."), // desktop/app/src/clipboard.rs
     QT_TRANSLATE_NOOP("Clipboard", "The clipboard is turned off for %1."), // desktop/app/src/clipboard.rs
     QT_TRANSLATE_NOOP("Clipboard", "There's no text, image, or file on the clipboard."), // desktop/app/src/clipboard.rs
-    QT_TRANSLATE_NOOP("Clipboard", "Update NectarLink on %1 to send it images."), // desktop/app/src/clipboard.rs
+    QT_TRANSLATE_NOOP("Clipboard", "Update Waypair Link on %1 to send it images."), // desktop/app/src/clipboard.rs
     QT_TRANSLATE_NOOP("Clipboard", "What you copied is marked private by its app, so it wasn't sent."), // desktop/app/src/clipboard.rs
     QT_TRANSLATE_NOOP("CommandPalette", "Browse all 28 features, live capability status, and where to find them"), // desktop/app/src/command_palette.rs
     QT_TRANSLATE_NOOP("CommandPalette", "Browse phone storage in File Explorer"), // desktop/app/src/command_palette.rs
@@ -99,7 +99,7 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("CommandPalette", "Open newest photo or screenshot"), // desktop/app/src/command_palette.rs
     QT_TRANSLATE_NOOP("CommandPalette", "Open the newest photo or screenshot from %1"), // desktop/app/src/command_palette.rs
     QT_TRANSLATE_NOOP("CommandPalette", "Open voice recordings folder for %1"), // desktop/app/src/command_palette.rs
-    QT_TRANSLATE_NOOP("CommandPalette", "Opened Recordings folder. Start a voice note in NectarLink on %1 to send it here."), // desktop/app/src/command_palette.rs
+    QT_TRANSLATE_NOOP("CommandPalette", "Opened Recordings folder. Start a voice note in Waypair Link on %1 to send it here."), // desktop/app/src/command_palette.rs
     QT_TRANSLATE_NOOP("CommandPalette", "Pair a new phone"), // desktop/app/src/command_palette.rs
     QT_TRANSLATE_NOOP("CommandPalette", "Place a phone call or open in dialer"), // desktop/app/src/command_palette.rs
     QT_TRANSLATE_NOOP("CommandPalette", "Place call on %1"), // desktop/app/src/command_palette.rs
@@ -180,7 +180,7 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Deck", "Tile not found."), // desktop/app/src/deck.rs
     QT_TRANSLATE_NOOP("Deck", "Use a single key (a-z, 0-9, f1-f12, enter, tab, space, escape, arrows, etc.)."), // desktop/app/src/deck.rs
     QT_TRANSLATE_NOOP("Deck", "Web address must start with http:// or https://."), // desktop/app/src/deck.rs
-    QT_TRANSLATE_NOOP("Doctor", "%1 Open NectarLink on the phone and keep both on the same network. If the phone asks to run in the background, allow it."), // desktop/app/src/doctor.rs
+    QT_TRANSLATE_NOOP("Doctor", "%1 Open Waypair Link on the phone and keep both on the same network. If the phone asks to run in the background, allow it."), // desktop/app/src/doctor.rs
     QT_TRANSLATE_NOOP("Doctor", "%1 days ago"), // desktop/app/src/doctor.rs
     QT_TRANSLATE_NOOP("Doctor", "%1 hours ago"), // desktop/app/src/doctor.rs
     QT_TRANSLATE_NOOP("Doctor", "%1 is connected"), // desktop/app/src/doctor.rs
@@ -197,15 +197,14 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Doctor", "It hasn't connected yet."), // desktop/app/src/doctor.rs
     QT_TRANSLATE_NOOP("Doctor", "Keep %1 reachable in the background (%2)"), // desktop/app/src/doctor.rs
     QT_TRANSLATE_NOOP("Doctor", "Last seen %1."), // desktop/app/src/doctor.rs
-    QT_TRANSLATE_NOOP("Doctor", "NectarLink isn't allowed through Windows Firewall"), // desktop/app/src/doctor.rs
-    QT_TRANSLATE_NOOP("Doctor", "On Huawei / Honor: open Settings → Battery → App launch, turn off Manage automatically for NectarLink, and keep Auto-launch, Secondary launch, and Run in background on."), // desktop/app/src/doctor.rs
-    QT_TRANSLATE_NOOP("Doctor", "On OnePlus / OxygenOS: open Settings → Apps → App management → NectarLink → Battery usage and turn on Allow background activity and Allow auto-launch."), // desktop/app/src/doctor.rs
-    QT_TRANSLATE_NOOP("Doctor", "On Oppo / Realme: open Settings → Apps → App management → NectarLink → Battery usage and turn on Allow background activity and Allow auto-launch."), // desktop/app/src/doctor.rs
-    QT_TRANSLATE_NOOP("Doctor", "On Pixel: open Settings → Apps → See all apps → NectarLink → App battery usage, tap Allow background usage, and choose Unrestricted."), // desktop/app/src/doctor.rs
-    QT_TRANSLATE_NOOP("Doctor", "On Samsung: open Settings → Apps → NectarLink → Battery and choose Unrestricted, then in Device care → Battery → Background usage limits make sure NectarLink is never put to sleep."), // desktop/app/src/doctor.rs
+    QT_TRANSLATE_NOOP("Doctor", "On Huawei / Honor: open Settings → Battery → App launch, turn off Manage automatically for Waypair Link, and keep Auto-launch, Secondary launch, and Run in background on."), // desktop/app/src/doctor.rs
+    QT_TRANSLATE_NOOP("Doctor", "On OnePlus / OxygenOS: open Settings → Apps → App management → Waypair Link → Battery usage and turn on Allow background activity and Allow auto-launch."), // desktop/app/src/doctor.rs
+    QT_TRANSLATE_NOOP("Doctor", "On Oppo / Realme: open Settings → Apps → App management → Waypair Link → Battery usage and turn on Allow background activity and Allow auto-launch."), // desktop/app/src/doctor.rs
+    QT_TRANSLATE_NOOP("Doctor", "On Pixel: open Settings → Apps → See all apps → Waypair Link → App battery usage, tap Allow background usage, and choose Unrestricted."), // desktop/app/src/doctor.rs
+    QT_TRANSLATE_NOOP("Doctor", "On Samsung: open Settings → Apps → Waypair Link → Battery and choose Unrestricted, then in Device care → Battery → Background usage limits make sure Waypair Link is never put to sleep."), // desktop/app/src/doctor.rs
     QT_TRANSLATE_NOOP("Doctor", "On USB"), // desktop/app/src/doctor.rs
-    QT_TRANSLATE_NOOP("Doctor", "On Vivo / OriginOS / Funtouch: open Settings → Battery → Background power consumption management → NectarLink and choose Unrestricted, and allow Autostart."), // desktop/app/src/doctor.rs
-    QT_TRANSLATE_NOOP("Doctor", "On Xiaomi / HyperOS / MIUI: open Settings → Apps → Manage apps → NectarLink, turn on Autostart, and set Battery saver to No restrictions."), // desktop/app/src/doctor.rs
+    QT_TRANSLATE_NOOP("Doctor", "On Vivo / OriginOS / Funtouch: open Settings → Battery → Background power consumption management → Waypair Link and choose Unrestricted, and allow Autostart."), // desktop/app/src/doctor.rs
+    QT_TRANSLATE_NOOP("Doctor", "On Xiaomi / HyperOS / MIUI: open Settings → Apps → Manage apps → Waypair Link, turn on Autostart, and set Battery saver to No restrictions."), // desktop/app/src/doctor.rs
     QT_TRANSLATE_NOOP("Doctor", "On public networks Windows keeps other devices from finding this PC. If it's your home or work network, set it to Private."), // desktop/app/src/doctor.rs
     QT_TRANSLATE_NOOP("Doctor", "On this network"), // desktop/app/src/doctor.rs
     QT_TRANSLATE_NOOP("Doctor", "Someone chose not to allow it when Windows asked. Allow it, and your phone can connect."), // desktop/app/src/doctor.rs
@@ -214,8 +213,9 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Doctor", "This network"), // desktop/app/src/doctor.rs
     QT_TRANSLATE_NOOP("Doctor", "This usually takes a few seconds."), // desktop/app/src/doctor.rs
     QT_TRANSLATE_NOOP("Doctor", "VPNs often keep devices on your network from reaching this PC. If your phone can't connect, try turning it off."), // desktop/app/src/doctor.rs
+    QT_TRANSLATE_NOOP("Doctor", "Waypair Link isn't allowed through Windows Firewall"), // desktop/app/src/doctor.rs
     QT_TRANSLATE_NOOP("Doctor", "While away"), // desktop/app/src/doctor.rs
-    QT_TRANSLATE_NOOP("Doctor", "Windows Firewall blocks NectarLink"), // desktop/app/src/doctor.rs
+    QT_TRANSLATE_NOOP("Doctor", "Windows Firewall blocks Waypair Link"), // desktop/app/src/doctor.rs
     QT_TRANSLATE_NOOP("Doctor", "Windows Firewall is off for this network"), // desktop/app/src/doctor.rs
     QT_TRANSLATE_NOOP("Doctor", "Windows Firewall lets your phone connect"), // desktop/app/src/doctor.rs
     QT_TRANSLATE_NOOP("Doctor", "Your phone may not be able to connect. Allow it once here."), // desktop/app/src/doctor.rs
@@ -230,7 +230,7 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Errors", "The device's app doesn't support that yet."), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("FolderSync", "Folders are up to date."), // desktop/app/src/folder_sync.rs
     QT_TRANSLATE_NOOP("FolderSync", "Synced %1 file(s)."), // desktop/app/src/folder_sync.rs
-    QT_TRANSLATE_NOOP("Guide", "1. Install NectarLink on your Windows 11 PC and your Android phone (Android 8.0 or newer).\n2. Connect both devices to the same Wi-Fi network, or plug your phone into your PC with a USB cable.\n3. Open the Pair step in the setup walkthrough, or click + (Pair a new device) at the bottom of the left rail.\n4. Scan the QR code from the NectarLink Android app, or select your phone from the nearby devices list and confirm that the 6-digit code matches on both screens.\n5. Choose which features to share for that phone and grant only the Android permissions you want to use."), // desktop/app/src/bridge/app.rs
+    QT_TRANSLATE_NOOP("Guide", "1. Install Waypair Link on your Mac (macOS 14.4 or newer) or Windows 11 PC and on your Android phone (Android 8.0 or newer).\n2. Connect both devices to the same Wi-Fi network, or plug your phone into your PC with a USB cable.\n3. Open the Pair step in the setup walkthrough, or click + (Pair a new device) at the bottom of the left rail.\n4. Scan the QR code from the Waypair Link Android app, or select your phone from the nearby devices list and confirm that the 6-digit code matches on both screens.\n5. Choose which features to share for that phone and grant only the Android permissions you want to use."), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "Android permissions and why each is optional"), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "Automations"), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "Calls"), // desktop/app/src/bridge/app.rs
@@ -244,17 +244,13 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Guide", "Features guide"), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "Features reference"), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "Handoff"), // desktop/app/src/bridge/app.rs
-    QT_TRANSLATE_NOOP("Guide", "If your phone and PC do not see each other:\n\n1. Open Connection Doctor from Settings › Connection & About or the Command Palette.\n2. Check that your Wi-Fi network profile in Windows is set to Private rather than Public, or click Fix in Connection Doctor to allow NectarLink through Windows Firewall.\n3. Verify that both devices are on the same subnet and that guest Wi-Fi client isolation is turned off on your router.\n4. You can also connect over a USB cable with USB debugging enabled; NectarLink automatically sets up a local tunnel."), // desktop/app/src/bridge/app.rs
+    QT_TRANSLATE_NOOP("Guide", "If your phone and PC do not see each other:\n\n1. Open Connection Doctor from Settings › Connection & About or the Command Palette.\n2. Check that your Wi-Fi network profile in Windows is set to Private rather than Public, or click Fix in Connection Doctor to allow Waypair Link through Windows Firewall.\n3. Verify that both devices are on the same subnet and that guest Wi-Fi client isolation is turned off on your router.\n4. You can also connect over a USB cable with USB debugging enabled; Waypair Link automatically sets up a local tunnel."), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "Install and first-time setup"), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "Local HTTP API"), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "Local by default\nYour phone and PC talk directly over your local network or USB cable. When Connect over mobile data is on, encrypted traffic can use a relay when away from home. Automatic update checks contact GitHub Releases and can be turned off in Settings › Connection & About › Check for updates.\n\nEnd-to-end encrypted\nEvery connection uses QUIC with TLS 1.3 and Ed25519 device certificates verified during pairing. Device keys are protected by Windows DPAPI and the Android Keystore.\n\nPer-device sharing controls\nSensitive capabilities such as Share PC folders, Remote input, and Reverse PC screen mirroring are turned off by default for each paired device until you turn them on."), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "LocalSend"), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "Messages"), // desktop/app/src/bridge/app.rs
-    QT_TRANSLATE_NOOP("Guide", "Most NectarLink features work in Standard mode with regular Android permissions. Two optional modes unlock deeper system integration:\n\nElevated mode (Wireless debugging or root)\n- Captures the phone screen without showing the Android cast confirmation prompt every time.\n- Streams individual phone apps in separate desktop windows (virtual displays).\n- Controls additional system quick toggles.\n\nAssist mode (Android Accessibility Service)\n- Injects mouse clicks, scrolling, and touch gestures when you control your phone from your PC.\n- NectarLink never reads screen text or logs keystrokes through the Accessibility service."), // desktop/app/src/bridge/app.rs
-    QT_TRANSLATE_NOOP("Guide", "Nectar Island"), // desktop/app/src/bridge/app.rs
-    QT_TRANSLATE_NOOP("Guide", "NectarLink links your Android phone and your PC directly on your local network or over a USB cable.\n\nHow it works\n- Devices discover each other over local Wi-Fi (mDNS) or USB (ADB reverse tunnel) and connect over QUIC (TLS 1.3).\n- Every connection is mutually authenticated using Ed25519 device keys generated on each device.\n- There is no user account, no cloud database, and no telemetry.\n\nCapability tiers on Android\n- Standard mode: Works right after installation with standard Android permissions.\n- Elevated mode (optional): Uses Wireless debugging (set up once in the phone app) or root for phone apps in their own windows, mirroring without the screen capture prompt, and more phone controls.\n- Assist mode (optional): Uses the Android Accessibility service only when you enable Remote input so your PC mouse and keyboard can control the phone."), // desktop/app/src/bridge/app.rs
-    QT_TRANSLATE_NOOP("Guide", "NectarLink never asks for every permission up front. Each feature works independently:\n\n- Notification Access: Required only if you want phone notifications, inline replies, and notification-backed chat threads on your PC.\n- SMS and Contacts: Required only if you want to read and send SMS/MMS messages or look up contact names on your PC.\n- Phone and Call Log: Required only if you want incoming call alerts, call history, or dialing from your PC.\n- Media and Photos: Required only if you want the Photos gallery, Shelf latest photo, or folder sync.\n- Camera and Microphone: Required only while streaming your phone as a webcam, taking a Continuity Camera shot, or recording a voice note."), // desktop/app/src/bridge/app.rs
-    QT_TRANSLATE_NOOP("Guide", "NectarLink overview"), // desktop/app/src/bridge/app.rs
+    QT_TRANSLATE_NOOP("Guide", "Most Waypair Link features work in Standard mode with regular Android permissions. Two optional modes unlock deeper system integration:\n\nElevated mode (Wireless debugging or root)\n- Captures the phone screen without showing the Android cast confirmation prompt every time.\n- Streams individual phone apps in separate desktop windows (virtual displays).\n- Controls additional system quick toggles.\n\nAssist mode (Android Accessibility Service)\n- Injects mouse clicks, scrolling, and touch gestures when you control your phone from your PC.\n- Waypair Link never reads screen text or logs keystrokes through the Accessibility service."), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "Notifications"), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "Phone as speaker"), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "Phone as webcam"), // desktop/app/src/bridge/app.rs
@@ -272,29 +268,33 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Guide", "Type on phone"), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "Voice recorder"), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "Wake PC"), // desktop/app/src/bridge/app.rs
+    QT_TRANSLATE_NOOP("Guide", "Waypair Link Island"), // desktop/app/src/bridge/app.rs
+    QT_TRANSLATE_NOOP("Guide", "Waypair Link links your Android phone and your PC directly on your local network or over a USB cable.\n\nHow it works\n- Devices discover each other over local Wi-Fi (mDNS) or USB (ADB reverse tunnel) and connect over QUIC (TLS 1.3).\n- Every connection is mutually authenticated using Ed25519 device keys generated on each device.\n- There is no user account, no cloud database, and no telemetry.\n\nCapability tiers on Android\n- Standard mode: Works right after installation with standard Android permissions.\n- Elevated mode (optional): Uses Wireless debugging (set up once in the phone app) or root for phone apps in their own windows, mirroring without the screen capture prompt, and more phone controls.\n- Assist mode (optional): Uses the Android Accessibility service only when you enable Remote input so your PC mouse and keyboard can control the phone."), // desktop/app/src/bridge/app.rs
+    QT_TRANSLATE_NOOP("Guide", "Waypair Link never asks for every permission up front. Each feature works independently:\n\n- Notification Access: Required only if you want phone notifications, inline replies, and notification-backed chat threads on your PC.\n- SMS and Contacts: Required only if you want to read and send SMS/MMS messages or look up contact names on your PC.\n- Phone and Call Log: Required only if you want incoming call alerts, call history, or dialing from your PC.\n- Media and Photos: Required only if you want the Photos gallery, Shelf latest photo, or folder sync.\n- Camera and Microphone: Required only while streaming your phone as a webcam, taking a Continuity Camera shot, or recording a voice note."), // desktop/app/src/bridge/app.rs
+    QT_TRANSLATE_NOOP("Guide", "Waypair Link overview"), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "What it does\nBrowses recent photos, camera shots, and screenshots on your phone without copying your entire library first. You can view full-resolution images, copy them to the clipboard, save them to disk, or drag them directly into other Windows apps.\n\nWhere to find it\n- Left navigation rail › Photos.\n- Shelf edge panel (Ctrl+Alt+S) › Latest photo and screenshot.\n\nWhat it needs\n- Photos and Media permission granted on your Android phone."), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "What it does\nControls your phone's Do Not Disturb mode, ringer mode (Sound, Vibrate, Silent), flashlight, media volume, screen brightness, Wi-Fi, Bluetooth, and Find My Phone ring from your PC.\n\nWhere to find it\n- Home › Phone controls and Find phone.\n- Command Palette.\n\nWhat it needs\n- Volume, flashlight, and Find My Phone work in Standard mode; Do Not Disturb requires Notification Policy access; Wi-Fi and Bluetooth toggles use Elevated mode on newer Android versions."), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "What it does\nDiscovers and exchanges files with nearby devices running LocalSend v2 on your local network without requiring pairing.\n\nWhere to find it\n- Home › LocalSend nearby, while LocalSend is on.\n- Settings › Files & Sync › LocalSend on local network.\n\nWhat it needs\n- LocalSend on local network turned on in Settings › Files & Sync, and both devices on the same local network."), // desktop/app/src/bridge/app.rs
-    QT_TRANSLATE_NOOP("Guide", "What it does\nDisplays a compact pill at the top center of your primary monitor for incoming calls, live file transfer progress, media playback, and optional notification previews.\n\nWhere to find it\n- Settings › General › Nectar Island.\n\nWhat it needs\n- Turn on Nectar Island in Settings › General and pick which events should appear."), // desktop/app/src/bridge/app.rs
-    QT_TRANSLATE_NOOP("Guide", "What it does\nExposes an opt-in localhost HTTP/JSON and Server-Sent Events API on 127.0.0.1 (default port 53320) protected by a bearer token so scripts, CLI tools, and Stream Deck plugins can trigger NectarLink actions.\n\nWhere to find it\n- Settings › Connection & About › Local automation API.\n\nWhat it needs\n- Turn on Local automation API in Settings › Connection & About and read the bearer token from api-token.json."), // desktop/app/src/bridge/app.rs
-    QT_TRANSLATE_NOOP("Guide", "What it does\nForwards keystrokes and pasted text from your PC keyboard directly to your phone without needing to mirror the phone screen.\n\nWhere to find it\n- Home › Type on phone.\n- Command Palette › Type on phone with PC keyboard.\n\nWhat it needs\n- Assist mode (Accessibility service), the NectarLink input method, or Elevated mode on your phone."), // desktop/app/src/bridge/app.rs
+    QT_TRANSLATE_NOOP("Guide", "What it does\nDisplays a compact pill at the top center of your primary monitor for incoming calls, live file transfer progress, media playback, and optional notification previews.\n\nWhere to find it\n- Settings › General › Waypair Link Island.\n\nWhat it needs\n- Turn on Waypair Link Island in Settings › General and pick which events should appear."), // desktop/app/src/bridge/app.rs
+    QT_TRANSLATE_NOOP("Guide", "What it does\nExposes an opt-in localhost HTTP/JSON and Server-Sent Events API on 127.0.0.1 (default port 53320) protected by a bearer token so scripts, CLI tools, and Stream Deck plugins can trigger Waypair Link actions.\n\nWhere to find it\n- Settings › Connection & About › Local automation API.\n\nWhat it needs\n- Turn on Local automation API in Settings › Connection & About and read the bearer token from api-token.json."), // desktop/app/src/bridge/app.rs
+    QT_TRANSLATE_NOOP("Guide", "What it does\nForwards keystrokes and pasted text from your PC keyboard directly to your phone without needing to mirror the phone screen.\n\nWhere to find it\n- Home › Type on phone.\n- Command Palette › Type on phone with PC keyboard.\n\nWhat it needs\n- Assist mode (Accessibility service), the Waypair Link input method, or Elevated mode on your phone."), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "What it does\nInspects Windows Firewall rules, network profile type (Private vs Public), UDP discovery sockets, and paired phone reachability, and offers one-click fixes.\n\nWhere to find it\n- Settings › Connection & About › Connection Doctor.\n- Command Palette › Connection Doctor.\n\nWhat it needs\n- Always available on your PC."), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "What it does\nKeeps selected folders on your phone (such as DCIM/Camera or Download) and folders on your PC in sync in one-way or two-way mode, and lets your phone browse shared PC folders.\n\nWhere to find it\n- Settings › Files & Sync › Synced folders.\n- Settings › Devices › Remote PC file access, for browsing PC folders from the phone.\n\nWhat it needs\n- Files and media access on your phone and at least one folder sync rule configured in Settings."), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "What it does\nLets you read and send SMS and MMS conversations, plus reply to notification-backed chat threads from messaging apps such as WhatsApp, Signal, and Telegram.\n\nWhere to find it\n- Left navigation rail › Messages.\n- Command Palette (Ctrl+Alt+Space) › type Text followed by a contact name.\n\nWhat it needs\n- SMS and Contacts permissions on your phone for SMS/MMS threads.\n- Notification Access on your phone for messaging app conversations."), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "What it does\nLets your paired phone wake this PC from sleep or soft power-off over your local network using a Wake-on-LAN packet.\n\nWhere to find it\n- Settings › Connection & About › Wake from your phone.\n- On your phone: Home › Wake, shown while the PC is offline.\n\nWhat it needs\n- A network adapter with Wake-on-LAN enabled in Windows Device Manager and BIOS/UEFI (wired Ethernet is most reliable)."), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "What it does\nLets your phone act as a wireless trackpad, keyboard, presentation clicker, and on-screen laser pointer for your PC.\n\nWhere to find it\n- On your phone: Home › Control PC.\n- Settings › Devices › Remote mouse, keyboard & Deck.\n\nWhat it needs\n- The per-device Remote mouse, keyboard & Deck switch on your PC (or approved from the one-time prompt when your phone requests control)."), // desktop/app/src/bridge/app.rs
-    QT_TRANSLATE_NOOP("Guide", "What it does\nMirrors your phone notifications to the Home feed and Windows notification pop-ups. You can reply inline to messages, click action buttons, dismiss individual notifications or groups, and undo a recent dismissal.\n\nWhere to find it\n- Home › Notifications.\n- Settings › Notifications for per-app rules (Show, Silent, or Hidden) and Do Not Disturb sync.\n- Settings › General › Copy one-time codes.\n\nWhat it needs\n- Notification Access permission enabled for NectarLink on your Android phone.\n- The per-device Notifications toggle enabled on your PC."), // desktop/app/src/bridge/app.rs
-    QT_TRANSLATE_NOOP("Guide", "What it does\nOpens a keyboard-first search bar over actions, contacts, message threads, mirrorable apps, phone quick toggles, clipboard history, and navigation pages.\n\nWhere to find it\n- Global hotkey Ctrl+Alt+Space (or Ctrl+K inside the NectarLink window).\n- Commands in the top bar.\n\nWhat it needs\n- Works at any time with zero background memory cost when closed."), // desktop/app/src/bridge/app.rs
+    QT_TRANSLATE_NOOP("Guide", "What it does\nMirrors your phone notifications to the Home feed and Windows notification pop-ups. You can reply inline to messages, click action buttons, dismiss individual notifications or groups, and undo a recent dismissal.\n\nWhere to find it\n- Home › Notifications.\n- Settings › Notifications for per-app rules (Show, Silent, or Hidden) and Do Not Disturb sync.\n- Settings › General › Copy one-time codes.\n\nWhat it needs\n- Notification Access permission enabled for Waypair Link on your Android phone.\n- The per-device Notifications toggle enabled on your PC."), // desktop/app/src/bridge/app.rs
+    QT_TRANSLATE_NOOP("Guide", "What it does\nOpens a keyboard-first search bar over actions, contacts, message threads, mirrorable apps, phone quick toggles, clipboard history, and navigation pages.\n\nWhere to find it\n- Global hotkey Ctrl+Alt+Space (or Ctrl+K inside the Waypair Link window).\n- Commands in the top bar.\n\nWhat it needs\n- Works at any time with zero background memory cost when closed."), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "What it does\nOpens a lightweight slide-out panel at the edge of your monitor showing your phone's latest photo, latest screenshot, recent clipboard items, and recent received files. Drag items out into any app, or drop files onto the Shelf to send them to your phone.\n\nWhere to find it\n- Global hotkey Ctrl+Alt+S.\n- Command Palette › Open Shelf.\n- Settings › Shortcuts & Rules › File shelf, to change the hotkey.\n\nWhat it needs\n- Paired phone; Photos permission on your phone for the latest photo and screenshot tiles."), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "What it does\nProvides a unified, searchable chronological feed of files, photos, clipboard items, calls, messages, and voice recordings shared between your phone and PC.\n\nWhere to find it\n- Top bar › Timeline.\n- Home › Timeline.\n\nWhat it needs\n- Works automatically for all paired devices; retention period can be adjusted in Settings › Storage & Privacy."), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "What it does\nReceives voice notes recorded on your phone and saves them to your PC in your chosen audio format (M4A, MP3, WAV, or FLAC).\n\nWhere to find it\n- On your phone: Home › Record.\n- Settings › Files & Sync › Voice recordings.\n\nWhat it needs\n- Microphone permission on your phone when recording a voice note."), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "What it does\nRuns automatic trigger-action rules such as locking your PC when your phone disconnects, pausing media when a call arrives, or running a command when your phone connects.\n\nWhere to find it\n- Settings › Shortcuts & Rules › Trigger-action rules.\n\nWhat it needs\n- Add and turn on one or more rules there."), // desktop/app/src/bridge/app.rs
-    QT_TRANSLATE_NOOP("Guide", "What it does\nSends files, folders, links, and text between your phone and PC at local network speed. If your phone is offline when you send, NectarLink places the item in the Waiting to send queue and delivers it automatically as soon as your phone reconnects.\n\nWhere to find it\n- Home › Send files button, drag-and-drop anywhere on the window, Waiting to send card, and Transfers list.\n- Windows File Explorer › right-click › Send to.\n\nWhat it needs\n- Paired phone and the per-device Files toggle enabled."), // desktop/app/src/bridge/app.rs
+    QT_TRANSLATE_NOOP("Guide", "What it does\nSends files, folders, links, and text between your phone and PC at local network speed. If your phone is offline when you send, Waypair Link places the item in the Waiting to send queue and delivers it automatically as soon as your phone reconnects.\n\nWhere to find it\n- Home › Send files button, drag-and-drop anywhere on the window, Waiting to send card, and Transfers list.\n- Windows File Explorer › right-click › Send to.\n\nWhat it needs\n- Paired phone and the per-device Files toggle enabled."), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "What it does\nSends web links, video links with their current playback timestamp, map coordinates or street addresses, and documents to your phone so they open immediately in the right app.\n\nWhere to find it\n- Command Palette › Open copied link on phone and Hand off document to phone.\n\nWhat it needs\n- Paired phone; works online or queues automatically when your phone is offline."), // desktop/app/src/bridge/app.rs
-    QT_TRANSLATE_NOOP("Guide", "What it does\nShares copied text, rich HTML/RTF text, images, and small copied file sets between your PC and phone. Keeps an encrypted local history of up to 50 items with pinning and smart context chips for links, phone numbers, addresses, and tracking codes.\n\nWhere to find it\n- Home › Send clipboard.\n- Settings › General › Sync clipboard to phone.\n\nWhat it needs\n- Automatic PC-to-phone clipboard send works whenever your phone is connected.\n- Background phone-to-PC clipboard sync on Android 10+ uses notifications, the NectarLink quick tile, or Elevated mode."), // desktop/app/src/bridge/app.rs
-    QT_TRANSLATE_NOOP("Guide", "What it does\nShows incoming and active phone calls on your PC with Answer, Decline, and Reject with SMS actions, plus browsable call history, contacts, and a dialpad.\n\nWhere to find it\n- Left navigation rail › Calls.\n- Incoming call banner on Home and Nectar Island.\n\nWhat it needs\n- Phone, Call Log, and Contacts permissions on your Android phone.\n- Call audio stays on your phone (or a headset paired to your phone); Elevated mode on Android 12+ unlocks mute, speakerphone, hold, and keypad controls."), // desktop/app/src/bridge/app.rs
+    QT_TRANSLATE_NOOP("Guide", "What it does\nShares copied text, rich HTML/RTF text, images, and small copied file sets between your PC and phone. Keeps an encrypted local history of up to 50 items with pinning and smart context chips for links, phone numbers, addresses, and tracking codes.\n\nWhere to find it\n- Home › Send clipboard.\n- Settings › General › Sync clipboard to phone.\n\nWhat it needs\n- Automatic PC-to-phone clipboard send works whenever your phone is connected.\n- Background phone-to-PC clipboard sync on Android 10+ uses notifications, the Waypair Link quick tile, or Elevated mode."), // desktop/app/src/bridge/app.rs
+    QT_TRANSLATE_NOOP("Guide", "What it does\nShows incoming and active phone calls on your PC with Answer, Decline, and Reject with SMS actions, plus browsable call history, contacts, and a dialpad.\n\nWhere to find it\n- Left navigation rail › Calls.\n- Incoming call banner on Home and Waypair Link Island.\n\nWhat it needs\n- Phone, Call Log, and Contacts permissions on your Android phone.\n- Call audio stays on your phone (or a headset paired to your phone); Elevated mode on Android 12+ unlocks mute, speakerphone, hold, and keypad controls."), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "What it does\nStreams your PC system audio to your connected phone in real time over the encrypted connection so you can listen through your phone speakers or headphones.\n\nWhere to find it\n- Home › Phone as speaker.\n- Settings › Camera & Audio › Stream PC audio to phone.\n\nWhat it needs\n- Paired phone connected over local Wi-Fi or USB."), // desktop/app/src/bridge/app.rs
-    QT_TRANSLATE_NOOP("Guide", "What it does\nStreams your PC's screen to your phone so you can view your desktop from across the room and use your phone as a trackpad or laser pointer.\n\nWhere to find it\n- Started from the NectarLink app on your phone.\n- Settings › Devices › Share PC screen to phone.\n\nWhat it needs\n- The per-device Share PC screen to phone switch on your PC, or one-time approval when your phone requests to view your screen."), // desktop/app/src/bridge/app.rs
+    QT_TRANSLATE_NOOP("Guide", "What it does\nStreams your PC's screen to your phone so you can view your desktop from across the room and use your phone as a trackpad or laser pointer.\n\nWhere to find it\n- Started from the Waypair Link app on your phone.\n- Settings › Devices › Share PC screen to phone.\n\nWhat it needs\n- The per-device Share PC screen to phone switch on your PC, or one-time approval when your phone requests to view your screen."), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "What it does\nStreams your phone camera into the NectarLink Virtual Camera on Windows so Zoom, Teams, Meet, Discord, and OBS can use your phone's rear or front camera at up to 4K.\n\nWhere to find it\n- Home › Phone as webcam.\n- Settings › Camera & Audio › Start webcam.\n\nWhat it needs\n- Camera permission on your phone.\n- For other apps to see it: Virtual camera add-on in Settings › Camera & Audio."), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "What it does\nStreams your phone screen into a low-latency desktop window with hardware-accelerated decoding, or opens individual Android apps in their own windows on your PC.\n\nWhere to find it\n- Left navigation rail › Apps.\n- Home › Mirror screen quick action.\n\nWhat it needs\n- Standard mode mirrors the full phone screen after you tap Start now on Android's screen capture prompt.\n- Elevated mode (Wireless debugging or root) skips the prompt and unlocks individual app windows.\n- Assist mode or Elevated mode lets you click, scroll, and type inside the mirrored window."), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "What it does\nSyncs media playback between your phone and PC, switches Windows audio output and microphone devices, and turns your phone into a customizable grid of shortcut tiles, macros, and volume sliders.\n\nWhere to find it\n- Left navigation rail › Deck.\n\nWhat it needs\n- Paired phone over any active connection."), // desktop/app/src/bridge/app.rs
@@ -310,7 +310,7 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Links", "Sent to %1"), // desktop/app/src/links.rs
     QT_TRANSLATE_NOOP("Links", "Tap the notification on your phone to open it."), // desktop/app/src/links.rs
     QT_TRANSLATE_NOOP("Links", "That's not a link or address"), // desktop/app/src/links.rs
-    QT_TRANSLATE_NOOP("Links", "Update NectarLink on %1."), // desktop/app/src/links.rs
+    QT_TRANSLATE_NOOP("Links", "Update Waypair Link on %1."), // desktop/app/src/links.rs
     QT_TRANSLATE_NOOP("Media", "Media is turned off for that device."), // desktop/app/src/media.rs
     QT_TRANSLATE_NOOP("Media", "That player can't do that."), // desktop/app/src/media.rs
     QT_TRANSLATE_NOOP("Media", "That player isn't playing anymore."), // desktop/app/src/media.rs
@@ -328,14 +328,14 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Mirror", "Screenshot from %1, saved in Downloads\\Nectarlink"), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Sending %1 files…"), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Sending %1…"), // desktop/app/src/mirror.rs
-    QT_TRANSLATE_NOOP("Mirror", "Set up Wireless debugging in NectarLink on the phone to open its apps here."), // desktop/app/src/mirror.rs
+    QT_TRANSLATE_NOOP("Mirror", "Set up Wireless debugging in Waypair Link on the phone to open its apps here."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Show in folder"), // desktop/app/src/mirror.rs
-    QT_TRANSLATE_NOOP("Mirror", "The app didn't open on the phone. Try again, or open NectarLink on the phone to check Wireless debugging."), // desktop/app/src/mirror.rs
+    QT_TRANSLATE_NOOP("Mirror", "The app didn't open on the phone. Try again, or open Waypair Link on the phone to check Wireless debugging."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "The phone isn't connected."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "The screenshot couldn't be copied to the clipboard."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "The screenshot couldn't be saved."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "This PC can't decode the phone's video."), // desktop/app/src/mirror.rs
-    QT_TRANSLATE_NOOP("Mirror", "This phone's app doesn't share its screen yet. Update NectarLink on the phone."), // desktop/app/src/mirror.rs
+    QT_TRANSLATE_NOOP("Mirror", "This phone's app doesn't share its screen yet. Update Waypair Link on the phone."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Wait for the screen to appear first."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mp4", "No video frames were recorded yet."), // desktop/app/src/win/mp4.rs
     QT_TRANSLATE_NOOP("Notifications", "Code copied"), // desktop/app/src/notifications.rs
@@ -351,7 +351,7 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("PcMirror", "Can't find the player's window. Play the video on this PC again, then turn on Play on phone."), // desktop/app/src/pc_mirror.rs
     QT_TRANSLATE_NOOP("PhoneMic", "Tap Start on %1 to use its microphone."), // desktop/app/src/phone_mic.rs
     QT_TRANSLATE_NOOP("PhoneMic", "The microphone is turned off for this PC on %1."), // desktop/app/src/phone_mic.rs
-    QT_TRANSLATE_NOOP("PhoneMic", "Update NectarLink on %1 to use its microphone."), // desktop/app/src/phone_mic.rs
+    QT_TRANSLATE_NOOP("PhoneMic", "Update Waypair Link on %1 to use its microphone."), // desktop/app/src/phone_mic.rs
     QT_TRANSLATE_NOOP("Photos", "Copied to clipboard."), // desktop/app/src/photos.rs
     QT_TRANSLATE_NOOP("Photos", "From %1"), // desktop/app/src/photos.rs
     QT_TRANSLATE_NOOP("Photos", "New photo"), // desktop/app/src/photos.rs
@@ -370,7 +370,7 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("PlayOnPhone", "Opening in %1 on %2. Tap the notification there."), // desktop/app/src/play_on_phone.rs
     QT_TRANSLATE_NOOP("PlayOnPhone", "Sent to %1. Tap the notification there."), // desktop/app/src/play_on_phone.rs
     QT_TRANSLATE_NOOP("PlayOnPhone", "Tap the notification on %1 to watch."), // desktop/app/src/play_on_phone.rs
-    QT_TRANSLATE_NOOP("PlayOnPhone", "Update NectarLink on %1 to play on it."), // desktop/app/src/play_on_phone.rs
+    QT_TRANSLATE_NOOP("PlayOnPhone", "Update Waypair Link on %1 to play on it."), // desktop/app/src/play_on_phone.rs
     QT_TRANSLATE_NOOP("Prefs", "Connected to OBS."), // desktop/app/src/bridge/prefs.rs
     QT_TRANSLATE_NOOP("Recordings", "Recording from %1 saved"), // desktop/app/src/recordings.rs
     QT_TRANSLATE_NOOP("SendTo", "Copied to your phone's clipboard."), // desktop/app/src/send_to.rs
@@ -379,7 +379,7 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("SendTo", "Couldn't send to %1"), // desktop/app/src/send_to.rs
     QT_TRANSLATE_NOOP("SendTo", "Couldn't share with %1"), // desktop/app/src/send_to.rs
     QT_TRANSLATE_NOOP("SendTo", "File failed integrity check; partial file kept to resume."), // desktop/app/src/send_to.rs
-    QT_TRANSLATE_NOOP("SendTo", "Send to %1 with NectarLink"), // desktop/app/src/send_to.rs
+    QT_TRANSLATE_NOOP("SendTo", "Send to %1 with Waypair Link"), // desktop/app/src/send_to.rs
     QT_TRANSLATE_NOOP("SendTo", "Sending to %1…"), // desktop/app/src/send_to.rs
     QT_TRANSLATE_NOOP("SendTo", "Sent to %1"), // desktop/app/src/send_to.rs
     QT_TRANSLATE_NOOP("SendTo", "The transfer didn't go through."), // desktop/app/src/send_to.rs
@@ -387,7 +387,7 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Setup", "Couldn't start setup: %1"), // desktop/app/src/setup.rs
     QT_TRANSLATE_NOOP("Setup", "Setup is taking too long. Try again after restarting the PC."), // desktop/app/src/setup.rs
     QT_TRANSLATE_NOOP("Setup", "Setup stopped with code %1."), // desktop/app/src/setup.rs
-    QT_TRANSLATE_NOOP("Setup", "The uninstaller is missing. Reinstall NectarLink, then uninstall it."), // desktop/app/src/setup.rs
+    QT_TRANSLATE_NOOP("Setup", "The uninstaller is missing. Reinstall Waypair Link, then uninstall it."), // desktop/app/src/setup.rs
     QT_TRANSLATE_NOOP("Timeline", "App window #%1"), // desktop/app/src/i18n.rs
     QT_TRANSLATE_NOOP("Timeline", "Clip (removed from clipboard history)"), // desktop/app/src/bridge/timeline.rs
     QT_TRANSLATE_NOOP("Timeline", "Copied image"), // desktop/app/src/bridge/timeline.rs
@@ -417,7 +417,7 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Timeline", "Voice recording"), // desktop/app/src/bridge/timeline.rs
     QT_TRANSLATE_NOOP("Timeline", "With %1"), // desktop/app/src/bridge/timeline.rs
     QT_TRANSLATE_NOOP("Timeline", "device"), // desktop/app/src/bridge/timeline.rs
-    QT_TRANSLATE_NOOP("Transfers", "Accept in NectarLink to save to Downloads\\Nectarlink"), // desktop/app/src/transfers.rs
+    QT_TRANSLATE_NOOP("Transfers", "Accept in Waypair Link to save to Downloads\\Nectarlink"), // desktop/app/src/transfers.rs
     QT_TRANSLATE_NOOP("Transfers", "Files are turned off for that device."), // desktop/app/src/transfers.rs
     QT_TRANSLATE_NOOP("Transfers", "From %1, opened from Downloads\\Nectarlink"), // desktop/app/src/transfers.rs
     QT_TRANSLATE_NOOP("Transfers", "From %1, saved in Downloads\\Nectarlink"), // desktop/app/src/transfers.rs
@@ -425,17 +425,17 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Transfers", "That's too many files to send at once."), // desktop/app/src/transfers.rs
     QT_TRANSLATE_NOOP("Transfers", "There's nothing to send in there."), // desktop/app/src/transfers.rs
     QT_TRANSLATE_NOOP("Updater", "Couldn't check for updates. Check your internet connection."), // desktop/app/src/updater.rs
-    QT_TRANSLATE_NOOP("Updater", "NectarLink %1 is available"), // desktop/app/src/updater.rs
-    QT_TRANSLATE_NOOP("Updater", "NectarLink %1 is available."), // desktop/app/src/updater.rs
-    QT_TRANSLATE_NOOP("Updater", "NectarLink is still on the version you had. Try again from Settings."), // desktop/app/src/updater.rs
-    QT_TRANSLATE_NOOP("Updater", "NectarLink is up to date."), // desktop/app/src/updater.rs
-    QT_TRANSLATE_NOOP("Updater", "NectarLink is updated to %1"), // desktop/app/src/updater.rs
     QT_TRANSLATE_NOOP("Updater", "The download was damaged, so it wasn't installed. Try again."), // desktop/app/src/updater.rs
     QT_TRANSLATE_NOOP("Updater", "The update couldn't be downloaded. Check your internet connection and try again."), // desktop/app/src/updater.rs
     QT_TRANSLATE_NOOP("Updater", "The update couldn't be saved. Check that there's free space and try again."), // desktop/app/src/updater.rs
     QT_TRANSLATE_NOOP("Updater", "The update couldn't be started. Try again."), // desktop/app/src/updater.rs
     QT_TRANSLATE_NOOP("Updater", "The update didn't install"), // desktop/app/src/updater.rs
     QT_TRANSLATE_NOOP("Updater", "Update now, or later from Settings."), // desktop/app/src/updater.rs
+    QT_TRANSLATE_NOOP("Updater", "Waypair Link %1 is available"), // desktop/app/src/updater.rs
+    QT_TRANSLATE_NOOP("Updater", "Waypair Link %1 is available."), // desktop/app/src/updater.rs
+    QT_TRANSLATE_NOOP("Updater", "Waypair Link is still on the version you had. Try again from Settings."), // desktop/app/src/updater.rs
+    QT_TRANSLATE_NOOP("Updater", "Waypair Link is up to date."), // desktop/app/src/updater.rs
+    QT_TRANSLATE_NOOP("Updater", "Waypair Link is updated to %1"), // desktop/app/src/updater.rs
     QT_TRANSLATE_NOOP("Updater", "Your phone reconnects on its own."), // desktop/app/src/updater.rs
     QT_TRANSLATE_NOOP("Webcam", "Starting camera on %1…"), // desktop/app/src/bridge/webcam.rs
     QT_TRANSLATE_NOOP("Webcam", "Streaming %1 × %2 · %3 fps from %4"), // desktop/app/src/bridge/webcam.rs

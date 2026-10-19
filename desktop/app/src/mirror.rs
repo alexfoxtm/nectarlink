@@ -468,7 +468,7 @@ pub fn screenshot_file(window: Window) {
         key: path.to_string_lossy().into_owned(),
         title: file_name.clone(),
         body: tr!("Mirror", "Screenshot from %1, saved in Downloads\\Nectarlink", device_name),
-        attribution: "NectarLink".into(),
+        attribution: "Waypair Link".into(),
         icon: None,
         image: Some(path),
         actions: vec![(ACTION_OPEN.into(), "Open".into()), (ACTION_SHOW.into(), "Show in folder".into())],
@@ -610,7 +610,7 @@ pub fn stop_recording(window: Window) {
                     key: path.to_string_lossy().into_owned(),
                     title: file_name.clone(),
                     body: tr!("Mirror", "Recording from %1, saved in Downloads\\Nectarlink", device_name),
-                    attribution: "NectarLink".into(),
+                    attribution: "Waypair Link".into(),
                     icon: None,
                     image: None,
                     actions: vec![
@@ -938,12 +938,12 @@ fn request(window: Window, options: MirrorStart) {
                 Error::Denied => tr!("Mirror", "Mirroring is turned off for this phone."),
                 Error::Unsupported if app => tr!(
                     "Mirror",
-                    "Set up Wireless debugging in NectarLink on the phone to open its apps here."
+                    "Set up Wireless debugging in Waypair Link on the phone to open its apps here."
                 ),
                 Error::Unsupported => {
                     tr!(
                         "Mirror",
-                        "This phone's app doesn't share its screen yet. Update NectarLink on the phone."
+                        "This phone's app doesn't share its screen yet. Update Waypair Link on the phone."
                     )
                 }
                 Error::Offline | Error::NotPaired => tr!("Mirror", "The phone isn't connected."),
@@ -964,7 +964,7 @@ fn request(window: Window, options: MirrorStart) {
                     window,
                     Phase::Ended(Some(tr!(
                         "Mirror",
-                        "The app didn't open on the phone. Try again, or open NectarLink on the phone to check Wireless debugging."
+                        "The app didn't open on the phone. Try again, or open Waypair Link on the phone to check Wireless debugging."
                     ))),
                 );
             }
@@ -1126,7 +1126,7 @@ pub fn load_apps(device: DeviceId) {
             }
             Err(Error::Unsupported) => Apps::Failed(tr!(
                 "Mirror",
-                "Set up Wireless debugging in NectarLink on the phone to open its apps here."
+                "Set up Wireless debugging in Waypair Link on the phone to open its apps here."
             )),
             Err(e) => Apps::Failed(describe(&e)),
         };
@@ -1331,7 +1331,7 @@ pub fn drop_files(raw_urls: &[String]) {
 /// Requests remote input control from the phone for `key` and shows a guidance banner.
 pub fn request_control(key: &str) {
     let Some(window) = Window::parse(key) else { return };
-    set_notice(window, "On your phone, tap Allow / turn on Control from your PC in NectarLink");
+    set_notice(window, "On your phone, tap Allow / turn on Control from your PC in Waypair Link");
     input(
         window,
         nectarlink_core::MirrorInput::Touch { action: nectarlink_core::TouchAction::Up, x: 0.5, y: 0.5 },

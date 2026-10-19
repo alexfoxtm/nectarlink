@@ -787,8 +787,8 @@
     </message>
     <message>
         <location filename="rust_strings.h" line="61"/>
-        <source>Update NectarLink on %1 to send it images.</source>
-        <translation>请更新 %1 上的 NectarLink 以向其发送图片。</translation>
+        <source>Update Waypair Link on %1 to send it images.</source>
+        <translation>请更新 %1 上的 Waypair Link 以向其发送图片。</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="62"/>
@@ -1040,8 +1040,8 @@
     </message>
     <message>
         <location filename="rust_strings.h" line="102"/>
-        <source>Opened Recordings folder. Start a voice note in NectarLink on %1 to send it here.</source>
-        <translation>已打开录音文件夹。在 %1 上的 NectarLink 中开始语音备忘，即可发送到这里。</translation>
+        <source>Opened Recordings folder. Start a voice note in Waypair Link on %1 to send it here.</source>
+        <translation>已打开录音文件夹。在 %1 上的 Waypair Link 中开始语音备忘，即可发送到这里。</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="103"/>
@@ -1821,8 +1821,8 @@
     <name>Doctor</name>
     <message>
         <location filename="rust_strings.h" line="183"/>
-        <source>%1 Open NectarLink on the phone and keep both on the same network. If the phone asks to run in the background, allow it.</source>
-        <translation>%1 在手机上打开 NectarLink，并让两台设备处于同一网络。如果手机询问是否允许在后台运行，请允许。</translation>
+        <source>%1 Open Waypair Link on the phone and keep both on the same network. If the phone asks to run in the background, allow it.</source>
+        <translation>%1 在手机上打开 Waypair Link，并让两台设备处于同一网络。如果手机询问是否允许在后台运行，请允许。</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="184"/>
@@ -1906,33 +1906,33 @@
     </message>
     <message>
         <location filename="rust_strings.h" line="200"/>
-        <source>NectarLink isn&apos;t allowed through Windows Firewall</source>
-        <translation>Windows 防火墙未允许 NectarLink</translation>
+        <source>Waypair Link isn&apos;t allowed through Windows Firewall</source>
+        <translation>Windows 防火墙未允许 Waypair Link</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="201"/>
-        <source>On Huawei / Honor: open Settings → Battery → App launch, turn off Manage automatically for NectarLink, and keep Auto-launch, Secondary launch, and Run in background on.</source>
-        <translation>华为 / 荣耀：打开 设置 → 电池 → 应用启动管理，为 NectarLink 关闭“自动管理”，并保持“允许自启动”“允许关联启动”和“允许后台活动”开启。</translation>
+        <source>On Huawei / Honor: open Settings → Battery → App launch, turn off Manage automatically for Waypair Link, and keep Auto-launch, Secondary launch, and Run in background on.</source>
+        <translation>华为 / 荣耀：打开 设置 → 电池 → 应用启动管理，为 Waypair Link 关闭“自动管理”，并保持“允许自启动”“允许关联启动”和“允许后台活动”开启。</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="202"/>
-        <source>On OnePlus / OxygenOS: open Settings → Apps → App management → NectarLink → Battery usage and turn on Allow background activity and Allow auto-launch.</source>
-        <translation>一加 / OxygenOS：打开 设置 → 应用 → 应用管理 → NectarLink → 耗电管理，开启“允许后台活动”和“允许自启动”。</translation>
+        <source>On OnePlus / OxygenOS: open Settings → Apps → App management → Waypair Link → Battery usage and turn on Allow background activity and Allow auto-launch.</source>
+        <translation>一加 / OxygenOS：打开 设置 → 应用 → 应用管理 → Waypair Link → 耗电管理，开启“允许后台活动”和“允许自启动”。</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="203"/>
-        <source>On Oppo / Realme: open Settings → Apps → App management → NectarLink → Battery usage and turn on Allow background activity and Allow auto-launch.</source>
-        <translation>OPPO / 真我：打开 设置 → 应用 → 应用管理 → NectarLink → 耗电管理，开启“允许后台活动”和“允许自启动”。</translation>
+        <source>On Oppo / Realme: open Settings → Apps → App management → Waypair Link → Battery usage and turn on Allow background activity and Allow auto-launch.</source>
+        <translation>OPPO / 真我：打开 设置 → 应用 → 应用管理 → Waypair Link → 耗电管理，开启“允许后台活动”和“允许自启动”。</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="204"/>
-        <source>On Pixel: open Settings → Apps → See all apps → NectarLink → App battery usage, tap Allow background usage, and choose Unrestricted.</source>
-        <translation>Pixel：打开 设置 → 应用 → 查看所有应用 → NectarLink → 应用的电池用量，点按“允许后台使用”，然后选择“无限制”。</translation>
+        <source>On Pixel: open Settings → Apps → See all apps → Waypair Link → App battery usage, tap Allow background usage, and choose Unrestricted.</source>
+        <translation>Pixel：打开 设置 → 应用 → 查看所有应用 → Waypair Link → 应用的电池用量，点按“允许后台使用”，然后选择“无限制”。</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="205"/>
-        <source>On Samsung: open Settings → Apps → NectarLink → Battery and choose Unrestricted, then in Device care → Battery → Background usage limits make sure NectarLink is never put to sleep.</source>
-        <translation>三星：打开 设置 → 应用程序 → NectarLink → 电池，选择“不受限制”，然后在 设备维护 → 电池 → 后台使用限制 中确保 NectarLink 不会被设为休眠。</translation>
+        <source>On Samsung: open Settings → Apps → Waypair Link → Battery and choose Unrestricted, then in Device care → Battery → Background usage limits make sure Waypair Link is never put to sleep.</source>
+        <translation>三星：打开 设置 → 应用程序 → Waypair Link → 电池，选择“不受限制”，然后在 设备维护 → 电池 → 后台使用限制 中确保 Waypair Link 不会被设为休眠。</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="206"/>
@@ -1941,13 +1941,13 @@
     </message>
     <message>
         <location filename="rust_strings.h" line="207"/>
-        <source>On Vivo / OriginOS / Funtouch: open Settings → Battery → Background power consumption management → NectarLink and choose Unrestricted, and allow Autostart.</source>
-        <translation>vivo / OriginOS / Funtouch：打开 设置 → 电池 → 后台耗电管理 → NectarLink，选择“允许后台高耗电”，并允许自启动。</translation>
+        <source>On Vivo / OriginOS / Funtouch: open Settings → Battery → Background power consumption management → Waypair Link and choose Unrestricted, and allow Autostart.</source>
+        <translation>vivo / OriginOS / Funtouch：打开 设置 → 电池 → 后台耗电管理 → Waypair Link，选择“允许后台高耗电”，并允许自启动。</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="208"/>
-        <source>On Xiaomi / HyperOS / MIUI: open Settings → Apps → Manage apps → NectarLink, turn on Autostart, and set Battery saver to No restrictions.</source>
-        <translation>小米 / HyperOS / MIUI：打开 设置 → 应用设置 → 应用管理 → NectarLink，开启“自启动”，并将省电策略设为“无限制”。</translation>
+        <source>On Xiaomi / HyperOS / MIUI: open Settings → Apps → Manage apps → Waypair Link, turn on Autostart, and set Battery saver to No restrictions.</source>
+        <translation>小米 / HyperOS / MIUI：打开 设置 → 应用设置 → 应用管理 → Waypair Link，开启“自启动”，并将省电策略设为“无限制”。</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="209"/>
@@ -1996,8 +1996,8 @@
     </message>
     <message>
         <location filename="rust_strings.h" line="218"/>
-        <source>Windows Firewall blocks NectarLink</source>
-        <translation>Windows 防火墙阻止了 NectarLink</translation>
+        <source>Windows Firewall blocks Waypair Link</source>
+        <translation>Windows 防火墙阻止了 Waypair Link</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="219"/>
@@ -2334,12 +2334,12 @@
     <name>Guide</name>
     <message>
         <location filename="rust_strings.h" line="233"/>
-        <source>1. Install Waypair Link on your Windows 11 PC and your Android phone (Android 8.0 or newer).
+        <source>1. Install Waypair Link on your Mac (macOS 14.4 or newer) or Windows 11 PC and on your Android phone (Android 8.0 or newer).
 2. Connect both devices to the same Wi-Fi network, or plug your phone into your PC with a USB cable.
 3. Open the Pair step in the setup walkthrough, or click + (Pair a new device) at the bottom of the left rail.
 4. Scan the QR code from the Waypair Link Android app, or select your phone from the nearby devices list and confirm that the 6-digit code matches on both screens.
 5. Choose which features to share for that phone and grant only the Android permissions you want to use.</source>
-        <translation>1. 在 Windows 11 电脑和 Android 手机（Android 8.0 或更高版本）上安装 Waypair Link。
+        <translation>1. 在 Mac（macOS 14.4 或更高版本）或 Windows 11 电脑，以及 Android 手机（Android 8.0 或更高版本）上安装 Waypair Link。
 2. 让两台设备连接到同一个 Wi‑Fi 网络，或用 USB 数据线将手机连接到电脑。
 3. 在设置向导中打开“配对”步骤，或点击左侧栏底部的 +（配对新设备）。
 4. 用 Waypair Link 安卓应用扫描二维码，或在附近设备列表中选择你的手机，并确认两边屏幕上的 6 位验证码一致。
@@ -2489,8 +2489,8 @@ Assist mode (Android Accessibility Service)
     </message>
     <message>
         <location filename="rust_strings.h" line="254"/>
-        <source>Nectar Island</source>
-        <translation>Nectar 岛</translation>
+        <source>Waypair Link Island</source>
+        <translation>Waypair Link 岛</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="255"/>
@@ -2693,18 +2693,18 @@ What it needs
 Displays a compact pill at the top center of your primary monitor for incoming calls, live file transfer progress, media playback, and optional notification previews.
 
 Where to find it
-- Settings › General › Nectar Island.
+- Settings › General › Waypair Link Island.
 
 What it needs
-- Turn on Nectar Island in Settings › General and pick which events should appear.</source>
+- Turn on Waypair Link Island in Settings › General and pick which events should appear.</source>
         <translation>功能
 在主显示器顶部中央显示一个小巧的胶囊，用于来电、实时文件传输进度、媒体播放以及可选的通知预览。
 
 位置
-- 设置 › 通用 › Nectar 岛。
+- 设置 › 通用 › Waypair Link 岛。
 
 需要
-- 在 设置 › 通用 中开启 Nectar 岛，并选择要显示哪些事件。</translation>
+- 在 设置 › 通用 中开启 Waypair Link 岛，并选择要显示哪些事件。</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="279"/>
@@ -3053,7 +3053,7 @@ Shows incoming and active phone calls on your PC with Answer, Decline, and Rejec
 
 Where to find it
 - Left navigation rail › Calls.
-- Incoming call banner on Home and Nectar Island.
+- Incoming call banner on Home and Waypair Link Island.
 
 What it needs
 - Phone, Call Log, and Contacts permissions on your Android phone.
@@ -3063,7 +3063,7 @@ What it needs
 
 位置
 - 左侧导航栏 › 通话。
-- 首页和 Nectar 岛上的来电横幅。
+- 首页和 Waypair Link 岛上的来电横幅。
 
 需要
 - Android 手机上的电话、通话记录和通讯录权限。
@@ -4083,11 +4083,6 @@ What it needs
 <context>
     <name>IslandWindow</name>
     <message>
-        <location filename="../qml/IslandWindow.qml" line="16"/>
-        <source>Nectar Island</source>
-        <translation>Nectar 岛</translation>
-    </message>
-    <message>
         <location filename="../qml/IslandWindow.qml" line="213"/>
         <source>Phone call</source>
         <translation>手机通话</translation>
@@ -4121,13 +4116,13 @@ What it needs
     </message>
     <message>
         <location filename="../qml/IslandWindow.qml" line="228"/>
-        <source>Nectar Island · %1</source>
-        <translation>Nectar 岛 · %1</translation>
+        <source>Waypair Link Island · %1</source>
+        <translation>Waypair Link 岛 · %1</translation>
     </message>
     <message>
         <location filename="../qml/IslandWindow.qml" line="229"/>
-        <source>Nectar Island · Ready</source>
-        <translation>Nectar 岛 · 就绪</translation>
+        <source>Waypair Link Island · Ready</source>
+        <translation>Waypair Link 岛 · 就绪</translation>
     </message>
     <message>
         <location filename="../qml/IslandWindow.qml" line="234"/>
@@ -4234,8 +4229,8 @@ What it needs
     </message>
     <message>
         <location filename="rust_strings.h" line="313"/>
-        <source>Update NectarLink on %1.</source>
-        <translation>请更新 %1 上的 NectarLink。</translation>
+        <source>Update Waypair Link on %1.</source>
+        <translation>请更新 %1 上的 Waypair Link。</translation>
     </message>
 </context>
 <context>
@@ -4932,8 +4927,8 @@ What it needs
     </message>
     <message>
         <location filename="rust_strings.h" line="331"/>
-        <source>Set up Wireless debugging in NectarLink on the phone to open its apps here.</source>
-        <translation>在手机上的 NectarLink 中设置无线调试，即可在这里打开其应用。</translation>
+        <source>Set up Wireless debugging in Waypair Link on the phone to open its apps here.</source>
+        <translation>在手机上的 Waypair Link 中设置无线调试，即可在这里打开其应用。</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="332"/>
@@ -4942,8 +4937,8 @@ What it needs
     </message>
     <message>
         <location filename="rust_strings.h" line="333"/>
-        <source>The app didn&apos;t open on the phone. Try again, or open NectarLink on the phone to check Wireless debugging.</source>
-        <translation>应用未在手机上打开。请重试，或在手机上打开 NectarLink 检查无线调试。</translation>
+        <source>The app didn&apos;t open on the phone. Try again, or open Waypair Link on the phone to check Wireless debugging.</source>
+        <translation>应用未在手机上打开。请重试，或在手机上打开 Waypair Link 检查无线调试。</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="334"/>
@@ -4967,8 +4962,8 @@ What it needs
     </message>
     <message>
         <location filename="rust_strings.h" line="338"/>
-        <source>This phone&apos;s app doesn&apos;t share its screen yet. Update NectarLink on the phone.</source>
-        <translation>此手机上的应用尚不能共享屏幕。请更新手机上的 NectarLink。</translation>
+        <source>This phone&apos;s app doesn&apos;t share its screen yet. Update Waypair Link on the phone.</source>
+        <translation>此手机上的应用尚不能共享屏幕。请更新手机上的 Waypair Link。</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="339"/>
@@ -5563,8 +5558,8 @@ What it needs
     </message>
     <message>
         <location filename="rust_strings.h" line="354"/>
-        <source>Update NectarLink on %1 to use its microphone.</source>
-        <translation>请更新 %1 上的 NectarLink 以使用其麦克风。</translation>
+        <source>Update Waypair Link on %1 to use its microphone.</source>
+        <translation>请更新 %1 上的 Waypair Link 以使用其麦克风。</translation>
     </message>
 </context>
 <context>
@@ -5936,8 +5931,8 @@ What it needs
     </message>
     <message>
         <location filename="rust_strings.h" line="373"/>
-        <source>Update NectarLink on %1 to play on it.</source>
-        <translation>请更新 %1 上的 NectarLink 以在其上播放。</translation>
+        <source>Update Waypair Link on %1 to play on it.</source>
+        <translation>请更新 %1 上的 Waypair Link 以在其上播放。</translation>
     </message>
 </context>
 <context>
@@ -5998,8 +5993,8 @@ What it needs
     </message>
     <message>
         <location filename="rust_strings.h" line="382"/>
-        <source>Send to %1 with NectarLink</source>
-        <translation>用 NectarLink 发送到 %1</translation>
+        <source>Send to %1 with Waypair Link</source>
+        <translation>用 Waypair Link 发送到 %1</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="383"/>
@@ -6485,8 +6480,8 @@ What it needs
     <message>
         <location filename="../qml/pages/SettingsPage.qml" line="991"/>
         <location filename="../qml/pages/SettingsPage.qml" line="994"/>
-        <source>Nectar Island</source>
-        <translation>Nectar 岛</translation>
+        <source>Waypair Link Island</source>
+        <translation>Waypair Link 岛</translation>
     </message>
     <message>
         <location filename="../qml/pages/SettingsPage.qml" line="992"/>
@@ -7319,6 +7314,21 @@ What it needs
         <translation>自由软件，应用采用 GPL-3.0-or-later 许可，核心采用 MPL-2.0 许可。</translation>
     </message>
     <message>
+        <location filename="../qml/pages/SettingsPage.qml" line="3149"/>
+        <source>Open-source licenses</source>
+        <translation>开源许可</translation>
+    </message>
+    <message>
+        <location filename="../qml/pages/SettingsPage.qml" line="3150"/>
+        <source>Licenses, copyrights and source attribution</source>
+        <translation>许可证、版权与源代码署名</translation>
+    </message>
+    <message>
+        <location filename="../qml/pages/SettingsPage.qml" line="3154"/>
+        <source>View</source>
+        <translation>查看</translation>
+    </message>
+    <message>
         <location filename="../qml/pages/SettingsPage.qml" line="3164"/>
         <source>Check for updates opens the updater, which reads Waypair Link&apos;s own signed release feed. It runs only when you ask; nothing checks or installs by itself.</source>
         <translation>“检查更新”会打开更新程序，它读取 Waypair Link 自己的已签名发布源。只有在你要求时才会运行，不会自动检查或安装。</translation>
@@ -7629,11 +7639,6 @@ What it needs
 </context>
 <context>
     <name>ShelfWindow</name>
-    <message>
-        <location filename="../qml/ShelfWindow.qml" line="16"/>
-        <source>Waypair Link Shelf</source>
-        <translation>Waypair Link 收纳架</translation>
-    </message>
     <message>
         <location filename="../qml/ShelfWindow.qml" line="50"/>
         <source>phone</source>
@@ -8238,8 +8243,8 @@ What it needs
     <name>Transfers</name>
     <message>
         <location filename="rust_strings.h" line="420"/>
-        <source>Accept in NectarLink to save to Downloads\Nectarlink</source>
-        <translation>在 NectarLink 中接受即可保存到 Downloads\Nectarlink</translation>
+        <source>Accept in Waypair Link to save to Downloads\Nectarlink</source>
+        <translation>在 Waypair Link 中接受即可保存到 Downloads\Nectarlink</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="421"/>
@@ -8281,28 +8286,28 @@ What it needs
     </message>
     <message>
         <location filename="rust_strings.h" line="428"/>
-        <source>NectarLink %1 is available</source>
-        <translation>NectarLink %1 已发布</translation>
+        <source>Waypair Link %1 is available</source>
+        <translation>Waypair Link %1 已发布</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="429"/>
-        <source>NectarLink %1 is available.</source>
-        <translation>NectarLink %1 已发布。</translation>
+        <source>Waypair Link %1 is available.</source>
+        <translation>Waypair Link %1 已发布。</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="430"/>
-        <source>NectarLink is still on the version you had. Try again from Settings.</source>
-        <translation>NectarLink 仍是原来的版本。请在设置中重试。</translation>
+        <source>Waypair Link is still on the version you had. Try again from Settings.</source>
+        <translation>Waypair Link 仍是原来的版本。请在设置中重试。</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="431"/>
-        <source>NectarLink is up to date.</source>
-        <translation>NectarLink 已是最新版本。</translation>
+        <source>Waypair Link is up to date.</source>
+        <translation>Waypair Link 已是最新版本。</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="432"/>
-        <source>NectarLink is updated to %1</source>
-        <translation>NectarLink 已更新到 %1</translation>
+        <source>Waypair Link is updated to %1</source>
+        <translation>Waypair Link 已更新到 %1</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="433"/>

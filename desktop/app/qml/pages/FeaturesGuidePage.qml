@@ -377,7 +377,7 @@ Item {
         },
         {
             id: "nectar_island",
-            name: "Nectar Island",
+            name: "Waypair Link Island",
             icon: Icons.island,
             area: "surfaces",
             capKey: "",
@@ -385,8 +385,8 @@ Item {
             pcLocal: true,
             prefKey: "nectarIsland",
             summary: "Compact floating pill at the top center of your monitor for calls, transfers, media, and alerts.",
-            whereLabel: "Settings › General › Nectar Island",
-            needsLabel: "Nectar Island enabled in Settings",
+            whereLabel: "Settings › General › Waypair Link Island",
+            needsLabel: "Waypair Link Island enabled in Settings",
             targetId: "settings:general:island",
             docKey: "nectar-island"
         },

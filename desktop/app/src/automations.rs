@@ -78,7 +78,7 @@ fn execute_rule(rule: &AutomationRule) {
         tracing::warn!(rule = %rule.name, trigger = %rule.trigger, error = %e, "automation action failed");
     } else {
         let _ = crate::pc_notifications::forward_to_phones(
-            "NectarLink Automations",
+            "Waypair Link Automations",
             &rule.name,
             &tr!("Automations", "Triggered by %1", rule.trigger),
         );

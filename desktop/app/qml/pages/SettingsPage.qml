@@ -993,10 +993,10 @@ Item {
                                 y: islandBatteryPairRow.splitCols ? Math.round((parent.height - height) / 2) : 0
                                 width: islandBatteryPairRow.colWidth
                                 iconPath: Icons.island
-                                title: qsTr("Nectar Island")
+                                title: qsTr("Waypair Link Island")
                                 description: qsTr("Top-screen pill for calls, transfers & media.")
                                 Toggle {
-                                    label: qsTr("Nectar Island")
+                                    label: qsTr("Waypair Link Island")
                                     checked: Preferences.nectarIsland
                                     onToggled: (on) => Preferences.nectarIsland = on
                                 }
@@ -3141,6 +3141,19 @@ Item {
                             iconPath: Icons.info
                             title: qsTr("Independently maintained fork")
                             description: qsTr("Free software under GPL-3.0-or-later (apps) and MPL-2.0 (core).")
+                        }
+                        Divider { width: parent.width }
+                        ListRow {
+                            width: parent.width
+                            iconPath: Icons.book
+                            title: qsTr("Open-source licenses")
+                            description: qsTr("Licenses, copyrights and source attribution")
+                            Button {
+                                variant: "tonal"
+                                size: "sm"
+                                text: qsTr("View")
+                                onClicked: Qt.openUrlExternally(AppController.licensesUrl())
+                            }
                         }
                         Divider { width: parent.width }
                         ListRow {
