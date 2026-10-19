@@ -20,6 +20,10 @@ use tokio::{
 
 use crate::state::{Changes, CoreStatus, Hub};
 
+#[cfg(target_os = "macos")]
+#[path = "mac/adb_bootstrap.rs"]
+mod adb_bootstrap;
+
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Debug)]
@@ -182,6 +186,12 @@ async fn run(data_dir: PathBuf, platform: Arc<dyn Platform>) {
     // NECTARLINK_NO_ADB=1 keeps a development copy from reaching phones plugged in over USB.
     let adb_disabled = std::env::var_os("NECTARLINK_NO_ADB").is_some_and(|v| v == "1");
     config.adb_server = (!adb_disabled).then_some(nectarlink_core::DEFAULT_ADB_ADDR);
+    // One background attempt on the core runtime, never the Qt thread. Wi-Fi does
+    // not wait on it. The USB watcher retries if the sealed server is late or absent.
+    #[cfg(target_os = "macos")]
+    if !adb_disabled {
+        adb_bootstrap::start_once();
+    }
     config.away_mode = crate::settings::Settings::load(&data_dir).away_mode;
     // This PC's own players, for phones (crate::win::media_sessions).
     config.capabilities = compute_capabilities(None);
