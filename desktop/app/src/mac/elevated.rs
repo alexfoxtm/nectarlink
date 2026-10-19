@@ -4,6 +4,7 @@
 use std::path::Path;
 
 pub enum Error {
+    #[allow(dead_code)]
     Declined,
     Other(String),
 }
@@ -17,5 +18,5 @@ impl Process {
 }
 
 pub fn start(_program: &Path, _params: &str) -> Result<Process, Error> {
-    Ok(Process)
+    Err(Error::Other("elevated execution is not supported on macOS".into()))
 }

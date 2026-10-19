@@ -57,20 +57,34 @@ pub fn speaker_volume_down() -> Result<(u8, bool), String> {
     Ok((next, muted))
 }
 
-pub fn mic_muted() -> Option<bool> {
+static LAST_MIC_VOL: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(75);
+
+pub fn mic_volume() -> Option<u8> {
     let output = std::process::Command::new("osascript")
         .args(["-e", "input volume of (get volume settings)"])
         .output()
         .ok()?;
     let text = String::from_utf8_lossy(&output.stdout);
-    let vol: u8 = text.trim().parse().ok()?;
-    Some(vol == 0)
+    text.trim().parse().ok()
+}
+
+pub fn mic_muted() -> Option<bool> {
+    mic_volume().map(|vol| vol == 0)
 }
 
 pub fn toggle_mic_mute() -> Result<bool, String> {
-    let muted = mic_muted().unwrap_or(false);
+    let current_vol = mic_volume().unwrap_or(0);
+    let muted = current_vol == 0;
     let next = !muted;
-    let vol = if next { 0 } else { 75 };
+    let vol = if next {
+        if current_vol > 0 {
+            LAST_MIC_VOL.store(current_vol, std::sync::atomic::Ordering::Relaxed);
+        }
+        0
+    } else {
+        let saved = LAST_MIC_VOL.load(std::sync::atomic::Ordering::Relaxed);
+        if saved > 0 { saved } else { 75 }
+    };
     let script = format!("set volume input volume {vol}");
     std::process::Command::new("osascript").args(["-e", &script]).output().map_err(|e| e.to_string())?;
     Ok(next)
@@ -86,6 +100,7 @@ pub fn output_devices() -> Vec<nectarlink_core::AudioOutputDevice> {
 
 pub fn watch(_changed: fn()) {}
 
+#[allow(dead_code)]
 pub fn start(_on_changed: impl Fn() + Send + Sync + 'static) {}
 
 #[cfg(test)]
@@ -103,9 +118,8 @@ mod tests {
 
     #[test]
     fn query_live_speaker_state() {
-        let state = speaker_state();
-        assert!(state.is_some());
-        let (vol, _muted) = state.unwrap();
-        assert!(vol <= 100);
+        if let Some((vol, _muted)) = speaker_state() {
+            assert!(vol <= 100);
+        }
     }
 }

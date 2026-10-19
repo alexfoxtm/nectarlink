@@ -263,8 +263,8 @@ NativeWindow {
             hasNormalPosition = true
         }
 
-        if (targetScreen && window.screen !== targetScreen) {
-            window.screen = targetScreen
+        if (targetScreen) {
+            window.setScreenByName(targetScreen.name)
         }
         x = sx + normalX
         y = sy + normalY
@@ -343,9 +343,12 @@ NativeWindow {
             }
         }
     }
-    onWindowVisibilityChanged: {
-        if (visible && !restoringGeometry && (window.visibility === Window.Windowed || window.visibility === Window.Maximized)) {
-            geometrySaveTimer.restart()
+    Connections {
+        target: window
+        function onVisibilityChanged() {
+            if (window.visible && !window.restoringGeometry && (window.visibility === Window.Windowed || window.visibility === Window.Maximized)) {
+                geometrySaveTimer.restart()
+            }
         }
     }
 

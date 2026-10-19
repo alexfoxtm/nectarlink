@@ -16,6 +16,14 @@ pub fn is_installed(_exe: &Path) -> bool {
     is_enabled()
 }
 
+fn xml_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
+}
+
 pub fn set_enabled(enabled: bool) -> Result<(), String> {
     if let Some(dir) = dirs::home_dir() {
         let agents = dir.join("Library/LaunchAgents");
@@ -23,6 +31,7 @@ pub fn set_enabled(enabled: bool) -> Result<(), String> {
         if enabled {
             let _ = std::fs::create_dir_all(&agents);
             let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+            let escaped_exe = xml_escape(&exe.to_string_lossy());
             let content = format!(
                 r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -32,14 +41,12 @@ pub fn set_enabled(enabled: bool) -> Result<(), String> {
     <string>com.thtbee.nectarlink</string>
     <key>ProgramArguments</key>
     <array>
-        <string>{}</string>
-        <string>--minimized</string>
+        <string>{escaped_exe}</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
 </dict>
-</plist>"#,
-                exe.display()
+</plist>"#
             );
             std::fs::write(&plist, content).map_err(|e| e.to_string())?;
         } else if plist.exists() {

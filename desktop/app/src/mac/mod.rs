@@ -2,8 +2,6 @@
 //! macOS integration: system facts, single instance, clipboard, sound,
 //! notifications, volume, and shell operations.
 
-#![allow(dead_code, unused_imports)]
-
 pub mod audio;
 pub mod audio_out;
 pub mod autostart;
@@ -118,10 +116,12 @@ pub fn secure_random(buf: &mut [u8]) -> bool {
 }
 
 /// On macOS, COM is not used. Runs `f` directly.
+#[allow(dead_code)]
 pub fn with_com<T>(f: impl FnOnce() -> T) -> T {
     f()
 }
 
+#[allow(dead_code)]
 pub(crate) fn reg_string(_root: u32, _key: &str, _value: &str) -> Option<String> {
     None
 }

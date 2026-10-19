@@ -23,11 +23,11 @@ pub struct Adapters {
 }
 
 pub fn firewall(_exe: &Path) -> Result<Firewall, String> {
-    Ok(Firewall { on: false, allowed: true, blocked: false })
+    Err("firewall check is not supported on macOS".into())
 }
 
 pub fn networks() -> Result<Vec<Network>, String> {
-    Ok(vec![Network { name: "Wi-Fi".into(), trusted: true }])
+    Err("network profile check is not supported on macOS".into())
 }
 
 pub fn adapters() -> Adapters {
@@ -35,7 +35,7 @@ pub fn adapters() -> Adapters {
 }
 
 pub fn fix_firewall(_exe: &Path) -> Result<bool, String> {
-    Ok(true)
+    Err("automatic firewall configuration is not supported on macOS".into())
 }
 
 pub fn open_firewall_settings() -> bool {
@@ -45,6 +45,7 @@ pub fn open_firewall_settings() -> bool {
     true
 }
 
+#[allow(dead_code)]
 pub fn diagnose() -> Vec<(String, bool, String)> {
     Vec::new()
 }

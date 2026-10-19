@@ -1475,7 +1475,6 @@ mod tests {
             "task.notify",
             "camera.continuity",
             "pc.power",
-            "pc.wake",
             "photos.show",
             "calls.show",
             "contacts.show",

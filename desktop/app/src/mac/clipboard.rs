@@ -11,6 +11,7 @@ use std::{
 
 static CLIP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+#[allow(dead_code)]
 #[derive(Clone, PartialEq, Eq)]
 pub enum Image {
     Png(Vec<u8>),
@@ -38,7 +39,12 @@ impl Image {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Clip {
-    Text { text: String, html: Option<String>, rtf: Option<String> },
+    Text {
+        text: String,
+        html: Option<String>,
+        rtf: Option<String>,
+    },
+    #[allow(dead_code)]
     Image(Image),
     Private,
     Empty,
@@ -47,23 +53,41 @@ pub enum Clip {
 type OnCopy = Box<dyn Fn(Clip) + Send + Sync>;
 static ON_COPY: OnceLock<OnCopy> = OnceLock::new();
 static LAST_TEXT: Mutex<Option<String>> = Mutex::new(None);
+static LAST_COUNT: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(-1);
 
 pub fn start(on_copy: impl Fn(Clip) + Send + Sync + 'static) {
     let _ = ON_COPY.set(Box::new(on_copy));
+    // Record initial changeCount at startup so we never broadcast existing clipboard contents
+    let initial_count = crate::bridge::native::ffi::mac_clipboard_change_count();
+    LAST_COUNT.store(initial_count, Ordering::Relaxed);
+
     std::thread::Builder::new()
         .name("mac-clipboard-watcher".into())
         .spawn(|| {
             loop {
                 std::thread::sleep(std::time::Duration::from_millis(500));
-                let clip = read();
-                if let Clip::Text { text, .. } = &clip {
-                    let mut last = LAST_TEXT.lock().unwrap_or_else(|e| e.into_inner());
-                    if last.as_deref() != Some(text) {
-                        *last = Some(text.clone());
-                        drop(last);
-                        if let Some(cb) = ON_COPY.get() {
-                            cb(clip);
+                let count = crate::bridge::native::ffi::mac_clipboard_change_count();
+                let last = LAST_COUNT.load(Ordering::Relaxed);
+                if count != last {
+                    LAST_COUNT.store(count, Ordering::Relaxed);
+                    let clip = read();
+                    match &clip {
+                        Clip::Text { text, .. } => {
+                            let mut last_text = LAST_TEXT.lock().unwrap_or_else(|e| e.into_inner());
+                            if last_text.as_deref() != Some(text) {
+                                *last_text = Some(text.clone());
+                                drop(last_text);
+                                if let Some(cb) = ON_COPY.get() {
+                                    cb(clip);
+                                }
+                            }
                         }
+                        Clip::Private => {
+                            if let Some(cb) = ON_COPY.get() {
+                                cb(clip);
+                            }
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -72,12 +96,13 @@ pub fn start(on_copy: impl Fn(Clip) + Send + Sync + 'static) {
 }
 
 pub fn read() -> Clip {
-    let output = std::process::Command::new("pbpaste").output().ok();
-    if let Some(out) = output {
-        let text = String::from_utf8_lossy(&out.stdout).to_string();
-        if !text.is_empty() {
-            return Clip::Text { text, html: None, rtf: None };
-        }
+    let mut is_private = false;
+    let text = crate::bridge::native::ffi::mac_clipboard_read_text(&mut is_private);
+    if is_private {
+        return Clip::Private;
+    }
+    if !text.is_empty() {
+        return Clip::Text { text, html: None, rtf: None };
     }
     Clip::Empty
 }
@@ -91,20 +116,12 @@ pub fn read_image_png() -> Option<Vec<u8>> {
 }
 
 pub fn write(text: &str) -> Result<(), String> {
-    use std::io::Write;
-    let mut child = std::process::Command::new("pbcopy")
-        .stdin(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|e| e.to_string())?;
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(text.as_bytes()).map_err(|e| e.to_string())?;
-    }
-    let status = child.wait().map_err(|e| e.to_string())?;
-    if status.success() {
+    if crate::bridge::native::ffi::mac_clipboard_write_text(text, false) {
         *LAST_TEXT.lock().unwrap_or_else(|e| e.into_inner()) = Some(text.to_string());
+        LAST_COUNT.store(crate::bridge::native::ffi::mac_clipboard_change_count(), Ordering::Relaxed);
         Ok(())
     } else {
-        Err("pbcopy failed".into())
+        Err("mac_clipboard_write_text failed".into())
     }
 }
 
@@ -113,7 +130,13 @@ pub fn write_rich(text: &str, _html: Option<&str>, _rtf: Option<&str>) -> Result
 }
 
 pub fn write_private(text: &str) -> Result<(), String> {
-    write(text)
+    if crate::bridge::native::ffi::mac_clipboard_write_text(text, true) {
+        *LAST_TEXT.lock().unwrap_or_else(|e| e.into_inner()) = Some(text.to_string());
+        LAST_COUNT.store(crate::bridge::native::ffi::mac_clipboard_change_count(), Ordering::Relaxed);
+        Ok(())
+    } else {
+        Err("mac_clipboard_write_text failed".into())
+    }
 }
 
 pub fn write_image(mime: &str, bytes: &[u8]) -> Result<(), String> {
@@ -143,18 +166,22 @@ pub fn write_image(mime: &str, bytes: &[u8]) -> Result<(), String> {
     }
 }
 
+#[allow(dead_code)]
 pub fn build_dropfiles_payload(_paths: &[PathBuf]) -> Vec<u8> {
     Vec::new()
 }
 
+#[allow(dead_code)]
 pub fn parse_dropfiles_payload(_bytes: &[u8]) -> Option<Vec<PathBuf>> {
     None
 }
 
+#[allow(dead_code)]
 pub fn read_files() -> Option<Vec<PathBuf>> {
     None
 }
 
+#[allow(dead_code)]
 pub fn write_files(_paths: &[PathBuf]) -> bool {
     false
 }

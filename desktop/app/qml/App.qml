@@ -131,7 +131,7 @@ QtObject {
     function onMainClosed() {
         if (mainLoader.active && mainLoader.item)
             mainLoader.item.saveWindowState()
-        if (!Preferences.closeToTray) {
+        if (Qt.platform.os === "osx" || !Preferences.closeToTray) {
             Qt.quit()
             return
         }

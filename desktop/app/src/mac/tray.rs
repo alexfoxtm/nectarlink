@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! macOS status bar / tray integration stubs.
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrayEvent {
     Open,
@@ -15,6 +16,7 @@ pub enum TrayEvent {
     AppearanceChanged,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct MenuLabels {
     pub open: String,
@@ -45,6 +47,7 @@ impl Tray {
 
 pub fn update_hotkeys(_photo_spec: &str, _scan_spec: &str, _palette_spec: &str, _shelf_spec: &str) {}
 
+#[allow(dead_code)]
 pub fn record_foreground_window() {}
 
 pub fn apply_no_activate_style_by_title(_title: &str) {}
@@ -63,6 +66,7 @@ pub fn snapshot_target_window() -> Option<(isize, String)> {
 
 pub fn send_paste_fallback_if_not_foreground(_hwnd: isize) {}
 
+#[allow(dead_code)]
 pub fn parse_hotkey(_spec: &str) -> Option<(u32, u32)> {
     None
 }

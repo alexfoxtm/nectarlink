@@ -3,6 +3,7 @@
 
 use nectarlink_core::PcWakeInfo;
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WakeSupport {
     Enabled,
@@ -52,6 +53,7 @@ pub fn query_wake_status() -> WakeStatus {
     WakeStatus::default()
 }
 
+#[allow(dead_code)]
 pub fn wake(_mac: &[u8]) -> Result<(), String> {
-    Ok(())
+    Err("wake-on-lan is not supported on macOS".into())
 }

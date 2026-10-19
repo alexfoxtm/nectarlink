@@ -13,6 +13,7 @@ pub fn pause_for_call() {}
 
 pub fn resume_after_call() {}
 
+#[allow(dead_code)]
 pub fn says_video(_id: &str) -> bool {
     false
 }

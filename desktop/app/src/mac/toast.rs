@@ -6,11 +6,13 @@ use std::{
     sync::{Mutex, OnceLock},
 };
 
+#[allow(dead_code)]
 pub const AUMID: &str = "com.thtbee.nectarlink";
 pub const CALL_ANSWER: &str = "answer";
 pub const CALL_DECLINE: &str = "decline";
 pub const CALL_END: &str = "end";
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ToastEvent {
     Opened { device: String, key: String },
@@ -19,6 +21,7 @@ pub enum ToastEvent {
     Dismissed { device: String, key: String },
 }
 
+#[allow(dead_code)]
 #[derive(Clone)]
 pub struct Toast {
     pub device: String,

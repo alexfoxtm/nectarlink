@@ -27,6 +27,7 @@ pub fn encode_png(bitmap: &Bitmap) -> Result<Vec<u8>, String> {
     Ok(create_png(bitmap.width, bitmap.height, &bitmap.bgra))
 }
 
+#[allow(dead_code)]
 pub fn bmp_from_dib(dib: &[u8]) -> Option<Vec<u8>> {
     Some(dib.to_vec())
 }

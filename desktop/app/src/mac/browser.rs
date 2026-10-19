@@ -16,6 +16,7 @@ pub fn is_browser(program: &str) -> bool {
 
 #[derive(Debug, Clone)]
 pub struct Window {
+    #[allow(dead_code)]
     pub hwnd: isize,
     pub program: String,
     pub title: String,

@@ -355,3 +355,15 @@ bool NativeWindow::nativeEvent(const QByteArray &eventType, void *message, qintp
 #endif
     return QQuickWindow::nativeEvent(eventType, message, result);
 }
+
+void NativeWindow::setScreenByName(const QString &screenName)
+{
+    if (screenName.isEmpty())
+        return;
+    for (QScreen *s : QGuiApplication::screens()) {
+        if (s->name() == screenName) {
+            setScreen(s);
+            break;
+        }
+    }
+}
