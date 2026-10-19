@@ -29,6 +29,9 @@ MACDEPLOYQT_ARG=""
 QT_BIN_DIR="${QT_BIN_DIR:-}"
 QML_DIR=""
 UPDATER_HELPER=""
+ADB_HELPER=""
+ADB_SEAL=""
+ADB_NOTICE=""
 SPARKLE_FRAMEWORK_ARG=""
 # Dedicated Nectar feed (Alex-authorized, Root-published): never the legacy
 # Swift appcast, whose items must not offer themselves to this app; Sparkle
@@ -71,6 +74,10 @@ Options:
                          (read before this script assigns that name), else
                          /Applications/Waypair.app/Contents/Frameworks/Sparkle.framework
                          when present (verified Sparkle 2.10.0 source; never downloaded).
+  --adb-helper <path>    Pre-signed pinned adb; requires --adb-seal and --adb-notice.
+  --adb-seal <path>      Post-sign schema1 checksum manifest. Packaging verifies
+                         bytes and copies it to Resources/PhoneSetup/adb-seal.json.
+  --adb-notice <path>    Vendor notice copied into Open-source Licenses.
   --update-feed <url>    SUFeedURL written to Info.plist. Default: the separate Nectar
                          dedicated Nectar feed (NOT the legacy Swift appcast).
   --update-ed-key <key>  SUPublicEDKey written to Info.plist. Default: the existing
@@ -417,6 +424,9 @@ while [[ $# -gt 0 ]]; do
         --qml-dir)      [[ $# -ge 2 ]] || fail "--qml-dir needs a value"; QML_DIR="$2"; shift 2 ;;
         --updater-helper) [[ $# -ge 2 ]] || fail "--updater-helper needs a value"; UPDATER_HELPER="$2"; shift 2 ;;
         --sparkle-framework) [[ $# -ge 2 ]] || fail "--sparkle-framework needs a value"; SPARKLE_FRAMEWORK_ARG="$2"; shift 2 ;;
+        --adb-helper) [[ $# -ge 2 ]] || fail "--adb-helper needs a value"; ADB_HELPER="$2"; shift 2 ;;
+        --adb-seal) [[ $# -ge 2 ]] || fail "--adb-seal needs a value"; ADB_SEAL="$2"; shift 2 ;;
+        --adb-notice) [[ $# -ge 2 ]] || fail "--adb-notice needs a value"; ADB_NOTICE="$2"; shift 2 ;;
         --update-feed)  [[ $# -ge 2 ]] || fail "--update-feed needs a value"; UPDATE_FEED="$2"; shift 2 ;;
         --update-ed-key) [[ $# -ge 2 ]] || fail "--update-ed-key needs a value"; UPDATE_ED_KEY="$2"; shift 2 ;;
         -h|--help)      usage; exit 0 ;;
@@ -447,6 +457,29 @@ bundle_id_ok "$BUNDLE_ID" || fail "invalid --bundle-id: $BUNDLE_ID"
 [[ "$UPDATE_ED_KEY" =~ ^[A-Za-z0-9+/]{43}=$ ]] || fail "invalid --update-ed-key (expected the 44-character base64 Ed25519 public key)"
 if [[ -n "$UPDATER_HELPER" ]]; then
     [[ -f "$UPDATER_HELPER" && -x "$UPDATER_HELPER" ]] || fail "updater helper not found or not executable: $UPDATER_HELPER (Root compiles scripts/macos/WaypairUpdater.swift; this script never compiles)"
+fi
+# Verify the post-sign helper bytes before creating an output bundle. The
+# runtime validates this same manifest before spawning; packaging never signs
+# or runs adb and must not mutate its already-sealed bytes.
+if [[ -n "$ADB_HELPER$ADB_SEAL$ADB_NOTICE" ]]; then
+    [[ -n "$ADB_HELPER" && -n "$ADB_SEAL" && -n "$ADB_NOTICE" ]] || fail "ADB inputs must be supplied together"
+    python3 - "$ADB_HELPER" "$ADB_SEAL" "$ADB_NOTICE" <<'PYADB'
+import hashlib, json, os, re, sys
+from pathlib import Path
+helper, seal, notice = map(Path, sys.argv[1:])
+for path in (helper, seal, notice):
+    if path.is_symlink() or not path.is_file():
+        raise SystemExit("ADB input must be a regular non-symlink file")
+if not os.access(helper, os.X_OK) or seal.stat().st_size > 4096 or not 0 < notice.stat().st_size <= 4 * 1024 * 1024:
+    raise SystemExit("invalid ADB input size or executable mode")
+manifest = json.loads(seal.read_text())
+if (manifest.get("schema") != 1 or manifest.get("relativePath") != "Helpers/adb"
+    or type(manifest.get("size")) is not int or not 0 < manifest["size"] <= 64 * 1024 * 1024
+    or manifest["size"] != helper.stat().st_size
+    or not re.fullmatch(r"[0-9a-f]{64}", manifest.get("sha256", ""))
+    or hashlib.sha256(helper.read_bytes()).hexdigest() != manifest["sha256"]):
+    raise SystemExit("ADB seal mismatch")
+PYADB
 fi
 # Save the incoming environment before any assignment to SPARKLE_FRAMEWORK.
 # Clearing that name first made the env step unreachable.
@@ -606,6 +639,15 @@ if grep -E -q '^ERROR:' "$deploy_log"; then
     fail "macdeployqt reported ERROR but exited 0. Refusing to claim the bundle is deployed. Left in place for inspection: $APP_PATH"
 fi
 rm -f "$deploy_log"
+
+# Add the pre-signed helper after macdeployqt: deployment must never rewrite
+# its signed bytes. Root's inside-out signer verifies and preserves this file.
+if [[ -n "$ADB_HELPER" ]]; then
+    mkdir -p "$APP_PATH/Contents/Helpers" "$APP_PATH/Contents/Resources/PhoneSetup"
+    cp -p "$ADB_HELPER" "$APP_PATH/Contents/Helpers/adb"
+    cp "$ADB_SEAL" "$APP_PATH/Contents/Resources/PhoneSetup/adb-seal.json"
+    cp "$ADB_NOTICE" "$APP_PATH/Contents/Resources/LICENSES/ADB-NOTICE.txt"
+fi
 
 # The executable's own Qt linkage, not the mere presence of Contents/Frameworks.
 # Copying Sparkle.framework creates that directory before macdeployqt runs.

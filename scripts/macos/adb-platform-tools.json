@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "version": "37.0.1",
+  "url": "https://dl.google.com/android/repository/platform-tools_r37.0.1-darwin.zip",
+  "archiveSha256": "ee39ad5967e95c2a07f04dbcbde96b1a0c916ba376096db5d2f498b7727a5d1d",
+  "archiveBytes": 16110554,
+  "member": "platform-tools/adb",
+  "memberSha256": "1811e253b21b12cbfda7201ebaf86c10e7ddcb5c606a7a81f7c82b4c429c2d3b",
+  "memberBytes": 18844128,
+  "notice": "platform-tools/NOTICE.txt",
+  "noticeSha256": "356cc66516060e4da6bdc53e6f0bbb8e8101673f326b73c68d535eddd04dd7b1",
+  "source": "https://android.googlesource.com/platform/packages/modules/adb/",
+  "provenance": "Versioned Google HTTPS archive freshly re-downloaded and matched the previously qualified immutable SHA256/size; no floating URL or execution"
+}
