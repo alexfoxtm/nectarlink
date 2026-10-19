@@ -1186,6 +1186,15 @@
     <string name="settings_background_clipboard_title">后台剪贴板权限</string>
     <string name="settings_guide_card_body">浏览全部功能、查看实时要求，或直接跳到对应开关。</string>
     <string name="settings_walkthrough_body">重新打开设置向导，处理权限、配对和省电级别。</string>
+    <string name="waypair_extras_title">Waypair 增强功能</string>
+    <string name="waypair_extras_body">Waypair 分支在 NectarLink 之上新增的功能。</string>
+    <string name="waypair_extras_filters_title">通知筛选</string>
+    <string name="waypair_extras_filters_body">只镜像你选择的应用和通知类型。短信权限需单独授予。</string>
+    <string name="waypair_extras_filters_action">选择应用和类型</string>
+    <string name="waypair_extras_ring_title">查找手机音量</string>
+    <string name="waypair_extras_ring_body">响铃时会调高闹钟音量，结束后恢复原音量；如果响铃中途被中断，则在下次启动时恢复。</string>
+    <string name="waypair_extras_updates_title">私有更新</string>
+    <string name="waypair_extras_updates_body">更新来自此构建自己的私有发布源，而非 NectarLink 官方。</string>
     <string name="desk_exit">退出桌面模式</string>
     <string name="desk_media_playing">电脑媒体 · 播放中</string>
     <string name="desk_media_audio">电脑媒体与音频</string>

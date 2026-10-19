@@ -918,6 +918,47 @@ fun SettingsScreen(
         }
 
         if (showFeatures) {
+            item(key = "waypair_extras", contentType = "section") {
+                Section(stringResource(R.string.waypair_extras_title)) {
+                    Text(
+                        stringResource(R.string.waypair_extras_body),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    SettingRowDivider()
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                            Text(stringResource(R.string.waypair_extras_filters_title), style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                stringResource(R.string.waypair_extras_filters_body),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        OutlinedButton(onClick = { notificationFilterOpen = true }) {
+                            Text(stringResource(R.string.clip_action_open))
+                        }
+                    }
+                    SettingRowDivider()
+                    Column(Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.waypair_extras_ring_title), style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            stringResource(R.string.waypair_extras_ring_body),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    SettingRowDivider()
+                    Column(Modifier.fillMaxWidth()) {
+                        Text(stringResource(R.string.waypair_extras_updates_title), style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            stringResource(R.string.waypair_extras_updates_body),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
             item(key = "about", contentType = "section") {
                 Section(stringResource(R.string.settings_about)) {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -1079,7 +1120,7 @@ private fun NotificationAccess(granted: Boolean, onChooseFilter: () -> Unit) {
         }
     }
     TextButton(onClick = onChooseFilter, modifier = Modifier.padding(top = 4.dp)) {
-        Text("Choose apps and types")
+        Text(stringResource(R.string.waypair_extras_filters_action))
     }
     if (!granted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {

@@ -3142,6 +3142,14 @@ Item {
                             title: qsTr("Local build for personal use")
                             description: qsTr("A modified NectarLink built locally for personal use, free software under GPL-3.0-or-later (apps) and MPL-2.0 (core). It is not an official NectarLink release.")
                         }
+                        Divider { width: parent.width }
+                        ListRow {
+                            width: parent.width
+                            iconPath: Icons.sparkle
+                            title: qsTr("Waypair extras")
+                            description: qsTr("Added by the Waypair fork. To choose which phone apps and notification types mirror here, open NectarLink on your phone > Settings > Notifications > Choose apps and types; SMS access is a separate permission. Find phone puts the phone's alarm volume back after ringing.")
+                                         + (AppController.canUpdate ? " " + qsTr("Updates come from this build's own private release feed.") : "")
+                        }
                         Divider {
                             width: parent.width
                             visible: AppController.canUpdate

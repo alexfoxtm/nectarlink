@@ -1324,6 +1324,15 @@
     <string name="settings_background_clipboard_title">Background clipboard access</string>
     <string name="settings_guide_card_body">Browse every feature, check live requirements, or jump straight to its controls.</string>
     <string name="settings_walkthrough_body">Reopen the setup guide for permissions, pairing, and power levels.</string>
+    <string name="waypair_extras_title">Waypair extras</string>
+    <string name="waypair_extras_body">Added by the Waypair fork on top of NectarLink.</string>
+    <string name="waypair_extras_filters_title">Notification filters</string>
+    <string name="waypair_extras_filters_body">Mirror only the apps and notification types you pick. SMS access is a separate permission.</string>
+    <string name="waypair_extras_filters_action">Choose apps and types</string>
+    <string name="waypair_extras_ring_title">Find phone volume</string>
+    <string name="waypair_extras_ring_body">Ringing raises the alarm volume, then puts your original volume back, or on the next launch if ringing was cut off.</string>
+    <string name="waypair_extras_updates_title">Private updates</string>
+    <string name="waypair_extras_updates_body">Updates come from this build\'s own private release feed, not NectarLink\'s.</string>
     <string name="desk_exit">Exit Desk Mode</string>
     <string name="desk_media_playing">PC Media · Playing</string>
     <string name="desk_media_audio">PC Media &amp; Audio</string>
