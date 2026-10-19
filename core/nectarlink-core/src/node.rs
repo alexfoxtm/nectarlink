@@ -75,7 +75,6 @@ const BASE_CAPABILITIES: &[&str] = &[
     "media.remote",
     "link.open",
     "task.notify",
-    "mirror.view",
 ];
 
 /// This device's mutable description, sent to peers.

@@ -44,5 +44,8 @@ pub mod ffi {
 
         /// `text` in the installed language (`QCoreApplication::translate`).
         fn translate(context: &str, text: &str) -> String;
+
+        /// Decodes image bytes into a byte vector: 4-byte width (LE), 4-byte height (LE), followed by ARGB32 bytes.
+        fn decode_image(bytes: &[u8]) -> Vec<u8>;
     }
 }

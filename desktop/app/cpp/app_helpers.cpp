@@ -277,4 +277,25 @@ rust::String translate(rust::Str context, rust::Str text)
     return rust::String(QCoreApplication::translate(c.c_str(), t.c_str()).toStdString());
 }
 
-
+rust::Vec<uint8_t> decode_image(rust::Slice<const uint8_t> bytes)
+{
+    rust::Vec<uint8_t> result;
+    if (bytes.empty())
+        return result;
+    QImage img;
+    if (!img.loadFromData(bytes.data(), static_cast<int>(bytes.size())))
+        return result;
+    const QImage argb = img.convertToFormat(QImage::Format_ARGB32);
+    const uint32_t width = static_cast<uint32_t>(argb.width());
+    const uint32_t height = static_cast<uint32_t>(argb.height());
+    const size_t byteCount = static_cast<size_t>(argb.sizeInBytes());
+    result.reserve(8 + byteCount);
+    for (int i = 0; i < 4; ++i)
+        result.push_back(static_cast<uint8_t>((width >> (i * 8)) & 0xFF));
+    for (int i = 0; i < 4; ++i)
+        result.push_back(static_cast<uint8_t>((height >> (i * 8)) & 0xFF));
+    const uint8_t *bits = argb.constBits();
+    for (size_t i = 0; i < byteCount; ++i)
+        result.push_back(bits[i]);
+    return result;
+}

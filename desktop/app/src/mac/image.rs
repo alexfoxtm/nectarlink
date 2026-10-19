@@ -9,12 +9,18 @@ pub struct Bitmap {
 }
 
 pub fn decode(bytes: &[u8]) -> Result<Bitmap, String> {
-    if bytes.len() >= 24 && &bytes[0..8] == b"\x89PNG\r\n\x1a\n" {
-        let width = u32::from_be_bytes(bytes[16..20].try_into().unwrap_or([0; 4]));
-        let height = u32::from_be_bytes(bytes[20..24].try_into().unwrap_or([0; 4]));
-        return Ok(Bitmap { width, height, bgra: vec![0; (width * height * 4) as usize] });
+    if bytes.is_empty() {
+        return Err("empty image data".into());
     }
-    Ok(Bitmap { width: 0, height: 0, bgra: Vec::new() })
+    let out = crate::bridge::native::ffi::decode_image(bytes);
+    if out.len() >= 8 {
+        let width = u32::from_le_bytes(out[0..4].try_into().unwrap_or([0; 4]));
+        let height = u32::from_le_bytes(out[4..8].try_into().unwrap_or([0; 4]));
+        let bgra = out[8..].to_vec();
+        Ok(Bitmap { width, height, bgra })
+    } else {
+        Err("failed to decode image".into())
+    }
 }
 
 pub fn encode_png(bitmap: &Bitmap) -> Result<Vec<u8>, String> {
@@ -139,4 +145,34 @@ fn write_chunk(out: &mut Vec<u8>, tag: &[u8; 4], data: &[u8]) {
         }
     }
     out.extend_from_slice(&(crc ^ 0xffff_ffff_u32).to_be_bytes());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decode_rejects_empty_data() {
+        assert!(decode(&[]).is_err());
+    }
+
+    #[test]
+    fn encode_and_decode_roundtrip_preserves_pixels() {
+        let original = Bitmap {
+            width: 2,
+            height: 2,
+            bgra: vec![
+                255, 0, 0, 255, // blue
+                0, 255, 0, 255, // green
+                0, 0, 255, 255, // red
+                255, 255, 255, 255, // white
+            ],
+        };
+        let png = encode_png(&original).expect("encode_png failed");
+        let decoded = decode(&png).expect("decode failed");
+        assert_eq!(decoded.width, 2);
+        assert_eq!(decoded.height, 2);
+        assert_eq!(decoded.bgra.len(), 16);
+        assert_eq!(decoded.bgra, original.bgra);
+    }
 }

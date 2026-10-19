@@ -1,16 +1,27 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! macOS speaker volume, mute, and state.
 
+fn parse_speaker_state(text: &str) -> Option<(u8, bool)> {
+    let mut parts = text.split_whitespace();
+    let vol: u8 = parts.next()?.parse().ok()?;
+    let muted: bool = parts.next()?.parse().unwrap_or(false);
+    Some((vol, muted))
+}
+
 pub fn speaker_state() -> Option<(u8, bool)> {
     let output = std::process::Command::new("osascript")
-        .args(["-e", "output volume of (get volume settings)", "-e", "output muted of (get volume settings)"])
+        .args([
+            "-e",
+            "set v to get volume settings",
+            "-e",
+            "(output volume of v as string) & \" \" & (output muted of v as string)",
+        ])
         .output()
         .ok()?;
-    let text = String::from_utf8_lossy(&output.stdout);
-    let mut lines = text.lines();
-    let vol: u8 = lines.next()?.trim().parse().ok()?;
-    let muted: bool = lines.next()?.trim().parse().unwrap_or(false);
-    Some((vol, muted))
+    if !output.status.success() {
+        return None;
+    }
+    parse_speaker_state(&String::from_utf8_lossy(&output.stdout))
 }
 
 pub fn set_speaker_volume(level: u8) -> Result<(), String> {
@@ -76,3 +87,25 @@ pub fn output_devices() -> Vec<nectarlink_core::AudioOutputDevice> {
 pub fn watch(_changed: fn()) {}
 
 pub fn start(_on_changed: impl Fn() + Send + Sync + 'static) {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn speaker_state_parses_volume_and_mute() {
+        assert_eq!(parse_speaker_state("25 false"), Some((25, false)));
+        assert_eq!(parse_speaker_state("100 true\n"), Some((100, true)));
+        assert_eq!(parse_speaker_state("0 false"), Some((0, false)));
+        assert_eq!(parse_speaker_state(""), None);
+        assert_eq!(parse_speaker_state("invalid"), None);
+    }
+
+    #[test]
+    fn query_live_speaker_state() {
+        let state = speaker_state();
+        assert!(state.is_some());
+        let (vol, _muted) = state.unwrap();
+        assert!(vol <= 100);
+    }
+}

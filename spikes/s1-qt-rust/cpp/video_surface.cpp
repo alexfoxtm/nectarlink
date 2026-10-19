@@ -24,9 +24,9 @@ namespace nl {
 
 namespace {
 
-#ifdef _WIN32
 constexpr quint32 kWidth = 1920;
 constexpr quint32 kHeight = 1080;
+#ifdef _WIN32
 constexpr quint32 kFps = 60;
 #endif
 

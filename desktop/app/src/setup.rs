@@ -35,11 +35,14 @@ pub const INSTALLED_ARG: &str = "--installed";
 /// Where the Android app is downloaded (the done screen's QR code and link).
 pub const ANDROID_URL: &str = "https://github.com/thtbee/nectarlink/releases/latest";
 
-const APP_EXE: &str = "nectarlink-desktop.exe";
+const APP_EXE: &str = if cfg!(windows) { "nectarlink-desktop.exe" } else { "nectarlink-desktop" };
+#[cfg(windows)]
 const UNINSTALL_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\Nectarlink";
-const SETUP_COPY_NAME: &str = "Nectarlink Uninstall.exe";
+const SETUP_COPY_NAME: &str = if cfg!(windows) { "Nectarlink Uninstall.exe" } else { "Nectarlink Uninstall" };
 
+#[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+#[cfg(windows)]
 const DETACHED_PROCESS: u32 = 0x0000_0008;
 
 /// What the window is for.

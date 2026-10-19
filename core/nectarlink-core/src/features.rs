@@ -1461,4 +1461,74 @@ mod tests {
         );
         assert_eq!(matrix.state("device.find_phone"), Some(FeatureState::Available));
     }
+
+    #[test]
+    fn macos_desktop_matrix_reflects_supported_and_unsupported_features() {
+        const MAC_DESKTOP: &[&str] = &[
+            "core.ping",
+            "device.battery",
+            "device.ring",
+            "files.transfer",
+            "clip.image",
+            "media.remote",
+            "link.open",
+            "task.notify",
+            "camera.continuity",
+            "pc.power",
+            "pc.wake",
+            "photos.show",
+            "calls.show",
+            "contacts.show",
+            "sms.show",
+            "toggles.show",
+        ];
+        let mac = facts(DeviceKind::Desktop, "macos", "15.0", PowerLevel::NotApplicable, MAC_DESKTOP);
+        let mut phone_caps = BASIC_PHONE.to_vec();
+        phone_caps.extend(["link.open", "storage.read", "storage.write"]);
+        let phone = facts(DeviceKind::Phone, "android", "16", PowerLevel::Elevated, &phone_caps);
+        let m = matrix_with(&phone, &mac, &HashMap::new());
+
+        // Supported macOS features are Available:
+        assert_eq!(m.state("device.find_phone"), Some(FeatureState::Available));
+        assert_eq!(m.state("device.battery"), Some(FeatureState::Available));
+        assert_eq!(m.state("device.pc_actions"), Some(FeatureState::Available));
+        assert_eq!(m.state("device.links_to_pc"), Some(FeatureState::Available));
+        assert_eq!(m.state("device.links_to_phone"), Some(FeatureState::Available));
+        assert_eq!(m.state("camera.continuity"), Some(FeatureState::Available));
+        assert_eq!(m.state("files.send"), Some(FeatureState::Available));
+        assert_eq!(m.state("files.recent_photos"), Some(FeatureState::Available));
+        assert_eq!(m.state("calls.alerts"), Some(FeatureState::Available));
+        assert_eq!(m.state("contacts.read"), Some(FeatureState::Available));
+        assert_eq!(m.state("toggles.volume"), Some(FeatureState::Available));
+        assert_eq!(m.state("clipboard.pc_to_phone"), Some(FeatureState::Available));
+
+        // Unsupported macOS features are NOT Available:
+        assert_eq!(
+            m.state("mirroring.view"),
+            Some(locked(UpgradeAction::UpdateApp(Role::Desktop), Effort::Minutes(2)))
+        );
+        assert_ne!(m.state("mirroring.control"), Some(FeatureState::Available));
+        assert_ne!(m.state("mirroring.app_windows"), Some(FeatureState::Available));
+        assert_ne!(m.state("mirroring.audio"), Some(FeatureState::Available));
+        assert_eq!(
+            m.state("media.pc_control"),
+            Some(locked(UpgradeAction::UpdateApp(Role::Desktop), Effort::Minutes(2)))
+        );
+        // With default toggles, storage is opt-in (toggle off):
+        assert_eq!(
+            m.state("files.storage"),
+            Some(locked(UpgradeAction::EnableDeviceToggle("storage"), Effort::Instant))
+        );
+        // With storage toggle enabled, missing desktop("storage.mount") locks behind UpdateApp:
+        let toggles_with_storage = HashMap::from([("storage".to_owned(), true)]);
+        let m_storage = matrix_with(&phone, &mac, &toggles_with_storage);
+        assert_eq!(
+            m_storage.state("files.storage"),
+            Some(locked(UpgradeAction::UpdateApp(Role::Desktop), Effort::Minutes(2)))
+        );
+        assert_eq!(
+            m.state("camera.webcam"),
+            Some(locked(UpgradeAction::EnableAddon("vcam"), Effort::Minutes(1)))
+        );
+    }
 }

@@ -7,7 +7,6 @@
 
 // A GUI app: no console window in release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-#![cfg_attr(not(windows), allow(unused))]
 
 mod automations;
 mod battery;
@@ -57,12 +56,9 @@ mod updater;
 mod webcam;
 #[cfg(windows)]
 mod win;
-
 #[cfg(target_os = "macos")]
-mod mac;
-
-#[cfg(target_os = "macos")]
-use mac as win;
+#[path = "mac/mod.rs"]
+mod win;
 
 use std::{
     path::{Path, PathBuf},

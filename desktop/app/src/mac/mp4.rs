@@ -51,18 +51,38 @@ impl MirrorRecorder {
     pub fn on_audio_config(&mut self, _rate: u32, _channels: u8) {}
 
     pub fn on_packet(&mut self, _keyframe: bool, _time_us: u64, _data: &[u8]) -> Result<(), String> {
-        Ok(())
+        Err("screen recording is not supported on macOS".into())
     }
 
     pub fn on_audio(&mut self, _time_us: u64, _pcm: &[u8]) -> Result<(), String> {
-        Ok(())
+        Err("audio recording is not supported on macOS".into())
     }
 
     pub fn finish(self) -> Result<PathBuf, String> {
-        Ok(self.path)
+        Err("screen recording is not supported on macOS".into())
     }
 }
 
 pub fn merge_sps_pps(sps_pps: &mut Vec<u8>, data: &[u8]) {
     sps_pps.extend_from_slice(data);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mp4_recorder_reports_unsupported() {
+        let mut rec = MirrorRecorder::new(PathBuf::from("/tmp/dummy.mp4"), 1920, 1080, 60, None);
+        assert!(rec.on_packet(true, 0, &[1, 2, 3]).is_err());
+        assert!(rec.on_audio(0, &[1, 2, 3]).is_err());
+        assert!(rec.finish().is_err());
+    }
+
+    #[test]
+    fn local_timestamp_filename_formats_correctly() {
+        let name = local_timestamp_filename("Screen", "mp4");
+        assert!(name.starts_with("Screen "));
+        assert!(name.ends_with(".mp4"));
+    }
 }

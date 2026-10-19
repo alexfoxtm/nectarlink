@@ -24,11 +24,11 @@ pub struct Decoder {
 
 impl Decoder {
     pub fn new_for_codec(codec: &str) -> Result<Decoder, String> {
-        Ok(Decoder { codec: codec.to_string() })
+        Err(format!("video decoding ({codec}) is not yet supported on macOS"))
     }
 
     pub fn new_gpu(codec: &str) -> Result<Decoder, String> {
-        Ok(Decoder { codec: codec.to_string() })
+        Self::new_for_codec(codec)
     }
 
     pub fn on_gpu(&self) -> bool {
@@ -40,7 +40,7 @@ impl Decoder {
     }
 
     pub fn decode(&mut self, _data: &[u8], _time_us: u64) -> Result<Vec<Picture>, String> {
-        Ok(Vec::new())
+        Err("video decoding is not supported on macOS".into())
     }
 
     pub fn flush(&mut self) {}
@@ -53,4 +53,21 @@ pub fn to_bgrx(picture: &Picture, width: u32, height: u32) -> Vec<u8> {
 
 pub fn ensure_mf_started() -> Result<(), String> {
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn h264_decoder_reports_unsupported_on_creation() {
+        assert!(Decoder::new_for_codec("h264").is_err());
+        assert!(Decoder::new_gpu("h264").is_err());
+    }
+
+    #[test]
+    fn h264_decode_reports_unsupported() {
+        let mut decoder = Decoder::default();
+        assert!(decoder.decode(&[0, 0, 0, 1], 0).is_err());
+    }
 }

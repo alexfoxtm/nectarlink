@@ -15,7 +15,12 @@ use std::{
         Arc,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
-    thread::{self, JoinHandle},
+    thread::JoinHandle,
+};
+
+#[cfg(windows)]
+use std::{
+    thread,
     time::{Duration, Instant},
 };
 
@@ -49,6 +54,7 @@ pub mod ffi {
 
         /// Wakes the Qt item when a new frame is published (coalesced C++-side).
         type FrameNotifier;
+        #[allow(dead_code)]
         fn notify(self: &FrameNotifier);
     }
 

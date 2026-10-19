@@ -65,6 +65,7 @@ pub struct Update {
 }
 
 /// The scheduled task the installer registers (see the module docs).
+#[cfg(windows)]
 pub const TASK: &str = "Nectarlink Update";
 /// What the task runs: `nectarlink-desktop.exe --update-service`.
 pub const SERVICE_ARG: &str = "--update-service";
@@ -72,7 +73,9 @@ pub const SERVICE_ARG: &str = "--update-service";
 const QUIET_FOR: Duration = Duration::from_secs(10 * 60);
 /// While an update waits for a quiet moment, how often to look for one.
 const LOOK_FOR_QUIET: Duration = Duration::from_secs(5 * 60);
+#[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+#[cfg(windows)]
 const DETACHED_PROCESS: u32 = 0x0000_0008;
 
 static AUTO: AtomicBool = AtomicBool::new(true);
@@ -481,6 +484,7 @@ fn install_with_task(shown: bool) -> Result<(), String> {
 
 /// A hidden PowerShell that waits (up to ten minutes) until `version` is
 /// installed and the installer has finished, then opens the app again.
+#[allow(dead_code)]
 fn spawn_relauncher(exe: &Path, version: &str, shown: bool) -> Result<(), String> {
     #[cfg(windows)]
     {
@@ -513,6 +517,7 @@ fn spawn_relauncher(exe: &Path, version: &str, shown: bool) -> Result<(), String
     }
 }
 
+#[allow(dead_code)]
 fn relauncher_script(exe: &str, version: &str, arguments: &str) -> String {
     let start = if arguments.is_empty() {
         format!("Start-Process -FilePath '{exe}'")

@@ -40,6 +40,7 @@ pub fn host() -> &'static CoreHost {
 }
 
 /// The running host's data directory, if the host has been started.
+#[allow(dead_code)]
 pub fn try_data_dir() -> Option<&'static std::path::Path> {
     HOST.get().map(|h| h.data_dir.as_path())
 }
@@ -99,9 +100,10 @@ pub fn start(data_dir: PathBuf, platform: Arc<dyn Platform>) -> std::io::Result<
 /// Computes the PC's advertised capabilities, advertising capture (`mirror.capture`)
 /// and input injection (`mirror.input`, `input.inject`) only when enabled for at
 /// least one paired device (or actively sharing).
-pub fn compute_capabilities(node: Option<&Node>) -> Vec<String> {
+pub fn compute_capabilities(
+    #[cfg_attr(not(windows), allow(unused_variables))] node: Option<&Node>,
+) -> Vec<String> {
     let mut caps = vec![
-        "media.control".into(),
         "pc.power".into(),
         nectarlink_core::PC_WAKE.into(),
         nectarlink_core::PHOTOS_SHOW.into(),
@@ -109,21 +111,28 @@ pub fn compute_capabilities(node: Option<&Node>) -> Vec<String> {
         nectarlink_core::CALLS_SHOW.into(),
         nectarlink_core::CONTACTS_SHOW.into(),
         nectarlink_core::SMS_SHOW.into(),
-        nectarlink_core::MIRROR_VIEW.into(),
-        nectarlink_core::MIRROR_LISTEN.into(),
-        nectarlink_core::DECK_ACTIONS.into(),
-        nectarlink_core::PC_AUDIO.into(),
-        nectarlink_core::RECORDER.into(),
         nectarlink_core::TOGGLES_SHOW.into(),
-        nectarlink_core::STORAGE_MOUNT.into(),
-        nectarlink_core::STORAGE_READ.into(),
-        nectarlink_core::STORAGE_WRITE.into(),
-        nectarlink_core::WEBCAM_VIRTUAL.into(),
-        nectarlink_core::MEDIA_STREAM.into(),
-        nectarlink_core::MIC_LISTEN.into(),
     ];
+    #[cfg(windows)]
+    {
+        caps.push("media.control".into());
+        caps.push(nectarlink_core::STORAGE_MOUNT.into());
+        caps.push(nectarlink_core::STORAGE_READ.into());
+        caps.push(nectarlink_core::STORAGE_WRITE.into());
+        caps.push(nectarlink_core::MIRROR_VIEW.into());
+        caps.push(nectarlink_core::MIRROR_LISTEN.into());
+        caps.push(nectarlink_core::DECK_ACTIONS.into());
+        caps.push(nectarlink_core::PC_AUDIO.into());
+        caps.push(nectarlink_core::RECORDER.into());
+        caps.push(nectarlink_core::WEBCAM_VIRTUAL.into());
+        caps.push(nectarlink_core::MEDIA_STREAM.into());
+        caps.push(nectarlink_core::MIC_LISTEN.into());
+    }
+    #[cfg(windows)]
     let mut pc_mirror_enabled = crate::pc_mirror::is_active();
+    #[cfg(windows)]
     let mut remote_input_enabled = false;
+    #[cfg(windows)]
     if let Some(node) = node
         && let Ok(devices) = node.paired_devices()
     {
@@ -140,9 +149,11 @@ pub fn compute_capabilities(node: Option<&Node>) -> Vec<String> {
             }
         }
     }
+    #[cfg(windows)]
     if pc_mirror_enabled {
         caps.push(nectarlink_core::MIRROR_CAPTURE.into());
     }
+    #[cfg(windows)]
     if remote_input_enabled {
         caps.push(nectarlink_core::MIRROR_INPUT.into());
         caps.push(nectarlink_core::INPUT_INJECT.into());
@@ -360,7 +371,7 @@ fn this_device() -> DeviceInfo {
     DeviceInfo {
         name,
         kind: if crate::win::is_laptop() { DeviceKind::Laptop } else { DeviceKind::Desktop },
-        os: "windows".into(),
+        os: std::env::consts::OS.into(),
         os_ver: crate::win::os_version(),
         model: None,
         accent: None,
@@ -389,5 +400,57 @@ pub fn shutdown() {
         if done.is_err() {
             tracing::warn!("core shutdown timed out");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn macos_advertises_only_supported_capabilities() {
+        let caps = compute_capabilities(None);
+        // Ensure unsupported features on macOS are never advertised
+        assert!(!caps.contains(&"mirror.view".into()), "macOS must not advertise mirror.view");
+        assert!(!caps.contains(&"mirror.listen".into()), "macOS must not advertise mirror.listen");
+        assert!(!caps.contains(&"media.control".into()), "macOS must not advertise media.control");
+        assert!(
+            !caps.contains(&nectarlink_core::STORAGE_MOUNT.into()),
+            "macOS must not advertise storage.mount"
+        );
+        assert!(
+            !caps.contains(&nectarlink_core::STORAGE_READ.into()),
+            "macOS must not advertise storage.read"
+        );
+        assert!(
+            !caps.contains(&nectarlink_core::STORAGE_WRITE.into()),
+            "macOS must not advertise storage.write"
+        );
+        assert!(
+            !caps.contains(&nectarlink_core::WEBCAM_VIRTUAL.into()),
+            "macOS must not advertise camera.virtual"
+        );
+        assert!(!caps.contains(&nectarlink_core::PC_AUDIO.into()), "macOS must not advertise pc.audio");
+        assert!(!caps.contains(&nectarlink_core::RECORDER.into()), "macOS must not advertise recorder");
+        assert!(
+            !caps.contains(&nectarlink_core::DECK_ACTIONS.into()),
+            "macOS must not advertise deck.actions"
+        );
+        assert!(
+            !caps.contains(&nectarlink_core::MEDIA_STREAM.into()),
+            "macOS must not advertise media.stream"
+        );
+        assert!(!caps.contains(&nectarlink_core::MIC_LISTEN.into()), "macOS must not advertise mic.listen");
+
+        // Ensure supported features on macOS are advertised
+        assert!(caps.contains(&"pc.power".into()));
+        assert!(caps.contains(&nectarlink_core::PC_WAKE.into()));
+        assert!(caps.contains(&nectarlink_core::PHOTOS_SHOW.into()));
+        assert!(caps.contains(&nectarlink_core::CAMERA_CONTINUITY.into()));
+        assert!(caps.contains(&nectarlink_core::CALLS_SHOW.into()));
+        assert!(caps.contains(&nectarlink_core::CONTACTS_SHOW.into()));
+        assert!(caps.contains(&nectarlink_core::SMS_SHOW.into()));
+        assert!(caps.contains(&nectarlink_core::TOGGLES_SHOW.into()));
     }
 }

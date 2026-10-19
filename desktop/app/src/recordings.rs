@@ -600,6 +600,7 @@ mod tests {
     }
 
     /// Builds a valid 48 kHz mono AAC-LC `.m4a` file for Media Foundation tests.
+    #[allow(dead_code)]
     fn test_m4a(duration_secs: u32) -> Vec<u8> {
         const AAC_FRAME: [u8; 6] = [0x01, 0x48, 0x00, 0x84, 0x21, 0x7E];
         const SAMPLE_RATE: u32 = 48_000;
