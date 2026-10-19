@@ -105,7 +105,9 @@ FocusScope {
     ]
 
     readonly property var stepSubtitles: [
-        "Your Android phone and your PC, working together on your local network.",
+        Qt.platform.os === "osx"
+            ? "Your Android phone and your Mac, working together on your local network."
+            : "Your Android phone and your PC, working together on your local network.",
         "No accounts, no cloud servers, and no telemetry.",
         "Get the Android app from GitHub Releases or install the APK over USB.",
         "Scan the QR code from the NectarLink Android app, or pick your phone from nearby devices.",
@@ -718,8 +720,10 @@ FocusScope {
                                     model: [
                                         {
                                             icon: Icons.bell,
-                                            title: qsTr("Notifications and Calls"),
-                                            body: "Reply to notifications, read SMS threads, and answer calls from your PC."
+                                            title: Qt.platform.os === "osx" ? qsTr("Notifications and Messages") : qsTr("Notifications and Calls"),
+                                            body: Qt.platform.os === "osx"
+                                                ? "See phone notifications and messages on your Mac when you enable access."
+                                                : "Reply to notifications, read SMS threads, and answer calls from your PC."
                                         },
                                         {
                                             icon: Icons.send,
@@ -728,8 +732,10 @@ FocusScope {
                                         },
                                         {
                                             icon: Icons.mirror,
-                                            title: qsTr("Mirroring, Camera, and Audio"),
-                                            body: "Stream your phone screen, use your phone as a webcam, or route PC audio."
+                                            title: Qt.platform.os === "osx" ? qsTr("More Mac features in development") : qsTr("Mirroring, Camera, and Audio"),
+                                            body: Qt.platform.os === "osx"
+                                                ? "Screen mirroring, webcam, PC audio and call audio are not ready in this macOS port yet."
+                                                : "Stream your phone screen, use your phone as a webcam, or route PC audio."
                                         },
                                         {
                                             icon: Icons.lock,
