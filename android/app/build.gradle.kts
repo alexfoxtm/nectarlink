@@ -29,6 +29,9 @@ val appVersionCode: Int = providers.gradleProperty("waypair.versionCode").orNull
     }
 } ?: cargoVersionCode
 
+val rustAbis: List<String> =
+    (findProperty("nectarlink.abis") as String?)?.split(",")?.map(String::trim) ?: listOf("arm64-v8a", "x86_64")
+
 // Release builds are signed only with an explicit key, never the debug key:
 // WAYPAIR_SIGNING names a properties file (storeFile, storePassword, keyAlias,
 // keyPassword); without it, upstream CI's NECTARLINK_KEYSTORE (a .jks file, key
@@ -66,6 +69,8 @@ android {
         targetSdk = 37
         versionCode = appVersionCode
         versionName = appVersion
+        // Dependencies contain additional ABIs; only advertise those with our Rust core.
+        ndk { abiFilters += rustAbis }
     }
 
     signingConfigs {
@@ -200,8 +205,6 @@ abstract class BundleFonts : DefaultTask() {
 }
 
 val workspaceDir: Directory = rootProject.layout.projectDirectory.dir("..")
-val rustAbis: List<String> =
-    (findProperty("nectarlink.abis") as String?)?.split(",")?.map(String::trim) ?: listOf("arm64-v8a", "x86_64")
 
 androidComponents {
     onVariants { variant ->
