@@ -4286,6 +4286,11 @@ What it needs
         <translation>更新应用</translation>
     </message>
     <message>
+        <location filename="../qml/components/LockChip.qml" line="35"/>
+        <source>Unavailable on this Mac</source>
+        <translation>此 Mac 上不可用</translation>
+    </message>
+    <message>
         <location filename="../qml/components/LockChip.qml" line="25"/>
         <source>Unavailable</source>
         <translation>不可用</translation>
@@ -4339,6 +4344,11 @@ What it needs
         <location filename="../qml/components/LockChip.qml" line="64"/>
         <source>This feature is turned off for this phone in Settings › Devices.</source>
         <translation>此功能已在设置 › 设备中对该手机关闭。</translation>
+    </message>
+    <message>
+        <location filename="../qml/components/LockChip.qml" line="79"/>
+        <source>Waypair Link for Mac doesn&apos;t offer this feature.</source>
+        <translation>Mac 版 Waypair Link 不提供此功能。</translation>
     </message>
 </context>
 <context>

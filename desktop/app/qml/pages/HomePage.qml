@@ -2285,7 +2285,7 @@ Item {
                     LockChip {
                         id: typeLock
                         visible: !typeOnPhoneCard.available && label.length > 0
-                                 && (home.online || typeOnPhoneCard.remoteInputFeature.action !== "updateApp")
+                                 && (home.online || !hideWhileOffline)
                         feature: typeOnPhoneCard.remoteInputFeature
                         maxWidth: parent.width
                     }
@@ -2972,7 +2972,7 @@ Item {
 
         Accessible.role: Accessible.Button
         Accessible.name: title
-        Accessible.description: available ? subtitle : lock.label
+        Accessible.description: available ? subtitle : (lock.visible ? lock.label : qsTr("When connected"))
         Accessible.onPressAction: if (tile.available) tile.clicked()
         Keys.onPressed: (event) => {
             if (tile.available && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space)) {
@@ -3023,7 +3023,7 @@ Item {
                     role: "caption"
                     muted: true
                 }
-                LockChip { id: lock; visible: !tile.available && label.length > 0 && (tile.deviceOnline || tile.feature.action !== "updateApp"); feature: tile.feature }
+                LockChip { id: lock; visible: !tile.available && label.length > 0 && (tile.deviceOnline || !hideWhileOffline); feature: tile.feature }
             }
         }
         HoverHandler { id: hover; cursorShape: tile.available ? Qt.PointingHandCursor : Qt.ArrowCursor }

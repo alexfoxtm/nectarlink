@@ -16,6 +16,9 @@ Rectangle {
         return s.action === "updateApp" && s.target === "desktop"
             && (Qt.platform.os === "osx" || Qt.platform.os === "macos")
     }
+    // A phone-side "Update app" is only known while the phone is connected;
+    // a gap in this Mac build holds offline too.
+    readonly property bool hideWhileOffline: (feature || {}).action === "updateApp" && !macLocalGap
 
     readonly property string shortLabel: {
         const s = feature || {}
@@ -29,7 +32,7 @@ Rectangle {
         case "enableAddon": return qsTr("Add-on")
         case "enablePath": return qsTr("Connect over mobile data")
         case "enableToggle": return qsTr("Off")
-        case "updateApp": return chip.macLocalGap ? qsTr("Not on Mac yet") : qsTr("Update app")
+        case "updateApp": return chip.macLocalGap ? qsTr("Unavailable on this Mac") : qsTr("Update app")
         default: return s.state === "unsupported" ? qsTr("Unavailable") : ""
         }
     }
@@ -73,7 +76,7 @@ Rectangle {
         case "enableToggle":
             return qsTr("This feature is turned off for this phone in Settings › Devices.")
         case "macLocalGap":
-            return qsTr("Waypair Link for Mac doesn't offer this yet.")
+            return qsTr("Waypair Link for Mac doesn't offer this feature.")
         default:
             return label
         }
