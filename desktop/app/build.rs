@@ -248,8 +248,15 @@ fn main() {
     let module = QmlModule::new("app.nectarlink")
         .qml_files(QML.iter().map(|f| QmlFile::from(*f)))
         .qml_files(QML_SINGLETONS.iter().map(|f| QmlFile::from(*f).singleton(true)));
-    CxxQtBuilder::new_qml_module(module)
-        .qt_module("Quick")
+    let builder = CxxQtBuilder::new_qml_module(module).qt_module("Quick");
+    // SVG icons use Qt's image plugin. Make its framework part of the Mac
+    // executable's dependency graph so macdeployqt can resolve that plugin.
+    let builder = if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
+        builder.qt_module("Svg")
+    } else {
+        builder
+    };
+    builder
         .include_dir("cpp")
         .cpp_files([
             "cpp/app_helpers.cpp",
@@ -288,6 +295,7 @@ fn main() {
         println!("cargo:rustc-link-lib=shell32");
         println!("cargo:rustc-link-lib=user32");
     } else if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
+        println!("cargo:rustc-link-arg=-Wl,-rpath,@executable_path/../Frameworks");
         println!("cargo:rustc-link-lib=framework=AppKit");
         println!("cargo:rustc-link-lib=framework=CoreGraphics");
         println!("cargo:rustc-link-lib=framework=CoreAudio");
