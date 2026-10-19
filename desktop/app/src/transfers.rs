@@ -5,6 +5,7 @@
 
 use crate::i18n::tr;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use nectarlink_core::{DeviceId, Direction, Error, NodeEvent, Transfer, TransferState};
 
@@ -211,28 +212,77 @@ pub fn resume(id: &str) {
     }
 }
 
-/// Opens a received file with its app (or a folder in File Explorer).
+/// Opens a received file with its app (or a folder in Finder / File Explorer).
 pub fn open(path: &Path) {
     if path.to_str().is_some_and(|s| s.starts_with("req:")) {
         crate::bridge::app::request_activation();
         return;
     }
-    if let Err(e) = std::process::Command::new("explorer").arg(path).spawn() {
+    if let Err(e) = launch(open_command(path)) {
         tracing::warn!(error = %e, "can't open a received file");
     }
 }
 
-/// Shows a received file or folder in File Explorer, selected.
+/// Shows a received file or folder in Finder / File Explorer, selected.
 pub fn show_in_folder(path: &Path) {
     if path.to_str().is_some_and(|s| s.starts_with("req:")) {
         crate::bridge::app::request_activation();
         return;
     }
-    let mut select = std::ffi::OsString::from("/select,");
-    select.push(path);
-    if let Err(e) = std::process::Command::new("explorer").arg(select).spawn() {
+    if let Err(e) = launch(show_command(path)) {
         tracing::warn!(error = %e, "can't show a received file");
     }
+}
+
+#[cfg(target_os = "macos")]
+fn open_command(path: &Path) -> Command {
+    mac_open(path, false)
+}
+
+#[cfg(target_os = "macos")]
+fn show_command(path: &Path) -> Command {
+    mac_open(path, true)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn open_command(path: &Path) -> Command {
+    let mut cmd = Command::new("explorer");
+    cmd.arg(path);
+    cmd
+}
+
+#[cfg(not(target_os = "macos"))]
+fn show_command(path: &Path) -> Command {
+    let mut select = std::ffi::OsString::from("/select,");
+    select.push(path);
+    let mut cmd = Command::new("explorer");
+    cmd.arg(select);
+    cmd
+}
+
+/// `/usr/bin/open [-R] <path>` with the path as one argument and no shell; a
+/// relative path gets `./` so a leading `-` is never read as an option.
+#[cfg(any(target_os = "macos", test))]
+fn mac_open(path: &Path, reveal: bool) -> Command {
+    let mut cmd = Command::new("/usr/bin/open");
+    if reveal {
+        cmd.arg("-R");
+    }
+    if path.is_absolute() {
+        cmd.arg(path);
+    } else {
+        cmd.arg(Path::new(".").join(path));
+    }
+    cmd
+}
+
+/// Starts `cmd` and reaps it off-thread so no zombie is left behind.
+fn launch(mut cmd: Command) -> std::io::Result<()> {
+    let mut child = cmd.spawn()?;
+    let _ = std::thread::Builder::new().name("open-reaper".into()).spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
 }
 
 /// A Windows notification when files from a phone or LocalSend peer are requested or saved.
@@ -310,4 +360,29 @@ pub fn on_event(event: &NodeEvent) {
         progress: None,
         call: false,
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::OsStr;
+
+    fn args(cmd: &Command) -> Vec<&OsStr> {
+        cmd.get_args().collect()
+    }
+
+    #[test]
+    fn mac_reveal_passes_the_path_whole() {
+        let path = Path::new("/Users/me/Downloads/Nectarlink/Résumé final — v2.pdf");
+        let cmd = mac_open(path, true);
+        assert_eq!(cmd.get_program(), "/usr/bin/open");
+        assert_eq!(args(&cmd), [OsStr::new("-R"), path.as_os_str()]);
+        assert_eq!(args(&mac_open(path, false)), [path.as_os_str()]);
+    }
+
+    #[test]
+    fn mac_open_never_hands_a_leading_dash_to_open() {
+        let cmd = mac_open(Path::new("-a Calculator"), false);
+        assert_eq!(args(&cmd), [Path::new("./-a Calculator").as_os_str()]);
+    }
 }
