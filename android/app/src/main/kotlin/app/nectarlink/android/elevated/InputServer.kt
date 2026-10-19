@@ -40,6 +40,12 @@ import java.security.MessageDigest
  * connection closes the window.
  */
 object InputServer {
+    /**
+     * R.string.app_name, which the shell can't read. Also the label of the
+     * app's own clips, which the clipboard watcher doesn't send back.
+     */
+    const val LABEL = "Waypair Link"
+
     private const val POWER_MODE_OFF = 0
     private const val POWER_MODE_NORMAL = 2
     private const val PKG = BuildConfig.APPLICATION_ID
@@ -140,9 +146,9 @@ object InputServer {
             val text = decode(parts[0])
             val html = parts.getOrNull(1)?.takeIf(String::isNotEmpty)?.let(decode)
             val clip = if (html != null) {
-                android.content.ClipData.newHtmlText("Nectarlink", text, html)
+                android.content.ClipData.newHtmlText(LABEL, text, html)
             } else {
-                android.content.ClipData.newPlainText("Nectarlink", text)
+                android.content.ClipData.newPlainText(LABEL, text)
             }
             clip.description.extras = android.os.PersistableBundle().apply {
                 putBoolean("com.android.systemui.SUPPRESS_CLIPBOARD_OVERLAY", true)
@@ -240,7 +246,7 @@ object InputServer {
                     extras?.getBoolean("com.android.systemui.SUPPRESS_CLIPBOARD_OVERLAY") == true ||
                     extras?.getBoolean("android.content.extra.IS_REMOTE_DEVICE") == true
                 val isSensitive = extras?.getBoolean("android.content.extra.IS_SENSITIVE") == true
-                if (isHostPipe || isSensitive || label == "Nectarlink") {
+                if (isHostPipe || isSensitive || label == LABEL) {
                     lastSentClipKey = null
                     return@runCatching
                 }
@@ -909,7 +915,7 @@ object InputServer {
             val usage = androidKeyCodeToHidUsage(androidKeyCode) ?: return false
             if (!keyboardAttempted) {
                 keyboardAttempted = true
-                keyboardFd = openDevice("NectarLink Virtual Keyboard", 0x4EE7, KEYBOARD_RD)
+                keyboardFd = openDevice("$LABEL Virtual Keyboard", 0x4EE7, KEYBOARD_RD)
             }
             val fd = keyboardFd ?: return false
             val down = ByteArray(8).apply { this[2] = usage.toByte() }
@@ -921,7 +927,7 @@ object InputServer {
         fun sendGamepadReport(buttons: Int, lx: Int, ly: Int, rx: Int, ry: Int, lt: Int, rt: Int): Boolean {
             if (!gamepadAttempted) {
                 gamepadAttempted = true
-                gamepadFd = openDevice("NectarLink Virtual Gamepad", 0x4EE8, GAMEPAD_RD)
+                gamepadFd = openDevice("$LABEL Virtual Gamepad", 0x4EE8, GAMEPAD_RD)
             }
             val fd = gamepadFd ?: return false
             val report = java.nio.ByteBuffer.allocate(12).order(java.nio.ByteOrder.LITTLE_ENDIAN).apply {

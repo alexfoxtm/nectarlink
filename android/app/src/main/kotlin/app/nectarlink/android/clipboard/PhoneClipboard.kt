@@ -11,6 +11,7 @@ import android.net.Uri
 import android.os.Build
 import android.util.Log
 import androidx.core.content.FileProvider
+import app.nectarlink.android.elevated.InputServer
 import java.io.File
 
 /**
@@ -223,9 +224,9 @@ object PhoneClipboard {
         // The shell's copy can ask SystemUI not to show it; the app's can't.
         if (app.nectarlink.android.elevated.Elevated.setClipboard(text, cleanHtml)) return@runCatching true
         val clip = if (cleanHtml != null) {
-            ClipData.newHtmlText("Nectarlink", text, cleanHtml)
+            ClipData.newHtmlText(InputServer.LABEL, text, cleanHtml)
         } else {
-            ClipData.newPlainText("Nectarlink", text)
+            ClipData.newPlainText(InputServer.LABEL, text)
         }
         runCatching {
             val extras = (clip.description.extras ?: android.os.PersistableBundle()).apply {
@@ -256,7 +257,7 @@ object PhoneClipboard {
         lastWrittenText = uri.toString()
         lastWrittenHtml = null
         lastWrittenAtMs = android.os.SystemClock.elapsedRealtime()
-        val clip = ClipData.newUri(context.contentResolver, "Nectarlink", uri)
+        val clip = ClipData.newUri(context.contentResolver, InputServer.LABEL, uri)
         manager(context)?.setPrimaryClip(clip) != null
     }.getOrElse {
         Log.w(TAG, "can't put an image on the clipboard", it)

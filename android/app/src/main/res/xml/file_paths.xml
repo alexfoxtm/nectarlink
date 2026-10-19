@@ -2,9 +2,11 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 <!-- Received files on Android 8–9 (see files/ReceivedFiles.kt), images
      a PC put on the clipboard (see clipboard/PhoneClipboard.kt), and
-     outgoing MMS PDUs (see sms/PhoneSms.kt). -->
+     outgoing MMS PDUs (see sms/PhoneSms.kt). Files received before the
+     folder took the app's name keep their addresses under "received". -->
 <paths>
     <external-files-path name="received" path="Download/Nectarlink/" />
+    <external-files-path name="downloads" path="Download/" />
     <cache-path name="clipboard" path="clipboard/" />
     <cache-path name="mms" path="mms/" />
 </paths>

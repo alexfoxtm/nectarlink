@@ -10,15 +10,18 @@ import android.provider.MediaStore
 import android.webkit.MimeTypeMap
 import androidx.annotation.RequiresApi
 import androidx.core.content.FileProvider
+import app.nectarlink.android.R
 import java.io.File
 
 /**
  * Files from a PC land in the app's cache first (the core writes them
- * there); this puts them where the user finds them: Download/Nectarlink.
+ * there); this puts them where the user finds them: Download/<app name>.
  */
 object ReceivedFiles {
     /** A received file where the user can open it. */
     data class Published(val uri: Uri, val name: String, val mime: String)
+
+    private fun folderName(context: Context) = context.getString(R.string.app_name)
 
     fun mimeOf(name: String): String =
         MimeTypeMap.getSingleton().getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase())
@@ -46,7 +49,7 @@ object ReceivedFiles {
         }
 
     /**
-     * Saves a downloaded or temporary [file] into `Download/Nectarlink` under [fileName]
+     * Saves a downloaded or temporary [file] into `Download/<app name>` under [fileName]
      * and returns its content [Uri], or `null` if saving failed.
      */
     fun saveToDownloads(
@@ -64,7 +67,7 @@ object ReceivedFiles {
         }
     }.getOrNull()
 
-    /** `folder`: where it goes in Download/Nectarlink (`Trip/Day 1`). */
+    /** `folder`: where it goes in Download/<app name> (`Trip/Day 1`). */
     private fun publishFile(context: Context, file: File, folder: String?): Published? = runCatching {
         val mime = mimeOf(file.name)
         val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -82,7 +85,7 @@ object ReceivedFiles {
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
             put(MediaStore.MediaColumns.MIME_TYPE, mime)
-            put(MediaStore.MediaColumns.RELATIVE_PATH, listOfNotNull(Environment.DIRECTORY_DOWNLOADS, "Nectarlink", folder).joinToString("/"))
+            put(MediaStore.MediaColumns.RELATIVE_PATH, listOfNotNull(Environment.DIRECTORY_DOWNLOADS, folderName(context), folder).joinToString("/"))
             put(MediaStore.MediaColumns.IS_PENDING, 1)
         }
         val uri = checkNotNull(resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values))
@@ -98,7 +101,7 @@ object ReceivedFiles {
 
     /** Android 8–9: the app's own Downloads folder, shared through a FileProvider. */
     private fun toAppDownloads(context: Context, file: File, displayName: String, folder: String?): Uri {
-        val base = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "Nectarlink")
+        val base = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), folderName(context))
         val dir = (if (folder == null) base else File(base, folder)).apply { mkdirs() }
         val baseFile = File(displayName)
         var target = File(dir, baseFile.name)

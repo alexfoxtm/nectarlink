@@ -144,7 +144,7 @@
     <string name="transfer_pause">暂停</string>
     <string name="transfer_resume">继续</string>
     <string name="transfer_paused_progress">已暂停 · %1$s / %2$s</string>
-    <string name="transfer_received_from">来自 %1$s · 位于Download/Nectarlink</string>
+    <string name="transfer_received_from">来自 %1$s · 位于 Download/Waypair Link</string>
     <string name="transfer_sent_to">已发送到 %1$s</string>
     <string name="transfer_cancelled">已取消</string>
     <string name="transfer_denied">%1$s 不接受来自本手机的文件。</string>
@@ -929,7 +929,7 @@
     <string name="guide_files_pc_1">将文件拖到电脑上的 Waypair Link 窗口或顶部边缘岛。</string>
     <string name="guide_files_opt_1">发送文件 / 发送文件夹：传输单个文件或完整文件夹树。</string>
     <string name="guide_files_opt_2">暂停 / 继续：继续中断的传输，不重发已完成的部分。</string>
-    <string name="guide_files_privacy">文件通过 QUIC TLS 1.3 传输，并使用 BLAKE3 完整性校验，保存到 Download/Nectarlink。</string>
+    <string name="guide_files_privacy">文件通过 QUIC TLS 1.3 传输，并使用 BLAKE3 完整性校验，保存到 Download/Waypair Link。</string>
     <string name="guide_files_limits">每批最多 5,000 个文件。</string>
     <string name="guide_queue_title">发送队列</string>
     <string name="guide_queue_summary">在电脑离线时排队文件、链接、剪贴板内容和录音，待其重新连接后送达。</string>
