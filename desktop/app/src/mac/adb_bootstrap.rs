@@ -258,9 +258,7 @@ fn read_seal(path: &Path) -> Option<Seal> {
     {
         return None;
     }
-    if decode_sha256_lowercase(&seal.sha256).is_none() {
-        return None;
-    }
+    decode_sha256_lowercase(&seal.sha256)?;
     Some(seal)
 }
 
