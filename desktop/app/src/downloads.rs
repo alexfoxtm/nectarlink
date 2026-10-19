@@ -66,7 +66,7 @@ pub fn received_dir_with_fallback(fallback_parent: impl FnOnce() -> PathBuf) -> 
     };
     #[cfg(target_os = "macos")]
     {
-        return save_dir(crate::core_host::try_data_dir(), &root);
+        save_dir(crate::core_host::try_data_dir(), &root)
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -565,10 +565,10 @@ fn migrate_received_folder(
         mark_done(data_dir).map_err(|e| e.to_string())?;
         return Ok(());
     };
-    if let Err(e) = fs::metadata(root) {
-        if e.kind() != io::ErrorKind::NotFound {
-            return skip_inaccessible(root, &e);
-        }
+    if let Err(e) = fs::metadata(root)
+        && e.kind() != io::ErrorKind::NotFound
+    {
+        return skip_inaccessible(root, &e);
     }
     migrate_at_root(data_dir, root)
 }
