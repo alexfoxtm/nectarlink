@@ -208,7 +208,8 @@ impl Platform for DesktopPlatform {
 /// Command-line options (also used by shortcuts and autostart).
 #[derive(Debug, Default)]
 struct Options {
-    /// Where to keep data (default: %LOCALAPPDATA%\Nectarlink).
+    /// Where to keep data (default: %LOCALAPPDATA%\Nectarlink; on macOS
+    /// ~/Library/Application Support/com.waypair.link.nectar).
     data_dir: Option<PathBuf>,
     /// Start in the tray without opening the window (autostart).
     minimized: bool,
@@ -346,8 +347,16 @@ fn parse_options_from<I: IntoIterator<Item = std::ffi::OsString>>(iter: I) -> Op
     options
 }
 
+/// The Waypair Link build keeps its own folder on macOS, apart from legacy
+/// Waypair (`com.waypair.mac`) and upstream NectarLink; nothing is moved or
+/// imported from either.
+#[cfg(target_os = "macos")]
+const DATA_DIR_NAME: &str = "com.waypair.link.nectar";
+#[cfg(not(target_os = "macos"))]
+const DATA_DIR_NAME: &str = "Nectarlink";
+
 fn default_data_dir() -> PathBuf {
-    dirs::data_local_dir().unwrap_or_else(std::env::temp_dir).join("Nectarlink")
+    dirs::data_local_dir().unwrap_or_else(std::env::temp_dir).join(DATA_DIR_NAME)
 }
 
 /// Network changes come in bursts; tell the core once things settle.
@@ -415,7 +424,7 @@ fn run_setup_window(mode: setup::Mode) -> ExitCode {
     bridge::native::ffi::prepare_qt_without_log();
     let mut app = QGuiApplication::new();
     if let Some(mut app) = app.as_mut() {
-        app.as_mut().set_application_name(&QString::from("NectarLink Setup"));
+        app.as_mut().set_application_name(&QString::from("Waypair Link Setup"));
         app.as_mut().set_application_version(&QString::from(env!("CARGO_PKG_VERSION")));
     }
     // Before any QML loads, so every string is right on the first pass.
@@ -602,7 +611,7 @@ fn main() -> ExitCode {
     bridge::native::ffi::prepare_qt();
     let mut app = QGuiApplication::new();
     if let Some(mut app) = app.as_mut() {
-        app.as_mut().set_application_name(&QString::from("Nectarlink"));
+        app.as_mut().set_application_name(&QString::from("Waypair Link"));
         app.as_mut().set_application_version(&QString::from(env!("CARGO_PKG_VERSION")));
     }
     // Before any QML loads, so every string is right on the first pass.
