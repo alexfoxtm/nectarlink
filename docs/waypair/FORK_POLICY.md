@@ -1,29 +1,24 @@
-# Upstream and fork policy
+# Waypair Link fork policy
 
-Alex's decision, 2026-10-19:
+Alex's latest decision, 2026-10-19, supersedes the earlier personal NectarLink branding and official-upstream-primary preference.
 
-- If NectarLink welcomes contributions, official NectarLink is the intended primary product. Keep this synchronized fork as fallback for rejected or not-yet-accepted features.
-- Verify the local macOS port and useful Android improvements first, then propose focused reusable fixes upstream with original attribution and DCO.
-- **R2 updater code stays in this fork only.** Exclude the Android R2 client, Mac R2/Sparkle helper integration, feeds, publisher, owner signing configuration and their tests from upstream contributions.
-- Keep branding and owner distribution changes separate from generic clipboard, Keychain, lifecycle, platform and Android fixes. Rejected features remain isolated fork changes while the base follows upstream.
-- Cloud stays independent. Preserve release keys, data and immutable artifacts. A source merge is not installation or OTA acceptance.
+## Product and branding
 
-## Name, logo and version (personal use only)
+- Develop **Waypair Link** as our independently maintained Android and macOS product, using the actual NectarLink Qt Quick/Rust desktop and matching Android codebase. No legacy Swift expansion or compatibility bridge. Waypair Cloud stays independent.
+- Use the original Waypair W mark in **black and white** on both platforms. Existing application theme colors remain; only the logo becomes monochrome. Keep the upstream brand assets unchanged for source history, not as our app icon.
+- About says **Independently maintained fork**, without prominent NectarLink branding or a promotional attribution paragraph. Original copyrights, authorship, attribution, source notices and full license files remain available in Open-source Licenses and the source. Do not imply that we authored upstream code or that this is an official upstream release.
+- These are Alex's personal builds. Version numbers remain monotonic; the current workspace follows 0.1.4 with local build markers. Branding does not change package IDs, data locations or cryptographic identity.
 
-Alex's later decision, 2026-10-19, replaces the Waypair Link rebrand:
+## Upstream synchronization and contributions
 
-- These builds are for Alex's personal use only. They keep the NectarLink name and the upstream Waggle Dance mark (`assets/brand/`), as in upstream `e71dee41`; they are not distributed as a product of their own.
-- Every build says it is a local build: Android About reads "NectarLink <version> · personal local build, not an official release", and desktop About has a "Local build for personal use" row stating it is not an official NectarLink release. Nothing implies an official upstream release.
-- The version follows upstream (`0.1.4`) with a local build suffix; Root sets it in the build, not in branding files.
-- The macOS bundle defaults to the name `NectarLink` with `assets/brand/AppIcon.icns`, made with `sips` and `iconutil` from upstream's `assets/brand/icon-512.png` (16 to 512 px; no 1024 px slot rather than upscale).
-- Identity stays as installed: Android `com.waypair` package overrides and signers, the Mac bundle id, data folders, keys and R2 feeds are unchanged; no package, data or key migration. The native application and shelf titles are NectarLink; shelf lookups were updated together.
-- R2 stays fork-only and Cloud stays separate, as above.
+- Before each development round, check canonical main/releases and saivinay1805's macOS PR24/feature branch using the provenance tooling. Review exact SHAs, preserve original author/history and notices, resolve overlaps, and run relevant checks before adopting changes through an integration checkout.
+- Keep our feature changes in focused commits so useful Android, desktop and macOS updates remain easy to incorporate. Waypair Link remains our product; prepare reusable generic contributions upstream separately.
+- **All R2 updater code stays exclusively in our fork.** Never include Android R2 clients, Mac Sparkle helper/integration, feeds, owner signing configuration, publisher or their tests in upstream contributions. Split mixed files/hunks before preparing a contribution.
+- The working branch is `waypair/macos-port`; `origin` is `alexfoxtm/nectarlink`, `upstream` is `thtbee/nectarlink`. No maintainer message or upstream PR submission is implied by routine synchronization.
 
-The working branch is `waypair/macos-port`; `origin` is `alexfoxtm/nectarlink`, and `upstream` is `thtbee/nectarlink`.
+## Identity, delivery and acceptance
 
-
-## Latest product decision — Waypair Link, monochrome mark
-
-Alex's later instruction on 2026-10-19 supersedes the personal NectarLink branding and official-upstream-primary preference above. The product is our independently maintained **Waypair Link** Android and macOS fork, built from NectarLink and regularly incorporating reviewed macOS updates from saivinay1805 and useful canonical upstream changes. Keep our feature delta and private R2 delivery under our control; contributions upstream remain separately prepared generic patches.
-
-Use the original Waypair W mark in black and white on both platforms. Only the logo changes color; existing app themes remain. About says “Independently maintained fork” without prominent NectarLink branding or a promotional attribution paragraph. Original author copyrights, attribution, license files and source notices remain available in Open-source Licenses and the source. This is a UI branding change, not a claim to have authored upstream code. Preserve package/bundle IDs, cryptographic identities, pairing, data, permissions, version monotonicity and the existing dedicated update channel paths/keys. Cloud stays separate. Alex will install the Galaxy APK; Root publishes both qualified builds to R2, installs the Mac build and removes only the confirmed obsolete NectarLink app bundle, never its data.
+- Preserve Android `com.waypair`, Mac `com.waypair.mac`, release signers, Keychain/Keystore aliases, encrypted identity, saved pairing, app data, permissions, update keys and immutable release objects. Keep existing dedicated channel paths even when their internal namespace says `nectar`.
+- A renamed app is an in-place product update, not a key/data migration. Do not import or clear old trust records. Cloud stays in its own sandbox and release channel.
+- Build/test/sign/publish qualified personal candidates locally to R2. Keep source, checks, artifact qualification, installed version, public readback, OTA and paired-device acceptance distinct.
+- Alex installs the Galaxy APK himself. Root installs the branded Mac build and removes only the confirmed obsolete NectarLink app bundle after replacement qualification; preserve all saved app data and keys.
