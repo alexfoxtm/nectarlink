@@ -12,7 +12,7 @@ Current personal release, packaged from source `9b93a5c5` (native code
 | --- | --- |
 | Bundle | `NectarLink.app`, `CFBundleIdentifier` `com.waypair.mac` |
 | Version | `CFBundleShortVersionString` 0.1.4, `CFBundleVersion` 30 (release `0.1.4-local.2`) |
-| Minimum macOS | 14.4 |
+| Minimum macOS | Derived from all bundled Mach-O architectures; current local Qt closure requires 27.0 |
 | Signature | existing Apple Development identity, hardened runtime, secure timestamp, no extra entitlements; `codesign --verify --deep --strict` passes |
 | DMG | `NectarLink-0.1.4-local.2.dmg`, SHA-256 `bdac21b16c2c2c60b3f51c928f8f006dfd18db6c27c5225bf6507b6a19b7670e` |
 | Source archive SHA-256 | `8f759caac0d1ef12673ae13c201af0c17b2b684cdd6cc5766757f6fa85edac65` |
@@ -37,7 +37,7 @@ It creates `Contents/MacOS/nectarlink-desktop` and an `Info.plist` with
 `CFBundleIdentifier`, `CFBundleName`/`DisplayName` (default `NectarLink`),
 `CFBundleExecutable`, `CFBundleShortVersionString`/`CFBundleVersion`, `APPL`,
 `NSPrincipalClass`, `CFBundleIconFile` (`assets/brand/AppIcon.icns`),
-`LSMinimumSystemVersion` 14.4, and the needed `NSLocalNetworkUsageDescription`
+`LSMinimumSystemVersion` initially 14.4, raised by `record-minimum-os.py` to the actual highest bundled deployment target before signing, and the needed `NSLocalNetworkUsageDescription`
 and `NSBonjourServices` (`_nectarlink._udp`, the mDNS service the core
 announces). No microphone or camera usage keys are declared. The Sparkle keys
 are described under Updates below.
@@ -116,7 +116,7 @@ contributions (`FORK_POLICY.md`).
 
 The DMG, its source archive, and `SHA256SUMS.txt` are under
 `waypair/nectar/macos/releases/v0.1.4-local.2/`. The appcast offers build 30
-with `minimumSystemVersion` 14.4. All objects were read back in full after
+with a reported `minimumSystemVersion` of 14.4 (later found stale in Wave24; it did not prove older-OS compatibility). All objects were read back in full after
 publication (`R2_RELEASE.md`), and the legacy Waypair and Cloud feeds were
 left unchanged.
 
@@ -132,7 +132,8 @@ identity was unchanged.
 Root owns the compilers, the signing identity, and the Ed25519 private key.
 
 ```sh
-# 1. Desktop binary, Homebrew Qt 6.12 (sets the macOS 14.4 minimum).
+# 1. Desktop binary. The current Homebrew Qt closure requires macOS 27.0;
+# record-minimum-os.py determines the host app minimum after deployment.
 cargo build --locked --release -p nectarlink-desktop
 
 # 2. Updater helper, warnings as errors, for the same minimum.
@@ -228,3 +229,16 @@ Exception to the general inside-out signing order above: **do not re-sign
 certificate and signed bytes, sign every other Mach-O and nested bundle, and
 sign the outer application last. Finally compare its SHA-256 and byte size to
 `Resources/PhoneSetup/adb-seal.json` again and run the strict deep bundle check.
+
+### Deployment-metadata correction (Wave24)
+
+A complete scan found the locally installed Qt and transitive libraries require
+macOS 27.0, including the same libraries in the previous build31. Earlier
+Info.plist/feed values of 14.4 were incorrect compatibility metadata, not proof
+of support on 14.4. The owner Mac runs27.0.1. The offline bundler now scans every
+bundled Mach-O architecture, refuses missing deployment metadata and records
+the real maximum in Info.plist and `Resources/build-minimum-os.json` before
+signing. The publisher must use that value in the appcast. Do not edit load
+commands to lower this requirement. Older-macOS support needs a separately built
+and qualified dependency toolchain. The updater helper's own14.4 target does
+not determine the Qt host application's minimum.
