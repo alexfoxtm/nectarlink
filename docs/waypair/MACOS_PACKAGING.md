@@ -183,3 +183,35 @@ contributions use DCO sign-off.
 2. **Device feature proof.** A fresh Nectar pairing with the Galaxy (after
    its 95 update) and acceptance of the paired features are still ahead.
 3. **Cellular full-duplex audio** is unproven; that probe is deferred.
+
+## Bundled ADB for a Mac without developer tools
+
+The desktop USB watcher is a client of localhost port 5037. The Mac fork now
+makes one background startup attempt for that server when the port is closed.
+`NECTARLINK_NO_ADB=1` disables the attempt and the USB watcher. An existing
+listener is left alone; the helper is never run as an ADB client that could
+replace a server after a version mismatch. Wi-Fi discovery is independent.
+
+Release preparation is offline: obtain the exact versioned Google archive in
+`scripts/macos/adb-platform-tools.json`, then run `prepare-adb.py --archive
+<archive> --output-dir <new-directory>`. The script checks the archive and the
+single `platform-tools/adb` member's size and SHA-256, copies only adb and its
+vendor notice, and never executes a helper. It does not use a floating latest
+URL or search PATH, Homebrew or Android SDK installations.
+
+The release owner signs that helper with the existing application identity
+before writing a schema1 seal of its **signed** SHA-256 and size. The seal's
+`relativePath` must be `Helpers/adb`. Supply all three bundle inputs together:
+`--adb-helper <signed-adb> --adb-seal <seal.json> --adb-notice <ADB-NOTICE.txt>`.
+Packaging verifies the seal before creating the bundle, then copies the helper
+after Qt deployment. It installs the seal under `Resources/PhoneSetup` and the
+notice under `Resources/LICENSES`. Signing the rest of the app must preserve
+this helper's exact already-signed bytes, verifying the owner certificate and
+seal before signing the outer app last.
+
+At runtime the fixed foreground-server arguments are `-L
+tcp:127.0.0.1:5037 nodaemon server`. A bind race fails without killing an existing
+listener. Symlinks, escaped paths, invalid manifests and mismatched helper bytes
+are refused. No runtime download, server restart, phone application install or
+Android permission change is part of this bootstrap. Fresh-host USB hardware
+acceptance is separate from the pure decision tests and existing-server check.
