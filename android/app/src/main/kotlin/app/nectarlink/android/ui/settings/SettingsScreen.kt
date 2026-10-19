@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.graphicsLayer
@@ -133,10 +134,11 @@ fun SettingsScreen(
     var confirmUnpair by remember { mutableStateOf<Device?>(null) }
     var confirmClearEverything by remember { mutableStateOf(false) }
     var pickLanguage by remember { mutableStateOf(false) }
+    var showLicenses by remember { mutableStateOf(false) }
     var activeCategory by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("all") }
     var pulsingSectionKey by remember { mutableStateOf<String?>(null) }
     val isGlass = LocalGlassTheme.current
-    val anyDialogOpen = confirmUnpair != null || confirmClearEverything
+    val anyDialogOpen = confirmUnpair != null || confirmClearEverything || showLicenses
 
     val categories = remember {
         listOf(
@@ -989,11 +991,42 @@ fun SettingsScreen(
                         }
                     }
                     SettingRowDivider()
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                            Text(stringResource(R.string.about_licenses_title), style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                stringResource(R.string.about_licenses_body),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        OutlinedButton(onClick = { showLicenses = true }) {
+                            Text(stringResource(R.string.clip_action_open))
+                        }
+                    }
+                    SettingRowDivider()
                     Text(stringResource(R.string.about_version, BuildConfig.VERSION_NAME), style = MaterialTheme.typography.bodyMedium)
                     CheckForUpdates(updater)
                 }
             }
         }
+    }
+
+    if (showLicenses) {
+        AlertDialog(
+            onDismissRequest = { showLicenses = false },
+            containerColor = glassModalContainerColor(),
+            title = { Text(stringResource(R.string.about_licenses_title)) },
+            text = {
+                Text(
+                    stringResource(R.string.about_licenses_text),
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showLicenses = false }) { Text(stringResource(R.string.action_done)) }
+            },
+        )
     }
 
     confirmUnpair?.let { device ->

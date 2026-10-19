@@ -2095,7 +2095,7 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
                     } else {
                         current.outputDevices + app.nectarlink.core.AudioOutputDevice(
                             id = "nectarlink:phone_speaker",
-                            name = "Phone speaker (NectarLink)",
+                            name = "Phone speaker (Waypair Link)",
                             isDefault = false,
                         )
                     }
