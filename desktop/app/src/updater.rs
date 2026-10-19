@@ -110,22 +110,33 @@ pub fn can_update() -> bool {
     std::env::current_exe().is_ok_and(|exe| autostart::is_installed(&exe))
 }
 
-/// macOS only: the bundled native Sparkle helper sitting next to this
-/// executable, present only when the packaged bundle also carries
-/// `Contents/Frameworks/Sparkle.framework`. Returns `None` (truthfully
-/// "updater unavailable") for a bare cargo binary or an incomplete bundle;
-/// the legacy GitHub-installer path below is never used on macOS, and no
-/// SHA-only download is ever trusted there.
+/// macOS: where a packaged `<App>.app/Contents/MacOS/<exe>` carries the
+/// native Sparkle helper (its own app, `Contents/Helpers/WaypairUpdater.app`)
+/// and `Contents/Frameworks/Sparkle.framework`. `None` for any other layout,
+/// such as a bare cargo binary.
+#[cfg(any(target_os = "macos", test))]
+fn macos_update_paths(exe: &Path) -> Option<(PathBuf, PathBuf)> {
+    let macos = exe.parent()?;
+    let contents = macos.parent()?;
+    let app = contents.parent()?;
+    if macos.file_name()? != "MacOS" || contents.file_name()? != "Contents" || app.extension()? != "app" {
+        return None;
+    }
+    Some((
+        contents.join("Helpers/WaypairUpdater.app/Contents/MacOS/WaypairUpdater"),
+        contents.join("Frameworks/Sparkle.framework"),
+    ))
+}
+
+/// macOS only: the bundled Sparkle helper, when both it and the framework
+/// are really there. `None` means truthfully "updater unavailable"; the
+/// GitHub-installer path below is never used on macOS, and no SHA-only
+/// download is ever trusted there.
 #[cfg(target_os = "macos")]
 fn macos_update_helper() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
-    let macos_dir = exe.parent()?;
-    let helper = macos_dir.join("WaypairUpdater");
-    if !helper.is_file() {
-        return None;
-    }
-    let bundle = macos_dir.parent()?.parent()?;
-    bundle.join("Frameworks").join("Sparkle.framework").is_dir().then_some(helper)
+    let (helper, framework) = macos_update_paths(&exe)?;
+    (helper.is_file() && framework.is_dir()).then_some(helper)
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -133,24 +144,48 @@ fn macos_update_helper() -> Option<PathBuf> {
     None
 }
 
-/// Launches the Sparkle helper for a user-initiated check. Sparkle (inside
-/// the helper) reads `SUFeedURL`/`SUPublicEDKey` from the host bundle,
-/// verifies the Ed25519 appcast signature, and only ever offers a version
-/// newer than the host bundle's, so the dedicated Nectar feed cannot
-/// install the older Swift app over this one.
+/// Set while the helper this app started runs; its waiter clears it.
 #[cfg(target_os = "macos")]
-fn macos_user_check() -> Result<(), String> {
-    let helper = macos_update_helper()
-        .ok_or_else(|| "The macOS update helper isn't bundled in this build.".to_string())?;
-    std::process::Command::new(&helper)
-        .arg("--check")
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| format!("Couldn't start the update helper: {e}"))
+static MAC_HELPER_RUNNING: AtomicBool = AtomicBool::new(false);
+
+/// Launches the Sparkle helper for a user-initiated check: `Ok(true)` when
+/// started, `Ok(false)` when the one this app started is still open.
+/// Sparkle (inside the helper) reads `SUFeedURL`/`SUPublicEDKey` from the
+/// host bundle, verifies the Ed25519 appcast signature, and only ever offers
+/// a version newer than the host bundle's. Errors are for the user.
+#[cfg(target_os = "macos")]
+fn macos_user_check() -> Result<bool, String> {
+    let helper =
+        macos_update_helper().ok_or_else(|| tr!("Updater", "This build can't check for updates yet."))?;
+    if MAC_HELPER_RUNNING.swap(true, Ordering::AcqRel) {
+        return Ok(false);
+    }
+    let mut child =
+        match std::process::Command::new(&helper).arg("--check").stdin(std::process::Stdio::null()).spawn() {
+            Ok(child) => child,
+            Err(e) => {
+                MAC_HELPER_RUNNING.store(false, Ordering::Release);
+                tracing::warn!(error = %e, "couldn't start the macOS update helper");
+                return Err(tr!("Updater", "Couldn't open the update window."));
+            }
+        };
+    let waiter = std::thread::Builder::new().name("update-helper".into()).spawn(move || {
+        match child.wait() {
+            Ok(status) if status.success() => {}
+            Ok(status) => tracing::warn!(%status, "the macOS update helper reported a failure"),
+            Err(e) => tracing::warn!(error = %e, "couldn't wait for the macOS update helper"),
+        }
+        MAC_HELPER_RUNNING.store(false, Ordering::Release);
+    });
+    if let Err(e) = waiter {
+        MAC_HELPER_RUNNING.store(false, Ordering::Release);
+        tracing::warn!(error = %e, "won't reap the macOS update helper");
+    }
+    Ok(true)
 }
 
 #[cfg(not(target_os = "macos"))]
-fn macos_user_check() -> Result<(), String> {
+fn macos_user_check() -> Result<bool, String> {
     Err("unavailable".into())
 }
 
@@ -201,10 +236,11 @@ pub fn start() {
 pub fn check_now(told: bool) -> Option<String> {
     if cfg!(target_os = "macos") {
         return match macos_user_check() {
-            Ok(()) => Some(tr!("Updater", "Checking for updates…")),
-            Err(e) => {
-                tracing::info!(error = %e, "macOS update helper unavailable");
-                told.then(|| tr!("Updater", "This build can't check for updates yet."))
+            Ok(true) => Some(tr!("Updater", "Checking for updates…")),
+            Ok(false) => Some(tr!("Updater", "The update window is already open.")),
+            Err(message) => {
+                tracing::info!(error = %message, "macOS update check unavailable");
+                told.then_some(message)
             }
         };
     }
@@ -393,10 +429,12 @@ fn task_registered() -> bool {
 /// app is about to quit for the installer.
 pub fn install(progress: impl FnMut(u64, u64)) -> Result<(), String> {
     if cfg!(target_os = "macos") {
-        // Sparkle's own UI owns download, verification, install, and any
-        // progress display; the Rust progress callback is not used there.
+        // Sparkle's own window downloads, verifies and installs.
         let _ = progress;
-        return macos_user_check();
+        return Err(tr!(
+            "Updater",
+            "On this Mac, updates install from the update window. Use Check for updates."
+        ));
     }
     let update = available().ok_or("There's no update to install.")?;
     let staged = stage(&update, progress).map_err(|e| {
@@ -831,6 +869,22 @@ fn after_start(shown: bool, title: String, body: String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mac_updater_lives_in_the_bundles_contents() {
+        let (helper, framework) =
+            macos_update_paths(Path::new("/Applications/Waypair.app/Contents/MacOS/nectarlink-desktop"))
+                .unwrap();
+        assert_eq!(
+            helper,
+            Path::new(
+                "/Applications/Waypair.app/Contents/Helpers/WaypairUpdater.app/Contents/MacOS/WaypairUpdater"
+            )
+        );
+        assert_eq!(framework, Path::new("/Applications/Waypair.app/Contents/Frameworks/Sparkle.framework"));
+        assert!(macos_update_paths(Path::new("/repo/target/release/nectarlink-desktop")).is_none());
+        assert!(macos_update_paths(Path::new("/tmp/Contents/MacOS/nectarlink-desktop")).is_none());
+    }
 
     #[test]
     fn versions_compare() {

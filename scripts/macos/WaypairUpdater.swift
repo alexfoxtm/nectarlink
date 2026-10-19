@@ -9,19 +9,21 @@
 // asks for an update check (`desktop/app/src/updater.rs`,
 // `macos_user_check`). Sparkle does all feed fetching, Ed25519 appcast
 // verification (against `SUPublicEDKey` in the host bundle), version
-// comparison, download, and installation — this file adds no download or
-// trust logic of its own, and never trusts a bare checksum.
+// comparison (against the host's `CFBundleVersion`), download, and
+// installation — this file adds no download or trust logic of its own, and
+// never trusts a bare checksum.
 //
-// Host bundle: the `.app` that contains this helper (found by walking up
-// from the executable path), used as both host and application bundle.
-// `SUFeedURL` and `SUPublicEDKey` are read by Sparkle from that bundle's
-// Info.plist; if either is missing the helper reports the updater as
-// unavailable and exits non-zero instead of guessing a feed or a key.
+// Layout: its own LSUIElement app, `<App>.app/Contents/Helpers/
+// WaypairUpdater.app`, with the bundle identifier `<host id>.updater`.
+// Sparkle's installer picks the process to quit and relaunch by the host's
+// bundle identifier and path, so the helper must not share either; this is
+// the arrangement of Sparkle's own sparkle-cli (host bundle = the app to
+// update, not the helper's main bundle).
 //
 // Root builds and signs this file (sole compiler), e.g.:
-//   swiftc -O -framework Sparkle \
+//   swiftc -parse-as-library -O -framework Sparkle \
 //     -F <dir-containing-Sparkle.framework> \
-//     -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
+//     -Xlinker -rpath -Xlinker @executable_path/../../../../Frameworks \
 //     scripts/macos/WaypairUpdater.swift -o WaypairUpdater
 // The framework itself is bundled by scripts/macos/package-app.sh
 // (--sparkle-framework; sourced from the existing verified Sparkle 2.10.0
@@ -36,70 +38,81 @@ private func fail(_ message: String) -> Never {
     exit(2)
 }
 
-/// The `.app` bundle containing this executable
-/// (`…/<App>.app/Contents/MacOS/WaypairUpdater`).
+/// The app this helper updates: the `.app` enclosing
+/// `<App>.app/Contents/Helpers/WaypairUpdater.app`, and only when this
+/// helper really is that nested bundle with the identifier `<host id>.updater`.
 private func hostBundle() -> Bundle {
-    var url = Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])
+    let own = Bundle.main.bundleURL.resolvingSymlinksInPath()
+    var url = own.deletingLastPathComponent()
     while url.pathExtension != "app" {
         let parent = url.deletingLastPathComponent()
         guard parent.path != url.path else {
-            fail("could not locate the host .app bundle from \(url.path)")
+            fail("no host .app encloses \(own.path)")
         }
         url = parent
     }
-    guard let bundle = Bundle(url: url) else {
-        fail("could not open host bundle at \(url.path)")
+    let expected = url.appendingPathComponent("Contents/Helpers/WaypairUpdater.app", isDirectory: true)
+    guard expected.standardizedFileURL.path == own.standardizedFileURL.path else {
+        fail("must run as <App>.app/Contents/Helpers/WaypairUpdater.app, not \(own.path)")
     }
-    return bundle
+    guard let host = Bundle(url: url), let hostID = host.bundleIdentifier, !hostID.isEmpty else {
+        fail("the host bundle at \(url.path) has no bundle identifier")
+    }
+    guard Bundle.main.bundleIdentifier == "\(hostID).updater" else {
+        fail("the helper's bundle identifier must be \(hostID).updater")
+    }
+    guard let executable = host.executableURL, FileManager.default.isExecutableFile(atPath: executable.path) else {
+        fail("the host bundle at \(url.path) has no executable")
+    }
+    return host
 }
 
+@MainActor
 private final class Delegate: NSObject, SPUUpdaterDelegate {
-    /// Set when Sparkle found something installable: the standard user
-    /// driver is presenting it, so the helper must stay alive until the
-    /// update cycle finishes instead of exiting at "not found" handlers.
-    var foundUpdate = false
-
-    func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
-        foundUpdate = true
-        print("WaypairUpdater: update \(item.displayVersionString) is available")
+    /// A short-lived, user-started check: Rust schedules nothing here, so
+    /// Sparkle must not ask about automatic checks.
+    @objc(updaterShouldPromptForPermissionToCheckForUpdates:)
+    func updaterShouldPromptForPermissionToCheck(forUpdates updater: SPUUpdater) -> Bool {
+        false
     }
 
-    func updaterDidNotFindUpdate(_ updater: SPUUpdater, error: Error) {
-        print("WaypairUpdater: no update available (\(error.localizedDescription))")
-        NSApp.terminate(nil)
-    }
-
+    /// Sparkle calls this only once its user driver is done: after the
+    /// up-to-date or error alert is acknowledged, after Dismiss, Skip, or
+    /// Later, and after an install. Every path ends the helper here.
+    @objc(updater:didFinishUpdateCycleForUpdateCheck:error:)
     func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error: Error?) {
-        if let error {
-            FileHandle.standardError.write(
-                Data("WaypairUpdater: update check failed: \(error.localizedDescription)\n".utf8))
-            NSApp.terminate(nil)
-        } else if !foundUpdate {
-            NSApp.terminate(nil)
+        guard let error = error as NSError? else {
+            exit(0)
         }
-        // With an update found, the standard user driver owns the flow
-        // (download/install/relaunch); exiting here would kill its UI.
+        // SUNoUpdateError, SUInstallationCanceledError,
+        // SUInstallationAuthorizeLaterError (SUErrors.h): outcomes, not failures.
+        if error.domain == SUSparkleErrorDomain, [1001, 4007, 4008].contains(error.code) {
+            exit(0)
+        }
+        FileHandle.standardError.write(
+            Data("WaypairUpdater: update check failed: \(error.localizedDescription)\n".utf8))
+        exit(1)
     }
 }
 
 @main
-private enum Main {
+@MainActor
+enum Main {
     static func main() {
         guard CommandLine.arguments.contains("--check") else {
             fail("usage: WaypairUpdater --check")
         }
         let bundle = hostBundle()
-        // Truthful availability: Sparkle needs both a feed and the pinned
-        // Ed25519 public key in the host bundle. Missing means this build
-        // simply cannot check — say so, never fall back to another feed.
-        guard let feed = bundle.object(forInfoDictionaryKey: "SUFeedURL") as? String, !feed.isEmpty else {
-            fail("SUFeedURL is missing from the host bundle; updates are unavailable in this build")
+        // Sparkle needs both a feed and the pinned Ed25519 public key in the
+        // host bundle. Missing means this build simply cannot check — say
+        // so, never fall back to another feed.
+        guard let feed = bundle.object(forInfoDictionaryKey: "SUFeedURL") as? String,
+              let feedURL = URL(string: feed), feedURL.scheme == "https", feedURL.host != nil else {
+            fail("the host bundle has no https SUFeedURL; updates are unavailable in this build")
         }
         guard let key = bundle.object(forInfoDictionaryKey: "SUPublicEDKey") as? String, !key.isEmpty else {
             fail("SUPublicEDKey is missing from the host bundle; updates are unavailable in this build")
         }
-        _ = feed
-        _ = key
 
         let app = NSApplication.shared
         let delegate = Delegate()
@@ -113,11 +126,10 @@ private enum Main {
         } catch {
             fail("could not start the updater: \(error.localizedDescription)")
         }
-        // User-initiated check: Sparkle shows progress/UI itself and only
-        // ever installs a version newer than the host bundle's, from the
-        // bundle's configured (dedicated Nectar)
-        // feed — never the legacy Swift app's appcast items.
         updater.checkForUpdates()
-        app.run()
+        // SPUUpdater holds its delegate weakly; both must outlive the run loop.
+        withExtendedLifetime((delegate, updater)) {
+            app.run()
+        }
     }
 }
