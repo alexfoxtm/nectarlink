@@ -251,4 +251,7 @@ dependencies {
     // UniFFI's Kotlin bindings call the core through JNA.
     implementation(libs.jna) { artifact { type = "aar" } }
     testImplementation(libs.junit)
+    // Local JVM tests get android.jar's org.json stubs, which throw; this is
+    // the real implementation for the manifest parsing tests.
+    testImplementation("org.json:json:20260814")
 }

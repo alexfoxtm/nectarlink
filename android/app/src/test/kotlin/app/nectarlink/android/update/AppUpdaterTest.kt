@@ -71,7 +71,7 @@ class AppUpdaterTest {
         try {
             AppUpdater.manifestUpdate(503, "{}", "0.1.0")
             fail("an HTTP error is not an empty release")
-        } catch (e: AppUpdater.HttpStatus) {
+        } catch (e: AppUpdater.Companion.HttpStatus) {
             assertEquals(503, e.code)
         }
         val host = "pub-a57457f4da43415ea6335550ee9e2983.r2.dev"
