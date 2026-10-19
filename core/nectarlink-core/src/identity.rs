@@ -5,7 +5,7 @@ use std::{
     fs,
     io::{self, Write},
     path::Path,
-    sync::Arc,
+    sync::{Arc, OnceLock},
 };
 
 use iroh::SecretKey;
@@ -42,20 +42,29 @@ impl KeyProtector for PlainKeyProtector {
     }
 }
 
-/// The best protector available on this platform.
+/// The best protector available on this platform. Cached: every
+/// caller (Node, settings, observers) shares one instance — and with
+/// it the macOS protector's in-memory wrapping-key cache — instead of
+/// reinstantiating it per use. Explicit protectors (tests, fixtures)
+/// are unaffected.
 pub fn default_protector() -> Arc<dyn KeyProtector> {
-    #[cfg(target_os = "macos")]
-    {
-        Arc::new(macos::MacosKeyProtector::new())
-    }
-    #[cfg(windows)]
-    {
-        Arc::new(dpapi::DpapiKeyProtector)
-    }
-    #[cfg(not(any(windows, target_os = "macos")))]
-    {
-        Arc::new(PlainKeyProtector)
-    }
+    static DEFAULT: OnceLock<Arc<dyn KeyProtector>> = OnceLock::new();
+    DEFAULT
+        .get_or_init(|| -> Arc<dyn KeyProtector> {
+            #[cfg(target_os = "macos")]
+            {
+                Arc::new(macos::MacosKeyProtector::new())
+            }
+            #[cfg(windows)]
+            {
+                Arc::new(dpapi::DpapiKeyProtector)
+            }
+            #[cfg(not(any(windows, target_os = "macos")))]
+            {
+                Arc::new(PlainKeyProtector)
+            }
+        })
+        .clone()
 }
 
 #[cfg(target_os = "macos")]

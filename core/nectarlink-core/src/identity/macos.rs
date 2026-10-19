@@ -12,9 +12,16 @@
 //!   reads it without a prompt. No access-control (user-presence)
 //!   entries, ACL edits, or authentication bypasses are used.
 //! - Creation happens only on the protect path when the item is
-//!   genuinely absent (`errSecItemNotFound`). Every other Keychain
-//!   error — access denied, interaction not allowed, a malformed
-//!   (non-32-byte) item — fails closed. The unprotect path never
+//!   genuinely absent (`errSecItemNotFound`), via an atomic
+//!   create-only `SecItemAdd`: a racing creator gets
+//!   `errSecDuplicateItem`, re-reads the winner's key, and never
+//!   updates or deletes existing wrapping material (the previous
+//!   upsert via `set_generic_password` could overwrite a winner's
+//!   key and orphan everything sealed with it). A process-wide
+//!   creation lock serialises protector instances locally, but
+//!   cross-process correctness rests on the atomic add alone. Every
+//!   other Keychain error — access denied, interaction not allowed,
+//!   a malformed (non-32-byte) item — fails closed. The unprotect path never
 //!   creates, regenerates, or overwrites the wrapping key, so a
 //!   corrupt sealed file or a refused Keychain can never trick the
 //!   app into sealing a new identity over the old one.
@@ -26,11 +33,15 @@
 
 use std::{io, sync::Mutex};
 
+use core_foundation::data::CFData;
 use ring::{
     aead::{AES_256_GCM, Aad, LessSafeKey, Nonce, UnboundKey},
     rand::{SecureRandom, SystemRandom},
 };
-use security_framework::passwords::{PasswordOptions, generic_password, set_generic_password};
+use security_framework::{
+    item::{ItemAddOptions, ItemAddValue, ItemClass},
+    passwords::{PasswordOptions, generic_password},
+};
 
 use super::KeyProtector;
 
@@ -47,6 +58,14 @@ const FORMAT_VERSION: u8 = 1;
 const AAD: &[u8] = b"nectarlink/macos-key-wrapping/v1";
 /// `errSecItemNotFound` from Security.framework.
 const ERR_SEC_ITEM_NOT_FOUND: i32 = -25300;
+/// `errSecDuplicateItem` from Security.framework.
+const ERR_SEC_DUPLICATE_ITEM: i32 = -25299;
+
+/// Serialises fetch-or-create across protector instances in this
+/// process. This is only an optimisation: cross-process correctness
+/// comes from the atomic create-only `SecItemAdd` below, never from
+/// this mutex.
+static CREATION_LOCK: Mutex<()> = Mutex::new(());
 
 const WRAPPING_KEY_LEN: usize = 32;
 const NONCE_LEN: usize = 12;
@@ -98,12 +117,38 @@ impl MacosKeyProtector {
         }
     }
 
-    /// The wrapping key, creating and storing a random one only when
-    /// `create` is set (the protect path) and the item is absent.
-    /// After storing, the item is re-read and the *stored* key is
-    /// used, so a racing first launch cannot leave us encrypting
-    /// with a candidate that was superseded in the Keychain.
+    /// Atomically creates the wrapping-key item with `candidate`
+    /// (`SecItemAdd`): `Ok(true)` when this call created it,
+    /// `Ok(false)` when an item already existed — in which case the
+    /// existing item is left exactly as-is (never updated, never
+    /// deleted) and `candidate` must be discarded.
+    fn add_key_create_only(&self, candidate: &[u8; WRAPPING_KEY_LEN]) -> io::Result<bool> {
+        let mut options = ItemAddOptions::new(ItemAddValue::Data {
+            class: ItemClass::generic_password(),
+            data: CFData::from_buffer(candidate),
+        });
+        options.set_service(SERVICE);
+        options.set_account_name(ACCOUNT);
+        match options.add() {
+            Ok(()) => Ok(true),
+            Err(e) if e.code() == ERR_SEC_DUPLICATE_ITEM => Ok(false),
+            Err(e) => Err(io::Error::other(format!(
+                "cannot store the Keychain wrapping key (OSStatus {})",
+                e.code()
+            ))),
+        }
+    }
+
+    /// The wrapping key, creating a random one only when `create` is
+    /// set (the protect path) and the item is absent.
     fn wrapping_key(&self, create: bool) -> io::Result<[u8; WRAPPING_KEY_LEN]> {
+        if let Some(key) = *self.cached_key.lock().unwrap_or_else(|e| e.into_inner()) {
+            return Ok(key);
+        }
+        // One fetch-or-create at a time per process; another instance
+        // may have filled our cache-relevant Keychain item meanwhile,
+        // which the fetch inside the lock then observes.
+        let _creation_guard = CREATION_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(key) = *self.cached_key.lock().unwrap_or_else(|e| e.into_inner()) {
             return Ok(key);
         }
@@ -120,20 +165,35 @@ impl MacosKeyProtector {
                 SystemRandom::new()
                     .fill(&mut candidate)
                     .map_err(|_| io::Error::other("cannot generate a random Keychain wrapping key"))?;
-                set_generic_password(SERVICE, ACCOUNT, &candidate).map_err(|e| {
-                    io::Error::other(format!(
-                        "cannot store the Keychain wrapping key (OSStatus {})",
-                        e.code()
-                    ))
-                })?;
-                self.fetch_key()?.ok_or_else(|| {
-                    io::Error::other("the Keychain wrapping key was stored but cannot be read back")
-                })?
+                get_or_create_with(|| self.fetch_key(), |c| self.add_key_create_only(c), &candidate)?
             }
         };
         *self.cached_key.lock().unwrap_or_else(|e| e.into_inner()) = Some(key);
         Ok(key)
     }
+}
+
+/// Create-if-absent resolution: returns the stored key when one
+/// exists; otherwise offers `candidate` to the atomic `add`. When
+/// `add` reports the item already existed (a racing creator won),
+/// the winner's key is re-read and returned — `candidate` is never
+/// used and the existing item is never overwritten. Kept generic
+/// over the store operations so the race semantics are testable
+/// with a fake store and synthetic keys.
+fn get_or_create_with(
+    fetch: impl Fn() -> io::Result<Option<[u8; WRAPPING_KEY_LEN]>>,
+    add: impl Fn(&[u8; WRAPPING_KEY_LEN]) -> io::Result<bool>,
+    candidate: &[u8; WRAPPING_KEY_LEN],
+) -> io::Result<[u8; WRAPPING_KEY_LEN]> {
+    if let Some(key) = fetch()? {
+        return Ok(key);
+    }
+    if add(candidate)? {
+        return Ok(*candidate);
+    }
+    fetch()?.ok_or_else(|| {
+        io::Error::other("the Keychain wrapping key appeared during creation but cannot be read back")
+    })
 }
 
 /// Seals `plaintext` under `key` with `nonce`:
@@ -228,5 +288,28 @@ mod tests {
         let mut future = sealed.clone();
         future[0] = FORMAT_VERSION + 1;
         assert!(open_with_key(&SYNTHETIC_KEY, &future).is_err());
+
+        // Create-if-absent race against a fake store: the first
+        // creator's key wins, and a racing creator's different
+        // candidate is neither stored nor used (never an upsert).
+        let store: Mutex<Option<[u8; WRAPPING_KEY_LEN]>> = Mutex::new(None);
+        let attempt = |candidate: &[u8; WRAPPING_KEY_LEN]| {
+            get_or_create_with(
+                || Ok(*store.lock().unwrap()),
+                |c| {
+                    let mut slot = store.lock().unwrap();
+                    if slot.is_some() {
+                        Ok(false)
+                    } else {
+                        *slot = Some(*c);
+                        Ok(true)
+                    }
+                },
+                candidate,
+            )
+        };
+        assert_eq!(attempt(&[0xa1; WRAPPING_KEY_LEN]).unwrap(), [0xa1; WRAPPING_KEY_LEN]);
+        assert_eq!(attempt(&[0xb2; WRAPPING_KEY_LEN]).unwrap(), [0xa1; WRAPPING_KEY_LEN]);
+        assert_eq!(*store.lock().unwrap(), Some([0xa1; WRAPPING_KEY_LEN]));
     }
 }
