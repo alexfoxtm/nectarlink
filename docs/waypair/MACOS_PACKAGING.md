@@ -30,25 +30,34 @@ microphone/camera usage keys are declared), runs
 `macdeployqt --help`) with `-qmldir` when QML sources exist to bundle Qt
 frameworks/plugins, and copies `LICENSE` + **all** of `LICENSES/` into
 `Contents/Resources/`, failing on any copy error. App names are validated as
-a single filename component (no `/`, `.`/`..`, or control characters) and
-plist values are XML-escaped; an existing file, directory, or dangling
-symlink at the output path is a collision.
+a single filename component (no `/`, `.`/`..`, or control characters). Plist
+text is XML-escaped with `sed`, not bash `${var//pat/repl}`, so the same
+entities are produced by macOS `/bin/bash` 3.2 and by newer bash (where `&`
+in a replacement means the matched text). After `macdeployqt`, `otool -L` on
+the bundled executable must name at least one `Qt*.framework`, and each of
+those frameworks must exist under `Contents/Frameworks`. A directory that
+contains only `Sparkle.framework` does not pass. `SPARKLE_FRAMEWORK` is read
+into a separate variable before the script assigns that name. An existing
+file, directory, or dangling symlink at the output path is a collision.
 
 Properties by construction:
 
 - **No signing, no entitlements, no notarization, no install.** Bundle
-  identity is configurable (`--bundle-id`); the default
-  `com.waypair.link.nectar-qualification` deliberately differs from the
-  installed legacy `com.waypair.mac`, and passing `com.waypair.mac` is
-  refused during qualification. Final identifier selection is a Root
-  release-engineering decision for the qualified build.
+  identity is configurable (`--bundle-id`). The default remains
+  `com.waypair.link.nectar-qualification`, so a qualification bundle does
+  not use the installed legacy app's id. Root has authorized
+  `--bundle-id com.waypair.mac` for the final replacement build. Passing
+  that id does not install the bundle, replace `/Applications/Waypair.app`,
+  migrate legacy data, add a compatibility layer, or rotate the Sparkle
+  public key. Installation stays a later Root step.
 - **No key access.** The script touches no keychain, signing identity,
   credential, or network resource, and creates no JIT/hardened-runtime
   entitlements (that decision is measured, not guessed).
 - **Fail-clear.** Missing/non-executable binary, undiscoverable
   `macdeployqt`, an existing bundle at the output path, invalid
-  identifier/version strings, or missing license texts all abort before or
-  during assembly with a specific message. `--help` documents everything.
+  identifier/version strings, missing license texts, or a post-`macdeployqt`
+  executable whose linked Qt frameworks are not in the bundle all abort
+  with a specific message. `--help` documents everything.
 
 Expected Root build sequence (Root owns compilers; illustrative, not run here):
 
@@ -92,24 +101,35 @@ this section is a shipping checklist.
    (today's non-Windows default stores `identity.key` unprotected) with
    release code identity, before any real pairing.
 3. **R2 updater (implemented in source; Root compiles/tests):** a native
-   Sparkle 2.10 helper (`scripts/macos/WaypairUpdater.swift`, public
-   `SPUUpdater` with the host/parent bundle and `checkForUpdates()`) is
-   spawned by Rust's macOS updater path on a user-initiated `--check`; the
-   bundle carries `Sparkle.framework` (verified 2.10.0 source:
-   `/Applications/Waypair.app/Contents/Frameworks/Sparkle.framework`),
-   `SUFeedURL` pointing at the dedicated Nectar feed
+   Sparkle 2.10 helper (`scripts/macos/WaypairUpdater.swift`) is spawned by
+   Rust's macOS updater path on a user-initiated check. Packaging places
+   that already-compiled binary inside its own app,
+   `Contents/Helpers/WaypairUpdater.app`, with `CFBundleIdentifier`
+   `<host id>.updater`, `LSUIElement` true, and `SUEnableAutomaticChecks`
+   false. The helper does not poll. `Sparkle.framework` stays in the host's
+   `Contents/Frameworks` (verified 2.10.0 source:
+   `/Applications/Waypair.app/Contents/Frameworks/Sparkle.framework`). Root
+   links the helper with
+   `@executable_path/../../../../Frameworks` and signs inside-out; this
+   script checks that rpath with `otool` and does not rewrite or sign it.
+   The host plist carries `SUFeedURL` for the dedicated Nectar feed
    (`waypair/nectar/macos/stable/appcast.xml`, never the legacy Swift
-   appcast), and the existing pinned
-   `SUPublicEDKey`. Upstream's GitHub-Releases installer path and any
-   SHA-only trust are never used on macOS; an unbundled helper is reported
-   truthfully as unavailable. Remaining: Root's Swift compile/sign, the
-   (Alex-authorized) R2 publication of that dedicated appcast, and rollback proof.
+   appcast), the existing pinned `SUPublicEDKey`, and
+   `SUEnableAutomaticChecks` false. Upstream's GitHub-Releases installer
+   path and any SHA-only trust are never used on macOS; an unbundled helper
+   is reported truthfully as unavailable. Remaining: Root's Swift
+   compile/sign, the (Alex-authorized) R2 publication of that dedicated
+   appcast, and rollback proof.
 4. **Notarization / distribution channel:** the free Apple Development owner
    channel ceiling stands until a separate Developer ID decision; first
    launch Gatekeeper behaviour must be documented, not hidden.
-5. **Final bundle identity & data locations:** chosen at qualification so
-   legacy `com.waypair.mac` data stays intact; TCC grants for the new code
-   identity are fresh by design.
+5. **Bundle identity at install time:** the packaging default stays
+   `com.waypair.link.nectar-qualification`. Explicit `--bundle-id com.waypair.mac`
+   is the authorized id for the replacement build and is not a second
+   compatibility stack or a key change. This script still only writes the
+   unsigned bundle under `--output-dir`. It does not install that bundle or
+   touch the legacy app's data. TCC grants follow whatever code identity
+   Root signs later.
 
 No bundle produced by this script has been launched, signed, or installed;
 qualification on a physical Mac/Galaxy pair remains ahead.
