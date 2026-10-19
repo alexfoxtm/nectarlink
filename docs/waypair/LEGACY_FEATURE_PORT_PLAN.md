@@ -50,6 +50,8 @@ Order is usefulness of old Link behavior that this fork does not already have, m
 
 ### 1. Copied-URL Dock handoff, after branding
 
+**Implementation gate verified 2026-10-19.** The current `clip.set` path writes the pasteboard and history and carries no original copy deadline or copied-link metadata. A desktop-only interception cannot reproduce the published Waypair consent/lifetime/privacy contract. The next slice must first define a separately negotiated NectarLink-native optional copied-link offer, sender-side metadata-before-read checks, authenticated pair/session admission, and default-off consent on both sides. It must leave ordinary clipboard behavior and older peers unchanged. This is a feature implementation dependency, not a reason to weaken sender verification or auto-open a URL. The official signed-Dock reopen APIs are present; no Dock feature code or runtime acceptance has landed. Evidence: `~/orca/tmp/waypair-wave25-20261019/DOCK-HANDOFF-IMPLEMENTATION.md`.
+
 **Benefit.** A web link copied on the paired phone shows the Mac's default-browser icon, with a small phone badge, on the Waypair Link Dock tile. The page opens only when the owner clicks that tile. It does not open by itself and it is not written to the Mac pasteboard.
 
 **Old behavior to reuse, from published `faf5dfea`, not from a new design.**
