@@ -1,7 +1,7 @@
 [package]
 name = "nectarlink-desktop"
 description = "NectarLink for Windows: the desktop app"
-version.workspace = true
+version = "0.47.0"
 edition.workspace = true
 # Above the workspace minimum: material-colors needs Rust 1.97.
 rust-version = "1.97"

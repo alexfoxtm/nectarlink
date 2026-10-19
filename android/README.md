@@ -72,9 +72,11 @@ No signing keys or passwords are stored in the repository:
   running `./gradlew assembleRelease`. In CI (`.github/workflows/release.yml`),
   these come from the `ANDROID_KEYSTORE` (base64) and
   `ANDROID_KEYSTORE_PASSWORD` repository secrets, and the temporary `.jks` file
-  is deleted immediately after `apksigner verify`. When `NECTARLINK_KEYSTORE` is
-  unset locally, `assembleRelease` signs `app-release.apk` with the debug key,
-  for testing only; never publish that build.
+  is deleted immediately after `apksigner verify`. Waypair releases may instead
+  use an explicit `WAYPAIR_SIGNING` properties file, as described in
+  [the fork build guide](../docs/waypair/ANDROID_BUILD.md). Release packaging
+  refuses missing or incomplete signing inputs; it never falls back to the
+  debug key. Debug builds use a separate package and need no release key.
 - **Windows:** `./scripts/package.ps1` builds `Nectarlink-<version>-x64-setup.exe`,
   and `.github/workflows/release.yml` publishes `SHA256SUMS.txt` alongside the
   release artifacts so both the Windows and Android in-app updaters verify the
