@@ -176,11 +176,8 @@ fn encoded_images(mime: &str, data: &[u8]) -> Result<(Option<Vec<u8>>, Option<Ve
     // A PNG signature alone must not bypass the decoder's allocation and
     // validity checks before returning the image to another application.
     let decoded = crate::win::image::decode(data)?;
-    let png = if png_passthrough {
-        Some(data.to_vec())
-    } else {
-        crate::win::image::encode_png(&decoded).ok()
-    };
+    let png =
+        if png_passthrough { Some(data.to_vec()) } else { crate::win::image::encode_png(&decoded).ok() };
     let tiff = if tiff_pixels_within_bound(decoded.width, decoded.height) {
         crate::win::image::encode_png(&decoded).ok().as_deref().and_then(tiff_bytes)
     } else {
