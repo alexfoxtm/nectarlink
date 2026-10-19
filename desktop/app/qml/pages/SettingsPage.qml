@@ -783,7 +783,7 @@ Item {
                                 }
                             }
                         }
-                        Divider { width: parent.width }
+                        Divider { width: parent.width; visible: Theme.hive || appearanceBottomPair.visible }
 
                         // Hive: the comb's motion instead of Mica (Hive keeps its own colors).
                         ListRow {
@@ -806,16 +806,20 @@ Item {
                         // Side-by-side when Graphite Dark shows Pure Black + Mica backdrop
                         Item {
                             id: appearanceBottomPair
-                            visible: !Theme.hive
+                            visible: !Theme.hive && (showMica || showGraphiteAmoled)
                             width: parent.width
                             readonly property bool showGraphiteAmoled: Theme.graphite && Theme.dark
-                            readonly property bool splitCols: showGraphiteAmoled && width >= 460
+                            // Mica is a Windows 11 backdrop; the saved preference stays as is.
+                            readonly property bool showMica: Qt.platform.os !== "osx" && Qt.platform.os !== "macos"
+                            readonly property bool splitCols: showGraphiteAmoled && showMica && width >= 460
                             readonly property real colWidth: splitCols ? Math.floor((width - 37) / 2) : width
                             implicitHeight: !showGraphiteAmoled
                                 ? micaRow.implicitHeight
-                                : (splitCols
-                                    ? Math.max(graphiteAmoledRow.implicitHeight, micaRow.implicitHeight)
-                                    : (graphiteAmoledRow.implicitHeight + 1 + micaRow.implicitHeight))
+                                : (!showMica
+                                    ? graphiteAmoledRow.implicitHeight
+                                    : (splitCols
+                                        ? Math.max(graphiteAmoledRow.implicitHeight, micaRow.implicitHeight)
+                                        : (graphiteAmoledRow.implicitHeight + 1 + micaRow.implicitHeight)))
 
                             ListRow {
                                 id: graphiteAmoledRow
@@ -843,13 +847,15 @@ Item {
                             }
 
                             Divider {
-                                visible: appearanceBottomPair.showGraphiteAmoled && !appearanceBottomPair.splitCols
+                                visible: appearanceBottomPair.showGraphiteAmoled && appearanceBottomPair.showMica
+                                    && !appearanceBottomPair.splitCols
                                 y: graphiteAmoledRow.implicitHeight
                                 width: parent.width
                             }
 
                             ListRow {
                                 id: micaRow
+                                visible: appearanceBottomPair.showMica
                                 x: appearanceBottomPair.splitCols ? (parent.width - width) : 0
                                 y: !appearanceBottomPair.showGraphiteAmoled
                                     ? 0

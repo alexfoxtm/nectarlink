@@ -9,6 +9,14 @@ Rectangle {
     property var feature: ({})
     property real maxWidth: parent ? parent.width : 0
 
+    // The desktop in the pair is this running app, so a capability it lacks
+    // on a Mac is missing from the Mac build, not from an older version.
+    readonly property bool macLocalGap: {
+        const s = feature || {}
+        return s.action === "updateApp" && s.target === "desktop"
+            && (Qt.platform.os === "osx" || Qt.platform.os === "macos")
+    }
+
     readonly property string shortLabel: {
         const s = feature || {}
         switch (s.action) {
@@ -21,7 +29,7 @@ Rectangle {
         case "enableAddon": return qsTr("Add-on")
         case "enablePath": return qsTr("Connect over mobile data")
         case "enableToggle": return qsTr("Off")
-        case "updateApp": return qsTr("Update app")
+        case "updateApp": return chip.macLocalGap ? qsTr("Not on Mac yet") : qsTr("Update app")
         default: return s.state === "unsupported" ? qsTr("Unavailable") : ""
         }
     }
@@ -30,6 +38,8 @@ Rectangle {
 
     readonly property string lockKind: {
         const s = feature || {}
+        if (macLocalGap)
+            return "macLocalGap"
         if (s.action === "raisePower")
             return s.target === "elevated" ? "elevated" : "assist"
         if (s.action === "grantRole" || s.target === "role" || s.target === "sms_role" || s.target === "call_screening")
@@ -62,6 +72,8 @@ Rectangle {
             return qsTr("Open Settings › Connection & About and turn on Connect over mobile data.")
         case "enableToggle":
             return qsTr("This feature is turned off for this phone in Settings › Devices.")
+        case "macLocalGap":
+            return qsTr("Waypair Link for Mac doesn't offer this yet.")
         default:
             return label
         }
