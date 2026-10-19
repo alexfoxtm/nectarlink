@@ -1,22 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
-<!-- Adaptive icon foreground: the Waggle Dance mark (assets/brand/icon.svg),
-     two loops for the phone and the PC around a drop of nectar, scaled to
-     stay inside the 66dp safe zone of the 108dp canvas. -->
+<!-- Adaptive icon foreground: the Waypair Link W mark (white glyph on the
+     black ic_launcher_background), two U shapes crossing below a loop.
+     Same centerline as desktop/app/src/mark.rs (100-unit grid, no extra
+     scaling): the stroked glyph spans x 23.98..76.02, y 28.73..71.27, well
+     inside the 66dp adaptive safe zone centered on the 108dp canvas.
+     The black over-stroke on the front strand cuts the crossing gap; it is
+     invisible on the black background layer beneath. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp" android:viewportWidth="100" android:viewportHeight="100">
-    <group android:pivotX="50" android:pivotY="50" android:scaleX="0.72" android:scaleY="0.72" android:rotation="-25">
-        <path android:pathData="M41.5,42.5C26,24 13.5,31 13.5,50C13.5,69 26,76 41.5,57.5"
-            android:strokeColor="#FFF8F3" android:strokeWidth="10.4" android:strokeLineCap="round"
-            android:fillColor="#00000000" />
-        <path android:pathData="M37,38C24.5,26.5 16,33 16,47"
-            android:strokeColor="#FFFFFF" android:strokeAlpha="0.68" android:strokeWidth="2"
-            android:strokeLineCap="round" android:fillColor="#00000000" />
-        <path android:pathData="M58.5,42.5C74,24 86.5,31 86.5,50C86.5,69 74,76 58.5,57.5"
-            android:strokeColor="#FFDDB8" android:strokeWidth="10.4" android:strokeLineCap="round"
-            android:fillColor="#00000000" />
-        <path android:pathData="M50,41.8a8.2,8.2 0,1 1,0 16.4a8.2,8.2 0,1 1,0 -16.4z" android:fillColor="#FFB95F" />
-        <path android:pathData="M48,44.8a3.2,3.2 0,1 1,0 6.4a3.2,3.2 0,1 1,0 -6.4z"
-            android:fillColor="#FFF8F3" android:fillAlpha="0.84" />
-    </group>
+    <path android:pathData="M29.13,33.88C29.13,40.39 29.13,46.82 29.13,53.33C29.13,60.56 33.84,66.12 39.91,66.12C45.18,66.12 54.61,56.91 54.61,49.45C54.61,46.89 52.56,44.85 50,44.85C47.44,44.85 45.39,46.89 45.39,49.45C45.39,56.91 54.82,66.12 60.09,66.12C66.16,66.12 70.87,60.56 70.87,53.33C70.87,46.82 70.87,40.39 70.87,33.88"
+        android:strokeColor="#FFFFFF" android:strokeWidth="10.3" android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+    <path android:pathData="M45.39,49.45C45.39,56.91 54.82,66.12 60.09,66.12"
+        android:strokeColor="#000000" android:strokeWidth="13.5" android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+    <path android:pathData="M45.39,49.45C45.39,56.91 54.82,66.12 60.09,66.12"
+        android:strokeColor="#FFFFFF" android:strokeWidth="10.3" android:strokeLineCap="round"
+        android:fillColor="#00000000" />
 </vector>

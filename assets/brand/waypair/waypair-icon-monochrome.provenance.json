@@ -1,0 +1,63 @@
+{
+  "asset": "waypair-icon-monochrome.svg",
+  "brand": "Waypair Link",
+  "version": "monochrome-1",
+  "created": "2026-10-19",
+  "use_case": "logo-brand",
+  "generator": {
+    "mode": "code-first native rasterization of the existing vector centerline; no generative reinterpretation, no new dependencies",
+    "method": "Rendered natively by Root from the restored desktop/app/src/mark.rs snapshot (SHA-256 9d0ddaa7ef720166da771e0cbe3d647a082553ed1be5c21e7cc0b4ec37812167, byte-identical to the committed mark.rs) using the native render harness preserved in the Wave23 scratch asset-native/ folder (render.rs, BUILD.log, RESULT.json, SOURCE.json). Sizes 16, 32, 64, 128, 256, 512, and 1024 were rendered from mark.rs render(); iconutil converted the iconset to AppIcon-monochrome.icns. The SVGs carry the identical path data by hand transcription of the same coordinates. This worker's earlier Python/NumPy renders were superseded and are not the committed exports."
+  },
+  "source_path_proof": {
+    "glyph_source": "git show 8c68bdcc:desktop/app/src/mark.rs (const PATH, OVER=5, CROSSING=(50.0, 59.7))",
+    "restored_to": "desktop/app/src/mark.rs (identical PATH/OVER/CROSSING/geometry constants; only TILE_TOP, TILE_BOTTOM, RIM, GLYPH color constants changed)",
+    "path_first_segment": "M29.13,33.88 C29.13,40.39 29.13,46.82 29.13,53.33",
+    "path_last_point": "70.87,33.88",
+    "unchanged_blue_source": {
+      "path": "assets/brand/waypair/waypair-icon-v2.png",
+      "sha256": "6768e4b77f3cc3554efd67a568c918c835f644e2f4ec381936fdfed70c9588e2",
+      "note": "Retained unchanged with its original waypair-icon-v2.provenance.json; not overwritten and not re-described as monochrome."
+    }
+  },
+  "palette": {
+    "glyph": "#FFFFFF",
+    "tile": "#000000",
+    "rim": "#8C8C8C mixed 0.34 over black in the raster (= #2F2F2F in the SVG stroke approximation)",
+    "rule": "Every source color has R == G == B; antialiasing blends only between black, white, and neutral gray."
+  },
+  "exports": [
+    {
+      "path": "assets/brand/waypair/waypair-icon-monochrome.svg",
+      "sha256": "e1b4d6a817fdea7080b940667729ba0a26e5f9b27d13eff67af630853066935e"
+    },
+    {
+      "path": "assets/brand/waypair/waypair-glyph-monochrome.svg",
+      "sha256": "dda7e8f307d65071d4ac8c15e9d4a56aaec84c75124b5716dfb7166288facd9d",
+      "note": "White glyph silhouette on transparency; source for themed/notification silhouettes."
+    },
+    {
+      "path": "assets/brand/waypair/waypair-icon-monochrome-512.png",
+      "sha256": "5938ea2b385c9a1ff4d457faae15c77488ed911a7d7505cc528f552d333ebdee"
+    },
+    {
+      "path": "assets/brand/waypair/waypair-icon-monochrome-1024.png",
+      "sha256": "fefe5c01df6b7217290d389e2adf51e0b3f11b026a3b51fcd432ace0e28ac3f6"
+    },
+    {
+      "path": "assets/brand/waypair/AppIcon-monochrome.icns",
+      "sha256": "0906839fb1bfd5fce27f041b0d65d0c0549c5cf479f59ab196527f0c0765fb60",
+      "method": "iconutil -c icns from a 16..1024 iconset rendered from the same centerline; consumed as the default by scripts/macos/package-app.sh (ICON_PATH=assets/brand/waypair/AppIcon-monochrome.icns, Root-owned)."
+    }
+  ],
+  "neutral_color_proof": {
+    "check": "Root native render proof (asset-native/RESULT.json): for each size 16..1024, raw RGBA and PNG were scanned for pixels where R, G, B are not all equal.",
+    "result": "0 tinted pixels at every size (16, 32, 64, 128, 256, 512, 1024).",
+    "code_level_guarantee": "mark.rs adds the test every_pixel_is_neutral_grayscale asserting R == G == B for 16/32/64px renders; TILE_TOP == TILE_BOTTOM == #000000, GLYPH == #FFFFFF, RIM == #8C8C8C."
+  },
+  "consumers": {
+    "desktop": "desktop/app/src/mark.rs renders the monochrome mark for window/tray/toast/executable icons; desktop/app/qml/Icons.qml Icons.mark is the same centerline scaled x0.24 onto the 24x24 stroke-icon grid. Existing app theme colors are untouched; only the logo changed.",
+    "android": "res/mipmap-anydpi-v26/ic_launcher.xml already composes ic_launcher_background (#000000 solid) + ic_launcher_foreground (white W, glyph bbox x 23.98..76.02, y 28.73..71.27 inside the 66dp adaptive safe zone) + ic_launcher_monochrome (single-color W for themed icons); ic_notification.xml is the same single-color silhouette at 24dp.",
+    "macos": "scripts/macos/package-app.sh (Root-owned, not edited here) defaults to assets/brand/waypair/AppIcon-monochrome.icns."
+  },
+  "constraints": "Original Waypair W symbol restored, not redrawn or reinterpreted; no text; no blue, honey, or tinted pixels; upstream assets/brand/* originals untouched."
+}

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="512" height="512">
+  <!-- Waypair Link monochrome mark: white W glyph (two crossing U shapes with
+       a central loop, geometry from desktop/app/src/mark.rs) on a black tile.
+       Neutral grayscale only: #FFFFFF on #000000, #2F2F2F rim (neutral gray
+       antialias/rim blend). No blue, honey, or tinted pixels. -->
+  <rect x="4" y="4" width="92" height="92" rx="22" fill="#000000"/>
+  <rect x="4.75" y="4.75" width="90.5" height="90.5" rx="21.25" fill="none" stroke="#2F2F2F" stroke-width="1.5"/>
+  <path d="M29.13 33.88C29.13 40.39 29.13 46.82 29.13 53.33C29.13 60.56 33.84 66.12 39.91 66.12C45.18 66.12 54.61 56.91 54.61 49.45C54.61 46.89 52.56 44.85 50 44.85C47.44 44.85 45.39 46.89 45.39 49.45C45.39 56.91 54.82 66.12 60.09 66.12C66.16 66.12 70.87 60.56 70.87 53.33C70.87 46.82 70.87 40.39 70.87 33.88" fill="none" stroke="#FFFFFF" stroke-width="10.3" stroke-linecap="round"/>
+  <!-- Crossing gap: black over-stroke on the front strand, then the front strand in white. -->
+  <path d="M45.39 49.45C45.39 56.91 54.82 66.12 60.09 66.12" fill="none" stroke="#000000" stroke-width="13.5" stroke-linecap="round"/>
+  <path d="M45.39 49.45C45.39 56.91 54.82 66.12 60.09 66.12" fill="none" stroke="#FFFFFF" stroke-width="10.3" stroke-linecap="round"/>
+</svg>
