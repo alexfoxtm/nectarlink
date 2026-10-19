@@ -206,6 +206,9 @@ NativeWindow {
                 const s = findScreen(window.normalScreen) || primaryScreen()
                 const targetGlobalX = screenOriginX(s) + window.normalX
                 const targetGlobalY = screenOriginY(s) + window.normalY
+                // In case showing changed it (see restoreAndBringToFront).
+                if (window.width !== window.normalWidth) window.width = window.normalWidth
+                if (window.height !== window.normalHeight) window.height = window.normalHeight
                 if (window.hasNormalPosition) {
                     if (window.x !== targetGlobalX) window.x = targetGlobalX
                     if (window.y !== targetGlobalY) window.y = targetGlobalY
@@ -263,20 +266,21 @@ NativeWindow {
             hasNormalPosition = true
         }
 
-        if (targetScreen) {
-            window.setScreenByName(targetScreen.name)
-        }
+        // NativeWindow's QML type doesn't expose `screen`; a position in
+        // desktop coordinates puts the window on the right monitor anyway.
         x = sx + normalX
         y = sy + normalY
 
-        if (Preferences.windowMaximized) {
-            bringToFront()
+        bringToFront()
+        // Again once shown: a size set before the first show comes out
+        // taller by the title bar on Windows. This is also the size
+        // un-maximizing returns to.
+        width = fittedW
+        height = fittedH
+        x = sx + normalX
+        y = sy + normalY
+        if (Preferences.windowMaximized)
             showMaximized()
-        } else {
-            bringToFront()
-            x = sx + normalX
-            y = sy + normalY
-        }
         restoreCompleteTimer.restart()
     }
 
@@ -313,42 +317,30 @@ NativeWindow {
         id: resizeSettleTimer
         interval: 140
     }
-    onXChanged: {
-        if (visible && !restoringGeometry && window.visibility === Window.Windowed) {
-            updateNormalPositionFromWindow()
-            geometrySaveTimer.restart()
-        }
-    }
-    onYChanged: {
-        if (visible && !restoringGeometry && window.visibility === Window.Windowed) {
-            updateNormalPositionFromWindow()
-            geometrySaveTimer.restart()
-        }
-    }
+    onXChanged: if (visible && !restoringGeometry) geometrySaveTimer.restart()
+    onYChanged: if (visible && !restoringGeometry) geometrySaveTimer.restart()
     onWidthChanged: {
         if (visible) {
             resizeSettleTimer.restart()
-            if (!restoringGeometry && window.visibility === Window.Windowed) {
-                normalWidth = Math.max(window.minimumWidth, window.width)
+            if (!restoringGeometry)
                 geometrySaveTimer.restart()
-            }
         }
     }
     onHeightChanged: {
         if (visible) {
             resizeSettleTimer.restart()
-            if (!restoringGeometry && window.visibility === Window.Windowed) {
-                normalHeight = Math.max(window.minimumHeight, window.height)
+            if (!restoringGeometry)
                 geometrySaveTimer.restart()
-            }
         }
     }
+    // QWindow::visibilityChanged is a revisioned signal that NativeWindow's
+    // QML type doesn't expose as a handler, so connect to it instead.
     Connections {
         target: window
         function onVisibilityChanged() {
-            if (window.visible && !window.restoringGeometry && (window.visibility === Window.Windowed || window.visibility === Window.Maximized)) {
+            if (window.visible && !window.restoringGeometry
+                && (window.visibility === Window.Windowed || window.visibility === Window.Maximized))
                 geometrySaveTimer.restart()
-            }
         }
     }
 
