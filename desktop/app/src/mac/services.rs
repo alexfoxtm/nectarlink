@@ -173,19 +173,19 @@ fn encoded_images(mime: &str, data: &[u8]) -> Result<(Option<Vec<u8>>, Option<Ve
         return Err("the image from the phone is empty or too large".into());
     }
     let png_passthrough = mime == "image/png" && data.starts_with(b"\x89PNG\r\n\x1a\n");
-    let decoded = crate::win::image::decode(data);
+    // A PNG signature alone must not bypass the decoder's allocation and
+    // validity checks before returning the image to another application.
+    let decoded = crate::win::image::decode(data)?;
     let png = if png_passthrough {
         Some(data.to_vec())
     } else {
-        decoded.as_ref().ok().and_then(|bitmap| crate::win::image::encode_png(bitmap).ok())
+        crate::win::image::encode_png(&decoded).ok()
     };
-    let tiff = decoded.as_ref().ok().and_then(|bitmap| {
-        if !tiff_pixels_within_bound(bitmap.width, bitmap.height) {
-            return None;
-        }
-        let normalized = crate::win::image::encode_png(bitmap).ok()?;
-        tiff_bytes(&normalized)
-    });
+    let tiff = if tiff_pixels_within_bound(decoded.width, decoded.height) {
+        crate::win::image::encode_png(&decoded).ok().as_deref().and_then(tiff_bytes)
+    } else {
+        None
+    };
     if png.is_none() && tiff.is_none() {
         return Err("the image from the phone couldn’t be converted".into());
     }
@@ -565,6 +565,11 @@ pub fn unregister() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn png_signature_without_a_decodable_image_is_refused() {
+        assert!(encoded_images("image/png", b"\x89PNG\r\n\x1a\n").is_err());
+    }
 
     #[test]
     fn user_data_selects_photo_or_scan_and_rejects_unknown() {
