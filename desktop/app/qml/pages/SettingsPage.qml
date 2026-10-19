@@ -890,7 +890,7 @@ Item {
                             width: parent.width
                             iconPath: Icons.globe
                             title: qsTr("Language")
-                            description: qsTr("NectarLink follows Windows unless you pick one.")
+                            description: qsTr("Waypair Link follows Windows unless you pick one.")
                             Segmented {
                                 readonly property var other: page.languages.find(
                                     (l) => l.code === Preferences.language && l.code !== "en")
@@ -3079,7 +3079,7 @@ Item {
                         ListRow {
                             width: parent.width
                             iconPath: Icons.desktop
-                            title: qsTr("NectarLink %1").arg(AppController.version)
+                            title: qsTr("Waypair Link %1").arg(AppController.version)
                             description: AppController.updateStatus.length > 0
                                          ? AppController.updateStatus
                                          : qsTr("This PC: %1").arg(AppController.deviceName)
@@ -3129,6 +3129,13 @@ Item {
                                     onClicked: Qt.openUrlExternally(AppController.logsUrl())
                                 }
                             }
+                        }
+                        Divider { width: parent.width }
+                        ListRow {
+                            width: parent.width
+                            iconPath: Icons.info
+                            title: qsTr("Based on NectarLink")
+                            description: qsTr("Waypair Link is a modified build of NectarLink, free software under GPL-3.0-or-later (apps) and MPL-2.0 (core). It is not an official NectarLink build.")
                         }
                         Divider { width: parent.width; visible: AppController.canUpdate }
                         ListRow {

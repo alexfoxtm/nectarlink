@@ -51,6 +51,8 @@ QtObject {
     }
 
     readonly property var bloomSeeds: Tokens.data.themes.bloom.seeds
+    // Waypair Link's blue, where no wallpaper, phone or preset seed applies.
+    readonly property string fallbackSeed: "ocean"
     // Colors made from the desktop wallpaper (or null until they're known),
     // in the shape of a preset seed.
     readonly property var wallpaperSeed: AppController.wallpaperColors !== ""
@@ -99,12 +101,12 @@ QtObject {
     // "artwork", "wallpaper", "phone" / "phone:<id>", or a preset name; dynamic
     // seeds fall back to wallpaper or the default preset until their colors are known.
     readonly property string seed: isArtworkSeed
-        ? (artworkSeed ? "artwork" : (wallpaperSeed ? "wallpaper" : Tokens.data.themes.bloom.defaultSeed))
+        ? (artworkSeed ? "artwork" : (wallpaperSeed ? "wallpaper" : fallbackSeed))
         : isPhoneSeed
-          ? (activePhoneSeed ? Preferences.seed : (wallpaperSeed ? "wallpaper" : Tokens.data.themes.bloom.defaultSeed))
+          ? (activePhoneSeed ? Preferences.seed : (wallpaperSeed ? "wallpaper" : fallbackSeed))
           : Preferences.seed === "wallpaper"
-            ? (wallpaperSeed ? "wallpaper" : Tokens.data.themes.bloom.defaultSeed)
-            : (bloomSeeds[Preferences.seed] ? Preferences.seed : Tokens.data.themes.bloom.defaultSeed)
+            ? (wallpaperSeed ? "wallpaper" : fallbackSeed)
+            : (bloomSeeds[Preferences.seed] ? Preferences.seed : fallbackSeed)
     readonly property var seedColors: seed === "artwork"
         ? artworkSeed
         : (seed === "phone" || seed.startsWith("phone:"))

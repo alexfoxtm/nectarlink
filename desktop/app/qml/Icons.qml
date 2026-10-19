@@ -43,7 +43,8 @@ QtObject {
     readonly property string star: "M11.53 2.3a.53.53 0 0 1 .95 0l2.31 4.68a2.12 2.12 0 0 0 1.6 1.16l5.16.75a.53.53 0 0 1 .3.9l-3.74 3.64a2.12 2.12 0 0 0-.61 1.88l.88 5.14a.53.53 0 0 1-.77.56l-4.62-2.43a2.12 2.12 0 0 0-1.97 0l-4.62 2.43a.53.53 0 0 1-.77-.56l.88-5.14a2.12 2.12 0 0 0-.61-1.88L2.16 9.8a.53.53 0 0 1 .3-.9l5.16-.76a2.12 2.12 0 0 0 1.6-1.16z"
     readonly property string backspace: "M10 5a2 2 0 0 0-1.34.52l-6.33 5.74a1 1 0 0 0 0 1.48l6.33 5.74A2 2 0 0 0 10 19h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zM12 9l6 6M18 9l-6 6"
     readonly property string lock: "M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2zM7 11V7a5 5 0 0 1 10 0v4M12 15.5v2"
-    readonly property string mark: "M9.39 11.23C4.14 8.78 2.13 11.57 4.06 15.70C5.99 19.83 9.42 20.09 10.91 14.49M13.09 9.51C14.58 3.91 18.01 4.17 19.94 8.30C21.87 12.43 19.86 15.22 14.61 12.77M12.6 12a0.6 0.6 0 1 1-1.2 0a0.6 0.6 0 1 1 1.2 0"
+    // The Waypair Link mark's centerline (desktop/app/src/mark.rs).
+    readonly property string mark: "M4.01 5.83V13.27C4.01 16.05 5.81 18.17 8.14 18.17C10.15 18.17 13.76 14.65 13.76 11.79C13.76 10.81 12.98 10.03 12 10.03C11.02 10.03 10.24 10.81 10.24 11.79C10.24 14.65 13.85 18.17 15.86 18.17C18.19 18.17 19.99 16.05 19.99 13.27V5.83"
     readonly property string back: "M15 18l-6-6 6-6"
     readonly property string chevronRight: "M9 18l6-6-6-6"
     readonly property string chevronDown: "M6 9l6 6 6-6"
