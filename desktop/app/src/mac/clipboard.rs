@@ -40,11 +40,26 @@ use std::{
 
 use dispatch2::DispatchQueue;
 use objc2::MainThreadMarker;
-use objc2_app_kit::{
-    NSPasteboard, NSPasteboardTypeHTML, NSPasteboardTypePNG, NSPasteboardTypeRTF, NSPasteboardTypeString,
-    NSPasteboardTypeTIFF,
-};
+use objc2_app_kit::NSPasteboard;
 use objc2_foundation::{NSData, NSString};
+
+/// Pasteboard format identifiers as plain values. These are the
+/// documented UTI strings the `NSPasteboardTypeString` /
+/// `NSPasteboardTypeHTML` / `NSPasteboardTypeRTF` /
+/// `NSPasteboardTypePNG` / `NSPasteboardTypeTIFF` constants hold;
+/// constructing `NSString`s from them keeps every call site in safe
+/// code (reading the extern statics would need `unsafe`, which this
+/// crate forbids outside narrow bridges).
+const TYPE_STRING: &str = "public.utf8-plain-text";
+const TYPE_HTML: &str = "public.html";
+const TYPE_RTF: &str = "public.rtf";
+const TYPE_PNG: &str = "public.png";
+const TYPE_TIFF: &str = "public.tiff";
+
+/// An `NSPasteboardType` (an `NSString`) for a format UTI.
+fn pasteboard_type(uti: &str) -> objc2::rc::Retained<NSString> {
+    NSString::from_str(uti)
+}
 
 /// Pasteboard types that mark content as not-for-transfer. Password
 /// managers set the concealed type; transient and auto-generated
@@ -316,18 +331,18 @@ fn read_unchecked(pb: &NSPasteboard, skip_private: bool) -> Clip {
     if types.iter().any(|t| is_private_type(t)) && skip_private {
         return Clip::Private;
     }
-    if let Some(text) = pb.stringForType(NSPasteboardTypeString) {
+    if let Some(text) = pb.stringForType(&pasteboard_type(TYPE_STRING)) {
         let text = text.to_string();
         if !text.trim().is_empty() {
-            let html = pb.stringForType(NSPasteboardTypeHTML).map(|s| s.to_string());
-            let rtf = pb.stringForType(NSPasteboardTypeRTF).map(|s| s.to_string());
+            let html = pb.stringForType(&pasteboard_type(TYPE_HTML)).map(|s| s.to_string());
+            let rtf = pb.stringForType(&pasteboard_type(TYPE_RTF)).map(|s| s.to_string());
             return Clip::Text { text, html, rtf };
         }
     }
-    if let Some(data) = pb.dataForType(NSPasteboardTypePNG) {
+    if let Some(data) = pb.dataForType(&pasteboard_type(TYPE_PNG)) {
         return Clip::Image(Image::Png(data.to_vec()));
     }
-    if let Some(data) = pb.dataForType(NSPasteboardTypeTIFF) {
+    if let Some(data) = pb.dataForType(&pasteboard_type(TYPE_TIFF)) {
         return Clip::Image(Image::Bitmap(data.to_vec()));
     }
     Clip::Empty
@@ -411,10 +426,11 @@ pub fn read_image_png() -> Option<Vec<u8>> {
         let before = pb.changeCount();
         let image = if is_marked_private(&pb) {
             None
-        } else if let Some(data) = pb.dataForType(NSPasteboardTypePNG) {
+        } else if let Some(data) = pb.dataForType(&pasteboard_type(TYPE_PNG)) {
             Some(data.to_vec())
         } else {
-            pb.dataForType(NSPasteboardTypeTIFF).and_then(|tiff| Image::Bitmap(tiff.to_vec()).to_png().ok())
+            pb.dataForType(&pasteboard_type(TYPE_TIFF))
+                .and_then(|tiff| Image::Bitmap(tiff.to_vec()).to_png().ok())
         };
         (pb.changeCount() == before).then_some(image).flatten()
     }) {
@@ -448,18 +464,35 @@ fn write_on_main(text: &str, html: Option<&str>, rtf: Option<&str>, private: boo
     write_outcome(on_main(move || {
         let pb = pasteboard();
         pb.clearContents();
-        if !pb.setString_forType(&NSString::from_str(&text), NSPasteboardTypeString) {
+        if private {
+            // Markers first, and both must land: a private write that
+            // cannot be marked must not report success while leaving
+            // unmarked text on the pasteboard, so any failure clears
+            // what was written and fails closed.
+            let concealed =
+                pb.setString_forType(&NSString::from_str(""), &NSString::from_str(CONCEALED_TYPE));
+            let transient =
+                pb.setString_forType(&NSString::from_str(""), &NSString::from_str(TRANSIENT_TYPE));
+            if !concealed || !transient {
+                pb.clearContents();
+                return Err(
+                    "marking the clipboard write as private failed; nothing was left on the pasteboard"
+                        .to_string(),
+                );
+            }
+        }
+        if !pb.setString_forType(&NSString::from_str(&text), &pasteboard_type(TYPE_STRING)) {
+            if private {
+                pb.clearContents();
+            }
             return Err("setting pasteboard text failed".to_string());
         }
-        if private {
-            pb.setString_forType(&NSString::from_str(""), &NSString::from_str(CONCEALED_TYPE));
-            pb.setString_forType(&NSString::from_str(""), &NSString::from_str(TRANSIENT_TYPE));
-        } else {
+        if !private {
             if let Some(html) = &html {
-                pb.setString_forType(&NSString::from_str(html), NSPasteboardTypeHTML);
+                pb.setString_forType(&NSString::from_str(html), &pasteboard_type(TYPE_HTML));
             }
             if let Some(rtf) = &rtf {
-                pb.setString_forType(&NSString::from_str(rtf), NSPasteboardTypeRTF);
+                pb.setString_forType(&NSString::from_str(rtf), &pasteboard_type(TYPE_RTF));
             }
         }
         let count = pb.changeCount() as i64;
@@ -499,7 +532,7 @@ pub fn write_image(mime: &str, bytes: &[u8]) -> Result<(), String> {
     write_outcome(on_main(move || {
         let pb = pasteboard();
         pb.clearContents();
-        if !pb.setData_forType(Some(&NSData::with_bytes(&png_bytes)), NSPasteboardTypePNG) {
+        if !pb.setData_forType(Some(&NSData::with_bytes(&png_bytes)), &pasteboard_type(TYPE_PNG)) {
             return Err("setting pasteboard image failed".to_string());
         }
         let count = pb.changeCount() as i64;
