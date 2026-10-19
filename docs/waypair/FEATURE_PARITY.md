@@ -61,3 +61,12 @@ Not in the next two slices: VideoToolbox mirroring, Now Playing, virtual camera,
 3. Integrate PR #24 `9c0f13d7` on the integration worker's branch; do not copy its audio fix twice.
 4. Visible-frame `work_area()` for Shelf and Island.
 5. Phone filter and find-phone volume are already in this fork. Remaining proof is a paired phone, which this session does not have.
+
+
+## Round 23 implementation and verification follow-up
+
+The snapshot above records the audit before implementation. Product merge `184aca79` now contains the reviewed `9c0f13d7` author update through history-preserving integration `435ffa2a`/`0383623f`; native Rust clipboard and the fork Mac Sparkle/R2 route are preserved. Root passed 19 pure Mac backend cases, eight updater cases, eighteen upstream-checker cases, and two real loopback download scenarios (resume and oversized chunked refusal). No audio command, personal call or microphone was executed.
+
+Received-file Open/Reveal is fixed by `058f5c88`: macOS uses `/usr/bin/open` and Finder `-R`, preserving path arguments and request activation. Three focused transfer cases pass on the merged product, including a Unicode/spaces path and leading-dash safety. Actual phone-to-Mac transfer and native Finder interaction remain runtime acceptance gates. A status item is the next native desktop slice; none is claimed by this fix.
+
+Android `6943bc8c` fixes numeric local-build ordering (`local.10` after `local.9`) and refuses malformed signed or non-ASCII identifiers. Root passed all nine existing updater/filter/alarm cases and `lintDebug`. `767e3308`/`231f40fe` make actual Waypair additions discoverable in both settings UIs and correct generic pairing wording for Macs as well as PCs. UI rendering and new release qualification are separate from these source/test results. Current published delivery is still source `9b93a5c5` (Mac30, Android95); Galaxy94 and Cloud10 remain unchanged.

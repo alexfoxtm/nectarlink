@@ -3,7 +3,7 @@
   "recorded_at": "2026-10-19",
   "port": {
     "branch": "waypair/macos-port",
-    "product": "Waypair Link (Nectar base)",
+    "product": "NectarLink (personal macOS fork)",
     "base_pin": "macos-pr24",
     "shallow_checkout": true
   },
