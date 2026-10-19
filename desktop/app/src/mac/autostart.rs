@@ -108,7 +108,7 @@ mod tests {
             "/Applications/Nectar &amp; Link &lt;mac&gt; &quot;&apos;app&quot;.app/Contents/MacOS/nectarlink";
         assert!(plist.contains(&format!("<string>{escaped}</string>")));
         assert!(!plist.contains("--minimized"), "no tray on macOS, so a login launch must show the window");
-        assert!(plist.contains("<string>com.thtbee.nectarlink</string>"));
+        assert!(plist.contains("<string>com.waypair.link.nectar</string>"));
         assert!(!plist.contains("Nectar & Link"));
         assert!(!plist.contains("<mac>"));
     }
