@@ -71,7 +71,15 @@
       "scripts/macos/WaypairUpdater.swift",
       "scripts/releases/",
       "android/app/src/main/kotlin/app/nectarlink/android/update/",
-      "android/app/src/test/kotlin/app/nectarlink/android/update/"
+      "android/app/src/test/kotlin/app/nectarlink/android/update/",
+      "scripts/macos/package-app.sh",
+      "desktop/app/qml/pages/SettingsPage.qml",
+      "android/app/build.gradle.kts",
+      "android/README.md",
+      "docs/waypair/ANDROID_R2.md",
+      "docs/waypair/R2_RELEASE.md",
+      "desktop/app/Cargo.toml",
+      "Cargo.lock"
     ],
     "cloud": [],
     "port_docs_and_tooling": [
@@ -113,6 +121,14 @@
   "fork_policy": {
     "primary_if_contributions_welcomed": "official NectarLink",
     "fallback": "synchronized alexfoxtm/nectarlink for rejected or pending features",
-    "r2_updater": "fork-only; exclude code, config, publishing scripts and tests from upstream PRs"
+    "r2_updater": "fork-only; exclude code, config, publishing scripts and tests from upstream PRs",
+    "r2_updater_mixed_path_notes": {
+      "scripts/macos/package-app.sh": "Sparkle/R2 helper, feed, key and signing hunks only",
+      "desktop/app/qml/pages/SettingsPage.qml": "fork update row only",
+      "android/app/build.gradle.kts": "WAYPAIR_SIGNING and R2 test dependency hunks only",
+      "android/README.md": "fork signing/updater instructions only",
+      "desktop/app/Cargo.toml": "fork version only",
+      "Cargo.lock": "fork package version; regenerate upstream lock separately"
+    }
   }
 }
