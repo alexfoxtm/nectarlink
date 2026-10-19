@@ -520,6 +520,32 @@ object InputServer {
 
     private val PACKAGE = Regex("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+")
 
+    private const val BRIGHTNESS_PREFIX = "settings put system screen_brightness "
+
+    /** The only shell commands the app may run through this. */
+    private val allowed = setOf(
+        "cmd statusbar expand-notifications",
+        "svc wifi enable",
+        "svc wifi disable",
+        "svc bluetooth enable",
+        "svc bluetooth disable",
+        "hotspot on",
+        "hotspot off",
+        "cmd wifi start-softap",
+        "cmd wifi stop-softap",
+        // Pause for banking apps: seeing which app is in front. Only this APK's own package.
+        "appops set $PKG GET_USAGE_STATS allow",
+    )
+
+    internal fun allowedCommand(cmd: String): Boolean {
+        if (cmd in allowed) return true
+        if (cmd.startsWith(BRIGHTNESS_PREFIX)) {
+            val v = cmd.removePrefix(BRIGHTNESS_PREFIX).toIntOrNull()
+            return v != null && v in 0..255
+        }
+        return false
+    }
+
     private class Injector {
         private val manager: Any
         private val inject: Method
@@ -748,33 +774,7 @@ object InputServer {
             }
         }
 
-        private fun allowedCommand(cmd: String): Boolean {
-            if (cmd in allowed) return true
-            if (cmd.startsWith(BRIGHTNESS_PREFIX)) {
-                val v = cmd.removePrefix(BRIGHTNESS_PREFIX).toIntOrNull()
-                return v != null && v in 0..255
-            }
-            return false
-        }
-
-        /** The only shell commands the app may run through this. */
-        private val allowed = setOf(
-            "cmd statusbar expand-notifications",
-            "svc wifi enable",
-            "svc wifi disable",
-            "svc bluetooth enable",
-            "svc bluetooth disable",
-            "hotspot on",
-            "hotspot off",
-            "cmd wifi start-softap",
-            "cmd wifi stop-softap",
-            // Pause for banking apps: seeing which app is in front.
-            "appops set app.nectarlink GET_USAGE_STATS allow",
-        )
-
         private companion object {
-            const val BRIGHTNESS_PREFIX = "settings put system screen_brightness "
-
             val GAMEPAD_BUTTON_KEYCODES = listOf(
                 0 to KeyEvent.KEYCODE_BUTTON_A,
                 1 to KeyEvent.KEYCODE_BUTTON_B,

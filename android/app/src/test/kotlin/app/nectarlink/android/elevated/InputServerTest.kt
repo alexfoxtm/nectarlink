@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package app.nectarlink.android.elevated
 
+import app.nectarlink.android.BuildConfig
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.w3c.dom.Element
 import java.io.File
@@ -18,6 +21,26 @@ class InputServerTest {
             val appName = (0 until strings.length).map { strings.item(it) as Element }
                 .first { it.getAttribute("name") == "app_name" }.textContent
             assertEquals(values, appName, InputServer.LABEL)
+        }
+    }
+
+    @Test
+    fun usageAccessIsAllowedForThisAppOnly() {
+        assertTrue(InputServer.allowedCommand("appops set ${BuildConfig.APPLICATION_ID} GET_USAGE_STATS allow"))
+    }
+
+    @Test
+    fun usageAccessForAnythingElseIsRefused() {
+        val id = BuildConfig.APPLICATION_ID
+        for (cmd in listOf(
+            "appops set com.example GET_USAGE_STATS allow",
+            "appops set $id.other GET_USAGE_STATS allow",
+            "appops set $id GET_USAGE_STATS allow; reboot",
+            "appops set $id GET_USAGE_STATS allow && reboot",
+            "appops set $id  GET_USAGE_STATS allow",
+            "appops set $id SYSTEM_ALERT_WINDOW allow",
+        )) {
+            assertFalse(cmd, InputServer.allowedCommand(cmd))
         }
     }
 }
