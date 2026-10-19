@@ -1,36 +1,29 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! The Waypair Link mark (`assets/brand/waypair/waypair-icon-v2.png`): one
-//! pearl-white path, two rounded U shapes that cross once at the bottom and
-//! loop in the middle, a W for two paired devices, on a royal-blue tile.
-//! Drawn in code at any pixel size: the tray, window and toast icons at
-//! runtime, and the executable's icon at build time (`build.rs` includes this
-//! file), so every size is sharp without bitmap assets. At 32 px and below
-//! the stroke is heavier and the tile fills more of the square.
+//! The NectarLink mark, the Waggle Dance (`assets/brand/icon.svg`): two loops,
+//! the phone and the PC, around a drop of nectar, tilted like a bee's waggle
+//! run, on an espresso tile with a warm glow. Drawn in code at any pixel
+//! size: the tray, window and toast icons at runtime, and the executable's
+//! icon at build time (`build.rs` includes this file), so every size is sharp
+//! without bitmap assets. At 32 px and below the strokes are heavier and the
+//! tile fills more of the square, as in the hand-tuned small sizes.
 
-/// The tile's blue from top to bottom, its rim, and the glyph (Waypair v2:
-/// `#164FA8` → `#063B86`).
-const TILE_TOP: [f32; 3] = rgb(0x16, 0x4F, 0xA8);
-const TILE_BOTTOM: [f32; 3] = rgb(0x06, 0x3B, 0x86);
-const RIM: [f32; 3] = rgb(0x7F, 0xA8, 0xE8);
-const GLYPH: [f32; 3] = rgb(0xF5, 0xF8, 0xFD);
+/// Espresso tile, its glow, the honey rim, and the two loops and the drop
+/// (docs/design/tokens.json, Honey palette).
+const TILE: [f32; 3] = rgb(0x2C, 0x16, 0x00);
+const GLOW: [f32; 3] = rgb(0x69, 0x3C, 0x00);
+const RIM: [f32; 3] = rgb(0xFF, 0xB9, 0x5F);
+const PHONE: [f32; 3] = rgb(0xFF, 0xF8, 0xF3);
+const PC: [f32; 3] = rgb(0xFF, 0xDD, 0xB8);
+const NECTAR: [f32; 3] = rgb(0xFF, 0xB9, 0x5F);
 
-/// The glyph's centerline in a 100×100 design grid, as cubic Béziers (start,
-/// control, control, end): left stem, bottom-left curve, up into the loop,
-/// over its top, down through the crossing, bottom-right curve, right stem.
-const PATH: [[(f32, f32); 4]; 8] = [
-    [(29.13, 33.88), (29.13, 40.39), (29.13, 46.82), (29.13, 53.33)],
-    [(29.13, 53.33), (29.13, 60.56), (33.84, 66.12), (39.91, 66.12)],
-    [(39.91, 66.12), (45.18, 66.12), (54.61, 56.91), (54.61, 49.45)],
-    [(54.61, 49.45), (54.61, 46.89), (52.56, 44.85), (50.0, 44.85)],
-    [(50.0, 44.85), (47.44, 44.85), (45.39, 46.89), (45.39, 49.45)],
-    [(45.39, 49.45), (45.39, 56.91), (54.82, 66.12), (60.09, 66.12)],
-    [(60.09, 66.12), (66.16, 66.12), (70.87, 60.56), (70.87, 53.33)],
-    [(70.87, 53.33), (70.87, 46.82), (70.87, 40.39), (70.87, 33.88)],
-];
-/// The strand that passes in front at the crossing, where the two U shapes
-/// meet below the loop, and that crossing's center.
-const OVER: usize = 5;
-const CROSSING: (f32, f32) = (50.0, 59.7);
+/// The loops in a 100×100 design grid, before the tilt: each is two cubic
+/// Béziers (start, control, control, end, control, control, end).
+const LEFT_LOOP: [(f32, f32); 7] =
+    [(41.5, 42.5), (26.0, 24.0), (13.5, 31.0), (13.5, 50.0), (13.5, 69.0), (26.0, 76.0), (41.5, 57.5)];
+const RIGHT_LOOP: [(f32, f32); 7] =
+    [(58.5, 42.5), (74.0, 24.0), (86.5, 31.0), (86.5, 50.0), (86.5, 69.0), (74.0, 76.0), (58.5, 57.5)];
+/// The tilt, degrees (counterclockwise on screen).
+const TILT: f32 = -25.0;
 
 /// Supersampling grid per pixel (SS×SS samples) for smooth edges.
 const SS: usize = 4;
@@ -44,17 +37,15 @@ struct Geometry {
     inset: f32,
     corner: f32,
     stroke: f32,
-    /// The tile-colored gap around the front strand at the crossing (none
-    /// where it would be under a pixel).
-    gap: f32,
+    drop: f32,
 }
 
 impl Geometry {
     fn for_size(size: usize) -> Self {
         if size <= 32 {
-            Geometry { inset: 2.0, corner: 20.0, stroke: 11.6, gap: 0.0 }
+            Geometry { inset: 2.0, corner: 20.0, stroke: 11.4, drop: 8.8 }
         } else {
-            Geometry { inset: 4.0, corner: 22.0, stroke: 10.3, gap: 1.6 }
+            Geometry { inset: 4.0, corner: 22.0, stroke: 10.4, drop: 8.2 }
         }
     }
 }
@@ -63,9 +54,9 @@ impl Geometry {
 pub fn render(size: usize) -> Vec<u8> {
     let g = Geometry::for_size(size);
     let unit = 100.0 / size as f32;
-    let glyph = polyline(&PATH);
-    let over = polyline(&PATH[OVER..=OVER]);
-    let half = g.stroke / 2.0;
+    let left = polyline(&LEFT_LOOP);
+    let right = polyline(&RIGHT_LOOP);
+    let (sin, cos) = (-TILT.to_radians()).sin_cos();
     // The rim is at least about a pixel wide, so the tile keeps an edge on dark taskbars.
     let rim = (1.5f32).max(unit * 0.6);
 
@@ -84,20 +75,22 @@ pub fn render(size: usize) -> Vec<u8> {
                         continue;
                     }
                     covered += 1;
-                    let tile = mix(TILE_TOP, TILE_BOTTOM, ((y - g.inset) / (100.0 - 2.0 * g.inset)).clamp(0.0, 1.0));
-                    let near_crossing = (x - CROSSING.0).hypot(y - CROSSING.1) <= g.stroke;
-                    let in_gap = near_crossing && {
-                        let front = distance_to(&over, (x, y));
-                        front > half && front <= half + g.gap
-                    };
-                    let paint = if in_gap {
-                        tile
-                    } else if distance_to(&glyph, (x, y)) <= half {
-                        GLYPH
+                    // Undo the tilt to test against the upright loops.
+                    let (dx, dy) = (x - 50.0, y - 50.0);
+                    let (ux, uy) = (50.0 + dx * cos - dy * sin, 50.0 + dx * sin + dy * cos);
+                    let half = g.stroke / 2.0;
+                    let paint = if (dx * dx + dy * dy).sqrt() <= g.drop {
+                        NECTAR
+                    } else if distance_to(&left, (ux, uy)) <= half {
+                        PHONE
+                    } else if distance_to(&right, (ux, uy)) <= half {
+                        PC
                     } else if -edge <= rim {
-                        mix(tile, RIM, 0.34)
+                        mix(TILE, RIM, 0.34)
                     } else {
-                        tile
+                        // The glow fades from the middle to the tile color at 40 units.
+                        let t = ((dx * dx + dy * dy).sqrt() / 40.0).min(1.0);
+                        mix(GLOW, TILE, t)
                     };
                     for c in 0..3 {
                         color[c] += paint[c];
@@ -136,11 +129,11 @@ fn rounded_square_distance(x: f32, y: f32, inset: f32, r: f32) -> f32 {
     (qx * qx + qy * qy).sqrt() - r
 }
 
-/// The path's Béziers as points close enough together to measure against.
-fn polyline(segments: &[[(f32, f32); 4]]) -> Vec<(f32, f32)> {
+/// A loop's two Béziers as points close enough together to measure against.
+fn polyline(loop_points: &[(f32, f32); 7]) -> Vec<(f32, f32)> {
     const STEPS: usize = 32;
-    let mut points = Vec::with_capacity(STEPS * segments.len() + 1);
-    for segment in segments {
+    let mut points = Vec::with_capacity(STEPS * 2 + 1);
+    for segment in [&loop_points[0..4], &loop_points[3..7]] {
         for step in 0..=STEPS {
             if step == 0 && !points.is_empty() {
                 continue;
@@ -179,30 +172,28 @@ mod tests {
         [img[i], img[i + 1], img[i + 2], img[i + 3]]
     }
 
-    fn glyph(p: [u8; 4]) -> bool {
-        p[0] > 0xE0 && p[1] > 0xE0 && p[2] > 0xE0 && p[3] == 255
-    }
-
     #[test]
-    fn corners_are_transparent_and_the_loop_sits_in_the_middle() {
+    fn corners_are_transparent_and_the_drop_sits_in_the_middle() {
         let size = 64;
         let img = render(size);
         assert_eq!(img.len(), size * size * 4);
         assert_eq!(pixel(&img, size, 0, 0)[3], 0, "rounded corner");
-        assert!(glyph(pixel(&img, size, 32, 29)), "the top of the loop");
-        // Near the top edge, between the stems: the blue tile.
+        let middle = pixel(&img, size, 32, 32);
+        assert_eq!(middle, [0xFF, 0xB9, 0x5F, 255], "the nectar drop");
+        // Near the top edge, between the loops: the dark tile.
         let tile = pixel(&img, size, 32, 8);
-        assert!(tile[2] > tile[0] && tile[2] > 0x80 && tile[3] == 255, "{tile:?}");
+        assert!(tile[0] < 0x80 && tile[3] == 255, "{tile:?}");
     }
 
     #[test]
-    fn both_stems_are_drawn() {
+    fn both_loops_are_drawn() {
         let size = 128;
         let img = render(size);
-        assert!(glyph(pixel(&img, size, 37, 56)), "left stem");
-        assert!(glyph(pixel(&img, size, 90, 56)), "right stem");
-        // Between the left stem and the loop there's tile.
-        assert!(!glyph(pixel(&img, size, 48, 46)), "gap left of the loop");
+        let light = |p: [u8; 4]| p[0] > 0xF0 && p[3] == 255;
+        // Somewhere left and right of the drop there's loop ink.
+        let left = (8..56).any(|x| light(pixel(&img, size, x, 64)) || light(pixel(&img, size, x, 70)));
+        let right = (72..120).any(|x| light(pixel(&img, size, x, 64)) || light(pixel(&img, size, x, 58)));
+        assert!(left && right);
     }
 
     #[test]

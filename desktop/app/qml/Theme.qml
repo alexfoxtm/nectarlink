@@ -51,7 +51,7 @@ QtObject {
     }
 
     readonly property var bloomSeeds: Tokens.data.themes.bloom.seeds
-    // Waypair Link's blue, where no wallpaper, phone or preset seed applies.
+    // This build's blue, where no wallpaper, phone or preset seed applies.
     readonly property string fallbackSeed: "ocean"
     // Colors made from the desktop wallpaper (or null until they're known),
     // in the shape of a preset seed.

@@ -95,9 +95,9 @@ FocusScope {
     ]
 
     readonly property var stepTitles: [
-        "Welcome to Waypair Link",
+        "Welcome to NectarLink",
         "Your data stays on your devices",
-        "Install Waypair Link on your phone",
+        "Install NectarLink on your phone",
         "Pair your phone and PC",
         "Choose what to share",
         "Optional setup",
@@ -108,7 +108,7 @@ FocusScope {
         "Your Android phone and your PC, working together on your local network.",
         "No accounts, no cloud servers, and no telemetry.",
         "Get the Android app from GitHub Releases or install the APK over USB.",
-        "Scan the QR code from the Waypair Link Android app, or pick your phone from nearby devices.",
+        "Scan the QR code from the NectarLink Android app, or pick your phone from nearby devices.",
         "Safe features are on by default. Higher-trust access stays off until you turn it on.",
         "Three quick checks so notifications and discovery work reliably on your PC.",
         "Reopen it from Settings or the Command Palette."
@@ -1469,7 +1469,7 @@ FocusScope {
                                             Layout.fillWidth: true
                                             text: AppController.toastsEnabled
                                                 ? "Enabled in Windows Settings."
-                                                : "Notifications are off for Waypair Link in Windows Settings."
+                                                : "Notifications are off for NectarLink in Windows Settings."
                                             role: "caption"
                                             color: Theme.surfaceContentVariant
                                             wrapMode: Text.WordWrap
@@ -1545,7 +1545,7 @@ FocusScope {
 
                                         Txt {
                                             Layout.fillWidth: true
-                                            text: qsTr("Keep Waypair Link ready in the system tray when you sign in.")
+                                            text: qsTr("Keep NectarLink ready in the system tray when you sign in.")
                                             role: "caption"
                                             color: Theme.surfaceContentVariant
                                             wrapMode: Text.WordWrap
@@ -1648,7 +1648,7 @@ FocusScope {
                                             : "Pair a phone anytime from Home",
                                         body: walkthrough.hasPairedDevice
                                             ? "Your phone is linked and ready on your local network."
-                                            : "Open the Waypair Link Android app whenever you are ready to scan the QR code."
+                                            : "Open the NectarLink Android app whenever you are ready to scan the QR code."
                                     },
                                     {
                                         icon: Icons.search,
@@ -1658,7 +1658,7 @@ FocusScope {
                                     {
                                         icon: Icons.book,
                                         title: qsTr("Features guide"),
-                                        body: "Browse every feature in Waypair Link, see what permissions it needs, and jump straight to it."
+                                        body: "Browse every feature in NectarLink, see what permissions it needs, and jump straight to it."
                                     }
                                 ]
 

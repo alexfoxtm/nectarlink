@@ -890,7 +890,7 @@ Item {
                             width: parent.width
                             iconPath: Icons.globe
                             title: qsTr("Language")
-                            description: qsTr("Waypair Link follows Windows unless you pick one.")
+                            description: qsTr("NectarLink follows Windows unless you pick one.")
                             Segmented {
                                 readonly property var other: page.languages.find(
                                     (l) => l.code === Preferences.language && l.code !== "en")
@@ -3084,7 +3084,7 @@ Item {
                         ListRow {
                             width: parent.width
                             iconPath: Icons.desktop
-                            title: qsTr("Waypair Link %1").arg(AppController.version)
+                            title: qsTr("NectarLink %1").arg(AppController.version)
                             description: AppController.updateStatus.length > 0
                                          ? AppController.updateStatus
                                          : qsTr("This PC: %1").arg(AppController.deviceName)
@@ -3139,8 +3139,8 @@ Item {
                         ListRow {
                             width: parent.width
                             iconPath: Icons.info
-                            title: qsTr("Based on NectarLink")
-                            description: qsTr("Waypair Link is a modified build of NectarLink, free software under GPL-3.0-or-later (apps) and MPL-2.0 (core). It is not an official NectarLink build.")
+                            title: qsTr("Local build for personal use")
+                            description: qsTr("A modified NectarLink built locally for personal use, free software under GPL-3.0-or-later (apps) and MPL-2.0 (core). It is not an official NectarLink release.")
                         }
                         Divider {
                             width: parent.width
@@ -3153,7 +3153,7 @@ Item {
                             visible: AppController.canUpdate && (Qt.platform.os === "osx" || Qt.platform.os === "macos")
                             iconPath: Icons.refresh
                             title: qsTr("Updates")
-                            description: qsTr("Check for updates opens the updater, which reads Waypair Link's own signed release feed. It runs only when you ask; nothing checks or installs by itself.")
+                            description: qsTr("Check for updates opens the updater, which reads this local build's own signed release feed, not NectarLink's. It runs only when you ask; nothing checks or installs by itself.")
                         }
                         ListRow {
                             width: parent.width
