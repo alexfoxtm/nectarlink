@@ -20,10 +20,19 @@ until qualification.
 
 It creates `Contents/MacOS/nectarlink-desktop`, a correct `Info.plist`
 (`CFBundleIdentifier`, `CFBundleName`/`DisplayName`, `CFBundleExecutable`,
-`CFBundleShortVersionString`, `CFBundleVersion`, `APPL`, `NSPrincipalClass`),
-runs `macdeployqt -no-codesign` (plus `-qmldir` when QML sources exist) to
-bundle Qt frameworks/plugins, and copies `LICENSE` + `LICENSES/` into
-`Contents/Resources/`.
+numeric `CFBundleShortVersionString`/`CFBundleVersion`, `APPL`,
+`NSPrincipalClass`, plus the actually-needed
+`NSLocalNetworkUsageDescription` and `NSBonjourServices` with
+`_nectarlink._udp` — the mDNS service the core announces
+(`MdnsAddressLookup::builder().service_name("nectarlink")`); no unused
+microphone/camera usage keys are declared), runs
+`macdeployqt -no-codesign` (options confirmed against the installed
+`macdeployqt --help`) with `-qmldir` when QML sources exist to bundle Qt
+frameworks/plugins, and copies `LICENSE` + **all** of `LICENSES/` into
+`Contents/Resources/`, failing on any copy error. App names are validated as
+a single filename component (no `/`, `.`/`..`, or control characters) and
+plist values are XML-escaped; an existing file, directory, or dangling
+symlink at the output path is a collision.
 
 Properties by construction:
 

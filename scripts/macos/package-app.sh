@@ -53,8 +53,9 @@ Options:
   --qml-dir <dir>        QML sources for macdeployqt -qmldir. Default: desktop/app/qml in this repo.
   -h, --help             Show this help.
 
-Discovery order for macdeployqt: --macdeployqt, --qt-bin-dir / QT_BIN_DIR,
-MACDEPLOYQT env, PATH, then `qmake -query QT_INSTALL_BINS`.
+Discovery order for macdeployqt: --macdeployqt (explicit), then
+--qt-bin-dir / QT_BIN_DIR, then MACDEPLOYQT env, then PATH, then
+`qmake -query QT_INSTALL_BINS`.
 No signing identity, keychain, entitlements file, or network is ever touched.
 EOF
 }
@@ -82,24 +83,46 @@ done
 [[ -f "$BINARY" ]]     || fail "input binary not found: $BINARY (build it first; this script never compiles)"
 [[ -x "$BINARY" ]]     || fail "input binary is not executable: $BINARY"
 
-# Keep Info.plist values free of characters that would break the plist or the shell.
+# --- Validate every value that becomes a path component or plist text ---
+# App name becomes a single directory name: never a path, never empty/dot, never
+# carrying control characters (including newlines).
+[[ -n "$APP_NAME" ]] || fail "--app-name must not be empty"
+[[ "$APP_NAME" != "." && "$APP_NAME" != ".." ]] || fail "invalid --app-name: $APP_NAME"
+[[ "$APP_NAME" != */* ]] || fail "invalid --app-name (must be a single filename component, no '/'): $APP_NAME"
+[[ "$APP_NAME" != *[[:cntrl:]]* ]] || fail "invalid --app-name (control characters are not allowed)"
 [[ "$BUNDLE_ID" =~ ^[A-Za-z0-9.-]+$ ]] || fail "invalid --bundle-id: $BUNDLE_ID"
-[[ "$VERSION" =~ ^[A-Za-z0-9.-]+$ ]]   || fail "invalid --version: $VERSION"
-[[ "$APP_NAME" != *"<"* && "$APP_NAME" != *">"* && "$APP_NAME" != *"&"* ]] || fail "invalid --app-name: $APP_NAME"
+# CFBundleShortVersionString: numeric major.minor[.patch]. CFBundleVersion:
+# non-negative integers separated by dots (Apple's numeric build format).
+[[ "$VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || fail "invalid --version (expected numeric x.y or x.y.z): $VERSION"
 [[ -n "$BUILD_VERSION" ]] || BUILD_VERSION="$VERSION"
-[[ "$BUILD_VERSION" =~ ^[A-Za-z0-9.-]+$ ]] || fail "invalid --build-version: $BUILD_VERSION"
+[[ "$BUILD_VERSION" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]] || fail "invalid --build-version (expected dot-separated integers): $BUILD_VERSION"
+
+# XML-escape plist text values so a legal-looking name cannot break the plist.
+xml_escape() {
+    local value="$1"
+    value="${value//&/&amp;}"
+    value="${value//</&lt;}"
+    value="${value//>/&gt;}"
+    value="${value//\"/&quot;}"
+    value="${value//\'/&apos;}"
+    printf '%s' "$value"
+}
 if [[ "$BUNDLE_ID" == "com.waypair.mac" ]]; then
     fail "--bundle-id com.waypair.mac is refused during qualification: it would collide with the installed legacy app. Pick a distinct id; final id selection is a Root release decision."
 fi
 
-# --- Discover macdeployqt (explicit first; never assumed, never downloaded) ---
+# --- Discover macdeployqt (never assumed, never downloaded) ---
+# Documented order: explicit --macdeployqt > --qt-bin-dir/QT_BIN_DIR > MACDEPLOYQT
+# env > PATH > qmake query. Preserve the incoming env value separately: resetting
+# MACDEPLOYQT first (as an earlier revision did) silently destroyed this step.
+MACDEPLOYQT_ENV="${MACDEPLOYQT:-}"
 MACDEPLOYQT=""
 if [[ -n "$MACDEPLOYQT_ARG" ]]; then
     MACDEPLOYQT="$MACDEPLOYQT_ARG"
-elif [[ -n "${MACDEPLOYQT:-}" ]]; then
-    MACDEPLOYQT="$MACDEPLOYQT"
 elif [[ -n "$QT_BIN_DIR" && -x "$QT_BIN_DIR/macdeployqt" ]]; then
     MACDEPLOYQT="$QT_BIN_DIR/macdeployqt"
+elif [[ -n "$MACDEPLOYQT_ENV" ]]; then
+    MACDEPLOYQT="$MACDEPLOYQT_ENV"
 elif command -v macdeployqt >/dev/null 2>&1; then
     MACDEPLOYQT="$(command -v macdeployqt)"
 elif command -v qmake >/dev/null 2>&1; then
@@ -116,7 +139,10 @@ fi
 [[ -d "$REPO_ROOT/LICENSES" ]] || fail "LICENSES/ not found at repo root: $REPO_ROOT (license texts must travel with the bundle)"
 
 APP_PATH="$OUTPUT_DIR/$APP_NAME.app"
-[[ ! -e "$APP_PATH" ]] || fail "output collision: $APP_PATH already exists. Remove it yourself or choose another --output-dir/--app-name; refusing to overwrite."
+# -e alone misses a dangling symlink at the output path; refuse on either.
+if [[ -e "$APP_PATH" || -L "$APP_PATH" ]]; then
+    fail "output collision: $APP_PATH already exists (file, directory, or symlink). Remove it yourself or choose another --output-dir/--app-name; refusing to overwrite."
+fi
 
 mkdir -p "$APP_PATH/Contents/MacOS" "$APP_PATH/Contents/Resources"
 
@@ -124,23 +150,27 @@ EXEC_NAME="nectarlink-desktop"
 cp "$BINARY" "$APP_PATH/Contents/MacOS/$EXEC_NAME"
 chmod +x "$APP_PATH/Contents/MacOS/$EXEC_NAME"
 
+PLIST_BUNDLE_ID="$(xml_escape "$BUNDLE_ID")"
+PLIST_APP_NAME="$(xml_escape "$APP_NAME")"
+PLIST_VERSION="$(xml_escape "$VERSION")"
+PLIST_BUILD_VERSION="$(xml_escape "$BUILD_VERSION")"
 cat > "$APP_PATH/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>CFBundleIdentifier</key>
-    <string>$BUNDLE_ID</string>
+    <string>$PLIST_BUNDLE_ID</string>
     <key>CFBundleName</key>
-    <string>$APP_NAME</string>
+    <string>$PLIST_APP_NAME</string>
     <key>CFBundleDisplayName</key>
-    <string>$APP_NAME</string>
+    <string>$PLIST_APP_NAME</string>
     <key>CFBundleExecutable</key>
     <string>$EXEC_NAME</string>
     <key>CFBundleShortVersionString</key>
-    <string>$VERSION</string>
+    <string>$PLIST_VERSION</string>
     <key>CFBundleVersion</key>
-    <string>$BUILD_VERSION</string>
+    <string>$PLIST_BUILD_VERSION</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleInfoDictionaryVersion</key>
@@ -149,16 +179,28 @@ cat > "$APP_PATH/Contents/Info.plist" <<EOF
     <string>NSApplication</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <!-- Actually needed: core config lan_discovery announces/discovers via
+         mDNS service "nectarlink" (MdnsAddressLookup::builder().service_name("nectarlink"),
+         i.e. _nectarlink._udp). No microphone/camera keys are declared: this
+         packaging step claims no such capture. -->
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Waypair Link finds and connects to your paired phone on your local network.</string>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_nectarlink._udp</string>
+    </array>
 </dict>
 </plist>
 EOF
 
 # License/notice material inside the bundle (GPL/MPL compliance, not a substitute
 # for the corresponding-source offer documented in MACOS_PACKAGING.md).
-cp "$REPO_ROOT/LICENSE" "$APP_PATH/Contents/Resources/LICENSE.txt"
+cp "$REPO_ROOT/LICENSE" "$APP_PATH/Contents/Resources/LICENSE.txt" || fail "failed to copy LICENSE into the bundle"
 mkdir -p "$APP_PATH/Contents/Resources/LICENSES"
-cp "$REPO_ROOT"/LICENSES/*.txt "$APP_PATH/Contents/Resources/LICENSES/" 2>/dev/null || true
-[[ -f "$REPO_ROOT/LICENSES/APP-STORE-EXCEPTION.md" ]] && cp "$REPO_ROOT/LICENSES/APP-STORE-EXCEPTION.md" "$APP_PATH/Contents/Resources/LICENSES/"
+# Copy ALL of LICENSES/ (every license text and the app-store exception), and
+# let any copy error abort the packaging (set -e): notices must not be
+# silently dropped.
+cp -R "$REPO_ROOT/LICENSES/." "$APP_PATH/Contents/Resources/LICENSES/" || fail "failed to copy LICENSES/ into the bundle"
 
 # Bundle Qt frameworks/plugins. -no-codesign: this script never signs; any
 # production signature is applied later by Root's release process.
