@@ -18,10 +18,12 @@ object RingPolicy {
     enum class ZenFilter { UNKNOWN, ALL, PRIORITY, NONE, ALARMS }
 
     /**
-     * Whether alarm-category audio can be heard under [filter]. The
-     * alarm category passes ALL, PRIORITY and ALARMS modes; only
-     * total silence (NONE) suppresses it at the system level, and no
-     * app-side attribute bypasses that.
+     * Whether alarm-category audio can still be heard under [filter].
+     * It passes ALL and ALARMS; under PRIORITY it passes only when the
+     * user's DND policy allows alarms, which this cannot see, so
+     * PRIORITY is treated as possibly audible. Total silence (NONE)
+     * suppresses it at the system level, and no app-side attribute
+     * bypasses that.
      */
     fun alarmReachesUser(filter: ZenFilter): Boolean = filter != ZenFilter.NONE
 

@@ -22,23 +22,25 @@ import android.util.Log
  * The alarm-stream volume is temporarily raised to full for the ring
  * and the user's original volume is restored exactly once on every
  * exit path (stop, the one-minute timeout, overlap handling, and
- * player failure). The saved volume is also kept in preferences
- * while a ring is active, so if the process dies mid-ring the next
- * launch restores it instead of leaving the user's alarm volume
- * raised forever. No user setting is permanently changed.
+ * player failure). The saved volume is synchronously committed to
+ * preferences before the volume is raised, so if the process dies
+ * mid-ring the next launch restores it instead of leaving the user's
+ * alarm volume raised forever; if it can't be committed, the volume
+ * is not raised at all. No user setting is permanently changed.
  *
- * Do Not Disturb: alarm-category audio (`USAGE_ALARM`) passes the
- * ALL, PRIORITY and ALARMS interruption filters, so raising the
- * volume is enough there. Total silence
- * (`INTERRUPTION_FILTER_NONE`) suppresses alarms at the system level
- * and cannot be bypassed by any audio attribute; this class
- * deliberately does not call `setInterruptionFilter` (whose
- * semantics for third-party callers are restricted on current
- * target SDKs) and never grants itself policy access. In that one
- * mode the ring degrades to vibration plus the raised volume, and
- * the truth is logged — a real bypass would need the user to grant
- * notification-policy access and, on Android 15+/targetSdk 37 Zen
- * modes, to allow this app's rule in system settings.
+ * Do Not Disturb: alarm-category audio (`USAGE_ALARM`) passes the ALL
+ * and ALARMS interruption filters. Under PRIORITY it is heard only if
+ * the user's DND policy allows alarms (the usual default, but
+ * user-configurable). Total silence (`INTERRUPTION_FILTER_NONE`)
+ * suppresses alarms at the system level and cannot be bypassed by any
+ * audio attribute; this class deliberately does not call
+ * `setInterruptionFilter` (whose semantics for third-party callers
+ * are restricted on current target SDKs) and never grants itself
+ * policy access. When DND blocks alarms the ring degrades to vibration
+ * plus the raised volume, and total silence is logged — a real bypass
+ * would need the user to grant notification-policy access and, on
+ * Android 15+/targetSdk 37 Zen modes, to allow this app's rule in
+ * system settings.
  */
 class Ringer(context: Context) {
     private val context = context.applicationContext
@@ -74,20 +76,25 @@ class Ringer(context: Context) {
         beginOverride()
         val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
             ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
-        player = runCatching {
-            MediaPlayer().apply {
-                setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ALARM)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build(),
-                )
-                setDataSource(context, uri)
-                isLooping = true
-                prepare()
-                start()
-            }
-        }.getOrNull()
+        player = runCatching { MediaPlayer() }.getOrNull()?.let { candidate ->
+            runCatching {
+                candidate.apply {
+                    setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_ALARM)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                            .build(),
+                    )
+                    setDataSource(context, uri)
+                    isLooping = true
+                    prepare()
+                    start()
+                }
+            }.onFailure {
+                Log.w(TAG, "alarm player failed to start", it)
+                runCatching { candidate.release() }
+            }.getOrNull()
+        }
         vibrator()?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 600, 400), 0))
         if (player != null) {
             main.postDelayed(timeout, MAX_RING_MS)
@@ -109,18 +116,27 @@ class Ringer(context: Context) {
     /**
      * Raises the alarm volume to full, capturing the user's volume
      * first (once — an overlapping ring keeps the first capture), and
-     * reports the one DND mode volume cannot fix.
+     * reports the one DND mode volume cannot fix. A still-persisted
+     * volume from an unfinished restore is the user's real original,
+     * so it wins over the current (possibly still raised) volume.
      */
     private fun beginOverride() {
+        logZenLimits()
         val am = audio ?: return
         val current = runCatching { am.getStreamVolume(AudioManager.STREAM_ALARM) }.getOrNull() ?: return
-        if (tracker.begin(current)) {
-            persistSaved(current)
+        val original = readPersisted() ?: current
+        if (tracker.begin(original) && !persistSaved(original)) {
+            tracker.consumeRestore()
+            Log.w(TAG, "can't persist the original alarm volume; not raising it")
+            return
         }
         val max = runCatching { am.getStreamMaxVolume(AudioManager.STREAM_ALARM) }.getOrDefault(current)
         runCatching {
             am.setStreamVolume(AudioManager.STREAM_ALARM, RingPolicy.raisedAlarmVolume(current, max), 0)
         }.onFailure { Log.w(TAG, "can't raise the alarm volume", it) }
+    }
+
+    private fun logZenLimits() {
         val filter = when (notifications?.currentInterruptionFilter) {
             NotificationManager.INTERRUPTION_FILTER_NONE -> RingPolicy.ZenFilter.NONE
             NotificationManager.INTERRUPTION_FILTER_PRIORITY -> RingPolicy.ZenFilter.PRIORITY
@@ -137,14 +153,19 @@ class Ringer(context: Context) {
     /** Restores the captured alarm volume, exactly once. */
     private fun restoreOverride() {
         val saved = tracker.consumeRestore() ?: return
-        val restored = runCatching {
-            audio?.setStreamVolume(AudioManager.STREAM_ALARM, saved, 0)
-        }.isSuccess
-        if (restored) {
+        if (setAlarmVolume(saved)) {
             clearPersisted()
         }
         // If setting it failed, the persisted copy stays, so the next
         // launch's stale-override restore retries instead of losing it.
+    }
+
+    /** True only when an AudioManager exists and accepted [volume]. */
+    private fun setAlarmVolume(volume: Int): Boolean {
+        val am = audio ?: return false
+        return runCatching { am.setStreamVolume(AudioManager.STREAM_ALARM, volume, 0) }
+            .onFailure { Log.w(TAG, "can't restore the alarm volume", it) }
+            .isSuccess
     }
 
     /**
@@ -156,19 +177,25 @@ class Ringer(context: Context) {
         if (tracker.active) return
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         if (!prefs.contains(KEY_SAVED_ALARM_VOLUME)) return
-        val saved = prefs.getInt(KEY_SAVED_ALARM_VOLUME, -1)
-        if (saved >= 0) {
-            runCatching { audio?.setStreamVolume(AudioManager.STREAM_ALARM, saved, 0) }
-                .onSuccess { clearPersisted() }
-        } else {
+        val saved = readPersisted()
+        if (saved == null) {
+            clearPersisted()
+        } else if (setAlarmVolume(saved)) {
             clearPersisted()
         }
     }
 
-    private fun persistSaved(volume: Int) {
+    private fun readPersisted(): Int? =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit().putInt(KEY_SAVED_ALARM_VOLUME, volume).apply()
-    }
+            .getInt(KEY_SAVED_ALARM_VOLUME, -1)
+            .takeIf { it >= 0 }
+
+    /** Synchronous, so the saved volume is on disk before any raise. */
+    private fun persistSaved(volume: Int): Boolean =
+        runCatching {
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit().putInt(KEY_SAVED_ALARM_VOLUME, volume).commit()
+        }.getOrDefault(false)
 
     private fun clearPersisted() {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
