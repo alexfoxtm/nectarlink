@@ -40,10 +40,12 @@ use std::{
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
+#[cfg(windows)]
+use crate::win::autostart;
 use crate::{
     core_host,
     state::Changes,
-    win::{autostart, http, toast},
+    win::{http, toast},
 };
 
 const LATEST: &str = "https://api.github.com/repos/thtbee/nectarlink/releases/latest";
@@ -104,6 +106,10 @@ pub fn set_auto_install(on: bool) {
 /// Whether this copy updates itself (an installed one, not a build run
 /// from its folder).
 pub fn can_update() -> bool {
+    #[cfg(not(windows))]
+    return false;
+
+    #[cfg(windows)]
     std::env::current_exe().is_ok_and(|exe| autostart::is_installed(&exe))
 }
 
@@ -221,6 +227,9 @@ const INSTALLER_SUFFIX: &str =
 /// The release as an update, if it's a newer published one with an
 /// installer for this architecture and its sums.
 fn newer_release(release: Release, current: &str) -> Option<Update> {
+    if !cfg!(windows) {
+        return None;
+    }
     newer_release_for(release, current, INSTALLER_SUFFIX)
 }
 
@@ -331,20 +340,28 @@ fn task_registered() -> bool {
 /// Blocking. Returns what went wrong, in words for the user. On success the
 /// app is about to quit for the installer.
 pub fn install(progress: impl FnMut(u64, u64)) -> Result<(), String> {
-    let update = available().ok_or("There's no update to install.")?;
-    let staged = stage(&update, progress).map_err(|e| {
-        tracing::warn!(error = %e, "update download failed");
-        e.for_user()
-    })?;
-    if task_registered() {
-        match install_with_task(true) {
-            Ok(()) => return Ok(()),
-            Err(e) => {
-                tracing::warn!(error = e, "the update task didn't start; asking for permission instead")
+    #[cfg(not(windows))]
+    {
+        let _ = progress;
+        Err("Updates are not supported on this platform.".into())
+    }
+    #[cfg(windows)]
+    {
+        let update = available().ok_or("There's no update to install.")?;
+        let staged = stage(&update, progress).map_err(|e| {
+            tracing::warn!(error = %e, "update download failed");
+            e.for_user()
+        })?;
+        if task_registered() {
+            match install_with_task(true) {
+                Ok(()) => return Ok(()),
+                Err(e) => {
+                    tracing::warn!(error = e, "the update task didn't start; asking for permission instead")
+                }
             }
         }
+        install_with_prompt(&update, &staged)
     }
-    install_with_prompt(&update, &staged)
 }
 
 /// Why a download didn't produce a checked installer.
@@ -667,6 +684,7 @@ fn download_verified(update: &Update, dir: &Path) -> Result<PathBuf, String> {
 /// The installer with Windows' administrator prompt (no update task): a
 /// fresh copy of the download in this user's temp folder, checked again, so
 /// what runs is what was checked.
+#[allow(dead_code)]
 fn install_with_prompt(update: &Update, staged: &Path) -> Result<(), String> {
     let failed = |e: String| {
         tracing::warn!(error = e, "update failed");

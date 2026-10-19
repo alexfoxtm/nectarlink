@@ -24,16 +24,27 @@ pub fn speaker_state() -> Option<(u8, bool)> {
     parse_speaker_state(&String::from_utf8_lossy(&output.stdout))
 }
 
-pub fn set_speaker_volume(level: u8) -> Result<(), String> {
-    let script = format!("set volume output volume {level}");
-    std::process::Command::new("osascript").args(["-e", &script]).output().map_err(|e| e.to_string())?;
+fn run_osascript(script: &str) -> Result<(), String> {
+    let output =
+        std::process::Command::new("osascript").args(["-e", script]).output().map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let msg = stderr.trim();
+        return Err(if msg.is_empty() {
+            format!("osascript failed with exit code {:?}", output.status.code())
+        } else {
+            msg.to_string()
+        });
+    }
     Ok(())
 }
 
+pub fn set_speaker_volume(level: u8) -> Result<(), String> {
+    run_osascript(&format!("set volume output volume {level}"))
+}
+
 pub fn set_speaker_mute(muted: bool) -> Result<(), String> {
-    let script = format!("set volume output muted {muted}");
-    std::process::Command::new("osascript").args(["-e", &script]).output().map_err(|e| e.to_string())?;
-    Ok(())
+    run_osascript(&format!("set volume output muted {muted}"))
 }
 
 pub fn toggle_speaker_mute() -> Result<bool, String> {
@@ -64,6 +75,9 @@ pub fn mic_volume() -> Option<u8> {
         .args(["-e", "input volume of (get volume settings)"])
         .output()
         .ok()?;
+    if !output.status.success() {
+        return None;
+    }
     let text = String::from_utf8_lossy(&output.stdout);
     text.trim().parse().ok()
 }
@@ -73,7 +87,7 @@ pub fn mic_muted() -> Option<bool> {
 }
 
 pub fn toggle_mic_mute() -> Result<bool, String> {
-    let current_vol = mic_volume().unwrap_or(0);
+    let current_vol = mic_volume().ok_or_else(|| "Couldn't read microphone volume".to_string())?;
     let muted = current_vol == 0;
     let next = !muted;
     let vol = if next {
@@ -86,7 +100,7 @@ pub fn toggle_mic_mute() -> Result<bool, String> {
         if saved > 0 { saved } else { 75 }
     };
     let script = format!("set volume input volume {vol}");
-    std::process::Command::new("osascript").args(["-e", &script]).output().map_err(|e| e.to_string())?;
+    run_osascript(&script)?;
     Ok(next)
 }
 
