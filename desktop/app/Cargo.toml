@@ -112,6 +112,15 @@ windows = { workspace = true, features = [
     "Win32_Media_MediaFoundation",
 ] }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+# Native NSPasteboard access (see src/mac/clipboard.rs): typed AppKit /
+# Foundation bindings, with GCD for main-thread dispatch. macOS only, so
+# Windows and Linux builds are unaffected.
+dispatch2 = "0.3"
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSPasteboard"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSData", "NSEnumerator", "NSString"] }
+
 [build-dependencies]
 cxx-qt-build = { workspace = true, features = ["link_qt_object_files"] }
 embed-resource.workspace = true
