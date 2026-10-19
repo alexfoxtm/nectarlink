@@ -896,7 +896,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c54e03a951783e8b327515db3f2a2fd0e3bed362a96b066f341ce66ed49b4ead"
 dependencies = [
  "data-encoding",
- "syn 2.0.119",
+ "syn 3.0.6",
 ]
 
 [[package]]
@@ -2351,6 +2351,7 @@ version = "0.1.4"
 dependencies = [
  "blake3",
  "bytes",
+ "core-foundation",
  "data-encoding",
  "iroh",
  "iroh-mdns-address-lookup",
@@ -2363,6 +2364,7 @@ dependencies = [
  "rusqlite",
  "rustls",
  "rustls-pki-types",
+ "security-framework",
  "serde",
  "serde_json",
  "sha2",
@@ -2380,7 +2382,7 @@ dependencies = [
 
 [[package]]
 name = "nectarlink-desktop"
-version = "0.1.4"
+version = "0.47.0"
 dependencies = [
  "anyhow",
  "blake3",
@@ -2390,11 +2392,15 @@ dependencies = [
  "cxx-qt-lib",
  "data-encoding",
  "dirs",
+ "dispatch2",
  "embed-resource",
  "hostname",
  "material-colors",
  "nectarlink-core",
  "nectarlink-vcam",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
  "qrcode",
  "serde",
  "serde_json",
@@ -2739,6 +2745,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a12a8ed07aefc768292f076dc3ac8c48f3781c8f2d5851dd3d98950e8c5a89f"
 dependencies = [
  "objc2-encode",
+]
+
+[[package]]
+name = "objc2-app-kit"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d49e936b501e5c5bf01fda3a9452ff86dc3ea98ad5f283e1455153142d97518c"
+dependencies = [
+ "bitflags",
+ "objc2",
+ "objc2-foundation",
 ]
 
 [[package]]
@@ -3895,7 +3912,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
