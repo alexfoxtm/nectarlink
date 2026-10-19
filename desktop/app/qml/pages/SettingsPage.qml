@@ -3137,10 +3137,22 @@ Item {
                             title: qsTr("Based on NectarLink")
                             description: qsTr("Waypair Link is a modified build of NectarLink, free software under GPL-3.0-or-later (apps) and MPL-2.0 (core). It is not an official NectarLink build.")
                         }
-                        Divider { width: parent.width; visible: AppController.canUpdate }
-                        ListRow {
+                        Divider {
                             width: parent.width
                             visible: AppController.canUpdate
+                                     && (Qt.platform.os === "windows" || Qt.platform.os === "osx" || Qt.platform.os === "macos")
+                        }
+                        // macOS: the Sparkle helper runs only for a manual check.
+                        ListRow {
+                            width: parent.width
+                            visible: AppController.canUpdate && (Qt.platform.os === "osx" || Qt.platform.os === "macos")
+                            iconPath: Icons.refresh
+                            title: qsTr("Updates")
+                            description: qsTr("Check for updates opens the updater, which reads Waypair Link's own signed release feed. It runs only when you ask; nothing checks or installs by itself.")
+                        }
+                        ListRow {
+                            width: parent.width
+                            visible: AppController.canUpdate && Qt.platform.os === "windows"
                             iconPath: Icons.refresh
                             title: qsTr("Check for updates")
                             description: qsTr("Looks for a new version on GitHub once a day.")
@@ -3152,7 +3164,7 @@ Item {
                         }
                         ListRow {
                             width: parent.width
-                            visible: AppController.canUpdate
+                            visible: AppController.canUpdate && Qt.platform.os === "windows"
                             enabled: Preferences.autoUpdate
                             opacity: enabled ? 1 : 0.5
                             iconPath: Icons.download
