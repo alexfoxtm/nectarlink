@@ -406,6 +406,50 @@ install_updater_helper() {
     require_helper_sparkle_rpath "$helper_exe"
 }
 
+# --- macOS Services (docs/waypair/MAC_CAPTURE_SERVICES.md) ---
+# The two public NSServices declared in the host Info.plist. Both share
+# the provider method the app registers (`waypairCapture`), matching the
+# `waypairCapture:userData:error:` selector implemented in
+# desktop/app/src/mac/services.rs; `NSUserData` selects photo vs scan.
+# The displayed names lead with the app name, so a qualification bundle
+# (--app-name "Waypair Link (Qualification)") lists distinct Services
+# from a release install. --app-name is validated to contain no '/', so
+# no displayed name can contain one either (AppKit would drop the text
+# before a slash). Only the public Services mechanism is used: no
+# private Continuity Camera registration, no extra entitlement.
+
+service_photo_menu() { printf '%s: Take Photo with Phone' "$1"; }
+service_scan_menu() { printf '%s: Scan Document with Phone' "$1"; }
+
+# Escape for a quoted .strings value: backslash first, then quotes.
+strings_escape() {
+    printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\n'
+}
+
+# ServicesMenu.strings for en and zh_CN, keyed by the (English) menu
+# item defaults, as AppKit looks them up. Values lead with the app name
+# in both languages for the same qualification-distinctness reason.
+write_services_menu_strings() {
+    local resources="$1"
+    local app_name="$2"
+    local photo_en scan_en photo_zh scan_zh
+    photo_en="$(strings_escape "$(service_photo_menu "$app_name")")"
+    scan_en="$(strings_escape "$(service_scan_menu "$app_name")")"
+    photo_zh="$(strings_escape "$app_name：用手机拍照")"
+    scan_zh="$(strings_escape "$app_name：用手机扫描文档")"
+    mkdir -p "$resources/en.lproj" "$resources/zh_CN.lproj" || fail "failed to create Services localization directories"
+    cat > "$resources/en.lproj/ServicesMenu.strings" <<EOF
+/* Services menu items (NSServices NSMenuItem defaults). */
+"$photo_en" = "$photo_en";
+"$scan_en" = "$scan_en";
+EOF
+    cat > "$resources/zh_CN.lproj/ServicesMenu.strings" <<EOF
+/* Services menu items (NSServices NSMenuItem defaults). */
+"$photo_en" = "$photo_zh";
+"$scan_en" = "$scan_zh";
+EOF
+}
+
 # Sourced for the scratch checks. Executing the file still packages.
 if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
     return 0
@@ -537,6 +581,8 @@ chmod +x "$APP_PATH/Contents/MacOS/$EXEC_NAME"
 PLIST_UPDATE_FEED="$(xml_escape "$UPDATE_FEED")"
 PLIST_BUNDLE_ID="$(xml_escape "$BUNDLE_ID")"
 PLIST_APP_NAME="$(xml_escape "$APP_NAME")"
+PLIST_PHOTO_MENU="$(xml_escape "$(service_photo_menu "$APP_NAME")")"
+PLIST_SCAN_MENU="$(xml_escape "$(service_scan_menu "$APP_NAME")")"
 PLIST_VERSION="$(xml_escape "$VERSION")"
 PLIST_BUILD_VERSION="$(xml_escape "$BUILD_VERSION")"
 cat > "$APP_PATH/Contents/Info.plist" <<EOF
@@ -589,9 +635,70 @@ cat > "$APP_PATH/Contents/Info.plist" <<EOF
     <string>$UPDATE_ED_KEY</string>
     <key>SUEnableAutomaticChecks</key>
     <false/>
+    <!-- Public macOS Services (desktop/app/src/mac/services.rs registers
+         the provider at launch). NSPortName must equal CFBundleName.
+         Image-returning only (PNG/TIFF, no NSSendTypes), so AppKit
+         enables these only in hosts that accept returned images;
+         plain-text and non-adopting hosts keep them disabled. The
+         provider waits at most 90 s of the 95 s NSTimeout and never
+         falls back to the general clipboard. -->
+    <key>NSServices</key>
+    <array>
+        <dict>
+            <key>NSMenuItem</key>
+            <dict>
+                <key>default</key>
+                <string>$PLIST_PHOTO_MENU</string>
+            </dict>
+            <key>NSMessage</key>
+            <string>waypairCapture</string>
+            <key>NSPortName</key>
+            <string>$PLIST_APP_NAME</string>
+            <key>NSRequiredContext</key>
+            <dict/>
+            <key>NSReturnTypes</key>
+            <array>
+                <string>public.png</string>
+                <string>public.tiff</string>
+            </array>
+            <key>NSServiceDescription</key>
+            <string>Take a photo with your paired phone</string>
+            <key>NSTimeout</key>
+            <string>95000</string>
+            <key>NSUserData</key>
+            <string>photo</string>
+        </dict>
+        <dict>
+            <key>NSMenuItem</key>
+            <dict>
+                <key>default</key>
+                <string>$PLIST_SCAN_MENU</string>
+            </dict>
+            <key>NSMessage</key>
+            <string>waypairCapture</string>
+            <key>NSPortName</key>
+            <string>$PLIST_APP_NAME</string>
+            <key>NSRequiredContext</key>
+            <dict/>
+            <key>NSReturnTypes</key>
+            <array>
+                <string>public.png</string>
+                <string>public.tiff</string>
+            </array>
+            <key>NSServiceDescription</key>
+            <string>Scan a document with your paired phone</string>
+            <key>NSTimeout</key>
+            <string>95000</string>
+            <key>NSUserData</key>
+            <string>scan</string>
+        </dict>
+    </array>
 </dict>
 </plist>
 EOF
+
+# Localized Services menu names (keys are the NSMenuItem defaults above).
+write_services_menu_strings "$APP_PATH/Contents/Resources" "$APP_NAME"
 
 # License/notice material inside the bundle (GPL/MPL compliance, not a substitute
 # for the corresponding-source offer documented in MACOS_PACKAGING.md).
