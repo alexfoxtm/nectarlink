@@ -4,8 +4,10 @@
 use material_colors::color::Rgb;
 use std::path::Path;
 
+/// No wallpaper sampling on macOS yet: `None` lets the theme use its
+/// fallback seed instead of a made-up color.
 pub fn seed() -> Option<Rgb> {
-    Some(Rgb::new(245, 166, 35))
+    None
 }
 
 pub fn artwork_scheme_from_path(_path: &Path) -> Option<String> {
