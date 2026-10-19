@@ -7315,8 +7315,8 @@ What it needs
     </message>
     <message>
         <location filename="../qml/pages/SettingsPage.qml" line="3150"/>
-        <source>Added by the Waypair fork. To choose which phone apps and notification types mirror here, open NectarLink on your phone &gt; Settings &gt; Notifications &gt; Choose apps and types; SMS access is a separate permission. Find phone puts the phone&apos;s alarm volume back after ringing.</source>
-        <translation>Waypair 分支新增的功能。要选择哪些手机应用和通知类型镜像到这里，请在手机上打开 NectarLink &gt; 设置 &gt; 通知 &gt; 选择应用和类型；短信权限需单独授予。查找手机响铃结束后，会把手机的闹钟音量恢复原样。</translation>
+        <source>Added by the Waypair fork. To choose which phone apps and notification types mirror here, open NectarLink on your phone &gt; Settings &gt; Permissions &gt; Notifications &gt; Choose apps and types; SMS access is a separate permission. Find phone puts the phone&apos;s alarm volume back after ringing.</source>
+        <translation>Waypair 分支新增的功能。要选择哪些手机应用和通知类型镜像到这里，请在手机上打开 NectarLink &gt; 设置 &gt; 权限 &gt; 通知 &gt; 选择应用和类型；短信权限需单独授予。查找手机响铃结束后，会把手机的闹钟音量恢复原样。</translation>
     </message>
     <message>
         <location filename="../qml/pages/SettingsPage.qml" line="3151"/>

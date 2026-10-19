@@ -4,15 +4,15 @@
     <string name="app_name">NectarLink</string>
 
     <!-- Pairing -->
-    <string name="pair_title">Pair with your PC</string>
+    <string name="pair_title">Pair with your computer</string>
     <string name="pair_show_title">Pair a phone or tablet</string>
     <string name="pair_show_hint">On your other phone or tablet, open NectarLink, tap Pair, and scan this code.</string>
     <string name="pair_show_qr_desc">Pairing code for another phone or tablet</string>
     <string name="action_show_code">Pair a phone or tablet instead</string>
-    <string name="pair_scan_hint">On your PC, open NectarLink. Point the camera at the code it shows. Another phone or tablet shows its code under Pair a phone or tablet.</string>
+    <string name="pair_scan_hint">On your computer, open NectarLink. Point the camera at the code it shows. Another phone or tablet shows its code under Pair a phone or tablet.</string>
     <string name="pair_nearby_title">Pair nearby</string>
-    <string name="pair_nearby_hint">On your PC, open NectarLink and keep its pairing screen open. It shows up here.</string>
-    <string name="pair_looking">Looking for PCs…</string>
+    <string name="pair_nearby_hint">On your computer, open NectarLink and keep its pairing screen open. It shows up here.</string>
+    <string name="pair_looking">Looking for computers…</string>
     <string name="pair_joining">Pairing…</string>
     <string name="pair_connecting">Connecting to %1$s…</string>
     <string name="pair_waiting">Waiting for %1$s…</string>
@@ -23,10 +23,10 @@
     <string name="pair_failed_title">Pairing didn\'t work</string>
     <string name="pair_failed_rejected">The codes didn\'t match, so nothing was paired.</string>
     <string name="pair_failed_declined">Pairing was declined on one of the devices.</string>
-    <string name="pair_failed_expired">The code expired. Show a new one on your PC.</string>
-    <string name="pair_failed_unreachable">Couldn\'t reach the PC. Make sure both are on the same network.</string>
+    <string name="pair_failed_expired">The code expired. Show a new one on your computer.</string>
+    <string name="pair_failed_unreachable">Couldn\'t reach the computer. Make sure both are on the same network.</string>
     <string name="pair_failed_other">That isn\'t a NectarLink pairing code, or something went wrong.</string>
-    <string name="your_pc">your PC</string>
+    <string name="your_pc">your computer</string>
     <string name="camera_permission_needed">NectarLink needs the camera to scan the pairing code. Nothing is recorded.</string>
 
     <!-- Home -->
@@ -43,7 +43,7 @@
     <string name="battery_level">%1$d%%</string>
     <string name="battery_charging">%1$d%% · charging</string>
     <string name="ringing_title">%1$s is ringing your phone</string>
-    <string name="ringing_title_unknown">Your PC is ringing your phone</string>
+    <string name="ringing_title_unknown">Your computer is ringing your phone</string>
     <string name="connected">Connected</string>
     <string name="not_connected">Not connected</string>
 
@@ -56,12 +56,12 @@
     <string name="settings_language_more">More</string>
     <string name="settings_dynamic_color">Colors from wallpaper</string>
     <string name="settings_dynamic_color_hint">Use your wallpaper\'s colors.</string>
-    <string name="settings_devices">PCs</string>
+    <string name="settings_devices">Computers</string>
     <string name="settings_about">About</string>
     <string name="settings_notifications">Notifications</string>
-    <string name="notifications_title">Show notifications on your PC</string>
-    <string name="notifications_on">On. Notifications appear on your paired PCs, where you can reply to and dismiss them.</string>
-    <string name="notifications_off">NectarLink needs notification access to show this phone’s notifications on your PC.</string>
+    <string name="notifications_title">Show notifications on your computer</string>
+    <string name="notifications_on">On. Notifications appear on your paired computers, where you can reply to and dismiss them.</string>
+    <string name="notifications_off">NectarLink needs notification access to show this phone’s notifications on your computer.</string>
     <string name="notifications_restricted">Switch greyed out? Open App info, tap ⋮, choose “Allow restricted settings”, then try again.</string>
     <string name="action_allow">Allow</string>
     <string name="clip_share_label">Send to PC</string>
@@ -87,8 +87,8 @@
     <string name="write_settings_title">Screen brightness</string>
     <string name="write_settings_on">On: your PC can adjust this phone\'s screen brightness.</string>
     <string name="write_settings_off">Let your PC adjust this phone\'s screen brightness.</string>
-    <string name="local_network_title">Reach your PC on this network</string>
-    <string name="local_network_text">Android asks before an app talks to devices on your network. NectarLink needs it to reach your PC.</string>
+    <string name="local_network_title">Reach your computer on this network</string>
+    <string name="local_network_text">Android asks before an app talks to devices on your network. NectarLink needs it to reach your computer.</string>
     <string name="channel_elevated">Wireless debugging setup</string>
     <string name="elevated_title">Real touch and keys (Wireless debugging)</string>
     <string name="elevated_not_set_up">Real-time touch, every key, and mute, hold and keypad on calls from your PC. Uses Android\'s own Wireless debugging.</string>
@@ -202,7 +202,7 @@
     <string name="clip_action_track">Track</string>
     <string name="clip_action_email">Email</string>
     <string name="background_title">Stay reachable in the background</string>
-    <string name="background_text">Android is pausing NectarLink to save battery, so your PC can\'t reach it. Let it run in the background.</string>
+    <string name="background_text">Android is pausing NectarLink to save battery, so your computer can\'t reach it. Let it run in the background.</string>
     <string name="background_on">Allowed to stay connected in the background</string>
     <string name="settings_background_title">Background &amp; battery</string>
     <string name="battery_open_oem_settings">Battery settings</string>
@@ -247,7 +247,7 @@
     <string name="peer_kind_phone">Phone</string>
     <string name="peer_kind_tablet">Tablet</string>
     <string name="action_unpair">Unpair</string>
-    <string name="action_pair_new">Pair another PC</string>
+    <string name="action_pair_new">Pair another computer</string>
     <string name="action_refresh">Refresh</string>
     <string name="action_update">Update</string>
     <string name="update_title">NectarLink %1$s is available</string>
@@ -300,13 +300,13 @@
     <string name="channel_connection">Connection</string>
     <string name="channel_ringing">Find my phone</string>
     <string name="notification_connected_to">Connected to %1$s</string>
-    <string name="notification_connected_many">Connected to %1$d PCs</string>
+    <string name="notification_connected_many">Connected to %1$d computers</string>
     <plurals name="notification_connected_pcs">
-        <item quantity="one">Connected to %1$d PC</item>
-        <item quantity="other">Connected to %1$d PCs</item>
+        <item quantity="one">Connected to %1$d computer</item>
+        <item quantity="other">Connected to %1$d computers</item>
     </plurals>
-    <string name="notification_waiting">Waiting for your PC</string>
-    <string name="notification_not_paired">Not paired with a PC yet</string>
+    <string name="notification_waiting">Waiting for your computer</string>
+    <string name="notification_not_paired">Not paired with a computer yet</string>
     <plurals name="transfer_files">
         <item quantity="one">%1$d file</item>
         <item quantity="other">%1$d files</item>
@@ -587,10 +587,10 @@
     <string name="task_running_short">Running</string>
 
     <!-- Errors -->
-    <string name="error_not_connected">The PC isn\'t connected right now.</string>
-    <string name="error_not_paired">That PC isn\'t paired anymore.</string>
-    <string name="error_timed_out">The PC didn\'t answer in time.</string>
-    <string name="error_unsupported">The PC\'s app doesn\'t support that yet.</string>
+    <string name="error_not_connected">The computer isn\'t connected right now.</string>
+    <string name="error_not_paired">That computer isn\'t paired anymore.</string>
+    <string name="error_timed_out">The computer didn\'t answer in time.</string>
+    <string name="error_unsupported">The computer\'s app doesn\'t support that yet.</string>
     <string name="error_generic">Something went wrong.</string>
 
     <!-- Theme seed names -->
@@ -1303,14 +1303,14 @@
     <string name="update_ready_title">NectarLink %1$s is ready</string>
     <string name="update_ready_text">Tap to install the update.</string>
     <string name="update_done_title">NectarLink is updated to %1$s</string>
-    <string name="update_done_text">Tap to open it. Your PCs reconnect on their own.</string>
+    <string name="update_done_text">Tap to open it. Your computers reconnect on their own.</string>
     <string name="update_auto_title">Install updates automatically</string>
-    <string name="update_auto_text">New versions from GitHub install in the background.</string>
+    <string name="update_auto_text">New versions install in the background. Android may ask you to confirm.</string>
 
     <string name="home_guide_title">Guide</string>
     <string name="home_whats_new_guide">What is new: Features guide</string>
     <string name="home_guide_card_body">Explore every NectarLink feature, check live permissions, or tap Show me to jump straight to any control.</string>
-    <string name="home_no_pc_paired">No PC paired yet</string>
+    <string name="home_no_pc_paired">No computer paired yet</string>
     <string name="home_no_pc_body">Open NectarLink on your Mac, Windows or Linux computer to pair by QR code or local discovery, or reopen the setup walkthrough.</string>
     <string name="home_background_clipboard_title">Background clipboard &amp; full control</string>
     <string name="home_background_clipboard_body">Sync clipboard in the background and enable touch control via Wireless Debugging.</string>

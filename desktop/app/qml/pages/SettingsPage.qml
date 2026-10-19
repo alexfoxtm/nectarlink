@@ -3147,7 +3147,7 @@ Item {
                             width: parent.width
                             iconPath: Icons.sparkle
                             title: qsTr("Waypair extras")
-                            description: qsTr("Added by the Waypair fork. To choose which phone apps and notification types mirror here, open NectarLink on your phone > Settings > Notifications > Choose apps and types; SMS access is a separate permission. Find phone puts the phone's alarm volume back after ringing.")
+                            description: qsTr("Added by the Waypair fork. To choose which phone apps and notification types mirror here, open NectarLink on your phone > Settings > Permissions > Notifications > Choose apps and types; SMS access is a separate permission. Find phone puts the phone's alarm volume back after ringing.")
                                          + (AppController.canUpdate ? " " + qsTr("Updates come from this build's own private release feed.") : "")
                         }
                         Divider {

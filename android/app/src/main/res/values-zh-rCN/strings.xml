@@ -1167,7 +1167,7 @@
     <string name="update_done_title">NectarLink 已更新至 %1$s</string>
     <string name="update_done_text">点击打开。您的电脑会自动重新连接。</string>
     <string name="update_auto_title">自动安装更新</string>
-    <string name="update_auto_text">来自 GitHub 的新版本会在后台安装。</string>
+    <string name="update_auto_text">新版本会在后台安装。Android 可能会要求你确认。</string>
 
     <string name="home_guide_title">指南</string>
     <string name="home_whats_new_guide">新增：功能指南</string>
