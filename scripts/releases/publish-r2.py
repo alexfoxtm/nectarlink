@@ -24,7 +24,7 @@ ANDROID_MANIFEST_KEY = "waypair/nectar/android/stable/update.json"
 MACOS_APPCAST_KEY = "waypair/nectar/macos/stable/appcast.xml"
 SUMS_NAME = "SHA256SUMS.txt"
 
-VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
+VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:-local\.[1-9][0-9]*)?$")
 SHA_RE = re.compile(r"^[0-9a-f]{64}$")
 SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._-]*$")
 SOURCE_SUFFIXES = (".tar.gz", ".tar.xz", ".tgz", ".zip")
@@ -135,7 +135,7 @@ def sums_upload(prefix, files):
 def version_of(section, label):
     version = section.get("version")
     if not isinstance(version, str) or not VERSION_RE.match(version):
-        raise Failure(f"{label}: version must be MAJOR.MINOR.PATCH")
+        raise Failure(f"{label}: version must be MAJOR.MINOR.PATCH with an optional -local.N suffix")
     return version
 
 
