@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import java.util.Properties
 import javax.inject.Inject
 
 plugins {
@@ -7,12 +8,52 @@ plugins {
 }
 
 // The version comes from the workspace (Cargo.toml), like the PC app's.
-val appVersion: String = rootProject.file("../Cargo.toml").readLines()
+val cargoVersion: String = rootProject.file("../Cargo.toml").readLines()
     .first { it.startsWith("version = ") }
     .substringAfter('"').substringBefore('"')
 /** 1.2.3 → 1002003: every release must have a larger code than the last. */
-val appVersionCode: Int = appVersion.substringBefore('-').split('.').map(String::toInt)
+val cargoVersionCode: Int = cargoVersion.substringBefore('-').split('.').map(String::toInt)
     .let { (major, minor, patch) -> major * 1_000_000 + minor * 1_000 + patch }
+
+// A fork's release sets its own identity and version, independent of upstream's
+// (docs/waypair/ANDROID_BUILD.md). Each defaults to upstream's.
+val appId: String = providers.gradleProperty("waypair.applicationId").orNull?.also {
+    require(it.matches(Regex("[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+"))) { "waypair.applicationId must be a package name" }
+} ?: "app.nectarlink"
+val appVersion: String = providers.gradleProperty("waypair.versionName").orNull?.also {
+    require(it.isNotBlank()) { "waypair.versionName must not be blank" }
+} ?: cargoVersion
+val appVersionCode: Int = providers.gradleProperty("waypair.versionCode").orNull?.let {
+    requireNotNull(it.toIntOrNull()?.takeIf { code -> code in 1..2_100_000_000 }) {
+        "waypair.versionCode must be an integer from 1 to 2100000000"
+    }
+} ?: cargoVersionCode
+
+// Release builds are signed only with an explicit key, never the debug key:
+// WAYPAIR_SIGNING names a properties file (storeFile, storePassword, keyAlias,
+// keyPassword); without it, upstream CI's NECTARLINK_KEYSTORE (a .jks file, key
+// alias nectarlink) and NECTARLINK_KEYSTORE_PASSWORD. Release packaging fails
+// without a complete key (checkReleaseSigning); debug builds and tests need none.
+val releaseSigning: Map<String, String?> = System.getenv("WAYPAIR_SIGNING")?.let { path ->
+    val props = Properties().apply { file(path).takeIf { it.isFile }?.inputStream()?.use { load(it) } }
+    listOf("storeFile", "storePassword", "keyAlias", "keyPassword").associateWith(props::getProperty)
+} ?: mapOf(
+    "storeFile" to System.getenv("NECTARLINK_KEYSTORE"),
+    "storePassword" to System.getenv("NECTARLINK_KEYSTORE_PASSWORD"),
+    "keyAlias" to "nectarlink",
+    "keyPassword" to System.getenv("NECTARLINK_KEYSTORE_PASSWORD"),
+)
+/** Why release signing is unusable, naming inputs but never their values; null when complete. */
+val releaseSigningProblem: String? = when {
+    providers.gradlePropertiesPrefixedBy("android.injected.signing.").get().isNotEmpty() ->
+        "android.injected.signing.* is not accepted; use WAYPAIR_SIGNING"
+    System.getenv("WAYPAIR_SIGNING")?.let { !file(it).isFile } == true -> "the WAYPAIR_SIGNING file does not exist"
+    releaseSigning.values.any { it.isNullOrBlank() } ->
+        "missing ${releaseSigning.filterValues { it.isNullOrBlank() }.keys.joinToString()}" +
+            " (set WAYPAIR_SIGNING, or NECTARLINK_KEYSTORE and NECTARLINK_KEYSTORE_PASSWORD)"
+    !file(releaseSigning.getValue("storeFile")!!).isFile -> "the keystore file does not exist"
+    else -> null
+}
 
 android {
     namespace = "app.nectarlink.android"
@@ -20,33 +61,32 @@ android {
     ndkVersion = "30.0.16248370"
 
     defaultConfig {
-        applicationId = "app.nectarlink"
+        applicationId = appId
         minSdk = 26
         targetSdk = 37
         versionCode = appVersionCode
         versionName = appVersion
     }
 
-    // Release builds are signed with the project's key when CI provides it
-    // (NECTARLINK_KEYSTORE: a .jks file; NECTARLINK_KEYSTORE_PASSWORD).
-    // Without it, a local release build is signed with the debug key so it can be
-    // installed over a debug build for testing. Never publish such a build: the
-    // release workflow refuses to run without the key and verifies the signature.
-    val keystore = System.getenv("NECTARLINK_KEYSTORE")?.let(::file)?.takeIf { it.exists() }
     signingConfigs {
-        if (keystore != null) {
+        if (releaseSigningProblem == null) {
             create("release") {
-                storeFile = keystore
-                storePassword = System.getenv("NECTARLINK_KEYSTORE_PASSWORD")
-                keyAlias = "nectarlink"
-                keyPassword = System.getenv("NECTARLINK_KEYSTORE_PASSWORD")
+                storeFile = file(releaseSigning.getValue("storeFile")!!)
+                storePassword = releaseSigning.getValue("storePassword")
+                keyAlias = releaseSigning.getValue("keyAlias")
+                keyPassword = releaseSigning.getValue("keyPassword")
             }
         }
     }
 
     buildTypes {
+        debug {
+            // Its own package, so a debug build never replaces an installed app:
+            // a release of this one, or legacy Waypair's com.waypair(.debug).
+            applicationIdSuffix = ".nectar.debug"
+        }
         release {
-            signingConfig = if (keystore != null) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
@@ -73,6 +113,16 @@ android {
 
 composeCompiler {
     stabilityConfigurationFiles.add(project.layout.projectDirectory.file("compose_stability.conf"))
+}
+
+// Only packaging is gated, so release unit tests and lint still run without a key.
+val checkReleaseSigning = tasks.register("checkReleaseSigning") {
+    description = "Fails unless release signing is fully configured."
+    val problem = releaseSigningProblem
+    doLast { if (problem != null) throw GradleException("Release signing is not configured: $problem") }
+}
+tasks.configureEach {
+    if (name in setOf("packageRelease", "packageReleaseBundle", "signReleaseBundle")) dependsOn(checkReleaseSigning)
 }
 
 // ---- The Rust core (nectarlink-ffi) ----
