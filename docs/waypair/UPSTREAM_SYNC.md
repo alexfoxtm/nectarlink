@@ -12,7 +12,7 @@ Pins and provenance live in `docs/waypair/UPSTREAM_BASE.json`:
 | Pin | Source | SHA | In port |
 | --- | --- | --- | --- |
 | `main` | `thtbee/nectarlink` `main` | `f8f72547` | yes, under PR24 |
-| `macos-pr24` | PR #24, `saivinay1805/nectarlink` `feature/macos-port` | `e71dee41` | yes, merged (child of port base `96370de1`) |
+| `macos-pr24` | PR #24, `saivinay1805/nectarlink` `feature/macos-port` | `9c0f13d7` | yes, merged (`e71dee41` via `ca80744c`, `9c0f13d7` via `435ffa2a`) |
 | `linux-pr12` | PR #12, `jochenkirstaetter/nectarlink` `linux` | `1de43ef1` | no, reference |
 
 The `upstream` remote stays `https://github.com/thtbee/nectarlink.git`. PR
@@ -173,6 +173,16 @@ them on device. Split mixed commits first. Rebase the generic part onto
 upstream `main` on a separate branch, with no Waypair name, R2 or Cloud
 references. Opening the upstream PR is Alex's call; workers never push,
 comment or open PRs upstream.
+
+Watch policy (Alex, 2026-10-19, latest): saivinay1805's macOS updates
+(PR #24, `feature/macos-port`) are always incorporated into the port once
+reviewed. Fetch only the canonical `refs/pull/24/head` at an exact SHA,
+review the diff against the fork's deltas (Mac Sparkle R2 updater, native
+objc2 clipboard privacy, identities/keys/license notices), merge preserving
+author and history, and move the `macos-pr24` pin in the same change. This
+is a standing incorporate-after-review instruction, not auto-merge: an
+unreviewed head, a moved pin, or a fork branch without the upstream PR
+never lands.
 
 Direction (Alex, 2026-10-19): the official upstream
 (`thtbee/nectarlink`) is the primary home for generic fixes while

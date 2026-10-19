@@ -30,17 +30,30 @@ pub fn get_retrying(url: &str, limit: usize) -> Result<Vec<u8>, String> {
 pub fn download(
     url: &str,
     file: &Path,
-    _limit: u64,
+    limit: u64,
     mut progress: impl FnMut(u64, u64),
 ) -> Result<(), String> {
+    let have = file.metadata().map(|m| m.len()).unwrap_or(0);
+    if have > limit {
+        return Err("too large".into());
+    }
+    let limit_str = limit.to_string();
     let status = std::process::Command::new("curl")
-        .args(["-s", "-L", "-f", "-C", "-", "-o", &file.to_string_lossy(), url])
+        .args(["-s", "-L", "-f", "-C", "-", "--max-filesize", &limit_str, "-o", &file.to_string_lossy(), url])
         .status()
         .map_err(|e| e.to_string())?;
+    let len = file.metadata().map(|m| m.len()).unwrap_or(0);
+    if len > limit {
+        let _ = std::fs::remove_file(file);
+        return Err("too large".into());
+    }
     if !status.success() {
+        if status.code() == Some(63) {
+            let _ = std::fs::remove_file(file);
+            return Err("too large".into());
+        }
         return Err("download failed".into());
     }
-    let len = file.metadata().map(|m| m.len()).unwrap_or(0);
     progress(len, len);
     Ok(())
 }
