@@ -42,6 +42,7 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("BtHfp", "Bluetooth connected (%1)."), // desktop/app/src/win/bt_hfp.rs
     QT_TRANSLATE_NOOP("BtHfp", "Bluetooth paired with %1 (not currently connected)."), // desktop/app/src/win/bt_hfp.rs
     QT_TRANSLATE_NOOP("BtHfp", "No paired Bluetooth phone endpoint found in Windows."), // desktop/app/src/win/bt_hfp.rs
+    QT_TRANSLATE_NOOP("BtHfp", "PC call audio isn't available on macOS yet; the call's audio stays on your phone."), // desktop/app/src/mac/bt_hfp.rs
     QT_TRANSLATE_NOOP("Calls", "Calling %1"), // desktop/app/src/calls.rs
     QT_TRANSLATE_NOOP("Calls", "Missed call from %1"), // desktop/app/src/calls.rs
     QT_TRANSLATE_NOOP("Calls", "On a call with %1"), // desktop/app/src/calls.rs
@@ -190,6 +191,7 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Doctor", "%1 minutes ago"), // desktop/app/src/doctor.rs
     QT_TRANSLATE_NOOP("Doctor", "%1 · %2 ms"), // desktop/app/src/doctor.rs
     QT_TRANSLATE_NOOP("Doctor", "A VPN is on"), // desktop/app/src/doctor.rs
+    QT_TRANSLATE_NOOP("Doctor", "Changing the macOS firewall isn't automated yet."), // desktop/app/src/mac/doctor.rs
     QT_TRANSLATE_NOOP("Doctor", "Connect it to the same Wi-Fi or wired network as your phone."), // desktop/app/src/doctor.rs
     QT_TRANSLATE_NOOP("Doctor", "Connected to %1"), // desktop/app/src/doctor.rs
     QT_TRANSLATE_NOOP("Doctor", "Connected to a network"), // desktop/app/src/doctor.rs
@@ -197,6 +199,7 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Doctor", "It hasn't connected yet."), // desktop/app/src/doctor.rs
     QT_TRANSLATE_NOOP("Doctor", "Keep %1 reachable in the background (%2)"), // desktop/app/src/doctor.rs
     QT_TRANSLATE_NOOP("Doctor", "Last seen %1."), // desktop/app/src/doctor.rs
+    QT_TRANSLATE_NOOP("Doctor", "Network profiles aren't checked on macOS."), // desktop/app/src/mac/doctor.rs
     QT_TRANSLATE_NOOP("Doctor", "On Huawei / Honor: open Settings → Battery → App launch, turn off Manage automatically for Waypair Link, and keep Auto-launch, Secondary launch, and Run in background on."), // desktop/app/src/doctor.rs
     QT_TRANSLATE_NOOP("Doctor", "On OnePlus / OxygenOS: open Settings → Apps → App management → Waypair Link → Battery usage and turn on Allow background activity and Allow auto-launch."), // desktop/app/src/doctor.rs
     QT_TRANSLATE_NOOP("Doctor", "On Oppo / Realme: open Settings → Apps → App management → Waypair Link → Battery usage and turn on Allow background activity and Allow auto-launch."), // desktop/app/src/doctor.rs
@@ -208,6 +211,7 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Doctor", "On public networks Windows keeps other devices from finding this PC. If it's your home or work network, set it to Private."), // desktop/app/src/doctor.rs
     QT_TRANSLATE_NOOP("Doctor", "On this network"), // desktop/app/src/doctor.rs
     QT_TRANSLATE_NOOP("Doctor", "Someone chose not to allow it when Windows asked. Allow it, and your phone can connect."), // desktop/app/src/doctor.rs
+    QT_TRANSLATE_NOOP("Doctor", "The macOS firewall state isn't checked yet."), // desktop/app/src/mac/doctor.rs
     QT_TRANSLATE_NOOP("Doctor", "This PC can see %1 announce itself on the network, but the router is blocking devices from talking directly to each other (often called AP Isolation, Client Isolation, or Guest Wi-Fi). Move both devices off any Guest Wi-Fi network, turn off AP / Client Isolation in your router's Wi-Fi settings, or connect with a USB cable."), // desktop/app/src/doctor.rs
     QT_TRANSLATE_NOOP("Doctor", "This PC isn't on a network"), // desktop/app/src/doctor.rs
     QT_TRANSLATE_NOOP("Doctor", "This network"), // desktop/app/src/doctor.rs
@@ -387,6 +391,7 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Setup", "Couldn't start setup: %1"), // desktop/app/src/setup.rs
     QT_TRANSLATE_NOOP("Setup", "Setup is taking too long. Try again after restarting the PC."), // desktop/app/src/setup.rs
     QT_TRANSLATE_NOOP("Setup", "Setup stopped with code %1."), // desktop/app/src/setup.rs
+    QT_TRANSLATE_NOOP("Setup", "Steps that need administrator rights aren't available on macOS yet."), // desktop/app/src/mac/elevated.rs
     QT_TRANSLATE_NOOP("Setup", "The uninstaller is missing. Reinstall Waypair Link, then uninstall it."), // desktop/app/src/setup.rs
     QT_TRANSLATE_NOOP("Timeline", "App window #%1"), // desktop/app/src/i18n.rs
     QT_TRANSLATE_NOOP("Timeline", "Clip (removed from clipboard history)"), // desktop/app/src/bridge/timeline.rs
@@ -424,12 +429,17 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Transfers", "Nearby device"), // desktop/app/src/transfers.rs
     QT_TRANSLATE_NOOP("Transfers", "That's too many files to send at once."), // desktop/app/src/transfers.rs
     QT_TRANSLATE_NOOP("Transfers", "There's nothing to send in there."), // desktop/app/src/transfers.rs
+    QT_TRANSLATE_NOOP("Updater", "Checking for updates…"), // desktop/app/src/updater.rs
     QT_TRANSLATE_NOOP("Updater", "Couldn't check for updates. Check your internet connection."), // desktop/app/src/updater.rs
+    QT_TRANSLATE_NOOP("Updater", "Couldn't open the update window."), // desktop/app/src/updater.rs
+    QT_TRANSLATE_NOOP("Updater", "On this Mac, updates install from the update window. Use Check for updates."), // desktop/app/src/updater.rs
     QT_TRANSLATE_NOOP("Updater", "The download was damaged, so it wasn't installed. Try again."), // desktop/app/src/updater.rs
     QT_TRANSLATE_NOOP("Updater", "The update couldn't be downloaded. Check your internet connection and try again."), // desktop/app/src/updater.rs
     QT_TRANSLATE_NOOP("Updater", "The update couldn't be saved. Check that there's free space and try again."), // desktop/app/src/updater.rs
     QT_TRANSLATE_NOOP("Updater", "The update couldn't be started. Try again."), // desktop/app/src/updater.rs
     QT_TRANSLATE_NOOP("Updater", "The update didn't install"), // desktop/app/src/updater.rs
+    QT_TRANSLATE_NOOP("Updater", "The update window is already open."), // desktop/app/src/updater.rs
+    QT_TRANSLATE_NOOP("Updater", "This build can't check for updates yet."), // desktop/app/src/updater.rs
     QT_TRANSLATE_NOOP("Updater", "Update now, or later from Settings."), // desktop/app/src/updater.rs
     QT_TRANSLATE_NOOP("Updater", "Waypair Link %1 is available"), // desktop/app/src/updater.rs
     QT_TRANSLATE_NOOP("Updater", "Waypair Link %1 is available."), // desktop/app/src/updater.rs
@@ -437,6 +447,8 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Updater", "Waypair Link is up to date."), // desktop/app/src/updater.rs
     QT_TRANSLATE_NOOP("Updater", "Waypair Link is updated to %1"), // desktop/app/src/updater.rs
     QT_TRANSLATE_NOOP("Updater", "Your phone reconnects on its own."), // desktop/app/src/updater.rs
+    QT_TRANSLATE_NOOP("Wake", "Waking other PCs isn't available on macOS yet."), // desktop/app/src/mac/wol.rs
+    QT_TRANSLATE_NOOP("Webcam", "Phone as webcam isn't available on macOS yet."), // desktop/app/src/mac/vcam.rs
     QT_TRANSLATE_NOOP("Webcam", "Starting camera on %1…"), // desktop/app/src/bridge/webcam.rs
     QT_TRANSLATE_NOOP("Webcam", "Streaming %1 × %2 · %3 fps from %4"), // desktop/app/src/bridge/webcam.rs
     QT_TRANSLATE_NOOP("Widget", "No phone connected"), // desktop/app/src/win/widget.rs
