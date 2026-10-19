@@ -10,7 +10,7 @@ Pins and provenance live in `docs/waypair/UPSTREAM_BASE.json`:
 | Pin | Source | SHA | In port |
 | --- | --- | --- | --- |
 | `main` | `thtbee/nectarlink` `main` | `f8f72547` | yes, under PR24 |
-| `macos-pr24` | PR #24, `saivinay1805/nectarlink` `feature/macos-port` | `96370de1` | yes, port base |
+| `macos-pr24` | PR #24, `saivinay1805/nectarlink` `feature/macos-port` | `e71dee41` | yes, merged (child of port base `96370de1`) |
 | `linux-pr12` | PR #12, `jochenkirstaetter/nectarlink` `linux` | `1de43ef1` | no, reference |
 
 The `upstream` remote stays `https://github.com/thtbee/nectarlink.git`. PR
@@ -71,10 +71,18 @@ cd ~/orca/workspaces/nectarlink/upstream-sync-YYYYMMDD
 GIT_TERMINAL_PROMPT=0 git fetch --no-tags upstream \
   +refs/heads/main:refs/remotes/upstream/main \
   +refs/pull/24/head:refs/remotes/upstream/pr/24
-# The product checkout is shallow; deepen only in the integration worktree.
-GIT_TERMINAL_PROMPT=0 git fetch --unshallow upstream
+git merge-base HEAD upstream/pr/24       # must resolve before merging
 git merge --no-ff upstream/main          # or upstream/pr/24 for port-base moves
 ```
+
+The product checkout is shallow, and that is fine as long as the merge base
+resolves at or above the shallow root (for PR #24 it is the pin itself:
+fetching `refs/pull/24/head` with no `--depth` added only the new head, and
+`merge-base` returned `96370de1`). Deepen only if the lowest common ancestor
+is actually needed and cannot be found: when `git merge-base` fails or the
+new upstream head's ancestry falls below the shallow boundary, deepen in the
+integration worktree only (`git fetch --deepen=<n> upstream`, or
+`--unshallow` as a last resort). Do not unshallow routinely.
 
 Merge, don't rebase `waypair/macos-port`: port history and upstream SHAs stay
 intact, so later syncs and upstream PRs stay cheap.
@@ -163,3 +171,14 @@ them on device. Split mixed commits first. Rebase the generic part onto
 upstream `main` on a separate branch, with no Waypair name, R2 or Cloud
 references. Opening the upstream PR is Alex's call; workers never push,
 comment or open PRs upstream.
+
+Direction (Alex, 2026-10-19): the official upstream
+(`thtbee/nectarlink`) is the primary home for generic fixes while
+contributions are welcomed there — upstream-first, so the port's delta
+shrinks. If a feature is rejected upstream or stays pending, it lives on in
+the synced fork instead: the fork tracks upstream by the merges above and
+carries the not-upstreamed features as its own delta. Either way the delta
+categories stay separate — `branding`, `r2_updater` and `cloud` commits are
+never mixed into upstream-bound `generic` commits or into a sync merge, so a
+feature can move between the upstream route and the fork route without
+untangling.

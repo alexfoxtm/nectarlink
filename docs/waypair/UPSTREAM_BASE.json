@@ -12,7 +12,7 @@
     "url": "https://github.com/thtbee/nectarlink.git",
     "repo": "thtbee/nectarlink",
     "branch": "main",
-    "license": "Multi-license, see LICENSE and LICENSES/ (desktop and core GPL-3.0-or-later)",
+    "license": "Multi-license, see LICENSE and LICENSES/: core libraries (core/ except the CLI: nectarlink-core, nectarlink-protocol, nectarlink-adb, nectarlink-localsend, nectarlink-ffi) MPL-2.0; desktop app, Android app and CLI GPL-3.0-or-later with LICENSES/APP-STORE-EXCEPTION.md; protocol specification and docs CC-BY-4.0",
     "contribution_terms": "DCO 1.1, Signed-off-by trailer on every commit (CONTRIBUTING.md)",
     "latest_release_at_record": "v0.1.4"
   },
@@ -34,12 +34,12 @@
       "ref": "refs/pull/24/head",
       "head_repo": "saivinay1805/nectarlink",
       "head_ref": "feature/macos-port",
-      "sha": "96370de1a215d29ef214854e537e7a2c5be211e9",
+      "sha": "e71dee4146619db00408825e0039bb00e0443627",
       "author": "saivinay1805 <saivinayreddyvavilla@gmail.com>",
-      "subject": "refactor(desktop): align module layout, honest error handling, and capability advertising for macOS",
-      "state_at_record": "open, unmerged",
+      "subject": "fix(desktop): fix screen restoration, clipboard autorelease pools, and macOS tray fallbacks",
+      "state_at_record": "open, unmerged, 7 commits (e71dee41 is the direct child of the previous pin 96370de1); 0 check runs at record time",
       "in_port": true,
-      "role": "Base commit of waypair/macos-port; every port commit sits on top of it."
+      "role": "Previous pin 96370de1 is the base commit of waypair/macos-port (every port commit sits on top of it); e71dee41 enters the port by merge commit ca80744cdb04df692626d79d744e79e210a0cd23 on alex.s/upstream-e71-20261019, preserving upstream parentage."
     },
     {
       "id": "linux-pr12",
