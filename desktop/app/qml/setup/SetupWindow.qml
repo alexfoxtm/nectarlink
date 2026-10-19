@@ -42,7 +42,7 @@ NativeWindow {
     minimumHeight: height
     maximumHeight: height
     visible: true
-    title: removing ? qsTr("Uninstall NectarLink") : qsTr("NectarLink Setup")
+    title: removing ? qsTr("Uninstall Waypair Link") : qsTr("Waypair Link Setup")
     color: bg
     backdrop: false
     darkFrame: dark
@@ -172,7 +172,7 @@ NativeWindow {
                 mipmap: true
                 scale: 1 + emblem.breath * 0.04
                 Accessible.role: Accessible.Graphic
-                Accessible.name: qsTr("NectarLink")
+                Accessible.name: qsTr("Waypair Link")
             }
             SadBee {
                 anchors.centerIn: parent
@@ -201,13 +201,13 @@ NativeWindow {
                 font.weight: Font.DemiBold
                 color: window.ink
                 text: window.phase === "failed"
-                    ? (window.removing ? qsTr("Couldn't uninstall NectarLink") : qsTr("Setup couldn't finish"))
+                    ? (window.removing ? qsTr("Couldn't uninstall Waypair Link") : qsTr("Setup couldn't finish"))
                     : window.phase === "working"
-                    ? (window.action === "remove" ? qsTr("Uninstalling NectarLink")
-                       : window.action === "update" ? qsTr("Updating NectarLink")
-                       : qsTr("Installing NectarLink"))
-                    : window.removing ? qsTr("Uninstall NectarLink?")
-                    : "NectarLink"
+                    ? (window.action === "remove" ? qsTr("Uninstalling Waypair Link")
+                       : window.action === "update" ? qsTr("Updating Waypair Link")
+                       : qsTr("Installing Waypair Link"))
+                    : window.removing ? qsTr("Uninstall Waypair Link?")
+                    : "Waypair Link"
             }
             Item { width: 1; height: 10 }
             Text {
@@ -221,7 +221,7 @@ NativeWindow {
                 text: window.phase === "failed" ? Setup.message
                     : window.phase === "working" ? Setup.step
                     : window.removing
-                    ? qsTr("Sorry to see you go. This uninstalls NectarLink and deletes its settings and pairings on this PC. Files you received stay in %1.").arg("Downloads\\Nectarlink")
+                    ? qsTr("Sorry to see you go. This uninstalls Waypair Link and deletes its settings and pairings on this PC. Files you received stay in %1.").arg("Downloads\\Nectarlink")
                     : Setup.kind === "update"
                     ? qsTr("Update from %1 to %2. Your settings and pairings stay as they are.").arg(Setup.installedVersion).arg(Setup.version)
                     : Setup.kind === "reinstall"
@@ -283,7 +283,7 @@ NativeWindow {
                 SetupButton {
                     visible: window.removing || window.phase === "failed"
                     filled: false
-                    text: window.removing && window.phase !== "failed" ? qsTr("Keep NectarLink") : qsTr("Close")
+                    text: window.removing && window.phase !== "failed" ? qsTr("Keep Waypair Link") : qsTr("Close")
                     ink: window.ink
                     focusColor: window.honey
                     onClicked: window.close()
@@ -331,7 +331,7 @@ NativeWindow {
                 font.pixelSize: 28
                 font.weight: Font.DemiBold
                 color: window.ink
-                text: window.removing ? qsTr("NectarLink is uninstalled") : qsTr("NectarLink is ready")
+                text: window.removing ? qsTr("Waypair Link is uninstalled") : qsTr("Waypair Link is ready")
             }
             Item { width: 1; height: 8 }
             Text {
@@ -393,7 +393,7 @@ NativeWindow {
                 anchors.horizontalCenter: parent.horizontalCenter
                 spacing: 12
                 SetupButton {
-                    text: window.removing ? qsTr("Close") : qsTr("Open NectarLink")
+                    text: window.removing ? qsTr("Close") : qsTr("Open Waypair Link")
                     fill: window.removing ? window.ink : window.honey
                     ink: window.removing ? window.bg : window.onHoney
                     focusColor: window.honey
@@ -453,7 +453,7 @@ NativeWindow {
                         font.pixelSize: 14
                         color: window.muted
                         textFormat: Text.StyledText
-                        text: qsTr("NectarLink goes into Program Files for everyone on this PC. Setup also:")
+                        text: qsTr("Waypair Link goes into Program Files for everyone on this PC. Setup also:")
                             + "<br>&#8226; " + qsTr("allows it through Windows Firewall on private networks, so your phone can connect")
                             + "<br>&#8226; " + qsTr("adds a task that installs updates without an administrator prompt")
                             + "<br>&#8226; " + qsTr("adds Start menu and desktop shortcuts, and starts it with Windows (turn this off in Settings)")

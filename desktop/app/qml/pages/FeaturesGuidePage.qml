@@ -569,7 +569,7 @@ Item {
 
             Txt {
                 Layout.fillWidth: true
-                text: qsTr("Every feature in NectarLink, what it needs, and where to find it.")
+                text: qsTr("Every feature in Waypair Link, what it needs, and where to find it.")
                 role: "body"
                 color: Theme.surfaceContentVariant
                 wrapMode: Text.WordWrap

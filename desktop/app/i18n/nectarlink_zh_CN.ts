@@ -50,28 +50,28 @@
     </message>
     <message>
         <location filename="rust_strings.h" line="16"/>
-        <source>NectarLink · %1</source>
-        <translation>NectarLink · %1</translation>
+        <source>Waypair Link · %1</source>
+        <translation>Waypair Link · %1</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="17"/>
-        <source>NectarLink · %1 devices connected</source>
-        <translation>NectarLink · 已连接 %1 台设备</translation>
+        <source>Waypair Link · %1 devices connected</source>
+        <translation>Waypair Link · 已连接 %1 台设备</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="18"/>
-        <source>NectarLink · 1 device connected</source>
-        <translation>NectarLink · 已连接 1 台设备</translation>
+        <source>Waypair Link · 1 device connected</source>
+        <translation>Waypair Link · 已连接 1 台设备</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="19"/>
-        <source>NectarLink · no devices paired</source>
-        <translation>NectarLink · 未配对设备</translation>
+        <source>Waypair Link · no devices paired</source>
+        <translation>Waypair Link · 未配对设备</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="20"/>
-        <source>NectarLink · not connected</source>
-        <translation>NectarLink · 未连接</translation>
+        <source>Waypair Link · not connected</source>
+        <translation>Waypair Link · 未连接</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="21"/>
@@ -80,8 +80,8 @@
     </message>
     <message>
         <location filename="rust_strings.h" line="22"/>
-        <source>Open NectarLink</source>
-        <translation>打开 NectarLink</translation>
+        <source>Open Waypair Link</source>
+        <translation>打开 Waypair Link</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="23"/>
@@ -90,8 +90,8 @@
     </message>
     <message>
         <location filename="rust_strings.h" line="24"/>
-        <source>Quit NectarLink</source>
-        <translation>退出 NectarLink</translation>
+        <source>Quit Waypair Link</source>
+        <translation>退出 Waypair Link</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="25"/>
@@ -178,8 +178,8 @@
     </message>
     <message>
         <location filename="../qml/pages/AppsPage.qml" line="90"/>
-        <source>Set up Wireless debugging in NectarLink on the phone to open its apps here.</source>
-        <translation>在手机上的 NectarLink 中设置无线调试，即可在此打开其应用。</translation>
+        <source>Set up Wireless debugging in Waypair Link on the phone to open its apps here.</source>
+        <translation>在手机上的 Waypair Link 中设置无线调试，即可在此打开其应用。</translation>
     </message>
     <message>
         <location filename="../qml/pages/AppsPage.qml" line="143"/>
@@ -2248,8 +2248,8 @@
     </message>
     <message>
         <location filename="../qml/pages/FeaturesGuidePage.qml" line="572"/>
-        <source>Every feature in NectarLink, what it needs, and where to find it.</source>
-        <translation>NectarLink 的每一项功能、所需条件，以及在哪里找到它。</translation>
+        <source>Every feature in Waypair Link, what it needs, and where to find it.</source>
+        <translation>Waypair Link 的每一项功能、所需条件，以及在哪里找到它。</translation>
     </message>
     <message>
         <location filename="../qml/pages/FeaturesGuidePage.qml" line="611"/>
@@ -2334,15 +2334,15 @@
     <name>Guide</name>
     <message>
         <location filename="rust_strings.h" line="233"/>
-        <source>1. Install NectarLink on your Windows 11 PC and your Android phone (Android 8.0 or newer).
+        <source>1. Install Waypair Link on your Windows 11 PC and your Android phone (Android 8.0 or newer).
 2. Connect both devices to the same Wi-Fi network, or plug your phone into your PC with a USB cable.
 3. Open the Pair step in the setup walkthrough, or click + (Pair a new device) at the bottom of the left rail.
-4. Scan the QR code from the NectarLink Android app, or select your phone from the nearby devices list and confirm that the 6-digit code matches on both screens.
+4. Scan the QR code from the Waypair Link Android app, or select your phone from the nearby devices list and confirm that the 6-digit code matches on both screens.
 5. Choose which features to share for that phone and grant only the Android permissions you want to use.</source>
-        <translation>1. 在 Windows 11 电脑和 Android 手机（Android 8.0 或更高版本）上安装 NectarLink。
+        <translation>1. 在 Windows 11 电脑和 Android 手机（Android 8.0 或更高版本）上安装 Waypair Link。
 2. 让两台设备连接到同一个 Wi‑Fi 网络，或用 USB 数据线将手机连接到电脑。
 3. 在设置向导中打开“配对”步骤，或点击左侧栏底部的 +（配对新设备）。
-4. 用 NectarLink 安卓应用扫描二维码，或在附近设备列表中选择你的手机，并确认两边屏幕上的 6 位验证码一致。
+4. 用 Waypair Link 安卓应用扫描二维码，或在附近设备列表中选择你的手机，并确认两边屏幕上的 6 位验证码一致。
 5. 选择要为这部手机共享的功能，只授予你想使用的 Android 权限。</translation>
     </message>
     <message>
@@ -2415,15 +2415,15 @@
         <source>If your phone and PC do not see each other:
 
 1. Open Connection Doctor from Settings › Connection &amp; About or the Command Palette.
-2. Check that your Wi-Fi network profile in Windows is set to Private rather than Public, or click Fix in Connection Doctor to allow NectarLink through Windows Firewall.
+2. Check that your Wi-Fi network profile in Windows is set to Private rather than Public, or click Fix in Connection Doctor to allow Waypair Link through Windows Firewall.
 3. Verify that both devices are on the same subnet and that guest Wi-Fi client isolation is turned off on your router.
-4. You can also connect over a USB cable with USB debugging enabled; NectarLink automatically sets up a local tunnel.</source>
+4. You can also connect over a USB cable with USB debugging enabled; Waypair Link automatically sets up a local tunnel.</source>
         <translation>如果手机和电脑找不到彼此：
 
 1. 从 设置 › 连接与关于 或命令面板打开连接诊断。
-2. 检查 Windows 中 Wi‑Fi 网络的配置文件是否设为“专用”而不是“公用”，或在连接诊断中点击“修复”，允许 NectarLink 通过 Windows 防火墙。
+2. 检查 Windows 中 Wi‑Fi 网络的配置文件是否设为“专用”而不是“公用”，或在连接诊断中点击“修复”，允许 Waypair Link 通过 Windows 防火墙。
 3. 确认两台设备在同一子网中，并且路由器已关闭访客 Wi‑Fi 的客户端隔离。
-4. 你也可以在开启 USB 调试后用 USB 数据线连接；NectarLink 会自动建立本地隧道。</translation>
+4. 你也可以在开启 USB 调试后用 USB 数据线连接；Waypair Link 会自动建立本地隧道。</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="248"/>
@@ -2466,7 +2466,7 @@ Sensitive capabilities such as Share PC folders, Remote input, and Reverse PC sc
     </message>
     <message>
         <location filename="rust_strings.h" line="253"/>
-        <source>Most NectarLink features work in Standard mode with regular Android permissions. Two optional modes unlock deeper system integration:
+        <source>Most Waypair Link features work in Standard mode with regular Android permissions. Two optional modes unlock deeper system integration:
 
 Elevated mode (Wireless debugging or root)
 - Captures the phone screen without showing the Android cast confirmation prompt every time.
@@ -2475,8 +2475,8 @@ Elevated mode (Wireless debugging or root)
 
 Assist mode (Android Accessibility Service)
 - Injects mouse clicks, scrolling, and touch gestures when you control your phone from your PC.
-- NectarLink never reads screen text or logs keystrokes through the Accessibility service.</source>
-        <translation>NectarLink 的大多数功能在标准模式下使用常规 Android 权限即可运行。两个可选模式可解锁更深的系统集成：
+- Waypair Link never reads screen text or logs keystrokes through the Accessibility service.</source>
+        <translation>Waypair Link 的大多数功能在标准模式下使用常规 Android 权限即可运行。两个可选模式可解锁更深的系统集成：
 
 提升模式（无线调试或 root）
 - 捕获手机屏幕时无需每次显示 Android 的投屏确认提示。
@@ -2485,7 +2485,7 @@ Assist mode (Android Accessibility Service)
 
 辅助模式（Android 无障碍服务）
 - 在你用电脑控制手机时注入鼠标点击、滚动和触摸手势。
-- NectarLink 绝不会通过无障碍服务读取屏幕文字或记录按键。</translation>
+- Waypair Link 绝不会通过无障碍服务读取屏幕文字或记录按键。</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="254"/>
@@ -2494,7 +2494,7 @@ Assist mode (Android Accessibility Service)
     </message>
     <message>
         <location filename="rust_strings.h" line="255"/>
-        <source>NectarLink links your Android phone and your PC directly on your local network or over a USB cable.
+        <source>Waypair Link links your Android phone and your PC directly on your local network or over a USB cable.
 
 How it works
 - Devices discover each other over local Wi-Fi (mDNS) or USB (ADB reverse tunnel) and connect over QUIC (TLS 1.3).
@@ -2505,7 +2505,7 @@ Capability tiers on Android
 - Standard mode: Works right after installation with standard Android permissions.
 - Elevated mode (optional): Uses Wireless debugging (set up once in the phone app) or root for phone apps in their own windows, mirroring without the screen capture prompt, and more phone controls.
 - Assist mode (optional): Uses the Android Accessibility service only when you enable Remote input so your PC mouse and keyboard can control the phone.</source>
-        <translation>NectarLink 通过本地网络或 USB 数据线直接连接你的 Android 手机和电脑。
+        <translation>Waypair Link 通过本地网络或 USB 数据线直接连接你的 Android 手机和电脑。
 
 工作原理
 - 设备通过本地 Wi‑Fi（mDNS）或 USB（ADB 反向隧道）互相发现，并通过 QUIC（TLS 1.3）连接。
@@ -2519,14 +2519,14 @@ Android 上的功能层级
     </message>
     <message>
         <location filename="rust_strings.h" line="256"/>
-        <source>NectarLink never asks for every permission up front. Each feature works independently:
+        <source>Waypair Link never asks for every permission up front. Each feature works independently:
 
 - Notification Access: Required only if you want phone notifications, inline replies, and notification-backed chat threads on your PC.
 - SMS and Contacts: Required only if you want to read and send SMS/MMS messages or look up contact names on your PC.
 - Phone and Call Log: Required only if you want incoming call alerts, call history, or dialing from your PC.
 - Media and Photos: Required only if you want the Photos gallery, Shelf latest photo, or folder sync.
 - Camera and Microphone: Required only while streaming your phone as a webcam, taking a Continuity Camera shot, or recording a voice note.</source>
-        <translation>NectarLink 从不一次性请求所有权限。每项功能都独立工作：
+        <translation>Waypair Link 从不一次性请求所有权限。每项功能都独立工作：
 
 - 通知使用权：仅当你想在电脑上看到手机通知、直接回复以及基于通知的聊天对话时才需要。
 - 短信和通讯录：仅当你想在电脑上读取和发送短信/彩信或查找联系人姓名时才需要。
@@ -2536,8 +2536,8 @@ Android 上的功能层级
     </message>
     <message>
         <location filename="rust_strings.h" line="257"/>
-        <source>NectarLink overview</source>
-        <translation>NectarLink 概览</translation>
+        <source>Waypair Link overview</source>
+        <translation>Waypair Link 概览</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="258"/>
@@ -2709,7 +2709,7 @@ What it needs
     <message>
         <location filename="rust_strings.h" line="279"/>
         <source>What it does
-Exposes an opt-in localhost HTTP/JSON and Server-Sent Events API on 127.0.0.1 (default port 53320) protected by a bearer token so scripts, CLI tools, and Stream Deck plugins can trigger NectarLink actions.
+Exposes an opt-in localhost HTTP/JSON and Server-Sent Events API on 127.0.0.1 (default port 53320) protected by a bearer token so scripts, CLI tools, and Stream Deck plugins can trigger Waypair Link actions.
 
 Where to find it
 - Settings › Connection &amp; About › Local automation API.
@@ -2717,7 +2717,7 @@ Where to find it
 What it needs
 - Turn on Local automation API in Settings › Connection &amp; About and read the bearer token from api-token.json.</source>
         <translation>功能
-在 127.0.0.1（默认端口 53320）上提供一个需手动开启的本地 HTTP/JSON 与服务器发送事件（SSE）API，由持有者令牌保护，供脚本、命令行工具和 Stream Deck 插件触发 NectarLink 的操作。
+在 127.0.0.1（默认端口 53320）上提供一个需手动开启的本地 HTTP/JSON 与服务器发送事件（SSE）API，由持有者令牌保护，供脚本、命令行工具和 Stream Deck 插件触发 Waypair Link 的操作。
 
 位置
 - 设置 › 连接与关于 › 本地自动化 API。
@@ -2735,7 +2735,7 @@ Where to find it
 - Command Palette › Type on phone with PC keyboard.
 
 What it needs
-- Assist mode (Accessibility service), the NectarLink input method, or Elevated mode on your phone.</source>
+- Assist mode (Accessibility service), the Waypair Link input method, or Elevated mode on your phone.</source>
         <translation>功能
 将电脑键盘的按键和粘贴的文本直接发送到手机，无需镜像手机屏幕。
 
@@ -2744,7 +2744,7 @@ What it needs
 - 命令面板 › 用电脑键盘在手机上输入。
 
 需要
-- 手机上的辅助模式（无障碍服务）、NectarLink 输入法或提升模式。</translation>
+- 手机上的辅助模式（无障碍服务）、Waypair Link 输入法或提升模式。</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="281"/>
@@ -2864,7 +2864,7 @@ Where to find it
 - Settings › General › Copy one-time codes.
 
 What it needs
-- Notification Access permission enabled for NectarLink on your Android phone.
+- Notification Access permission enabled for Waypair Link on your Android phone.
 - The per-device Notifications toggle enabled on your PC.</source>
         <translation>功能
 将手机通知同步到首页动态和 Windows 通知弹窗。你可以直接回复消息、点击操作按钮、清除单条或整组通知，并撤销最近一次清除。
@@ -2875,7 +2875,7 @@ What it needs
 - 设置 › 通用 › 复制一次性验证码。
 
 需要
-- 在 Android 手机上为 NectarLink 开启通知使用权。
+- 在 Android 手机上为 Waypair Link 开启通知使用权。
 - 在电脑上为该设备开启“通知”开关。</translation>
     </message>
     <message>
@@ -2884,7 +2884,7 @@ What it needs
 Opens a keyboard-first search bar over actions, contacts, message threads, mirrorable apps, phone quick toggles, clipboard history, and navigation pages.
 
 Where to find it
-- Global hotkey Ctrl+Alt+Space (or Ctrl+K inside the NectarLink window).
+- Global hotkey Ctrl+Alt+Space (or Ctrl+K inside the Waypair Link window).
 - Commands in the top bar.
 
 What it needs
@@ -2893,7 +2893,7 @@ What it needs
 打开一个以键盘为主的搜索栏，覆盖操作、联系人、消息对话、可镜像的应用、手机快捷开关、剪贴板历史和导航页面。
 
 位置
-- 全局快捷键 Ctrl+Alt+Space（在 NectarLink 窗口内也可用 Ctrl+K）。
+- 全局快捷键 Ctrl+Alt+Space（在 Waypair Link 窗口内也可用 Ctrl+K）。
 - 顶栏中的“命令”。
 
 需要
@@ -2986,7 +2986,7 @@ What it needs
     <message>
         <location filename="rust_strings.h" line="292"/>
         <source>What it does
-Sends files, folders, links, and text between your phone and PC at local network speed. If your phone is offline when you send, NectarLink places the item in the Waiting to send queue and delivers it automatically as soon as your phone reconnects.
+Sends files, folders, links, and text between your phone and PC at local network speed. If your phone is offline when you send, Waypair Link places the item in the Waiting to send queue and delivers it automatically as soon as your phone reconnects.
 
 Where to find it
 - Home › Send files button, drag-and-drop anywhere on the window, Waiting to send card, and Transfers list.
@@ -2995,7 +2995,7 @@ Where to find it
 What it needs
 - Paired phone and the per-device Files toggle enabled.</source>
         <translation>功能
-以本地网络的速度在手机和电脑之间发送文件、文件夹、链接和文本。如果发送时手机离线，NectarLink 会把它放入“等待发送”队列，并在手机重新连接后自动送达。
+以本地网络的速度在手机和电脑之间发送文件、文件夹、链接和文本。如果发送时手机离线，Waypair Link 会把它放入“等待发送”队列，并在手机重新连接后自动送达。
 
 位置
 - 首页 › “发送文件”按钮、在窗口任意位置拖放、“等待发送”卡片以及传输列表。
@@ -3034,7 +3034,7 @@ Where to find it
 
 What it needs
 - Automatic PC-to-phone clipboard send works whenever your phone is connected.
-- Background phone-to-PC clipboard sync on Android 10+ uses notifications, the NectarLink quick tile, or Elevated mode.</source>
+- Background phone-to-PC clipboard sync on Android 10+ uses notifications, the Waypair Link quick tile, or Elevated mode.</source>
         <translation>功能
 在电脑和手机之间共享复制的文本、富文本（HTML/RTF）、图片和少量复制的文件。在本地加密保存最多 50 条历史记录，支持置顶，并为链接、电话号码、地址和快递单号提供智能上下文标签。
 
@@ -3044,7 +3044,7 @@ What it needs
 
 需要
 - 只要手机已连接，电脑到手机的剪贴板就会自动发送。
-- 在 Android 10 及以上版本上，手机到电脑的后台剪贴板同步通过通知、NectarLink 快捷设置图块或提升模式实现。</translation>
+- 在 Android 10 及以上版本上，手机到电脑的后台剪贴板同步通过通知、Waypair Link 快捷设置图块或提升模式实现。</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="295"/>
@@ -3096,7 +3096,7 @@ What it needs
 Streams your PC&apos;s screen to your phone so you can view your desktop from across the room and use your phone as a trackpad or laser pointer.
 
 Where to find it
-- Started from the NectarLink app on your phone.
+- Started from the Waypair Link app on your phone.
 - Settings › Devices › Share PC screen to phone.
 
 What it needs
@@ -3105,7 +3105,7 @@ What it needs
 将电脑屏幕串流到手机，让你在房间另一头查看桌面，并把手机用作触控板或激光笔。
 
 位置
-- 从手机上的 NectarLink 应用开始。
+- 从手机上的 Waypair Link 应用开始。
 - 设置 › 设备 › 将电脑屏幕共享到手机。
 
 需要
@@ -4156,8 +4156,8 @@ What it needs
     </message>
     <message>
         <location filename="../qml/IslandWindow.qml" line="258"/>
-        <source>Click to view in NectarLink</source>
-        <translation>点击在 NectarLink 中查看</translation>
+        <source>Click to view in Waypair Link</source>
+        <translation>点击在 Waypair Link 中查看</translation>
     </message>
     <message>
         <location filename="../qml/IslandWindow.qml" line="261"/>
@@ -4297,8 +4297,8 @@ What it needs
     </message>
     <message>
         <location filename="../qml/components/LockChip.qml" line="46"/>
-        <source>On your phone, open NectarLink › Settings › Control from your PC and turn on the Accessibility service.</source>
-        <translation>请在手机上打开 NectarLink › 设置 › 从电脑控制，并开启无障碍服务。</translation>
+        <source>On your phone, open Waypair Link › Settings › Control from your PC and turn on the Accessibility service.</source>
+        <translation>请在手机上打开 Waypair Link › 设置 › 从电脑控制，并开启无障碍服务。</translation>
     </message>
     <message>
         <location filename="../qml/components/LockChip.qml" line="48"/>
@@ -4307,28 +4307,28 @@ What it needs
     </message>
     <message>
         <location filename="../qml/components/LockChip.qml" line="50"/>
-        <source>On your phone, set NectarLink as the default SMS/Caller ID app when prompted.</source>
-        <translation>请在手机上按提示将 NectarLink 设为默认短信/来电显示应用。</translation>
+        <source>On your phone, set Waypair Link as the default SMS/Caller ID app when prompted.</source>
+        <translation>请在手机上按提示将 Waypair Link 设为默认短信/来电显示应用。</translation>
     </message>
     <message>
         <location filename="../qml/components/LockChip.qml" line="53"/>
-        <source>On your phone, open NectarLink and allow Notification access.</source>
-        <translation>请在手机上打开 NectarLink 并允许通知使用权。</translation>
+        <source>On your phone, open Waypair Link and allow Notification access.</source>
+        <translation>请在手机上打开 Waypair Link 并允许通知使用权。</translation>
     </message>
     <message>
         <location filename="../qml/components/LockChip.qml" line="55"/>
-        <source>On your phone, open NectarLink and allow Do Not Disturb access.</source>
-        <translation>请在手机上打开 NectarLink 并允许免打扰权限。</translation>
+        <source>On your phone, open Waypair Link and allow Do Not Disturb access.</source>
+        <translation>请在手机上打开 Waypair Link 并允许免打扰权限。</translation>
     </message>
     <message>
         <location filename="../qml/components/LockChip.qml" line="57"/>
-        <source>On your phone, open NectarLink and allow Modify system settings.</source>
-        <translation>请在手机上打开 NectarLink 并允许修改系统设置。</translation>
+        <source>On your phone, open Waypair Link and allow Modify system settings.</source>
+        <translation>请在手机上打开 Waypair Link 并允许修改系统设置。</translation>
     </message>
     <message>
         <location filename="../qml/components/LockChip.qml" line="58"/>
-        <source>Open NectarLink on your phone and grant this permission in Settings.</source>
-        <translation>请在手机上打开 NectarLink，并在设置中授予此权限。</translation>
+        <source>Open Waypair Link on your phone and grant this permission in Settings.</source>
+        <translation>请在手机上打开 Waypair Link，并在设置中授予此权限。</translation>
     </message>
     <message>
         <location filename="../qml/components/LockChip.qml" line="60"/>
@@ -4985,13 +4985,13 @@ What it needs
     </message>
     <message>
         <location filename="../qml/MirrorWindow.qml" line="25"/>
-        <source>%1 · NectarLink</source>
-        <translation>%1 · NectarLink</translation>
+        <source>%1 · Waypair Link</source>
+        <translation>%1 · Waypair Link</translation>
     </message>
     <message>
         <location filename="../qml/MirrorWindow.qml" line="25"/>
-        <source>Phone screen · NectarLink</source>
-        <translation>手机屏幕 · NectarLink</translation>
+        <source>Phone screen · Waypair Link</source>
+        <translation>手机屏幕 · Waypair Link</translation>
     </message>
     <message>
         <location filename="../qml/MirrorWindow.qml" line="325"/>
@@ -5056,8 +5056,8 @@ What it needs
     </message>
     <message>
         <location filename="../qml/MirrorWindow.qml" line="480"/>
-        <source>To control the phone, turn on Control from your PC in NectarLink&apos;s settings on the phone.</source>
-        <translation>要控制手机，请在手机上的 NectarLink 设置中开启“从电脑控制”。</translation>
+        <source>To control the phone, turn on Control from your PC in Waypair Link&apos;s settings on the phone.</source>
+        <translation>要控制手机，请在手机上的 Waypair Link 设置中开启“从电脑控制”。</translation>
     </message>
     <message>
         <location filename="../qml/MirrorWindow.qml" line="489"/>
@@ -5414,8 +5414,8 @@ What it needs
     </message>
     <message>
         <location filename="../qml/pages/PairingPanel.qml" line="99"/>
-        <source>Install NectarLink</source>
-        <translation>安装 NectarLink</translation>
+        <source>Install Waypair Link</source>
+        <translation>安装 Waypair Link</translation>
     </message>
     <message>
         <location filename="../qml/pages/PairingPanel.qml" line="99"/>
@@ -5442,8 +5442,8 @@ What it needs
     </message>
     <message>
         <location filename="../qml/pages/PairingPanel.qml" line="172"/>
-        <source>Open NectarLink on your phone</source>
-        <translation>在手机上打开 NectarLink</translation>
+        <source>Open Waypair Link on your phone</source>
+        <translation>在手机上打开 Waypair Link</translation>
     </message>
     <message>
         <location filename="../qml/pages/PairingPanel.qml" line="172"/>
@@ -5452,8 +5452,8 @@ What it needs
     </message>
     <message>
         <location filename="../qml/pages/PairingPanel.qml" line="220"/>
-        <source>On your phone, open NectarLink and choose “Pair nearby”. It shows up here.</source>
-        <translation>请在手机上打开 NectarLink 并选择“就近配对”，本机会显示该设备。</translation>
+        <source>On your phone, open Waypair Link and choose “Pair nearby”. It shows up here.</source>
+        <translation>请在手机上打开 Waypair Link 并选择“就近配对”，本机会显示该设备。</translation>
     </message>
     <message>
         <location filename="../qml/pages/PairingPanel.qml" line="250"/>
@@ -6452,8 +6452,8 @@ What it needs
     </message>
     <message>
         <location filename="../qml/pages/SettingsPage.qml" line="893"/>
-        <source>NectarLink follows Windows unless you pick one.</source>
-        <translation>除非你另行选择，NectarLink 会跟随 Windows 的语言。</translation>
+        <source>Waypair Link follows Windows unless you pick one.</source>
+        <translation>除非你另行选择，Waypair Link 会跟随 Windows 的语言。</translation>
     </message>
     <message>
         <location filename="../qml/pages/SettingsPage.qml" line="901"/>
@@ -7278,8 +7278,8 @@ What it needs
     </message>
     <message>
         <location filename="../qml/pages/SettingsPage.qml" line="3082"/>
-        <source>NectarLink %1</source>
-        <translation>NectarLink %1</translation>
+        <source>Waypair Link %1</source>
+        <translation>Waypair Link %1</translation>
     </message>
     <message>
         <location filename="../qml/pages/SettingsPage.qml" line="3085"/>
@@ -7309,14 +7309,29 @@ What it needs
         <translation>打开日志</translation>
     </message>
     <message>
+        <location filename="../qml/pages/SettingsPage.qml" line="3142"/>
+        <source>Independently maintained fork</source>
+        <translation>独立维护的分支</translation>
+    </message>
+    <message>
+        <location filename="../qml/pages/SettingsPage.qml" line="3143"/>
+        <source>Free software under GPL-3.0-or-later (apps) and MPL-2.0 (core).</source>
+        <translation>自由软件，应用采用 GPL-3.0-or-later 许可，核心采用 MPL-2.0 许可。</translation>
+    </message>
+    <message>
+        <location filename="../qml/pages/SettingsPage.qml" line="3164"/>
+        <source>Check for updates opens the updater, which reads Waypair Link&apos;s own signed release feed. It runs only when you ask; nothing checks or installs by itself.</source>
+        <translation>“检查更新”会打开更新程序，它读取 Waypair Link 自己的已签名发布源。只有在你要求时才会运行，不会自动检查或安装。</translation>
+    </message>
+    <message>
         <location filename="../qml/pages/SettingsPage.qml" line="3149"/>
         <source>Waypair extras</source>
         <translation>Waypair 增强功能</translation>
     </message>
     <message>
         <location filename="../qml/pages/SettingsPage.qml" line="3150"/>
-        <source>Added by the Waypair fork. To choose which phone apps and notification types mirror here, open NectarLink on your phone &gt; Settings &gt; Permissions &gt; Notifications &gt; Choose apps and types; SMS access is a separate permission. Find phone puts the phone&apos;s alarm volume back after ringing.</source>
-        <translation>Waypair 分支新增的功能。要选择哪些手机应用和通知类型镜像到这里，请在手机上打开 NectarLink &gt; 设置 &gt; 权限 &gt; 通知 &gt; 选择应用和类型；短信权限需单独授予。查找手机响铃结束后，会把手机的闹钟音量恢复原样。</translation>
+        <source>Added by the Waypair fork. To choose which phone apps and notification types mirror here, open Waypair Link on your phone &gt; Settings &gt; Permissions &gt; Notifications &gt; Choose apps and types; SMS access is a separate permission. Find phone puts the phone&apos;s alarm volume back after ringing.</source>
+        <translation>Waypair 分支新增的功能。要选择哪些手机应用和通知类型镜像到这里，请在手机上打开 Waypair Link &gt; 设置 &gt; 权限 &gt; 通知 &gt; 选择应用和类型；短信权限需单独授予。查找手机响铃结束后，会把手机的闹钟音量恢复原样。</translation>
     </message>
     <message>
         <location filename="../qml/pages/SettingsPage.qml" line="3151"/>
@@ -7421,21 +7436,21 @@ What it needs
     </message>
     <message>
         <location filename="rust_strings.h" line="390"/>
-        <source>The uninstaller is missing. Reinstall NectarLink, then uninstall it.</source>
-        <translation>缺少卸载程序。请重新安装 NectarLink，然后再卸载。</translation>
+        <source>The uninstaller is missing. Reinstall Waypair Link, then uninstall it.</source>
+        <translation>缺少卸载程序。请重新安装 Waypair Link，然后再卸载。</translation>
     </message>
 </context>
 <context>
     <name>SetupWindow</name>
     <message>
         <location filename="../qml/setup/SetupWindow.qml" line="44"/>
-        <source>Uninstall NectarLink</source>
-        <translation>卸载 NectarLink</translation>
+        <source>Uninstall Waypair Link</source>
+        <translation>卸载 Waypair Link</translation>
     </message>
     <message>
         <location filename="../qml/setup/SetupWindow.qml" line="44"/>
-        <source>NectarLink Setup</source>
-        <translation>NectarLink 安装程序</translation>
+        <source>Waypair Link Setup</source>
+        <translation>Waypair Link 安装程序</translation>
     </message>
     <message>
         <location filename="../qml/setup/SetupWindow.qml" line="107"/>
@@ -7447,13 +7462,13 @@ What it needs
     </message>
     <message>
         <location filename="../qml/setup/SetupWindow.qml" line="158"/>
-        <source>NectarLink</source>
-        <translation>NectarLink</translation>
+        <source>Waypair Link</source>
+        <translation>Waypair Link</translation>
     </message>
     <message>
         <location filename="../qml/setup/SetupWindow.qml" line="187"/>
-        <source>Couldn&apos;t uninstall NectarLink</source>
-        <translation>无法卸载 NectarLink</translation>
+        <source>Couldn&apos;t uninstall Waypair Link</source>
+        <translation>无法卸载 Waypair Link</translation>
     </message>
     <message>
         <location filename="../qml/setup/SetupWindow.qml" line="187"/>
@@ -7462,28 +7477,28 @@ What it needs
     </message>
     <message>
         <location filename="../qml/setup/SetupWindow.qml" line="189"/>
-        <source>Uninstalling NectarLink</source>
-        <translation>正在卸载 NectarLink</translation>
+        <source>Uninstalling Waypair Link</source>
+        <translation>正在卸载 Waypair Link</translation>
     </message>
     <message>
         <location filename="../qml/setup/SetupWindow.qml" line="190"/>
-        <source>Updating NectarLink</source>
-        <translation>正在更新 NectarLink</translation>
+        <source>Updating Waypair Link</source>
+        <translation>正在更新 Waypair Link</translation>
     </message>
     <message>
         <location filename="../qml/setup/SetupWindow.qml" line="191"/>
-        <source>Installing NectarLink</source>
-        <translation>正在安装 NectarLink</translation>
+        <source>Installing Waypair Link</source>
+        <translation>正在安装 Waypair Link</translation>
     </message>
     <message>
         <location filename="../qml/setup/SetupWindow.qml" line="192"/>
-        <source>Uninstall NectarLink?</source>
-        <translation>要卸载 NectarLink 吗？</translation>
+        <source>Uninstall Waypair Link?</source>
+        <translation>要卸载 Waypair Link 吗？</translation>
     </message>
     <message>
         <location filename="../qml/setup/SetupWindow.qml" line="207"/>
-        <source>Sorry to see you go. This uninstalls NectarLink and deletes its settings and pairings on this PC. Files you received stay in %1.</source>
-        <translation>很遗憾你要离开。这会卸载 NectarLink，并删除这台电脑上的设置和配对。你收到的文件仍保留在 %1。</translation>
+        <source>Sorry to see you go. This uninstalls Waypair Link and deletes its settings and pairings on this PC. Files you received stay in %1.</source>
+        <translation>很遗憾你要离开。这会卸载 Waypair Link，并删除这台电脑上的设置和配对。你收到的文件仍保留在 %1。</translation>
     </message>
     <message>
         <location filename="../qml/setup/SetupWindow.qml" line="209"/>
@@ -7532,8 +7547,8 @@ What it needs
     </message>
     <message>
         <location filename="../qml/setup/SetupWindow.qml" line="269"/>
-        <source>Keep NectarLink</source>
-        <translation>保留 NectarLink</translation>
+        <source>Keep Waypair Link</source>
+        <translation>保留 Waypair Link</translation>
     </message>
     <message>
         <location filename="../qml/setup/SetupWindow.qml" line="284"/>
@@ -7543,13 +7558,13 @@ What it needs
     </message>
     <message>
         <location filename="../qml/setup/SetupWindow.qml" line="317"/>
-        <source>NectarLink is uninstalled</source>
-        <translation>NectarLink 已卸载</translation>
+        <source>Waypair Link is uninstalled</source>
+        <translation>Waypair Link 已卸载</translation>
     </message>
     <message>
         <location filename="../qml/setup/SetupWindow.qml" line="317"/>
-        <source>NectarLink is ready</source>
-        <translation>NectarLink 已就绪</translation>
+        <source>Waypair Link is ready</source>
+        <translation>Waypair Link 已就绪</translation>
     </message>
     <message>
         <location filename="../qml/setup/SetupWindow.qml" line="329"/>
@@ -7573,13 +7588,13 @@ What it needs
     </message>
     <message>
         <location filename="../qml/setup/SetupWindow.qml" line="379"/>
-        <source>Open NectarLink</source>
-        <translation>打开 NectarLink</translation>
+        <source>Open Waypair Link</source>
+        <translation>打开 Waypair Link</translation>
     </message>
     <message>
         <location filename="../qml/setup/SetupWindow.qml" line="439"/>
-        <source>NectarLink goes into Program Files for everyone on this PC. Setup also:</source>
-        <translation>NectarLink 将安装到 Program Files，供本机所有用户使用。安装程序还会：</translation>
+        <source>Waypair Link goes into Program Files for everyone on this PC. Setup also:</source>
+        <translation>Waypair Link 将安装到 Program Files，供本机所有用户使用。安装程序还会：</translation>
     </message>
     <message>
         <location filename="../qml/setup/SetupWindow.qml" line="440"/>
@@ -7616,8 +7631,8 @@ What it needs
     <name>ShelfWindow</name>
     <message>
         <location filename="../qml/ShelfWindow.qml" line="16"/>
-        <source>NectarLink Shelf</source>
-        <translation>NectarLink 收纳架</translation>
+        <source>Waypair Link Shelf</source>
+        <translation>Waypair Link 收纳架</translation>
     </message>
     <message>
         <location filename="../qml/ShelfWindow.qml" line="50"/>
@@ -8488,8 +8503,8 @@ What it needs
     </message>
     <message>
         <location filename="../qml/pages/WalkthroughPage.qml" line="1548"/>
-        <source>Keep NectarLink ready in the system tray when you sign in.</source>
-        <translation>登录后让 NectarLink 常驻系统托盘待命。</translation>
+        <source>Keep Waypair Link ready in the system tray when you sign in.</source>
+        <translation>登录后让 Waypair Link 常驻系统托盘待命。</translation>
     </message>
     <message>
         <location filename="../qml/pages/WalkthroughPage.qml" line="1606"/>
@@ -8534,13 +8549,13 @@ What it needs
     <name>WelcomePage</name>
     <message>
         <location filename="../qml/pages/WelcomePage.qml" line="36"/>
-        <source>Welcome to NectarLink</source>
-        <translation>欢迎使用 NectarLink</translation>
+        <source>Welcome to Waypair Link</source>
+        <translation>欢迎使用 Waypair Link</translation>
     </message>
     <message>
         <location filename="../qml/pages/WelcomePage.qml" line="46"/>
-        <source>NectarLink couldn&apos;t start.</source>
-        <translation>NectarLink 无法启动。</translation>
+        <source>Waypair Link couldn&apos;t start.</source>
+        <translation>Waypair Link 无法启动。</translation>
     </message>
     <message>
         <location filename="../qml/pages/WelcomePage.qml" line="47"/>

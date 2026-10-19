@@ -118,7 +118,7 @@ impl Step {
     /// What the window says while this step runs.
     pub fn label(self) -> &'static str {
         match self {
-            Step::Closing => "Closing NectarLink",
+            Step::Closing => "Closing Waypair Link",
             Step::Files => "Copying files",
             Step::Firewall => "Allowing through Windows Firewall",
             Step::Updates => "Setting up updates",
@@ -183,7 +183,7 @@ pub fn remove(installed: &Path, mut on_event: impl FnMut(Event)) -> Outcome {
     if !uninstaller.is_file() {
         return Outcome::Failed(tr!(
             "Setup",
-            "The uninstaller is missing. Reinstall NectarLink, then uninstall it."
+            "The uninstaller is missing. Reinstall Waypair Link, then uninstall it."
         ));
     }
     let progress = progress_file("remove");
