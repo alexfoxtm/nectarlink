@@ -676,21 +676,70 @@ class AppUpdater(context: Context) {
             hash?.takeIf { file == name && it.length == 64 }
         }
 
-        /** `1.2.3` style versions; a release is newer than its pre-releases. */
+        /**
+         * `1.2.3` style versions; a release is newer than its pre-releases.
+         * Pre-release identifiers split on `.` compare numerically when both
+         * are integers, so `local.10` is newer than `local.9`.
+         */
         fun isNewer(candidate: String, current: String): Boolean {
-            fun parse(v: String): Pair<List<Int>, String?>? {
-                val numbers = v.substringBefore('-').split('.').map { it.toIntOrNull() ?: return null }
+            fun parse(v: String): Pair<List<Int>, List<String>?>? {
+                val numbers = v.substringBefore('-').split('.').map { part ->
+                    if (part.isEmpty() || part.any { it !in '0'..'9' }) return null
+                    part.toIntOrNull() ?: return null
+                }
                 if (numbers.size !in 2..3) return null
-                return (numbers + List(3 - numbers.size) { 0 }) to v.substringAfter('-', "").ifEmpty { null }
+                val pre = if ('-' in v) {
+                    val raw = v.substringAfter('-')
+                    if (raw.isEmpty()) return null
+                    val ids = raw.split('.')
+                    if (ids.any { it.isEmpty() || !identifierOk(it) }) return null
+                    ids
+                } else {
+                    null
+                }
+                return (numbers + List(3 - numbers.size) { 0 }) to pre
             }
             val (a, aPre) = parse(candidate) ?: return false
             val (b, bPre) = parse(current) ?: return false
             for (i in 0..2) if (a[i] != b[i]) return a[i] > b[i]
             return when {
                 aPre == null && bPre != null -> true
-                aPre != null && bPre != null -> aPre > bPre
+                aPre != null && bPre != null -> preNewer(aPre, bPre)
                 else -> false
             }
+        }
+
+        /** An integer identifier, or null when [id] is not one. Leading zeros and overflow are not integers. */
+        private fun integerId(id: String): Long? {
+            if (id.any { it !in '0'..'9' }) return null
+            if (id.length > 1 && id[0] == '0') return null
+            return id.toLongOrNull()
+        }
+
+        /** ASCII letters, digits, and hyphens; a digit-only identifier must be a canonical integer. */
+        private fun identifierOk(id: String): Boolean {
+            if (id.isEmpty() || id.any { it !in 'A'..'Z' && it !in 'a'..'z' && it !in '0'..'9' && it != '-' }) return false
+            return id.any { it !in '0'..'9' } || integerId(id) != null
+        }
+
+        /**
+         * Dot-identifier order: integers compare by value and rank below
+         * non-numeric identifiers; a longer equal prefix is newer.
+         */
+        private fun preNewer(a: List<String>, b: List<String>): Boolean {
+            val count = minOf(a.size, b.size)
+            for (i in 0 until count) {
+                if (a[i] == b[i]) continue
+                val aNum = integerId(a[i])
+                val bNum = integerId(b[i])
+                return when {
+                    aNum != null && bNum != null -> aNum > bNum
+                    aNum != null -> false
+                    bNum != null -> true
+                    else -> a[i] > b[i]
+                }
+            }
+            return a.size > b.size
         }
     }
 }

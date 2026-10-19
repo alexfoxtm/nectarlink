@@ -15,9 +15,11 @@ class AppUpdaterTest {
         assertTrue(AppUpdater.isNewer("1.0", "0.9.9"))
         assertTrue(AppUpdater.isNewer("0.2.0", "0.2.0-beta.1"))
         assertTrue(AppUpdater.isNewer("0.2.0-beta.2", "0.2.0-beta.1"))
+        assertTrue(AppUpdater.isNewer("0.2.0-local.10", "0.2.0-local.9"))
         assertFalse(AppUpdater.isNewer("0.0.1", "0.0.1"))
         assertFalse(AppUpdater.isNewer("0.0.1", "0.1.0"))
         assertFalse(AppUpdater.isNewer("garbage", "0.1.0"))
+        assertFalse(AppUpdater.isNewer("+1.0", "0.1.0"))
     }
 
     @Test
