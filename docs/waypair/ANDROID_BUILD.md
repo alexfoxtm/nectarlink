@@ -29,10 +29,13 @@ Intended release identity:
   and trust store (`noBackupFilesDir`); it reads, converts, or imports no
   Waypair protocol-2 pairing, key, or data.
 - **Legacy data untouched until qualified.** Installing a signed
-  `com.waypair` release is an in-place upgrade of the legacy app, so it
-  happens only after the Nectar-based Link qualifies and Alex decides to
-  switch. Qualification runs on the debug package below (or another
-  explicitly chosen non-legacy `waypair.applicationId`), beside the legacy app.
+  `com.waypair` release is an in-place upgrade of the legacy app, so only
+  Root does it, once Alex authorizes it (granted 2026-10-19). Development
+  runs on the debug package below, beside the legacy app.
+- **Authorized first install:** `com.waypair`, signer B preserved,
+  `versionName` 0.47.0 / `versionCode` 92 over the installed unpublished
+  candidate 91. A real OTA check, only if needed, is 0.47.1 / 93.
+  Current targets (owned emulator and Galaxy) only need `arm64-v8a`.
 
 ## Debug builds never replace an installed app
 
@@ -71,7 +74,9 @@ installed): SDK platform `android-37.0` present; build-tools 35.0.0 and
 `29.0.14206865` only (`30.0.16248370` required, missing); `cargo-ndk`
 missing; Rust targets installed are Apple only (Android targets missing);
 Homebrew OpenJDK 17 present; `ANDROID_SDK_ROOT` set, `ANDROID_HOME` unset;
-no `android/local.properties`.
+no `android/local.properties`. Root is installing NDK 30, build-tools 37,
+the `aarch64-linux-android` target, and `cargo-ndk`. The commands below are
+the full set for a fresh machine.
 
 Setup (not run here):
 
@@ -92,10 +97,10 @@ Build (not run here), from `android/`:
 # Qualification debug build under the Waypair id: com.waypair.nectar.debug.
 ./gradlew --no-daemon assembleDebug -Pwaypair.applicationId=com.waypair
 # Waypair release, Root only, with the preserved signer:
-WAYPAIR_SIGNING=<path to signing.properties> ./gradlew --no-daemon assembleRelease \
+WAYPAIR_SIGNING=<path to signer B's signing.properties> ./gradlew --no-daemon assembleRelease \
   -Pwaypair.applicationId=com.waypair \
-  -Pwaypair.versionName=<name> -Pwaypair.versionCode=<code above installed> \
-  -Pnectarlink.abis=arm64-v8a,armeabi-v7a
+  -Pwaypair.versionName=0.47.0 -Pwaypair.versionCode=92 \
+  -Pnectarlink.abis=arm64-v8a
 "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --print-certs \
   app/build/outputs/apk/release/app-release.apk
 ```
@@ -110,10 +115,10 @@ Waypair build do **not** work. Every non-debug build still carries upstream's
 `AppUpdater`, which polls GitHub Releases of `thtbee/nectarlink` and verifies
 `SHA256SUMS.txt`. Under `com.waypair` it would advertise upstream versions,
 and its install session (pinned to the app's own package, with a different
-signer) could not install them. Before any Waypair release is distributed,
-a separate port (task M4-T2) must replace it with the existing R2 feed:
-authenticated feed and artifact, version checks against `versionCode`, and
-tested rollback, without touching the legacy `com.waypair` feed or signers.
+signer) could not install them. The dedicated Android R2 worker owns
+replacing it with the existing R2 feed (task M4-T2): authenticated feed and
+artifact, version checks against `versionCode`, and tested rollback. Until
+that lands and the 0.47.1 / 93 OTA has actually run, no update path is claimed.
 
 ## Other open gates
 
