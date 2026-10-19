@@ -133,3 +133,5 @@ this section is a shipping checklist.
 
 No bundle produced by this script has been launched, signed, or installed;
 qualification on a physical Mac/Galaxy pair remains ahead.
+
+Owner release builds made with Homebrew Qt 6.12 require macOS 14.4 or newer (the linked QtCore LC_BUILD_VERSION). The bundle carries the existing Waypair AppIcon.icns. The verified Sparkle 2.10 framework can also be supplied explicitly from a retained qualified archive; an installed legacy app is not required.

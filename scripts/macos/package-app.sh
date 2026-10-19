@@ -298,6 +298,10 @@ fi
 
 mkdir -p "$APP_PATH/Contents/MacOS" "$APP_PATH/Contents/Resources"
 
+ICON_PATH="$REPO_ROOT/assets/brand/waypair/AppIcon.icns"
+[[ -f "$ICON_PATH" ]] || fail "Waypair app icon is missing: $ICON_PATH"
+cp "$ICON_PATH" "$APP_PATH/Contents/Resources/AppIcon.icns"
+
 EXEC_NAME="nectarlink-desktop"
 cp "$BINARY" "$APP_PATH/Contents/MacOS/$EXEC_NAME"
 chmod +x "$APP_PATH/Contents/MacOS/$EXEC_NAME"
@@ -330,6 +334,10 @@ cat > "$APP_PATH/Contents/Info.plist" <<EOF
     <string>6.0</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.4</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <!-- Actually needed: core config lan_discovery announces/discovers via
