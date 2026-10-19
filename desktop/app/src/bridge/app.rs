@@ -2199,7 +2199,7 @@ fn load_guide_doc_content(raw_key: &str) -> (String, String) {
             tr!("Guide", "Install and first-time setup"),
             tr!(
                 "Guide",
-                "1. Install Waypair Link on your Mac (macOS 14.4 or newer) or Windows 11 PC and on your Android phone (Android 8.0 or newer).\n\
+                "1. Install a Waypair Link build compatible with your Mac or Windows 11 PC, and install the Android app on your phone (Android 8.0 or newer). Check the Mac download for its required macOS version.\n\
              2. Connect both devices to the same Wi-Fi network, or plug your phone into your PC with a USB cable.\n\
              3. Open the Pair step in the setup walkthrough, or click + (Pair a new device) at the bottom of the left rail.\n\
              4. Scan the QR code from the Waypair Link Android app, or select your phone from the nearby devices list and confirm that the 6-digit code matches on both screens.\n\

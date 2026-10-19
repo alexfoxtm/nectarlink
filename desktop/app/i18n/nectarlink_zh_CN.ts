@@ -2334,12 +2334,12 @@
     <name>Guide</name>
     <message>
         <location filename="rust_strings.h" line="233"/>
-        <source>1. Install Waypair Link on your Mac (macOS 14.4 or newer) or Windows 11 PC and on your Android phone (Android 8.0 or newer).
+        <source>1. Install a Waypair Link build compatible with your Mac or Windows 11 PC, and install the Android app on your phone (Android 8.0 or newer). Check the Mac download for its required macOS version.
 2. Connect both devices to the same Wi-Fi network, or plug your phone into your PC with a USB cable.
 3. Open the Pair step in the setup walkthrough, or click + (Pair a new device) at the bottom of the left rail.
 4. Scan the QR code from the Waypair Link Android app, or select your phone from the nearby devices list and confirm that the 6-digit code matches on both screens.
 5. Choose which features to share for that phone and grant only the Android permissions you want to use.</source>
-        <translation>1. 在 Mac（macOS 14.4 或更高版本）或 Windows 11 电脑，以及 Android 手机（Android 8.0 或更高版本）上安装 Waypair Link。
+        <translation>1. 在 Mac 或 Windows 11 电脑上安装兼容的 Waypair Link 构建，并在手机上安装 Android 应用（Android 8.0 或更高版本）。请查看 Mac 下载说明中的 macOS 版本要求。
 2. 让两台设备连接到同一个 Wi‑Fi 网络，或用 USB 数据线将手机连接到电脑。
 3. 在设置向导中打开“配对”步骤，或点击左侧栏底部的 +（配对新设备）。
 4. 用 Waypair Link 安卓应用扫描二维码，或在附近设备列表中选择你的手机，并确认两边屏幕上的 6 位验证码一致。
