@@ -8,9 +8,11 @@
 
 use crate::i18n::tr;
 use std::{
+    collections::VecDeque,
     sync::{
         Mutex,
         atomic::{AtomicU64, Ordering},
+        mpsc,
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -39,13 +41,86 @@ struct PendingPastePrompt {
     target_name: String,
 }
 
+/// One in-flight macOS Service capture (see `crate::win::services`).
+/// Owned here so core events can be intercepted before the ordinary
+/// clipboard/paste delivery below ever sees them.
+#[derive(Debug)]
+struct ServiceWaiter {
+    device: DeviceId,
+    device_name: String,
+    request_id: String,
+    mode: CameraCaptureMode,
+    sender: mpsc::Sender<ServiceEvent>,
+}
+
+/// Events delivered to a waiting Service invocation, matched strictly by
+/// `(device, request_id)` — never by device alone.
+#[derive(Debug)]
+pub enum ServiceEvent {
+    /// The phone accepted (`camera.capture.ok`); the capture is still open.
+    Accepted,
+    /// The phone sent the image; the core already validated and saved it.
+    Received { mime: String, data: Vec<u8> },
+    /// The phone cancelled (reason is peer free text; sanitize before showing).
+    Cancelled { reason: Option<String> },
+    /// Cancelled from this app (window Cancel, timeout, or shutdown).
+    CancelledLocally,
+    /// The link dropped or the device was unpaired mid-capture.
+    Disconnected,
+    /// The live request itself failed before acceptance.
+    Failed(String),
+}
+
+/// Why a Service capture could not be started. Checked locally, before
+/// anything is sent; a Service never queues.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ServiceRefusal {
+    /// Another capture (window or Service) is already in progress.
+    Busy,
+    NoPairedDevice,
+    Offline {
+        device_name: String,
+    },
+    PhotosOff {
+        device_name: String,
+    },
+    Unsupported {
+        device_name: String,
+    },
+    CoreNotReady,
+}
+
+/// Handle for one started Service capture. The receiver is fed by
+/// [`on_event`] (and by the spawned send task on failure) until exactly
+/// one terminal [`ServiceEvent`] arrives.
+pub struct ServiceTicket {
+    pub device: DeviceId,
+    pub device_name: String,
+    pub request_id: String,
+    pub mode: CameraCaptureMode,
+    pub receiver: mpsc::Receiver<ServiceEvent>,
+}
+
+/// How many finished Service request ids are remembered. A result that
+/// arrives for one of these (after timeout, cancel, or delivery) is
+/// dropped here and never reaches the general clipboard or a later,
+/// unrelated request.
+const MAX_CLOSED_SERVICE_IDS: usize = 32;
+
 #[derive(Debug, Default)]
 struct ContinuityState {
     active: Option<ActiveRequest>,
     prompt: Option<PendingPastePrompt>,
+    service: Option<ServiceWaiter>,
+    closed_service_ids: VecDeque<String>,
 }
 
-static STATE: Mutex<ContinuityState> = Mutex::new(ContinuityState { active: None, prompt: None });
+static STATE: Mutex<ContinuityState> = Mutex::new(ContinuityState {
+    active: None,
+    prompt: None,
+    service: None,
+    closed_service_ids: VecDeque::new(),
+});
 
 /// Snapshot of Continuity Camera state exposed to QML via `AppController`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -118,20 +193,33 @@ fn notify_continuity() {
 /// Returns a snapshot of the current Continuity Camera UI state.
 pub fn view() -> ContinuityView {
     let guard = STATE.lock().unwrap_or_else(|e| e.into_inner());
-    let (busy, mode, status) = match &guard.active {
-        Some(active) if !active.queued_offline => {
-            let mode_str = active.mode.as_str().to_owned();
-            let status_str = match active.mode {
+    let (busy, mode, status) = match &guard.service {
+        Some(service) => {
+            let status_str = match service.mode {
                 CameraCaptureMode::Photo => {
-                    tr!("ContinuityCamera", "Take a photo on %1…", active.device_name)
+                    tr!("ContinuityCamera", "Take a photo on %1…", service.device_name)
                 }
                 CameraCaptureMode::Scan => {
-                    tr!("ContinuityCamera", "Scan a document on %1…", active.device_name)
+                    tr!("ContinuityCamera", "Scan a document on %1…", service.device_name)
                 }
             };
-            (true, mode_str, status_str)
+            (true, service.mode.as_str().to_owned(), status_str)
         }
-        _ => (false, String::new(), String::new()),
+        _ => match &guard.active {
+            Some(active) if !active.queued_offline => {
+                let mode_str = active.mode.as_str().to_owned();
+                let status_str = match active.mode {
+                    CameraCaptureMode::Photo => {
+                        tr!("ContinuityCamera", "Take a photo on %1…", active.device_name)
+                    }
+                    CameraCaptureMode::Scan => {
+                        tr!("ContinuityCamera", "Scan a document on %1…", active.device_name)
+                    }
+                };
+                (true, mode_str, status_str)
+            }
+            _ => (false, String::new(), String::new()),
+        },
     };
     let (paste_prompt_visible, paste_prompt_title, paste_prompt_body, paste_target_name) =
         if let Some(prompt) = &guard.prompt {
@@ -160,6 +248,15 @@ pub fn start(mode_raw: &str) {
 /// `preferred_index` if it is online, or the first online phone, or the
 /// preferred offline paired phone (queueing a 2-minute expiring request).
 pub fn start_for_index(preferred_index: usize, mode_raw: &str) {
+    // One capture at a time across entry points: while a Service request
+    // is open, the window can cancel it (see `cancel`) but not start another.
+    if STATE.lock().unwrap_or_else(|e| e.into_inner()).service.is_some() {
+        crate::bridge::app::show_message(tr!(
+            "ContinuityCamera",
+            "A photo or scan requested by another app is still in progress."
+        ));
+        return;
+    }
     let mode = CameraCaptureMode::parse(mode_raw).unwrap_or(CameraCaptureMode::Photo);
     let target = crate::win::tray::snapshot_target_window();
 
@@ -253,8 +350,184 @@ pub fn start_for_index(preferred_index: usize, mode_raw: &str) {
     });
 }
 
+/// Records a Service request id as closed, so a late result for it is
+/// dropped instead of reaching the general clipboard or another request.
+fn tombstone_locked(state: &mut ContinuityState, request_id: &str) {
+    if state.closed_service_ids.iter().any(|id| id == request_id) {
+        return;
+    }
+    state.closed_service_ids.push_back(request_id.to_owned());
+    while state.closed_service_ids.len() > MAX_CLOSED_SERVICE_IDS {
+        state.closed_service_ids.pop_front();
+    }
+}
+
+/// Takes the Service waiter when `(device, request_id)` matches it
+/// strictly, tombstoning the id. A different device or a different id
+/// (e.g. a late result from an older request) never matches.
+fn take_service_locked(
+    state: &mut ContinuityState,
+    device: &DeviceId,
+    request_id: &str,
+) -> Option<ServiceWaiter> {
+    let matches = state.service.as_ref().is_some_and(|w| w.device == *device && w.request_id == request_id);
+    if !matches {
+        return None;
+    }
+    let waiter = state.service.take()?;
+    tombstone_locked(state, &waiter.request_id);
+    Some(waiter)
+}
+
+fn next_service_request_id() -> String {
+    let ms = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+    let seq = REQUEST_SEQ.fetch_add(1, Ordering::Relaxed);
+    format!("mac-svc-{ms}-{seq}")
+}
+
+/// Starts a capture for a macOS Service invocation. All readiness checks
+/// are local and happen before anything is sent: one capture at a time,
+/// a paired device that is online, the `photos` toggle on, and — when the
+/// capability matrix is known — a phone that isn't `Unsupported` for
+/// Continuity Camera. The request itself uses the core's live-only
+/// `request_camera_capture_now`, so `Ok` from the send is never a queue
+/// receipt; acceptance arrives as [`ServiceEvent::Accepted`].
+pub fn begin_service(mode: CameraCaptureMode) -> Result<ServiceTicket, ServiceRefusal> {
+    {
+        let guard = STATE.lock().unwrap_or_else(|e| e.into_inner());
+        if guard.service.is_some() || guard.active.is_some() {
+            return Err(ServiceRefusal::Busy);
+        }
+    }
+    let chosen: Option<Result<(DeviceId, String), String>> = core_host::host().hub.read(|s| {
+        let first_name = s.devices.first().map(|d| d.info.name.clone());
+        match s.devices.iter().find(|d| matches!(d.link, LinkState::Online { .. })) {
+            Some(d) => Some(Ok((d.id, d.info.name.clone()))),
+            None => first_name.map(Err),
+        }
+    });
+    let (device_id, device_name) = match chosen {
+        None => return Err(ServiceRefusal::NoPairedDevice),
+        Some(Err(name)) => return Err(ServiceRefusal::Offline { device_name: name }),
+        Some(Ok(found)) => found,
+    };
+    let Some(node) = core_host::node() else { return Err(ServiceRefusal::CoreNotReady) };
+    match node.device_toggles(device_id) {
+        Ok(toggles) => {
+            if toggles.iter().any(|(name, on)| *name == "photos" && !*on) {
+                return Err(ServiceRefusal::PhotosOff { device_name });
+            }
+        }
+        Err(Error::NotPaired) => return Err(ServiceRefusal::NoPairedDevice),
+        Err(_) => {} // `request_camera_capture_now` re-checks the same gates.
+    }
+    if let Ok(matrix) = node.capabilities(device_id)
+        && matches!(
+            matrix.state("camera.continuity"),
+            Some(nectarlink_core::FeatureState::Unsupported { .. })
+        )
+    {
+        return Err(ServiceRefusal::Unsupported { device_name });
+    }
+
+    let request_id = next_service_request_id();
+    let (sender, receiver) = mpsc::channel();
+    {
+        let mut guard = STATE.lock().unwrap_or_else(|e| e.into_inner());
+        // Rechecked under the lock that installs the waiter, so two
+        // invocations racing the preflight can't both start a capture.
+        if guard.service.is_some() || guard.active.is_some() {
+            return Err(ServiceRefusal::Busy);
+        }
+        guard.service = Some(ServiceWaiter {
+            device: device_id,
+            device_name: device_name.clone(),
+            request_id: request_id.clone(),
+            mode,
+            sender,
+        });
+    }
+    notify_continuity();
+
+    let ticket = ServiceTicket {
+        device: device_id,
+        device_name: device_name.clone(),
+        request_id: request_id.clone(),
+        mode,
+        receiver,
+    };
+    core_host::spawn(async move {
+        if let Err(err) = node.request_camera_capture_now(device_id, request_id.clone(), mode).await {
+            let message = match err {
+                Error::Denied => {
+                    tr!("ContinuityCamera", "Allow Photos access for %1 in Settings first.", device_name)
+                }
+                Error::Offline => format!("{device_name} is not connected."),
+                Error::NotPaired => tr!("ContinuityCamera", "Pair your phone first."),
+                other => tr!("ContinuityCamera", "Couldn’t open camera on %1: %2", device_name, other),
+            };
+            fail_service(&request_id, message);
+        }
+    });
+    Ok(ticket)
+}
+
+/// Reports a failed live send to the waiter for `request_id`, if it is
+/// still the current Service request, and closes it.
+fn fail_service(request_id: &str, message: String) {
+    let waiter = {
+        let mut guard = STATE.lock().unwrap_or_else(|e| e.into_inner());
+        if guard.service.as_ref().is_some_and(|w| w.request_id == request_id) {
+            let waiter = guard.service.take();
+            if let Some(w) = &waiter {
+                tombstone_locked(&mut guard, &w.request_id);
+            }
+            waiter
+        } else {
+            None
+        }
+    };
+    if let Some(waiter) = waiter {
+        let _ = waiter.sender.send(ServiceEvent::Failed(message));
+        notify_continuity();
+    }
+}
+
+/// Cancels the in-flight Service capture, if any: clears the waiter,
+/// wakes it as locally cancelled, tombstones the id so a late result is
+/// dropped, and tells the phone. Returns whether one was in flight.
+pub fn cancel_service(phone_reason: &str) -> bool {
+    let waiter = {
+        let mut guard = STATE.lock().unwrap_or_else(|e| e.into_inner());
+        let waiter = guard.service.take();
+        if let Some(w) = &waiter {
+            tombstone_locked(&mut guard, &w.request_id);
+        }
+        waiter
+    };
+    let Some(waiter) = waiter else { return false };
+    let _ = waiter.sender.send(ServiceEvent::CancelledLocally);
+    notify_continuity();
+    if let Some(node) = core_host::node() {
+        let reason = phone_reason.to_owned();
+        core_host::spawn(async move {
+            let _ = node.cancel_camera_capture(waiter.device, waiter.request_id, Some(reason)).await;
+        });
+    }
+    true
+}
+
+/// Cancels any in-flight Service capture at core shutdown.
+pub fn shutdown_service() {
+    cancel_service("cancelled");
+}
+
 /// Cancels an in-flight Continuity Camera request from the PC side.
 pub fn cancel() {
+    // While a Service request is open, Cancel belongs to it.
+    if cancel_service("cancelled") {
+        return;
+    }
     let active = {
         let mut guard = STATE.lock().unwrap_or_else(|e| e.into_inner());
         guard.active.take()
@@ -310,8 +583,115 @@ fn spawn_focus_and_paste(hwnd: isize) {
     });
 }
 
+/// Routes one event to the Service waiter when it belongs to it.
+/// Returns `true` when the event was consumed (or dropped as a late
+/// Service response) and ordinary delivery must not see it. Matching is
+/// strict: the same device *and* the waiter's current request id.
+fn intercept_service_event(event: &NodeEvent) -> bool {
+    match event {
+        NodeEvent::CameraCaptureAccepted { device, request_id } => {
+            let sender = {
+                let guard = STATE.lock().unwrap_or_else(|e| e.into_inner());
+                guard
+                    .service
+                    .as_ref()
+                    .filter(|w| w.device == *device && w.request_id == *request_id)
+                    .map(|w| w.sender.clone())
+            };
+            match sender {
+                Some(sender) => {
+                    let _ = sender.send(ServiceEvent::Accepted);
+                    true
+                }
+                None => false,
+            }
+        }
+        NodeEvent::CameraCaptureReceived { device, request_id, mime, data, .. } => {
+            let waiter = {
+                let mut guard = STATE.lock().unwrap_or_else(|e| e.into_inner());
+                if guard.closed_service_ids.iter().any(|id| id == request_id) {
+                    // Late Service response: the core already saved it,
+                    // but it must not reach the general clipboard.
+                    return true;
+                }
+                take_service_locked(&mut guard, device, request_id)
+            };
+            match waiter {
+                Some(waiter) => {
+                    let _ =
+                        waiter.sender.send(ServiceEvent::Received { mime: mime.clone(), data: data.clone() });
+                    notify_continuity();
+                    true
+                }
+                None => false,
+            }
+        }
+        NodeEvent::CameraCaptureCancelled { device, request_id, reason } => {
+            let waiter = {
+                let mut guard = STATE.lock().unwrap_or_else(|e| e.into_inner());
+                if guard.closed_service_ids.iter().any(|id| id == request_id) {
+                    return true;
+                }
+                take_service_locked(&mut guard, device, request_id)
+            };
+            match waiter {
+                Some(waiter) => {
+                    let _ = waiter.sender.send(ServiceEvent::Cancelled { reason: reason.clone() });
+                    notify_continuity();
+                    true
+                }
+                None => false,
+            }
+        }
+        NodeEvent::LinkChanged { device, link } if !matches!(link, LinkState::Online { .. }) => {
+            let waiter = {
+                let mut guard = STATE.lock().unwrap_or_else(|e| e.into_inner());
+                let request_id =
+                    guard.service.as_ref().filter(|w| w.device == *device).map(|w| w.request_id.clone());
+                match request_id {
+                    Some(id) => take_service_locked(&mut guard, device, &id),
+                    None => None,
+                }
+            };
+            match waiter {
+                Some(waiter) => {
+                    let _ = waiter.sender.send(ServiceEvent::Disconnected);
+                    notify_continuity();
+                    true
+                }
+                None => false,
+            }
+        }
+        NodeEvent::DeviceRemoved(device) => {
+            let waiter = {
+                let mut guard = STATE.lock().unwrap_or_else(|e| e.into_inner());
+                let request_id =
+                    guard.service.as_ref().filter(|w| w.device == *device).map(|w| w.request_id.clone());
+                match request_id {
+                    Some(id) => take_service_locked(&mut guard, device, &id),
+                    None => None,
+                }
+            };
+            match waiter {
+                Some(waiter) => {
+                    let _ = waiter.sender.send(ServiceEvent::Disconnected);
+                    notify_continuity();
+                    true
+                }
+                None => false,
+            }
+        }
+        _ => false,
+    }
+}
+
 /// Handles Continuity Camera events from `nectarlink_core`.
 pub fn on_event(event: &NodeEvent) {
+    // Service-bound responses are intercepted before ordinary delivery,
+    // so they never reach the general clipboard or paste path.
+    if intercept_service_event(event) {
+        return;
+    }
     match event {
         NodeEvent::CameraCaptureReceived { device, request_id, mode, mime, data, .. } => {
             let matched = {
@@ -450,6 +830,40 @@ mod tests {
             }
             other => panic!("expected PromptMissingTarget, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn service_waiter_matches_strictly_and_late_ids_are_tombstoned() {
+        let phone = DeviceId([7; 32]);
+        let other = DeviceId([8; 32]);
+        let (sender, _rx) = mpsc::channel();
+        let mut state = ContinuityState {
+            active: None,
+            prompt: None,
+            service: Some(ServiceWaiter {
+                device: phone,
+                device_name: "Pixel".into(),
+                request_id: "mac-svc-1-1".into(),
+                mode: CameraCaptureMode::Photo,
+                sender,
+            }),
+            closed_service_ids: VecDeque::new(),
+        };
+        // A late result from another request, or from another device,
+        // never resolves this waiter.
+        assert!(take_service_locked(&mut state, &phone, "mac-svc-old-9").is_none());
+        assert!(take_service_locked(&mut state, &other, "mac-svc-1-1").is_none());
+        assert!(state.service.is_some());
+        // The exact (device, request_id) pair does, and closes the id.
+        assert!(take_service_locked(&mut state, &phone, "mac-svc-1-1").is_some());
+        assert!(state.service.is_none());
+        assert!(state.closed_service_ids.iter().any(|id| id == "mac-svc-1-1"));
+        // Closing is idempotent and bounded.
+        tombstone_locked(&mut state, "mac-svc-1-1");
+        for n in 0..(MAX_CLOSED_SERVICE_IDS + 5) {
+            tombstone_locked(&mut state, &format!("mac-svc-x-{n}"));
+        }
+        assert_eq!(state.closed_service_ids.len(), MAX_CLOSED_SERVICE_IDS);
     }
 
     #[test]

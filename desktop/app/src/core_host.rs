@@ -403,6 +403,8 @@ pub async fn refresh_wake() {
 
 /// Stops the node (telling connected devices) and the runtime.
 pub fn shutdown() {
+    // No Service capture may outlive the node that would answer it.
+    crate::continuity_camera::shutdown_service();
     let Some(host) = HOST.get() else { return };
     if let Some(node) = host.node.get().cloned() {
         let done =

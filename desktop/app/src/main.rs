@@ -643,9 +643,17 @@ fn main() -> ExitCode {
         bridge::native::ffi::register_qml_app_engine(engine.as_mut());
         engine.load(&QUrl::from("qrc:/qt/qml/app/nectarlink/qml/App.qml"));
     }
+    // Just before exec(): Service requests can arrive as soon as the
+    // provider is set, so the core and the UI must already be up.
+    #[cfg(target_os = "macos")]
+    win::services::register();
     let code = app.as_mut().map_or(1, |app| app.exec());
 
     tracing::info!(code, "shutting down");
+    // The Services provider goes first, so no new Service invocation can
+    // start (and any in-flight one is cancelled) while the app tears down.
+    #[cfg(target_os = "macos")]
+    win::services::unregister();
     // QML first (it holds references into Qt), then the core.
     drop(engine);
     pc_audio_stream::set_enabled(false);
