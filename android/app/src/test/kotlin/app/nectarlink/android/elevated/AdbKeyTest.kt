@@ -28,6 +28,13 @@ class AdbKeyTest {
     }
 
     @Test
+    fun thePeerNameIsOneWord() {
+        assertEquals("SomeApp", AdbKey.peerName("Some App"))
+        assertEquals("SomeApp", AdbKey.peerName(" Some\tApp\n"))
+        assertEquals("Nectarlink", AdbKey.peerName("Nectarlink"))
+    }
+
+    @Test
     fun theKeyIsKept() {
         val dir = folder.newFolder()
         val first = AdbKey.load(dir)

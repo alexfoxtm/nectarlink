@@ -49,6 +49,13 @@ internal class AdbKey private constructor(val privateKey: PrivateKey, val certif
             return AdbKey(pair.private, cert)
         }
 
+        /**
+         * The name sent with this key when pairing, which wireless debugging
+         * lists under Paired devices. Android shows only the first word after
+         * the key, so the app's label goes without spaces.
+         */
+        fun peerName(appLabel: String): String = appLabel.filterNot(Char::isWhitespace)
+
         /** Forgets the key (unpaired: a new one is made next time). */
         fun delete(dir: File) {
             File(dir, KEY_FILE).delete()

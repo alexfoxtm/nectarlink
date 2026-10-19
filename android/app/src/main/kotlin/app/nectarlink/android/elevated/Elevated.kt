@@ -17,6 +17,7 @@ import android.util.Log
 import android.view.KeyEvent
 import android.view.WindowManager
 import androidx.core.content.edit
+import app.nectarlink.android.R
 import app.nectarlink.android.banking.BankingPause
 import app.nectarlink.android.calls.CallCompanion
 import app.nectarlink.android.notifications.NotificationListener
@@ -220,9 +221,10 @@ object Elevated {
 
     private fun paired() = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(PAIRED, false)
 
-    /** The phone's own adbd, as NectarLink. */
+    /** The phone's own adbd, as this app. */
     private class Connection(context: Context) : AbsAdbConnectionManager() {
         private val key = AdbKey.load(context.noBackupFilesDir.resolve("adb"))
+        private val name = AdbKey.peerName(context.getString(R.string.app_name))
 
         init {
             setApi(Build.VERSION.SDK_INT)
@@ -231,7 +233,7 @@ object Elevated {
 
         override fun getPrivateKey() = key.privateKey
         override fun getCertificate() = key.certificate
-        override fun getDeviceName() = "Nectarlink"
+        override fun getDeviceName() = name
     }
 
     // ---- Pairing ----
