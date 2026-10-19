@@ -1,0 +1,97 @@
+{
+  "schema": 1,
+  "recorded_at": "2026-10-19",
+  "port": {
+    "branch": "waypair/macos-port",
+    "product": "Waypair Link (Nectar base)",
+    "base_pin": "macos-pr24",
+    "shallow_checkout": true
+  },
+  "upstream": {
+    "remote": "upstream",
+    "url": "https://github.com/thtbee/nectarlink.git",
+    "repo": "thtbee/nectarlink",
+    "branch": "main",
+    "license": "Multi-license, see LICENSE and LICENSES/ (desktop and core GPL-3.0-or-later)",
+    "contribution_terms": "DCO 1.1, Signed-off-by trailer on every commit (CONTRIBUTING.md)",
+    "latest_release_at_record": "v0.1.4"
+  },
+  "pins": [
+    {
+      "id": "main",
+      "kind": "branch",
+      "ref": "refs/heads/main",
+      "sha": "f8f725474570f7da31bb3559623332830f3bda4d",
+      "author": "Bee <302257494+thtbee@users.noreply.github.com>",
+      "subject": "Changelog: the window remembers where it was",
+      "in_port": true,
+      "role": "Canonical upstream main at last review. macos-pr24 is 6 commits ahead of it and 0 behind, so the port contains it."
+    },
+    {
+      "id": "macos-pr24",
+      "kind": "pull",
+      "number": 24,
+      "ref": "refs/pull/24/head",
+      "head_repo": "saivinay1805/nectarlink",
+      "head_ref": "feature/macos-port",
+      "sha": "96370de1a215d29ef214854e537e7a2c5be211e9",
+      "author": "saivinay1805 <saivinayreddyvavilla@gmail.com>",
+      "subject": "refactor(desktop): align module layout, honest error handling, and capability advertising for macOS",
+      "state_at_record": "open, unmerged",
+      "in_port": true,
+      "role": "Base commit of waypair/macos-port; every port commit sits on top of it."
+    },
+    {
+      "id": "linux-pr12",
+      "kind": "pull",
+      "number": 12,
+      "ref": "refs/pull/12/head",
+      "head_repo": "jochenkirstaetter/nectarlink",
+      "head_ref": "linux",
+      "sha": "1de43ef1dd50c603601e4149dfbdd8520ebd5084",
+      "author": "Jochen Kirst\u00e4tter <7329802+jochenkirstaetter@users.noreply.github.com>",
+      "subject": "fix(linux): clean up stale pipe sources, add Mono/Stereo virtual mic alignment and +9 dB makeup gain",
+      "state_at_record": "open, unmerged, stacked on #23, diverged from main (5 ahead, 5 behind, merge base c92a86dd)",
+      "in_port": false,
+      "role": "Reference only. Not merged into the port; watch for shared desktop/core fixes worth cherry-picking."
+    }
+  ],
+  "port_deltas": {
+    "branding": [
+      "assets/brand/waypair/",
+      "android/app/src/main/res/drawable/ic_launcher_",
+      "android/app/src/main/res/drawable/ic_notification.xml",
+      "android/app/src/main/res/drawable-nodpi/ic_launcher_waypair",
+      "android/app/build.gradle.kts",
+      "desktop/app/src/mark.rs",
+      "desktop/app/src/main.rs"
+    ],
+    "r2_updater": [
+      "desktop/app/src/updater.rs",
+      "scripts/macos/WaypairUpdater.swift",
+      "scripts/releases/",
+      "android/app/src/main/kotlin/app/nectarlink/android/update/",
+      "android/app/src/test/kotlin/app/nectarlink/android/update/"
+    ],
+    "cloud": [],
+    "port_docs_and_tooling": [
+      "docs/waypair/",
+      "scripts/upstream/",
+      "scripts/macos/package-app.sh"
+    ]
+  },
+  "adopted_contributions": [],
+  "relevance": {
+    "keywords": [
+      "macos", "mac", "darwin", "apple", "keychain", "sparkle", "linux",
+      "android", "desktop", "core", "security", "crypto", "pairing",
+      "clipboard", "update", "updater", "release", "signing", "fix"
+    ]
+  },
+  "github_api": {
+    "base": "https://api.github.com",
+    "max_requests": 12,
+    "per_page": 30,
+    "timeout_seconds": 20
+  }
+}
