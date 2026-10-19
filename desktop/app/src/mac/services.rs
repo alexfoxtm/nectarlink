@@ -154,7 +154,7 @@ fn encoded_images(mime: &str, data: &[u8]) -> Result<(Option<Vec<u8>>, Option<Ve
 /// TIFF representation of a decodable image, or `None` when AppKit
 /// can't decode it. Main thread (AppKit image objects).
 fn tiff_bytes(data: &[u8]) -> Option<Vec<u8>> {
-    use objc2::ClassType;
+    use objc2::AnyThread;
     use objc2_app_kit::NSBitmapImageRep;
     if MainThreadMarker::new().is_none() {
         return None;
@@ -343,7 +343,7 @@ fn handle_capture(pboard: &NSPasteboard, user_data: &str) -> Result<(), String> 
 #[allow(unsafe_code)]
 mod provider {
     use objc2::rc::Retained;
-    use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send};
+    use objc2::{MainThreadMarker, MainThreadOnly, define_class, msg_send};
     use objc2_app_kit::NSPasteboard;
     use objc2_foundation::{NSObject, NSObjectProtocol, NSString};
 
