@@ -215,3 +215,15 @@ listener. Symlinks, escaped paths, invalid manifests and mismatched helper bytes
 are refused. No runtime download, server restart, phone application install or
 Android permission change is part of this bootstrap. Fresh-host USB hardware
 acceptance is separate from the pure decision tests and existing-server check.
+
+The bundled helper deliberately has the usual shared ADB-server lifetime: when
+Waypair quits, a server it started may remain available for other tools and the
+next launch. Waypair does not signal or kill it. If it exits, this one-shot
+bootstrap does not respawn it until the next app launch; the USB watcher keeps
+retrying localhost. This avoids a periodic process restart loop.
+
+Exception to the general inside-out signing order above: **do not re-sign
+`Contents/Helpers/adb`** after writing its seal. Verify its existing owner
+certificate and signed bytes, sign every other Mach-O and nested bundle, and
+sign the outer application last. Finally compare its SHA-256 and byte size to
+`Resources/PhoneSetup/adb-seal.json` again and run the strict deep bundle check.

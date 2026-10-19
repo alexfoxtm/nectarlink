@@ -97,6 +97,7 @@ mod target {
         // SAFETY:
         // - The superclass `NSObject` has no subclassing requirements.
         // - `MenuTarget` does not implement `Drop`.
+        #[name = "WaypairLinkTrayMenuTarget"]
         #[unsafe(super = NSObject)]
         #[thread_kind = MainThreadOnly]
         #[ivars = TargetIvars]

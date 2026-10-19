@@ -167,11 +167,7 @@ fn sealed_helper(current_exe: &Path) -> Option<PathBuf> {
     if seal.size > HELPER_MAX_BYTES || seal.size != helper_meta.len() {
         return None;
     }
-    if hash_matches(&helper, &seal.sha256, seal.size)? {
-        Some(helper)
-    } else {
-        None
-    }
+    if hash_matches(&helper, &seal.sha256, seal.size)? { Some(helper) } else { None }
 }
 
 /// `Foo.app/Contents/MacOS/<bin>` only. A dev build under `target/debug` is not a bundle.
@@ -335,15 +331,12 @@ mod tests {
     }
 
     fn scratch(name: &str) -> Scratch {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos();
+        let nanos =
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos();
         let home = std::env::var_os("HOME").filter(|h| !h.is_empty()).expect("HOME");
-        let dir = PathBuf::from(home).join("orca/tmp/waypair-adb-bootstrap-tests").join(format!(
-            "{name}-{}-{nanos}",
-            std::process::id()
-        ));
+        let dir = PathBuf::from(home)
+            .join("orca/tmp/waypair-adb-bootstrap-tests")
+            .join(format!("{name}-{}-{nanos}", std::process::id()));
         fs::create_dir_all(dir.join("Contents/MacOS")).unwrap();
         fs::create_dir_all(dir.join("Contents/Helpers")).unwrap();
         fs::create_dir_all(dir.join("Contents/Resources/PhoneSetup")).unwrap();

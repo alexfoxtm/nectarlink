@@ -40,7 +40,7 @@ def prepare(archive: Path, pin: dict, output: Path) -> dict:
     executable.chmod(0o755)
     (output / "ADB-NOTICE.txt").write_bytes(notice)
     (output / "origin.json").write_text(json.dumps(pin, indent=2) + "\n")
-    return {"helper": str(executable), "unsignedSha256": pin["memberSha256"], "notice": str(output / "ADB-NOTICE.txt")}
+    return {"helper": str(executable), "upstreamSha256": pin["memberSha256"], "notice": str(output / "ADB-NOTICE.txt")}
 
 
 def main():

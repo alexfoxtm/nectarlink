@@ -473,7 +473,9 @@ for path in (helper, seal, notice):
 if not os.access(helper, os.X_OK) or seal.stat().st_size > 4096 or not 0 < notice.stat().st_size <= 4 * 1024 * 1024:
     raise SystemExit("invalid ADB input size or executable mode")
 manifest = json.loads(seal.read_text())
-if (manifest.get("schema") != 1 or manifest.get("relativePath") != "Helpers/adb"
+if (set(manifest) != {"schema", "relativePath", "sha256", "size"}
+    or type(manifest.get("schema")) is not int or manifest["schema"] != 1
+    or manifest.get("relativePath") != "Helpers/adb"
     or type(manifest.get("size")) is not int or not 0 < manifest["size"] <= 64 * 1024 * 1024
     or manifest["size"] != helper.stat().st_size
     or not re.fullmatch(r"[0-9a-f]{64}", manifest.get("sha256", ""))
