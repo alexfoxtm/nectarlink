@@ -83,9 +83,25 @@
   "adopted_contributions": [],
   "relevance": {
     "keywords": [
-      "macos", "mac", "darwin", "apple", "keychain", "sparkle", "linux",
-      "android", "desktop", "core", "security", "crypto", "pairing",
-      "clipboard", "update", "updater", "release", "signing", "fix"
+      "macos",
+      "mac",
+      "darwin",
+      "apple",
+      "keychain",
+      "sparkle",
+      "linux",
+      "android",
+      "desktop",
+      "core",
+      "security",
+      "crypto",
+      "pairing",
+      "clipboard",
+      "update",
+      "updater",
+      "release",
+      "signing",
+      "fix"
     ]
   },
   "github_api": {
@@ -93,5 +109,10 @@
     "max_requests": 12,
     "per_page": 30,
     "timeout_seconds": 20
+  },
+  "fork_policy": {
+    "primary_if_contributions_welcomed": "official NectarLink",
+    "fallback": "synchronized alexfoxtm/nectarlink for rejected or pending features",
+    "r2_updater": "fork-only; exclude code, config, publishing scripts and tests from upstream PRs"
   }
 }

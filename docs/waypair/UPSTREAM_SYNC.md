@@ -1,5 +1,7 @@
 # Upstream sync — Waypair Link (Nectar base)
 
+**Fork-only rule:** R2 updater, feed, publishing and owner-signing changes (and their tests) must never be included in upstream contributions. See [FORK_POLICY.md](FORK_POLICY.md).
+
 The port on `waypair/macos-port` is the product. Upstream NectarLink
 (`thtbee/nectarlink`) keeps moving, and other people send useful fixes. This
 page is how new upstream work gets into the port, and how generic port fixes
