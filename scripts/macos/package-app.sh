@@ -435,8 +435,8 @@ write_services_menu_strings() {
     local photo_en scan_en photo_zh scan_zh
     photo_en="$(strings_escape "$(service_photo_menu "$app_name")")"
     scan_en="$(strings_escape "$(service_scan_menu "$app_name")")"
-    photo_zh="$(strings_escape "$app_name：用手机拍照")"
-    scan_zh="$(strings_escape "$app_name：用手机扫描文档")"
+    photo_zh="$(strings_escape "${app_name}：用手机拍照")"
+    scan_zh="$(strings_escape "${app_name}：用手机扫描文档")"
     mkdir -p "$resources/en.lproj" "$resources/zh_CN.lproj" || fail "failed to create Services localization directories"
     cat > "$resources/en.lproj/ServicesMenu.strings" <<EOF
 /* Services menu items (NSServices NSMenuItem defaults). */
