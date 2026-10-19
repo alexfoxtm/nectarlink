@@ -118,6 +118,12 @@ fn default_true() -> bool {
     true
 }
 
+/// Windows and Linux keep running in the tray when the window closes.
+/// The macOS tray is still a stub, so a missing preference must quit with the window.
+fn default_close_to_tray() -> bool {
+    !cfg!(target_os = "macos")
+}
+
 fn default_webcam_camera() -> String {
     "back".to_owned()
 }
@@ -316,6 +322,7 @@ pub struct Settings {
     #[serde(default = "default_true", alias = "comb_motion")]
     pub comb_motion: bool,
     /// Closing the window keeps NectarLink running in the tray.
+    /// Off by default on macOS while the tray is a stub; on for Windows and Linux.
     #[serde(alias = "close_to_tray")]
     pub close_to_tray: bool,
     /// Send what's copied on this PC to connected phones.
@@ -493,7 +500,7 @@ impl Default for Settings {
             amoled: false,
             backdrop: true,
             comb_motion: true,
-            close_to_tray: true,
+            close_to_tray: default_close_to_tray(),
             auto_clipboard: true,
             clipboard_history: true,
             suggest_clipboard_actions: true,
@@ -651,6 +658,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let def = Settings::load(dir.path());
         assert_eq!(def, Settings::default());
+        assert_eq!(def.close_to_tray, cfg!(not(target_os = "macos")));
         assert_eq!(def.command_palette_hotkey, "Ctrl+Alt+Space");
         assert_eq!(def.shelf_hotkey, "Ctrl+Alt+S");
         assert!(!def.local_api_enabled);
