@@ -11,9 +11,10 @@ import android.content.SharedPreferences
  * The choice (every app, or an explicit set; message, email, and other)
  * follows the local Waypair notification-mirror policy. It was rewritten
  * for this GPL tree rather than copied from that Apache-2.0 source. The
- * default mirrors whatever this app already mirrors. It does not grant SMS
- * or Gmail access, does not read those stores, and does not log notification
- * text. Those code readers stay on their own switches.
+ * default mirrors whatever this app already mirrors. It does not read or
+ * log notification text, and it does not change SMS permission. This app
+ * has no Gmail code reader. A code the computer copies comes from a
+ * notification that passed this filter.
  */
 internal enum class NotificationAppMode { ALL, SELECTED }
 

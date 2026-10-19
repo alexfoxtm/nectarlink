@@ -127,7 +127,9 @@ class NotificationListener : NotificationListenerService() {
 
     /**
      * App, type, user, and structural eligibility before any title or body
-     * is read. SMS and Gmail code readers are not consulted.
+     * is read. SMS permission is separate and is not consulted. There is no
+     * Gmail reader here. A notification that fails this gate is not forwarded,
+     * so the computer cannot copy a code out of it.
      */
     private fun mirrored(sbn: StatusBarNotification, ranking: RankingMap?, update: Boolean): app.nectarlink.core.Notification? {
         val n = sbn.notification

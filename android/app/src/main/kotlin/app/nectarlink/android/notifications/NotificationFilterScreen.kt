@@ -42,8 +42,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Per-app and per-type mirror choices. The settings host shows this page;
- * this file does not grant SMS or Gmail access.
+ * Per-app and per-type mirror choices. SMS access stays on its own
+ * settings switch. This screen does not add a Gmail reader.
  */
 @Composable
 fun NotificationFilterPage(onBack: () -> Unit, modifier: Modifier = Modifier) {
@@ -83,7 +83,7 @@ fun NotificationFilterPage(onBack: () -> Unit, modifier: Modifier = Modifier) {
             TextButton(onClick = onBack) { Text(stringResource(R.string.action_back)) }
             Text("Notification mirroring", style = MaterialTheme.typography.headlineSmall)
             Text(
-                "Choose which apps and notification types may be mirrored. New apps are included until you switch to selected apps.",
+                "Choose which notifications appear on your Mac. SMS access is managed separately.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -143,13 +143,6 @@ fun NotificationFilterPage(onBack: () -> Unit, modifier: Modifier = Modifier) {
                     val kinds = if (on) filter.kinds + kind else filter.kinds - kind
                     save(store, filter.copy(kinds = kinds), { filter = it }, { notice = it })
                 },
-            )
-        }
-        item {
-            Text(
-                "This list does not grant SMS or Gmail access and does not read or log message text. An SMS inbox or Gmail code reader, if you turn one on separately, is not changed by these switches.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
