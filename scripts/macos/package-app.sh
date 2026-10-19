@@ -656,6 +656,9 @@ fi
 qt_names="$(linked_qt_framework_names "$APP_PATH/Contents/MacOS/$EXEC_NAME")"
 require_named_qt_frameworks "$APP_PATH/Contents/Frameworks" "$qt_names"
 require_bundle_closure "$APP_PATH"
+# Derive the supported OS from every actual bundled architecture, never from
+# the compiler host or a stale fixed deployment promise. Run before signing.
+python3 "$REPO_ROOT/scripts/macos/record-minimum-os.py" "$APP_PATH"
 
 printf '\nUnsigned bundle assembled (NOT signed, NOT notarized, not installed):\n  %s\n' "$APP_PATH"
 printf 'Identifier: %s  Version: %s (%s)\n' "$BUNDLE_ID" "$VERSION" "$BUILD_VERSION"
