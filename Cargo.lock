@@ -2382,7 +2382,7 @@ dependencies = [
 
 [[package]]
 name = "nectarlink-desktop"
-version = "0.47.0"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "blake3",
