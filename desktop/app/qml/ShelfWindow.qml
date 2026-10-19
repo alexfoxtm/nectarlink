@@ -13,7 +13,8 @@ import app.nectarlink
 Window {
     id: shelfWin
 
-    title: qsTr("Waypair Link Shelf")
+    // bridge/app.rs finds this window by its title.
+    title: qsTr("NectarLink Shelf")
     flags: Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.WindowDoesNotAcceptFocus
     color: "transparent"
     visible: true
