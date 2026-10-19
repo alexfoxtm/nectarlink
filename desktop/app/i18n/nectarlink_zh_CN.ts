@@ -8601,4 +8601,79 @@ What it needs
         <translation>不可用</translation>
     </message>
 </context>
+<context>
+    <name>MacServices</name>
+    <message>
+        <source>%1 can’t capture photos for other apps.</source>
+        <translation>%1 无法为其他应用拍照。</translation>
+    </message>
+    <message>
+        <source>%1 didn’t answer the capture request.</source>
+        <translation>%1 未响应拍摄请求。</translation>
+    </message>
+    <message>
+        <source>%1 isn’t connected.</source>
+        <translation>%1 未连接。</translation>
+    </message>
+    <message>
+        <source>A photo or scan is already in progress in Waypair Link.</source>
+        <translation>Waypair Link 正在处理另一项拍照或扫描请求。</translation>
+    </message>
+    <message>
+        <source>Allow Photos for %1 in Waypair Link.</source>
+        <translation>请在 Waypair Link 中为 %1 允许照片访问。</translation>
+    </message>
+    <message>
+        <source>Asking %1…</source>
+        <translation>正在请求 %1…</translation>
+    </message>
+    <message>
+        <source>Camera capture cancelled on %1.</source>
+        <translation>%1 上的拍摄已取消。</translation>
+    </message>
+    <message>
+        <source>Camera capture cancelled on %1: %2</source>
+        <translation>%1 上的拍摄已取消：%2</translation>
+    </message>
+    <message>
+        <source>Camera is busy on %1.</source>
+        <translation>%1 的相机正忙。</translation>
+    </message>
+    <message>
+        <source>Camera permission was denied on %1.</source>
+        <translation>%1 的相机权限被拒绝。</translation>
+    </message>
+    <message>
+        <source>Pair your phone first.</source>
+        <translation>请先配对手机。</translation>
+    </message>
+    <message>
+        <source>Photo from %1 returned to %2</source>
+        <translation>已将 %1 的照片返回给 %2</translation>
+    </message>
+    <message>
+        <source>Scan the document on %1 (%2 waits up to 90 s; Esc stops waiting)</source>
+        <translation>请在 %1 上扫描文档（%2 最多等待 90 秒；按 Esc 停止等待）</translation>
+    </message>
+    <message>
+        <source>Scanned document from %1 returned to %2</source>
+        <translation>已将 %1 扫描的文档返回给 %2</translation>
+    </message>
+    <message>
+        <source>Take the photo on %1 (%2 waits up to 90 s; Esc stops waiting)</source>
+        <translation>请在 %1 上拍照（%2 最多等待 90 秒；按 Esc 停止等待）</translation>
+    </message>
+    <message>
+        <source>The capture from %1 didn’t finish in time, so nothing was returned to %2.</source>
+        <translation>%1 的拍摄未及时完成，未向 %2 返回任何内容。</translation>
+    </message>
+    <message>
+        <source>The image from %1 couldn’t be prepared: %2</source>
+        <translation>无法处理 %1 的图像：%2</translation>
+    </message>
+    <message>
+        <source>Waypair Link is still starting; try again in a moment.</source>
+        <translation>Waypair Link 正在启动，请稍后重试。</translation>
+    </message>
+</context>
 </TS>

@@ -152,6 +152,7 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("CommandPalette", "Use phone as webcam"), // desktop/app/src/command_palette.rs
     QT_TRANSLATE_NOOP("CommandPalette", "Wake-on-LAN is ready on %1 (phones can wake this PC)."), // desktop/app/src/command_palette.rs
     QT_TRANSLATE_NOOP("CommandPalette", "Wake-on-LAN on %1 is %2. Check Settings."), // desktop/app/src/command_palette.rs
+    QT_TRANSLATE_NOOP("ContinuityCamera", "A photo or scan requested by another app is still in progress."), // desktop/app/src/continuity_camera.rs
     QT_TRANSLATE_NOOP("ContinuityCamera", "Allow Photos access for %1 in Settings first."), // desktop/app/src/continuity_camera.rs
     QT_TRANSLATE_NOOP("ContinuityCamera", "Camera capture cancelled on %1."), // desktop/app/src/continuity_camera.rs
     QT_TRANSLATE_NOOP("ContinuityCamera", "Camera is busy on %1."), // desktop/app/src/continuity_camera.rs
@@ -162,6 +163,7 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("ContinuityCamera", "Opening camera on %1…"), // desktop/app/src/continuity_camera.rs
     QT_TRANSLATE_NOOP("ContinuityCamera", "Opening document scanner on %1…"), // desktop/app/src/continuity_camera.rs
     QT_TRANSLATE_NOOP("ContinuityCamera", "Pair your phone first to take a photo or scan a document."), // desktop/app/src/continuity_camera.rs
+    QT_TRANSLATE_NOOP("ContinuityCamera", "Pair your phone first."), // desktop/app/src/continuity_camera.rs
     QT_TRANSLATE_NOOP("ContinuityCamera", "Pasted into %1"), // desktop/app/src/continuity_camera.rs
     QT_TRANSLATE_NOOP("ContinuityCamera", "Scan a document on %1…"), // desktop/app/src/continuity_camera.rs
     QT_TRANSLATE_NOOP("ContinuityCamera", "Take a photo on %1…"), // desktop/app/src/continuity_camera.rs
@@ -315,6 +317,24 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Links", "Tap the notification on your phone to open it."), // desktop/app/src/links.rs
     QT_TRANSLATE_NOOP("Links", "That's not a link or address"), // desktop/app/src/links.rs
     QT_TRANSLATE_NOOP("Links", "Update Waypair Link on %1."), // desktop/app/src/links.rs
+    QT_TRANSLATE_NOOP("MacServices", "%1 can’t capture photos for other apps."), // desktop/app/src/mac/services.rs
+    QT_TRANSLATE_NOOP("MacServices", "%1 didn’t answer the capture request."), // desktop/app/src/mac/services.rs
+    QT_TRANSLATE_NOOP("MacServices", "%1 isn’t connected."), // desktop/app/src/mac/services.rs
+    QT_TRANSLATE_NOOP("MacServices", "A photo or scan is already in progress in Waypair Link."), // desktop/app/src/mac/services.rs
+    QT_TRANSLATE_NOOP("MacServices", "Allow Photos for %1 in Waypair Link."), // desktop/app/src/mac/services.rs
+    QT_TRANSLATE_NOOP("MacServices", "Asking %1…"), // desktop/app/src/mac/services.rs
+    QT_TRANSLATE_NOOP("MacServices", "Camera capture cancelled on %1."), // desktop/app/src/mac/services.rs
+    QT_TRANSLATE_NOOP("MacServices", "Camera capture cancelled on %1: %2"), // desktop/app/src/mac/services.rs
+    QT_TRANSLATE_NOOP("MacServices", "Camera is busy on %1."), // desktop/app/src/mac/services.rs
+    QT_TRANSLATE_NOOP("MacServices", "Camera permission was denied on %1."), // desktop/app/src/mac/services.rs
+    QT_TRANSLATE_NOOP("MacServices", "Pair your phone first."), // desktop/app/src/mac/services.rs
+    QT_TRANSLATE_NOOP("MacServices", "Photo from %1 returned to %2"), // desktop/app/src/mac/services.rs
+    QT_TRANSLATE_NOOP("MacServices", "Scan the document on %1 (%2 waits up to 90 s; Esc stops waiting)"), // desktop/app/src/mac/services.rs
+    QT_TRANSLATE_NOOP("MacServices", "Scanned document from %1 returned to %2"), // desktop/app/src/mac/services.rs
+    QT_TRANSLATE_NOOP("MacServices", "Take the photo on %1 (%2 waits up to 90 s; Esc stops waiting)"), // desktop/app/src/mac/services.rs
+    QT_TRANSLATE_NOOP("MacServices", "The capture from %1 didn’t finish in time, so nothing was returned to %2."), // desktop/app/src/mac/services.rs
+    QT_TRANSLATE_NOOP("MacServices", "The image from %1 couldn’t be prepared: %2"), // desktop/app/src/mac/services.rs
+    QT_TRANSLATE_NOOP("MacServices", "Waypair Link is still starting; try again in a moment."), // desktop/app/src/mac/services.rs
     QT_TRANSLATE_NOOP("Media", "Media is turned off for that device."), // desktop/app/src/media.rs
     QT_TRANSLATE_NOOP("Media", "That player can't do that."), // desktop/app/src/media.rs
     QT_TRANSLATE_NOOP("Media", "That player isn't playing anymore."), // desktop/app/src/media.rs
