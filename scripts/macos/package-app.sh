@@ -13,8 +13,10 @@
 #   * access any keychain, credential, or network resource.
 #
 # It fails clearly on: missing/non-executable input binary, undiscoverable
-# macdeployqt, an existing bundle at the output path, or missing license
-# texts (GPL/MPL source-and-notice material must travel with the bundle).
+# macdeployqt, an existing bundle at the output path, missing license
+# texts (GPL/MPL source-and-notice material must travel with the bundle),
+# macdeployqt ERROR lines (that tool exits 0 when it cannot resolve an
+# @rpath), or a post-deploy bundle that is not closed.
 set -euo pipefail
 
 BINARY=""
@@ -78,6 +80,10 @@ Options:
 Discovery order for macdeployqt: --macdeployqt (explicit), then
 --qt-bin-dir / QT_BIN_DIR, then MACDEPLOYQT env, then PATH, then
 `qmake -query QT_INSTALL_BINS`.
+Homebrew splits Qt modules (QtSvg lives in qtsvg, not qtbase). macdeployqt
+only searches the libraries it infers from the binary unless given
+-libpath. This script passes -libpath from the sibling qmake's
+QT_INSTALL_LIBS (qmake6 on Homebrew: the unified /opt/homebrew/lib).
 No signing identity, keychain, entitlements file, or network is ever touched.
 EOF
 }
@@ -140,6 +146,196 @@ require_named_qt_frameworks() {
             fail "linked ${name}.framework is missing from ${frameworks_dir} after macdeployqt. Sparkle.framework does not satisfy Qt deployment."
         fi
     done <<< "$names"
+}
+
+# Homebrew's qmake6 -query QT_INSTALL_LIBS is one directory (/opt/homebrew/lib)
+# even when frameworks live in split prefixes (qtbase, qtdeclarative, qtsvg).
+# macdeployqt does not search that directory unless -libpath is passed, so a
+# QML image plugin's @rpath/QtSvg.framework is reported as ERROR and left
+# unresolved while macdeployqt itself still exits 0.
+qt_install_libs_from_deployqt() {
+    local deployqt="$1"
+    local bindir qmake libs candidate
+    bindir="$(cd "$(dirname "$deployqt")" && pwd)"
+    qmake=""
+    for candidate in "$bindir/qmake6" "$bindir/qmake"; do
+        if [[ -x "$candidate" ]]; then
+            qmake="$candidate"
+            break
+        fi
+    done
+    if [[ -z "$qmake" ]]; then
+        if command -v qmake6 >/dev/null 2>&1; then
+            qmake="$(command -v qmake6)"
+        elif command -v qmake >/dev/null 2>&1; then
+            qmake="$(command -v qmake)"
+        fi
+    fi
+    [[ -n "$qmake" ]] || return 0
+    libs="$("$qmake" -query QT_INSTALL_LIBS 2>/dev/null || true)"
+    libs="$(printf '%s' "$libs" | tr -d '\r\n')"
+    [[ -n "$libs" && -d "$libs" ]] || return 0
+    printf '%s' "$libs"
+}
+
+is_macho_file() {
+    local magic
+    magic="$(od -An -t x1 -N 4 -- "$1" 2>/dev/null | tr -d ' \n' || true)"
+    case "$magic" in
+        cffaedfe|cefaedfe|feedfacf|feedface|cafebabe|bebafeca) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# Absolute library paths other than the OS. /opt/homebrew and /usr/local
+# (including Cellar and opt kegs) must not remain after deployment.
+absolute_non_system_ref() {
+    local ref="$1"
+    [[ "$ref" == /* ]] || return 1
+    case "$ref" in
+        /System/*|/usr/lib/*|/usr/libexec/*) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
+enclosing_macos_dir() {
+    local path="$1"
+    local fallback="${2:-}"
+    local d
+    d="$(cd "$(dirname "$path")" && pwd -P)"
+    while [[ "$d" != "/" ]]; do
+        if [[ "$(basename "$d")" == *.app ]]; then
+            printf '%s/Contents/MacOS' "$d"
+            return 0
+        fi
+        d="$(dirname "$d")"
+    done
+    if [[ -n "$fallback" ]]; then
+        printf '%s/Contents/MacOS' "$fallback"
+        return 0
+    fi
+    return 1
+}
+
+existing_file_path() {
+    local path="$1"
+    local dir base
+    dir="$(dirname "$path")"
+    base="$(basename "$path")"
+    [[ -f "$dir/$base" ]] || return 1
+    dir="$(cd "$dir" && pwd -P)" || return 1
+    printf '%s/%s' "$dir" "$base"
+}
+
+path_inside_dir() {
+    local root="$1"
+    local path="$2"
+    [[ "$path" == "$root" || "$path" == "$root"/* ]]
+}
+
+# LC_RPATH of this image, then of the main executable in the nearest .app.
+# dyld walks that chain for @rpath. An rpath is only useful here when the
+# substituted file lands inside the bundle; /opt/homebrew/lib does not.
+closure_rpaths() {
+    local binary="$1"
+    local bundle="$2"
+    local macos exe
+    otool -l "$binary" | awk '$1 == "cmd" && $2 == "LC_RPATH" { want = 1; next } want && $1 == "path" { print $2; want = 0 }'
+    macos="$(enclosing_macos_dir "$binary" "$bundle")"
+    [[ -n "$macos" && -d "$macos" ]] || return 0
+    for exe in "$macos"/*; do
+        [[ -f "$exe" && ! -L "$exe" ]] || continue
+        [[ "$exe" -ef "$binary" ]] && continue
+        is_macho_file "$exe" || continue
+        otool -l "$exe" | awk '$1 == "cmd" && $2 == "LC_RPATH" { want = 1; next } want && $1 == "path" { print $2; want = 0 }'
+    done
+}
+
+expand_rpath_prefix() {
+    local binary="$1"
+    local rpath="$2"
+    local bundle="$3"
+    local loader exe
+    loader="$(dirname "$binary")"
+    exe="$(enclosing_macos_dir "$binary" "$bundle")"
+    case "$rpath" in
+        @loader_path) printf '%s' "$loader" ;;
+        @loader_path/*) printf '%s/%s' "$loader" "${rpath#@loader_path/}" ;;
+        @executable_path) printf '%s' "$exe" ;;
+        @executable_path/*) printf '%s/%s' "$exe" "${rpath#@executable_path/}" ;;
+        /*) printf '%s' "$rpath" ;;
+        *) printf '%s/%s' "$loader" "$rpath" ;;
+    esac
+}
+
+# Success when ref names a file inside the bundle. System absolute paths are
+# the caller's responsibility.
+ref_resolves_inside_bundle() {
+    local binary="$1"
+    local ref="$2"
+    local bundle="$3"
+    local tail rpath prefix candidate
+    case "$ref" in
+        @executable_path/*)
+            prefix="$(enclosing_macos_dir "$binary" "$bundle")"
+            candidate="$(existing_file_path "$prefix/${ref#@executable_path/}")" || return 1
+            path_inside_dir "$bundle" "$candidate"
+            ;;
+        @loader_path/*)
+            candidate="$(existing_file_path "$(dirname "$binary")/${ref#@loader_path/}")" || return 1
+            path_inside_dir "$bundle" "$candidate"
+            ;;
+        @rpath/*)
+            tail="${ref#@rpath/}"
+            while IFS= read -r rpath; do
+                [[ -n "$rpath" ]] || continue
+                prefix="$(expand_rpath_prefix "$binary" "$rpath" "$bundle")"
+                candidate="$(existing_file_path "$prefix/$tail")" || continue
+                if path_inside_dir "$bundle" "$candidate"; then
+                    return 0
+                fi
+            done < <(closure_rpaths "$binary" "$bundle")
+            return 1
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+# Every Mach-O under the bundle must load only system libraries or files
+# inside the bundle. A plugin @rpath/QtSvg that macdeployqt could not rewrite
+# fails here, as does a load command that still names /opt/homebrew. The
+# library's own install id is not a load edge (see the caller). @rpath counts
+# only when LC_RPATH substitution finds the file inside the bundle.
+require_bundle_closure() {
+    local bundle="$1"
+    local root f rel ref ids
+    root="$(cd "$bundle" && pwd -P)"
+    while IFS= read -r -d '' f; do
+        is_macho_file "$f" || continue
+        rel="${f#"$root"/}"
+        # otool -L repeats LC_ID_DYLIB. That id is not a load edge: a copied
+        # Homebrew framework often keeps /opt/homebrew/... as its own id while
+        # dependents use @executable_path or a bundle-relative @rpath.
+        ids="$(otool -D "$f" | awk 'NR > 1 && $0 !~ /:$/ { print }')"
+        while IFS= read -r ref; do
+            [[ -n "$ref" ]] || continue
+            if [[ -n "$ids" ]] && printf '%s\n' "$ids" | grep -F -x -q -- "$ref"; then
+                continue
+            fi
+            if absolute_non_system_ref "$ref"; then
+                fail "bundle is not closed after macdeployqt: ${rel} loads ${ref}. A Homebrew absolute library path is not a bundled framework."
+            fi
+            case "$ref" in
+                @executable_path/*|@loader_path/*|@rpath/*)
+                    if ! ref_resolves_inside_bundle "$f" "$ref" "$root"; then
+                        fail "bundle is not closed after macdeployqt: ${rel} depends on ${ref}, which does not resolve to a file inside the bundle. Missing plugin or transitive Qt frameworks fail the deploy."
+                    fi
+                    ;;
+            esac
+        done < <(otool -L "$f" | sed -n $'s/^\t//p' | sed 's/ (compatibility version.*$//; s/ (architecture.*$//')
+    done < <(find "$root" -type f -print0)
 }
 
 # From Contents/Helpers/WaypairUpdater.app/Contents/MacOS, four levels up is
@@ -387,15 +583,39 @@ fi
 
 # Bundle Qt frameworks/plugins. -no-codesign: this script never signs; any
 # production signature is applied later by Root's release process.
+# -libpath is the unified Qt prefix (qmake6 QT_INSTALL_LIBS). Without it,
+# Homebrew's split qtsvg prefix is invisible and macdeployqt prints
+# "Cannot resolve rpath @rpath/QtSvg.framework/..." while exiting 0.
 DEPLOY_ARGS=("$APP_PATH" -no-codesign)
+qt_libs="$(qt_install_libs_from_deployqt "$MACDEPLOYQT")"
+if [[ -n "$qt_libs" ]]; then
+    DEPLOY_ARGS+=(-libpath="$qt_libs")
+else
+    printf 'warning: QT_INSTALL_LIBS not found beside %s; macdeployqt will run without -libpath\n' "$MACDEPLOYQT" >&2
+fi
 [[ -d "$QML_DIR" ]] && DEPLOY_ARGS+=(-qmldir="$QML_DIR")
 printf 'Running: %s %s\n' "$MACDEPLOYQT" "${DEPLOY_ARGS[*]}"
-"$MACDEPLOYQT" "${DEPLOY_ARGS[@]}" || fail "macdeployqt failed; bundle left in place for inspection: $APP_PATH"
+deploy_log="$(mktemp "${TMPDIR:-/tmp}/waypair-macdeployqt.XXXXXX")"
+set +e
+"$MACDEPLOYQT" "${DEPLOY_ARGS[@]}" >"$deploy_log" 2>&1
+deploy_status=$?
+set -e
+cat "$deploy_log"
+if [[ "$deploy_status" -ne 0 ]]; then
+    rm -f "$deploy_log"
+    fail "macdeployqt failed; bundle left in place for inspection: $APP_PATH"
+fi
+if grep -E -q '^ERROR:' "$deploy_log"; then
+    rm -f "$deploy_log"
+    fail "macdeployqt reported ERROR but exited 0. Refusing to claim the bundle is deployed. Left in place for inspection: $APP_PATH"
+fi
+rm -f "$deploy_log"
 
 # The executable's own Qt linkage, not the mere presence of Contents/Frameworks.
 # Copying Sparkle.framework creates that directory before macdeployqt runs.
 qt_names="$(linked_qt_framework_names "$APP_PATH/Contents/MacOS/$EXEC_NAME")"
 require_named_qt_frameworks "$APP_PATH/Contents/Frameworks" "$qt_names"
+require_bundle_closure "$APP_PATH"
 
 printf '\nUnsigned bundle assembled (NOT signed, NOT notarized, not installed):\n  %s\n' "$APP_PATH"
 printf 'Identifier: %s  Version: %s (%s)\n' "$BUNDLE_ID" "$VERSION" "$BUILD_VERSION"

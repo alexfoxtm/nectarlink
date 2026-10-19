@@ -28,7 +28,14 @@ numeric `CFBundleShortVersionString`/`CFBundleVersion`, `APPL`,
 microphone/camera usage keys are declared), runs
 `macdeployqt -no-codesign` (options confirmed against the installed
 `macdeployqt --help`) with `-qmldir` when QML sources exist to bundle Qt
-frameworks/plugins, and copies `LICENSE` + **all** of `LICENSES/` into
+frameworks/plugins. Homebrew splits Qt into separate prefixes (`qtbase`,
+`qtdeclarative`, `qtsvg`) while `qmake6 -query QT_INSTALL_LIBS` is the one
+directory `/opt/homebrew/lib`. macdeployqt does not search that directory
+unless given `-libpath`, so a QML image plugin's
+`@rpath/QtSvg.framework/Versions/A/QtSvg` is printed as `ERROR:` and left
+unresolved even though macdeployqt exits 0. The script queries
+`QT_INSTALL_LIBS` from `qmake6` or `qmake` beside the discovered
+`macdeployqt` and passes `-libpath`. It also copies `LICENSE` + **all** of `LICENSES/` into
 `Contents/Resources/`, failing on any copy error. App names are validated as
 a single filename component (no `/`, `.`/`..`, or control characters). Plist
 text is XML-escaped with `sed`, not bash `${var//pat/repl}`, so the same
@@ -36,7 +43,18 @@ entities are produced by macOS `/bin/bash` 3.2 and by newer bash (where `&`
 in a replacement means the matched text). After `macdeployqt`, `otool -L` on
 the bundled executable must name at least one `Qt*.framework`, and each of
 those frameworks must exist under `Contents/Frameworks`. A directory that
-contains only `Sparkle.framework` does not pass. `SPARKLE_FRAMEWORK` is read
+contains only `Sparkle.framework` does not pass. `macdeployqt` output that
+contains `ERROR:` fails the script even when the tool exits 0. A closure
+walk then rejects the bundle unless every Mach-O load command is a system
+library (`/System`, `/usr/lib`, `/usr/libexec`) or resolves to a file inside
+the `.app`. `@executable_path` and `@loader_path` are resolved from the
+nearest `.app`'s `Contents/MacOS` and from the loading image. `@rpath` is
+resolved with that image's `LC_RPATH` plus the nearest app executable's
+`LC_RPATH`, and the substituted file must lie inside the bundle — an
+`LC_RPATH` of `/opt/homebrew/lib` does not count. A dylib's own install id
+is not a load edge: Homebrew frameworks often keep an `/opt/homebrew/...`
+id after they have been copied, while dependents already use a bundle path.
+`SPARKLE_FRAMEWORK` is read
 into a separate variable before the script assigns that name. An existing
 file, directory, or dangling symlink at the output path is a collision.
 
@@ -55,9 +73,11 @@ Properties by construction:
   entitlements (that decision is measured, not guessed).
 - **Fail-clear.** Missing/non-executable binary, undiscoverable
   `macdeployqt`, an existing bundle at the output path, invalid
-  identifier/version strings, missing license texts, or a post-`macdeployqt`
-  executable whose linked Qt frameworks are not in the bundle all abort
-  with a specific message. `--help` documents everything.
+  identifier/version strings, missing license texts, a `macdeployqt` `ERROR:`
+  line, a post-`macdeployqt` executable whose linked Qt frameworks are not
+  in the bundle, or a Mach-O load that is still an absolute Homebrew path or
+  an `@rpath`/`@loader_path`/`@executable_path` that does not resolve inside
+  the bundle all abort with a specific message. `--help` documents everything.
 
 Expected Root build sequence (Root owns compilers; illustrative, not run here):
 
