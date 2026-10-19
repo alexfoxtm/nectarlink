@@ -242,3 +242,9 @@ signing. The publisher must use that value in the appcast. Do not edit load
 commands to lower this requirement. Older-macOS support needs a separately built
 and qualified dependency toolchain. The updater helper's own14.4 target does
 not determine the Qt host application's minimum.
+
+## QA bundle cleanup
+
+Create temporary test app bundles inside a `qa.noindex` directory under the round’s `~/orca/tmp/` folder. Keep a distinct test window title and an isolated `--data-dir`; never reset the installed app’s data or keys. Register only the exact test bundle when native Services checks require it, then unregister that same path and quit the fixture after the bounded check.
+
+After qualification, publication and installation no longer depend on a staged `.app`, remove its LaunchServices registration and move the obsolete bundle to Trash. Retain the signed DMG, source archive, receipts and required signing/build dependencies. Do not reset LaunchServices or the Dock globally, and do not remove Application Support, Keychain items or user-owned sessions as app cleanup.
