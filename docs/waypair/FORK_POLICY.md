@@ -20,3 +20,10 @@ Alex's later decision, 2026-10-19, replaces the Waypair Link rebrand:
 - R2 stays fork-only and Cloud stays separate, as above.
 
 The working branch is `waypair/macos-port`; `origin` is `alexfoxtm/nectarlink`, and `upstream` is `thtbee/nectarlink`.
+
+
+## Latest product decision — Waypair Link, monochrome mark
+
+Alex's later instruction on 2026-10-19 supersedes the personal NectarLink branding and official-upstream-primary preference above. The product is our independently maintained **Waypair Link** Android and macOS fork, built from NectarLink and regularly incorporating reviewed macOS updates from saivinay1805 and useful canonical upstream changes. Keep our feature delta and private R2 delivery under our control; contributions upstream remain separately prepared generic patches.
+
+Use the original Waypair W mark in black and white on both platforms. Only the logo changes color; existing app themes remain. About says “Independently maintained fork” without prominent NectarLink branding or a promotional attribution paragraph. Original author copyrights, attribution, license files and source notices remain available in Open-source Licenses and the source. This is a UI branding change, not a claim to have authored upstream code. Preserve package/bundle IDs, cryptographic identities, pairing, data, permissions, version monotonicity and the existing dedicated update channel paths/keys. Cloud stays separate. Alex will install the Galaxy APK; Root publishes both qualified builds to R2, installs the Mac build and removes only the confirmed obsolete NectarLink app bundle, never its data.

@@ -21,7 +21,7 @@ set -euo pipefail
 
 BINARY=""
 OUTPUT_DIR=""
-APP_NAME="NectarLink"
+APP_NAME="Waypair Link"
 BUNDLE_ID="com.waypair.link.nectar-qualification"
 VERSION="0.1.4"
 BUILD_VERSION=""
@@ -51,7 +51,7 @@ Required:
                          Fails if the .app already exists there.
 
 Options:
-  --app-name <name>      App/display name. Default: "NectarLink" (personal local build).
+  --app-name <name>      App/display name. Default: "Waypair Link".
   --bundle-id <id>       CFBundleIdentifier. Default: com.waypair.link.nectar-qualification.
                          The default stays distinct from an installed legacy app.
                          Explicit --bundle-id com.waypair.mac is allowed for the
@@ -491,8 +491,8 @@ fi
 
 mkdir -p "$APP_PATH/Contents/MacOS" "$APP_PATH/Contents/Resources"
 
-ICON_PATH="$REPO_ROOT/assets/brand/AppIcon.icns"
-[[ -f "$ICON_PATH" ]] || fail "NectarLink app icon is missing: $ICON_PATH"
+ICON_PATH="$REPO_ROOT/assets/brand/waypair/AppIcon-monochrome.icns"
+[[ -f "$ICON_PATH" ]] || fail "Waypair Link monochrome app icon is missing: $ICON_PATH"
 cp "$ICON_PATH" "$APP_PATH/Contents/Resources/AppIcon.icns"
 
 EXEC_NAME="nectarlink-desktop"

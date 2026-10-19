@@ -3,7 +3,7 @@
   "recorded_at": "2026-10-19",
   "port": {
     "branch": "waypair/macos-port",
-    "product": "NectarLink (personal macOS fork)",
+    "product": "Waypair Link (independently maintained NectarLink fork)",
     "base_pin": "macos-pr24",
     "shallow_checkout": true
   },
@@ -119,8 +119,8 @@
     "timeout_seconds": 20
   },
   "fork_policy": {
-    "primary_if_contributions_welcomed": "official NectarLink",
-    "fallback": "synchronized alexfoxtm/nectarlink for rejected or pending features",
+    "primary_if_contributions_welcomed": "Waypair Link remains our independently maintained product; prepare generic upstream contributions separately",
+    "fallback": "Regularly synchronized alexfoxtm/nectarlink carrying our controlled feature delta",
     "r2_updater": "fork-only; exclude code, config, publishing scripts and tests from upstream PRs",
     "r2_updater_mixed_path_notes": {
       "scripts/macos/package-app.sh": "Sparkle/R2 helper, feed, key and signing hunks only",
