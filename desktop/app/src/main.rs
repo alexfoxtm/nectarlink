@@ -453,10 +453,11 @@ fn connect_services_about_to_quit(
     app: Option<std::pin::Pin<&mut QGuiApplication>>,
 ) -> Option<cxx_qt::QMetaObjectConnectionGuard> {
     use cxx_qt::casting::Upcast;
-    Some(
-        app?.upcast_pin()
-            .connect_about_to_quit(|_| win::services::unregister(), cxx_qt::ConnectionType::DirectConnection),
-    )
+    let core: std::pin::Pin<&mut cxx_qt_lib::QCoreApplication> = app?.upcast_pin();
+    Some(core.connect_about_to_quit(
+        |_| win::services::unregister(),
+        cxx_qt::ConnectionType::DirectConnection,
+    ))
 }
 
 fn main() -> ExitCode {
