@@ -1,25 +1,30 @@
-# Android build — personal NectarLink local build
+# Android build — Waypair Link fork build
 
-Fork build configuration for the Nectar-based Android app. These builds are
-for Alex's personal use only. They keep the NectarLink name and mark and say
-they are a local build, not an official NectarLink release
-(`FORK_POLICY.md`). They are not endorsed by upstream and are not distributed
-as a product.
+This is the independently maintained **Waypair Link** Android fork, based on
+NectarLink. The app label is **Waypair Link**; About identifies it as an
+**independently maintained fork**. These builds are for Alex's personal use.
+The dedicated R2 publication supports this fork's updater and does not make
+the app an official upstream release or a supported third-party product.
+Original attribution and license notices remain in Open-source Licenses and
+the source (`FORK_POLICY.md`). The `-local` version marker identifies the
+fork build; it does not mean the artifact is unpublished.
 
 Everything lives in `android/app/build.gradle.kts`. Without any of the inputs
 below the build is upstream's (`app.nectarlink`, version from `Cargo.toml`).
 
 ## Identity and version
 
-| Gradle property | Default (upstream) | Personal release |
+| Gradle property | Default (upstream) | Waypair Link release |
 | --- | --- | --- |
 | `waypair.applicationId` | `app.nectarlink` | `com.waypair` |
 | `waypair.versionName` | workspace version in `Cargo.toml` (`0.1.4`) | `0.1.4-local.<n>` |
 | `waypair.versionCode` | derived from `Cargo.toml` (`1.2.3` → `1002003`) | chosen by Root, above the installed code |
 
-Each is independent and validated (package-name syntax, non-blank name,
-integer code 1..2100000000). The Kotlin namespace stays `app.nectarlink.android`
-and the label is "NectarLink".
+`waypair.versionName` and `waypair.versionCode` are independent properties;
+changing one does not derive or change the other. Each is validated
+(package-name syntax, non-blank name, integer code 1..2100000000). The Kotlin
+namespace stays `app.nectarlink.android`; the packaged label is **Waypair
+Link**.
 
 Package identity is preserved, not migrated:
 
@@ -27,24 +32,27 @@ Package identity is preserved, not migrated:
   and supplies that existing key; this build never generates, rotates, or
   prints keys. Android accepts an upgrade only with the same signer and a
   higher `versionCode`, so Root picks the code explicitly.
-- **Fresh explicit Nectar pairing.** The app keeps its own identity and trust
-  store (`noBackupFilesDir`) and reads, converts, or imports no legacy
-  Waypair protocol-2 pairing, key, or data.
+- **Stable app and trust identity.** A rename is an in-place update under
+  `com.waypair`, with the existing data locations, Keystore identity, and
+  pairing records preserved. Do not import keys, reset trust, or migrate
+  identity data.
 - **Device identity in the Android Keystore.** `KeystoreKeyProtector` seals
   the identity key with a non-exportable AES-GCM Keystore key.
 
-Current personal release, built from source `9b93a5c5`:
+Current published personal-use release, built from source
+`405256518f8601cd4ef802cb3a4193afc027bef0`:
 
 | | |
 | --- | --- |
-| Version | `0.1.4-local.2`, `versionCode` 95 |
+| Version | `0.1.4-local.3`, `versionCode` 96 |
+| App label / About | `Waypair Link` / `Independently maintained fork` |
 | ABI | `arm64-v8a` only |
-| Signer | signer B, preserved |
-| Checks | lint 0 errors, 16 KiB zip alignment |
-| APK SHA-256 | `1ec2da61609e39e583998d2020ec4cc84f35c592a058a241c0b6b4f0ddc8c732` |
-| Source archive SHA-256 | `8f759caac0d1ef12673ae13c201af0c17b2b684cdd6cc5766757f6fa85edac65` |
+| Signer / package | signer B preserved / `com.waypair` |
+| Checks | lint 0 errors, APK and native libraries 16 KiB aligned |
+| APK SHA-256 | `756fa704570cf8f53a81fa4a69638e12a29d0106c62a77af0ba7b1f8afcc40f7` |
 
-The previous release was `0.1.4-local.1`, `versionCode` 94.
+The previous release was `0.1.4-local.2`, `versionCode` 95. The version
+name and code remain separate release properties.
 
 ## Debug builds never replace an installed app
 
@@ -107,10 +115,10 @@ From `android/`:
 ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug
 # Debug build under the fork id: com.waypair.nectar.debug.
 ./gradlew --no-daemon assembleDebug -Pwaypair.applicationId=com.waypair
-# Personal release, Root only, with the preserved signer B:
+# Waypair Link release, Root only, with the preserved signer B:
 WAYPAIR_SIGNING=<path to signer B's signing.properties> ./gradlew --no-daemon assembleRelease \
   -Pwaypair.applicationId=com.waypair \
-  -Pwaypair.versionName=0.1.4-local.2 -Pwaypair.versionCode=95 \
+  -Pwaypair.versionName=0.1.4-local.3 -Pwaypair.versionCode=96 \
   -Pnectarlink.abis=arm64-v8a
 "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --print-certs \
   app/build/outputs/apk/release/app-release.apk
@@ -120,34 +128,38 @@ Root compares the printed certificate with the installed `com.waypair`
 signer before any install or publication. The signing properties file and
 keystore stay outside the repository.
 
-## Updates: dedicated R2 route (fork-only)
+## Updates: dedicated fork-only R2 route
 
-Release builds check the dedicated Nectar manifest on R2, not GitHub
-Releases: `waypair/nectar/android/stable/update.json`. Client rules are in
+Release builds check this fork's dedicated R2 manifest, not the GitHub
+Releases API: `waypair/nectar/android/stable/update.json`. The historical
+`nectar` path is retained as a stable channel ID. Client rules are in
 `ANDROID_R2.md`, publication in `R2_RELEASE.md`. The route is separate from
-the legacy Waypair and Cloud feeds (`waypair/android/...`,
-`waypair/cloud/...`), which this release left unchanged. The R2 client stays
-in this fork and is excluded from upstream contributions (`FORK_POLICY.md`).
+the existing Waypair Link and Cloud feeds (`waypair/android/...`,
+`waypair/cloud/...`), which this fork leaves unchanged. All R2 updater code,
+configuration, and publication stay in this fork and are excluded from
+upstream contributions (`FORK_POLICY.md`).
 
 An update is offered when the manifest's tag is newer than the running
 `versionName`. Android installs it only over the same package and signer,
 with a higher `versionCode`.
 
-The `0.1.4-local.2` APK, its source archive, and `SHA256SUMS.txt` are under
-`waypair/nectar/android/releases/v0.1.4-local.2/`, and the stable manifest
-points to them. All four objects were read back in full after publication.
+The current published release is `0.1.4-local.3` / code 96 under
+`waypair/nectar/android/releases/v0.1.4-local.3/`; its stable manifest uses
+the dedicated fork-only route above. The qualification receipt below records
+the APK identity and local runtime evidence. The R2 publication/readback record
+is maintained separately from that qualification.
 
 ## Qualification status
 
 | Device | State |
 | --- | --- |
-| Owned disposable emulator | 94 → 95 normal in-app OTA passed: Check for updates, Update, Android's "allow from this source" prompt, in-app download and install, no `adb install` after the 94 fixture. The installed APK matched the published SHA-256, the UID and Cloud UID were unchanged, Home (no setup wizard) and Dark appearance were kept, and a fresh check reported 0.1.4-local.2 up to date. |
-| Galaxy (physical) | `0.1.4-local.1` / 94 installed with signer B under `com.waypair` and launched. 95 is not installed yet; the phone is disconnected. New permissions stay under the owner's control. |
+| Owned disposable emulator — 95 history | `0.1.4-local.2` / code 95 OTA from 94 passed through the in-app update flow. This is historical 95 evidence, not qualification of the current build. |
+| Owned disposable emulator — current 96 qualification | Receipt `/Users/AleksandrSlobodanyuk/orca/tmp/waypair-wave23-20261019/release/ANDROID96-BRAND-QUALIFICATION.json` records source `405256518f8601cd4ef802cb3a4193afc027bef0`, package `com.waypair`, version `0.1.4-local.3` / code 96, signer B preserved, label `Waypair Link`, About text `Independently maintained fork`, zero lint errors, and 16 KiB alignment. It records launch to Home without setup and no physical Galaxy use. APK SHA-256: `756fa704570cf8f53a81fa4a69638e12a29d0106c62a77af0ba7b1f8afcc40f7`. |
+| Physical Galaxy | No install or launch status is claimed here; the owner was disconnected during this qualification. Alex owns any Galaxy install and paired-device acceptance. |
 
 ## Remaining gates
 
-- Galaxy: install 95 (by OTA from 94), then a fresh Nectar pairing with the
-  Mac and acceptance of the paired features on the device.
+- Galaxy: owner-led install and paired-feature acceptance remain unverified.
 - Full-duplex audio over cellular is unproven; that probe is deferred.
 
 ## Licensing
