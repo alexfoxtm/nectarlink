@@ -150,8 +150,9 @@ scripts/macos/package-app.sh \
   --sparkle-framework <dir containing Sparkle.framework 2.10.0>/Sparkle.framework
 ```
 
-4. **Sign inside out** with the existing Apple Development identity: every
-   Mach-O file deepest first, then every `.app`, `.xpc`, `.framework`, and
+4. **Sign inside out** with the existing Apple Development identity: first
+   verify and preserve the pre-signed `Contents/Helpers/adb` against its seal
+   when present. Sign every other Mach-O file deepest first, then every `.app`, `.xpc`, `.framework`, and
    `.bundle` deepest first, then the app, each with
    `codesign --force --options runtime --timestamp --sign <identity>` and no
    `--entitlements`. Then
