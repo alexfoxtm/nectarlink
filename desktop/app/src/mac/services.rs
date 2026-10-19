@@ -168,7 +168,9 @@ fn requesting_app_name() -> String {
 /// handed to AppKit. A larger image still returns PNG. Either may be
 /// absent; only real conversions are ever written to the caller's
 /// pasteboard.
-fn encoded_images(mime: &str, data: &[u8]) -> Result<(Option<Vec<u8>>, Option<Vec<u8>>), String> {
+type ImageRepresentations = (Option<Vec<u8>>, Option<Vec<u8>>);
+
+fn encoded_images(mime: &str, data: &[u8]) -> Result<ImageRepresentations, String> {
     if data.is_empty() || data.len() as u64 > nectarlink_core::CAMERA_CAPTURE_MAX_IMAGE_BYTES {
         return Err("the image from the phone is empty or too large".into());
     }
@@ -195,9 +197,7 @@ fn encoded_images(mime: &str, data: &[u8]) -> Result<(Option<Vec<u8>>, Option<Ve
 fn tiff_bytes(data: &[u8]) -> Option<Vec<u8>> {
     use objc2::AnyThread;
     use objc2_app_kit::NSBitmapImageRep;
-    if MainThreadMarker::new().is_none() {
-        return None;
-    }
+    MainThreadMarker::new()?;
     let rep = NSBitmapImageRep::initWithData(NSBitmapImageRep::alloc(), &NSData::with_bytes(data))?;
     let tiff = rep.TIFFRepresentation()?.to_vec();
     if tiff.len() as u64 > MAX_TIFF_UNCOMPRESSED_BYTES { None } else { Some(tiff) }
