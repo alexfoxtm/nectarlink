@@ -1836,7 +1836,7 @@ impl qobject::AppController {
             let json = compute_shelf_items_json(idx);
             self.as_mut().set_shelf_items(QString::from(&json));
             self.as_mut().set_shelf_open(true);
-            win::tray::apply_no_activate_style_by_title("Waypair Link Shelf");
+            win::tray::apply_no_activate_style_by_title("NectarLink Shelf");
         }
     }
 
@@ -1858,7 +1858,7 @@ impl qobject::AppController {
     }
 
     pub fn style_shelf_window(&self) {
-        win::tray::apply_no_activate_style_by_title("Waypair Link Shelf");
+        win::tray::apply_no_activate_style_by_title("NectarLink Shelf");
         win::tray::apply_no_activate_style_by_title("Nectar Island");
     }
 
