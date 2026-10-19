@@ -241,9 +241,82 @@ pub fn install_id_from(platform_id: &str) -> Option<String> {
 mod tests {
     use super::*;
 
-    // Unit tests always use the explicit plain protector: the platform
-    // default (macOS Keychain, Windows DPAPI) must never be touched
-    // with a developer's real credentials from a test run.
+    // Unit tests never call `default_protector()`: the macOS Keychain
+    // protector would create an item in the developer's login
+    // Keychain. Tests that need a protected file use DPAPI explicitly
+    // on Windows (user-scoped, no interaction, the coverage CI always
+    // had) and a test-local synthetic AEAD protector everywhere else,
+    // so the non-leak assertion is live on every platform.
+    #[cfg(not(windows))]
+    struct SyntheticAeadProtector;
+
+    #[cfg(not(windows))]
+    impl SyntheticAeadProtector {
+        /// Fixed synthetic key: real ciphertext on disk, no secret anywhere.
+        const KEY: [u8; 32] = [0x42; 32];
+        const NONCE_LEN: usize = 12;
+
+        fn key() -> ring::aead::LessSafeKey {
+            ring::aead::LessSafeKey::new(
+                ring::aead::UnboundKey::new(&ring::aead::AES_256_GCM, &Self::KEY).expect("32-byte key"),
+            )
+        }
+    }
+
+    #[cfg(not(windows))]
+    impl KeyProtector for SyntheticAeadProtector {
+        fn id(&self) -> u8 {
+            0xEE
+        }
+
+        fn protect(&self, plaintext: &[u8]) -> io::Result<Vec<u8>> {
+            use ring::rand::SecureRandom;
+            let mut nonce = [0u8; Self::NONCE_LEN];
+            ring::rand::SystemRandom::new().fill(&mut nonce).map_err(|_| io::Error::other("rng"))?;
+            let mut body = plaintext.to_vec();
+            Self::key()
+                .seal_in_place_append_tag(
+                    ring::aead::Nonce::assume_unique_for_key(nonce),
+                    ring::aead::Aad::empty(),
+                    &mut body,
+                )
+                .map_err(|_| io::Error::other("seal"))?;
+            let mut out = nonce.to_vec();
+            out.extend_from_slice(&body);
+            Ok(out)
+        }
+
+        fn unprotect(&self, ciphertext: &[u8]) -> io::Result<Vec<u8>> {
+            if ciphertext.len() < Self::NONCE_LEN + ring::aead::AES_256_GCM.tag_len() {
+                return Err(io::Error::new(io::ErrorKind::InvalidData, "sealed data too short"));
+            }
+            let (nonce, body) = ciphertext.split_at(Self::NONCE_LEN);
+            let nonce: [u8; Self::NONCE_LEN] = nonce.try_into().expect("nonce length checked");
+            let mut body = body.to_vec();
+            let plain = Self::key()
+                .open_in_place(
+                    ring::aead::Nonce::assume_unique_for_key(nonce),
+                    ring::aead::Aad::empty(),
+                    &mut body,
+                )
+                .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "does not authenticate"))?;
+            Ok(plain.to_vec())
+        }
+    }
+
+    /// The real at-rest protector where the test run can use one without
+    /// touching personal credentials (DPAPI), else the synthetic one.
+    fn protected_test_protector() -> Box<dyn KeyProtector> {
+        #[cfg(windows)]
+        {
+            Box::new(dpapi::DpapiKeyProtector)
+        }
+        #[cfg(not(windows))]
+        {
+            Box::new(SyntheticAeadProtector)
+        }
+    }
+
     #[test]
     fn creates_then_reloads_the_same_key() {
         let dir = tempfile::tempdir().unwrap();
@@ -256,13 +329,16 @@ mod tests {
     #[test]
     fn key_file_does_not_contain_the_plain_key_when_protected() {
         let dir = tempfile::tempdir().unwrap();
-        let protector = PlainKeyProtector;
-        let key = load_or_create(dir.path(), &protector).unwrap();
+        let protector = protected_test_protector();
+        assert_ne!(protector.id(), 0, "this test must run with a real at-rest protector");
+        let key = load_or_create(dir.path(), protector.as_ref()).unwrap();
         let file = fs::read(dir.path().join(FILE_NAME)).unwrap();
-        if protector.id() != 0 {
-            let raw = key.to_bytes();
-            assert!(!file.windows(raw.len()).any(|w| w == raw), "plaintext key found on disk");
-        }
+        assert_eq!(&file[..MAGIC.len()], MAGIC.as_slice());
+        assert_eq!(file[MAGIC.len()], protector.id());
+        let raw = key.to_bytes();
+        assert!(!file.windows(raw.len()).any(|w| w == raw), "plaintext key found on disk");
+        let reloaded = load_or_create(dir.path(), protector.as_ref()).unwrap();
+        assert_eq!(reloaded.public(), key.public(), "the protected file unlocks to the same key");
     }
 
     #[test]

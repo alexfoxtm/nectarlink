@@ -13,12 +13,68 @@ use std::{
 };
 
 use nectarlink_core::{
-    ClipboardItemKind, DeviceId, DeviceInfo, DeviceKind, FileSource, LinkState, Node, NodeConfig, NodeEvent,
-    NoopPlatform, Notification, NotificationAction, NotificationChatMessage, NotificationConversation,
-    OutgoingFile, PlainKeyProtector, TimelineKind, TimelineQuery, TimelineRetention, TransferState,
-    clipboard_history::ClipboardHistoryStore,
+    ClipboardItemKind, DeviceId, DeviceInfo, DeviceKind, FileSource, KeyProtector, LinkState, Node,
+    NodeConfig, NodeEvent, NoopPlatform, Notification, NotificationAction, NotificationChatMessage,
+    NotificationConversation, OutgoingFile, PlainKeyProtector, TimelineKind, TimelineQuery,
+    TimelineRetention, TransferState, clipboard_history::ClipboardHistoryStore,
 };
 use tempfile::TempDir;
+
+/// Test-local AEAD protector with a fixed synthetic key: real
+/// AES-256-GCM ciphertext at rest (id != 0) without DPAPI or a Keychain,
+/// so the encrypted-history benchmark never touches personal credentials.
+struct SyntheticAeadProtector;
+
+impl SyntheticAeadProtector {
+    const KEY: [u8; 32] = [0x42; 32];
+    const NONCE_LEN: usize = 12;
+
+    fn key() -> ring::aead::LessSafeKey {
+        ring::aead::LessSafeKey::new(
+            ring::aead::UnboundKey::new(&ring::aead::AES_256_GCM, &Self::KEY).expect("32-byte key"),
+        )
+    }
+}
+
+impl KeyProtector for SyntheticAeadProtector {
+    fn id(&self) -> u8 {
+        0xEE
+    }
+
+    fn protect(&self, plaintext: &[u8]) -> std::io::Result<Vec<u8>> {
+        use ring::rand::SecureRandom;
+        let mut nonce = [0u8; Self::NONCE_LEN];
+        ring::rand::SystemRandom::new().fill(&mut nonce).map_err(|_| std::io::Error::other("rng"))?;
+        let mut body = plaintext.to_vec();
+        Self::key()
+            .seal_in_place_append_tag(
+                ring::aead::Nonce::assume_unique_for_key(nonce),
+                ring::aead::Aad::empty(),
+                &mut body,
+            )
+            .map_err(|_| std::io::Error::other("seal"))?;
+        let mut out = nonce.to_vec();
+        out.extend_from_slice(&body);
+        Ok(out)
+    }
+
+    fn unprotect(&self, ciphertext: &[u8]) -> std::io::Result<Vec<u8>> {
+        if ciphertext.len() < Self::NONCE_LEN + ring::aead::AES_256_GCM.tag_len() {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "sealed data too short"));
+        }
+        let (nonce, body) = ciphertext.split_at(Self::NONCE_LEN);
+        let nonce: [u8; Self::NONCE_LEN] = nonce.try_into().expect("nonce length checked");
+        let mut body = body.to_vec();
+        let plain = Self::key()
+            .open_in_place(
+                ring::aead::Nonce::assume_unique_for_key(nonce),
+                ring::aead::Aad::empty(),
+                &mut body,
+            )
+            .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "does not authenticate"))?;
+        Ok(plain.to_vec())
+    }
+}
 
 fn make_config(dir: &TempDir, name: &str, kind: DeviceKind) -> NodeConfig {
     let mut cfg = NodeConfig::new(
@@ -341,7 +397,10 @@ async fn scale_5000_timeline_entries_and_200_chat_threads() {
 #[test]
 fn scale_50_large_clips_encrypted_history() {
     let dir = TempDir::new().expect("temp dir");
-    let protector = nectarlink_core::default_protector();
+    // Never `default_protector()`: on macOS that creates a wrapping key in
+    // the developer's login Keychain. A disposable synthetic AEAD protector
+    // gives real AES-256-GCM at rest on every platform instead.
+    let protector: Arc<dyn KeyProtector> = Arc::new(SyntheticAeadProtector);
 
     let store = ClipboardHistoryStore::open(dir.path(), protector.clone());
     let write_start = Instant::now();
@@ -356,17 +415,15 @@ fn scale_50_large_clips_encrypted_history() {
     }
     let write_elapsed = write_start.elapsed();
 
-    // Verify the file on disk does not leak plaintext. Encryption comes from
-    // the platform's protector (DPAPI on Windows); elsewhere the default
-    // protector stores as is (id 0), so there is nothing to check.
+    // Verify the file on disk does not leak plaintext: the synthetic AEAD
+    // protector always encrypts, so this assertion is live on every platform.
     let enc_bytes =
         std::fs::read(dir.path().join("clipboard_history.enc")).expect("encrypted history exists");
-    if protector.id() != 0 {
-        assert!(
-            !enc_bytes.windows(b"clip-payload-0025".len()).any(|w| w == b"clip-payload-0025"),
-            "clipboard_history.enc must be encrypted at rest"
-        );
-    }
+    assert_ne!(protector.id(), 0, "the benchmark must measure a real at-rest protector");
+    assert!(
+        !enc_bytes.windows(b"clip-payload-0025".len()).any(|w| w == b"clip-payload-0025"),
+        "clipboard_history.enc must be encrypted at rest"
+    );
 
     // Measure cold open + AES-256-GCM decryption + listing + substring search across all 50 x 64 KiB clips.
     let read_start = Instant::now();
