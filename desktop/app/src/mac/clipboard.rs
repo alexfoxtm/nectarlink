@@ -21,12 +21,20 @@
 //! runs on the main thread, otherwise by dispatching to the main GCD
 //! queue (serviced by the Qt/Cocoa run loop) and waiting briefly for
 //! the result. A caller is never blocked indefinitely if the main run
-//! loop is not (or no longer) running.
+//! loop is not (or no longer) running: an operation that times out
+//! before it starts is cancelled and can never run later, while one
+//! that already started is reported as started-but-unknown rather
+//! than as a clean failure.
+//!
+//! Snapshots are consistency-checked with `changeCount`: types and
+//! contents read across an external pasteboard replacement are
+//! discarded, never transferred under the old contents' privacy
+//! classification.
 
 use std::{
     hash::{DefaultHasher, Hash, Hasher},
     path::PathBuf,
-    sync::{Mutex, OnceLock, mpsc},
+    sync::{Arc, Mutex, OnceLock, mpsc},
     time::Duration,
 };
 
@@ -175,22 +183,111 @@ fn is_private_type(type_name: &str) -> bool {
     PRIVATE_TYPES.contains(&type_name)
 }
 
+/// Claim state for one dispatched main-thread operation. Pure state
+/// transitions (no GCD, no pasteboard), so the timeout semantics are
+/// unit-testable: work cancelled while still [`DispatchPhase::Pending`]
+/// is guaranteed never to run, while work already
+/// [`DispatchPhase::Started`] cannot honestly be called cancelled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DispatchPhase {
+    Pending,
+    Started,
+    Cancelled,
+}
+
+#[derive(Debug)]
+struct DispatchGate {
+    phase: DispatchPhase,
+}
+
+impl DispatchGate {
+    fn new() -> Self {
+        Self { phase: DispatchPhase::Pending }
+    }
+
+    /// Marks the operation started; `false` means it was cancelled
+    /// while pending and must not execute (now or later).
+    fn claim(&mut self) -> bool {
+        if self.phase == DispatchPhase::Pending {
+            self.phase = DispatchPhase::Started;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Cancels only not-yet-started work. Returns `true` when the
+    /// operation is guaranteed never to run; `false` when it already
+    /// started, in which case its outcome is unknown to the waiter.
+    fn cancel(&mut self) -> bool {
+        if self.phase == DispatchPhase::Pending {
+            self.phase = DispatchPhase::Cancelled;
+            true
+        } else {
+            false
+        }
+    }
+}
+
+/// Outcome of a main-thread dispatch, distinguishing what can
+/// honestly be claimed after a timeout.
+enum MainOutcome<T> {
+    Completed(T),
+    /// Timed out before the operation started; it was cancelled and
+    /// will never execute later.
+    NotStarted,
+    /// Timed out after the operation started on the main thread; it
+    /// may still complete, so its effect is unknown.
+    StartedTimeout,
+}
+
 /// Runs `f` on the main thread (all `NSPasteboard` access happens
-/// inside `f`), returning `None` if the main run loop does not service
-/// the request promptly. Never spawns a helper process.
-fn on_main<T, F>(f: F) -> Option<T>
+/// inside `f`). Never spawns a helper process. If the waiter times
+/// out while `f` is still queued, the claim gate is cancelled so the
+/// queued closure drops `f` unexecuted instead of running it later
+/// (e.g. overwriting the pasteboard after the caller gave up); if
+/// `f` already started, that is reported honestly as
+/// [`MainOutcome::StartedTimeout`] rather than as a clean failure.
+fn on_main<T, F>(f: F) -> MainOutcome<T>
 where
     T: Send + 'static,
     F: FnOnce() -> T + Send + 'static,
 {
     if MainThreadMarker::new().is_some() {
-        return Some(f());
+        return MainOutcome::Completed(f());
     }
+    let gate = Arc::new(Mutex::new(DispatchGate::new()));
     let (tx, rx) = mpsc::channel();
+    let queued_gate = Arc::clone(&gate);
     DispatchQueue::main().exec_async(move || {
-        let _ = tx.send(f());
+        // Lock only for the claim, never while `f` runs.
+        let claimed = queued_gate.lock().unwrap_or_else(|e| e.into_inner()).claim();
+        if claimed {
+            let _ = tx.send(f());
+        }
     });
-    rx.recv_timeout(MAIN_THREAD_TIMEOUT).ok()
+    match rx.recv_timeout(MAIN_THREAD_TIMEOUT) {
+        Ok(value) => MainOutcome::Completed(value),
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            if gate.lock().unwrap_or_else(|e| e.into_inner()).cancel() {
+                MainOutcome::NotStarted
+            } else if let Ok(value) = rx.try_recv() {
+                // Finished just as the deadline passed.
+                MainOutcome::Completed(value)
+            } else {
+                MainOutcome::StartedTimeout
+            }
+        }
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            // The queued closure dropped without sending: either it
+            // observed our cancellation, or it never ran at all.
+            if gate.lock().unwrap_or_else(|e| e.into_inner()).phase == DispatchPhase::Cancelled {
+                MainOutcome::NotStarted
+            } else {
+                MainOutcome::StartedTimeout
+            }
+        }
+    }
 }
 
 /// The general pasteboard. Main thread only: call inside [`on_main`].
@@ -209,10 +306,12 @@ fn is_marked_private(pb: &NSPasteboard) -> bool {
     offered_types(pb).iter().any(|t| is_private_type(t))
 }
 
-/// Reads the pasteboard. Main thread only. With `skip_private`,
+/// Reads types and contents. Main thread only. With `skip_private`,
 /// marked content reads as [`Clip::Private`] and its contents are
-/// never materialised for transfer.
-fn read_on_main(pb: &NSPasteboard, skip_private: bool) -> Clip {
+/// never materialised for transfer. Callers that transfer the result
+/// must use [`snapshot_on_main`] instead, so the types checked here
+/// are known to belong to the contents read here.
+fn read_unchecked(pb: &NSPasteboard, skip_private: bool) -> Clip {
     let types = offered_types(pb);
     if types.iter().any(|t| is_private_type(t)) && skip_private {
         return Clip::Private;
@@ -234,6 +333,21 @@ fn read_on_main(pb: &NSPasteboard, skip_private: bool) -> Clip {
     Clip::Empty
 }
 
+/// A consistency-checked snapshot: the `changeCount` observed before
+/// reading types/contents must still be current afterwards, and is
+/// returned with the clip. `None` means the pasteboard was replaced
+/// mid-read (e.g. a concealed clip landed between the marker check
+/// and the content read); such a torn snapshot is discarded, never
+/// transferred under the previous contents' privacy classification.
+/// The next watcher poll observes the new `changeCount` and takes a
+/// fresh snapshot. Main thread only.
+fn snapshot_on_main(pb: &NSPasteboard, skip_private: bool) -> Option<(i64, Clip)> {
+    let before = pb.changeCount() as i64;
+    let clip = read_unchecked(pb, skip_private);
+    let after = pb.changeCount() as i64;
+    (before == after).then_some((before, clip))
+}
+
 pub fn start(on_copy: impl Fn(Clip) + Send + Sync + 'static) {
     if ON_COPY.set(Box::new(on_copy)).is_err() {
         return; // already started
@@ -248,16 +362,23 @@ pub fn start(on_copy: impl Fn(Clip) + Send + Sync + 'static) {
                 // externally-written change. The first successful poll
                 // baselines, so startup content is never resent and
                 // never even read.
-                let clip = on_main(|| {
+                let clip = match on_main(|| {
                     let pb = pasteboard();
                     let count = pb.changeCount() as i64;
                     if !watch_state(|s| s.observe(count)) {
                         return None;
                     }
-                    let clip = read_on_main(&pb, true);
+                    // Discard a snapshot taken across an external
+                    // replacement; the next poll sees its changeCount.
+                    let (snapshotted, clip) = snapshot_on_main(&pb, true)?;
+                    if snapshotted != count {
+                        return None;
+                    }
                     watch_state(|s| s.should_report(&clip)).then_some(clip)
-                })
-                .flatten();
+                }) {
+                    MainOutcome::Completed(clip) => clip,
+                    MainOutcome::NotStarted | MainOutcome::StartedTimeout => None,
+                };
                 if let Some(clip) = clip {
                     if let Some(cb) = ON_COPY.get() {
                         cb(clip);
@@ -269,26 +390,52 @@ pub fn start(on_copy: impl Fn(Clip) + Send + Sync + 'static) {
 }
 
 pub fn read() -> Clip {
-    on_main(|| read_on_main(&pasteboard(), true)).unwrap_or(Clip::Empty)
+    match on_main(|| snapshot_on_main(&pasteboard(), true)) {
+        MainOutcome::Completed(Some((_, clip))) => clip,
+        _ => Clip::Empty,
+    }
 }
 
 pub fn read_for_paste() -> Clip {
-    on_main(|| read_on_main(&pasteboard(), false)).unwrap_or(Clip::Empty)
+    match on_main(|| snapshot_on_main(&pasteboard(), false)) {
+        MainOutcome::Completed(Some((_, clip))) => clip,
+        _ => Clip::Empty,
+    }
 }
 
 pub fn read_image_png() -> Option<Vec<u8>> {
-    on_main(|| {
+    match on_main(|| {
         let pb = pasteboard();
-        if is_marked_private(&pb) {
-            return None;
+        // Same consistency rule as text snapshots: discard image data
+        // read across an external replacement.
+        let before = pb.changeCount();
+        let image = if is_marked_private(&pb) {
+            None
+        } else if let Some(data) = pb.dataForType(NSPasteboardTypePNG) {
+            Some(data.to_vec())
+        } else {
+            pb.dataForType(NSPasteboardTypeTIFF).and_then(|tiff| Image::Bitmap(tiff.to_vec()).to_png().ok())
+        };
+        (pb.changeCount() == before).then_some(image).flatten()
+    }) {
+        MainOutcome::Completed(image) => image,
+        MainOutcome::NotStarted | MainOutcome::StartedTimeout => None,
+    }
+}
+
+/// Interprets a dispatched write, claiming only what the dispatch
+/// state actually guarantees (see [`MainOutcome`]).
+fn write_outcome(outcome: MainOutcome<Result<(), String>>) -> Result<(), String> {
+    match outcome {
+        MainOutcome::Completed(result) => result,
+        MainOutcome::NotStarted => {
+            Err("the clipboard write did not start on the main thread in time; it will not run later".into())
         }
-        if let Some(data) = pb.dataForType(NSPasteboardTypePNG) {
-            return Some(data.to_vec());
-        }
-        let tiff = pb.dataForType(NSPasteboardTypeTIFF)?;
-        Image::Bitmap(tiff.to_vec()).to_png().ok()
-    })
-    .flatten()
+        MainOutcome::StartedTimeout => Err(
+            "the clipboard write timed out after starting on the main thread; it may already have taken effect"
+                .into(),
+        ),
+    }
 }
 
 /// Writes text/rich/private content on the main thread and records the
@@ -298,7 +445,7 @@ fn write_on_main(text: &str, html: Option<&str>, rtf: Option<&str>, private: boo
     let html = html.map(str::to_owned);
     let rtf = rtf.map(str::to_owned);
     let written = Clip::Text { text: text.clone(), html: html.clone(), rtf: rtf.clone() };
-    on_main(move || {
+    write_outcome(on_main(move || {
         let pb = pasteboard();
         pb.clearContents();
         if !pb.setString_forType(&NSString::from_str(&text), NSPasteboardTypeString) {
@@ -318,8 +465,7 @@ fn write_on_main(text: &str, html: Option<&str>, rtf: Option<&str>, private: boo
         let count = pb.changeCount() as i64;
         watch_state(|s| s.note_self_write(count, &written));
         Ok(())
-    })
-    .unwrap_or_else(|| Err("the main thread did not service the clipboard write".to_string()))
+    }))
 }
 
 pub fn write(text: &str) -> Result<(), String> {
@@ -350,7 +496,7 @@ fn png_bytes_for_write(mime: &str, bytes: &[u8]) -> Result<Vec<u8>, String> {
 pub fn write_image(mime: &str, bytes: &[u8]) -> Result<(), String> {
     let png_bytes = png_bytes_for_write(mime, bytes)?;
     let written = Clip::Image(Image::Png(png_bytes.clone()));
-    on_main(move || {
+    write_outcome(on_main(move || {
         let pb = pasteboard();
         pb.clearContents();
         if !pb.setData_forType(Some(&NSData::with_bytes(&png_bytes)), NSPasteboardTypePNG) {
@@ -359,8 +505,7 @@ pub fn write_image(mime: &str, bytes: &[u8]) -> Result<(), String> {
         let count = pb.changeCount() as i64;
         watch_state(|s| s.note_self_write(count, &written));
         Ok(())
-    })
-    .unwrap_or_else(|| Err("the main thread did not service the clipboard write".to_string()))
+    }))
 }
 
 pub fn build_dropfiles_payload(_paths: &[PathBuf]) -> Vec<u8> {
@@ -456,5 +601,20 @@ mod tests {
         assert!(!is_private_type("public.html"));
         // Marked content yields no fingerprint, so it can never be sent.
         assert_eq!(fingerprint(&Clip::Private), None);
+    }
+
+    #[test]
+    fn dispatch_gate_claimed_work_cannot_be_cancelled() {
+        let mut gate = DispatchGate::new();
+        assert!(gate.claim());
+        assert!(!gate.claim(), "an operation starts at most once");
+        assert!(!gate.cancel(), "started work must not be reported as cancelled");
+    }
+
+    #[test]
+    fn dispatch_gate_cancelled_before_claim_never_runs() {
+        let mut gate = DispatchGate::new();
+        assert!(gate.cancel(), "pending work can be cancelled");
+        assert!(!gate.claim(), "cancelled-before-start work must never execute later");
     }
 }
