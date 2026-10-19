@@ -1,0 +1,36 @@
+{
+  "asset": "waypair-icon-v2.png",
+  "brand": "Waypair",
+  "version": 2,
+  "created": "2026-10-14",
+  "use_case": "logo-brand",
+  "generator": {
+    "mode": "built-in image_gen",
+    "image_id": "01a13d0a-c1d4-7b91-9d84-e3d76302ca60",
+    "original_filename": "exec-9101e407-5127-433a-aa23-a25d5b5b5062.png"
+  },
+  "prompt": "Use case: logo-brand\nAsset type: finished production application icon artwork for Waypair, macOS and Android.\nPrimary request: Create one original exceptionally refined app icon for a connected-device continuity application. A quiet, precise, dimensional icon with the clarity and craft of a premium native system app.\nSubject: A simple substantial pearl-white glyph made of TWO interlocking rounded U-shaped paths, forming a subtle W silhouette. One path passes through the other with one elegant crossing to suggest two devices paired and moving in continuity. Geometry is bold and balanced, only two paths, no tiny details. It must read at 16 pixels.\nScene/backdrop: A full-bleed perfectly square solid deep rich royal blue canvas, with very restrained blue tonal depth from #164FA8 at top to #063B86 below, no surrounding margin and NO rounded tile corners baked in; the platform applies the rounded-square mask.\nStyle/medium: immaculate softly dimensional satin ceramic white symbol, very slight beveled thickness, gentle studio top-left lighting and a subtle close contact shadow. Flat frontal orthographic view, never tilted.\nComposition: centered glyph occupies approximately 58 percent of canvas width and height, generous balanced clear blue space, exactly square 1024x1024 artwork. Straight clean continuous edges.\nConstraints: original brand symbol, no text, no letters printed, no fruit, no Apple logo, no existing brand logo, no smartphone outline, no computer illustration, no frame, no border, no glow, no rainbow, no dramatic metallic reflections, no decorative specks. High white-on-blue contrast. Deliver only the icon artwork.",
+  "source": {
+    "width": 1254,
+    "height": 1254,
+    "alpha": false,
+    "sha256": "6768e4b77f3cc3554efd67a568c918c835f644e2f4ec381936fdfed70c9588e2"
+  },
+  "exports": [
+    {
+      "path": "app/src/main/res/drawable-nodpi/ic_launcher_waypair_v2.png",
+      "method": "sips -z 1024 1024",
+      "sha256": "2dc2e205c11f09bc4442752d0c375995226f5a736f67ab5f3047147a7de91420"
+    },
+    {
+      "path": "app/src/main/res/drawable/ic_launcher_monochrome.xml",
+      "method": "Cubic vector outline visually traced against the 1254px source silhouette: source-coordinate rounded stems, central loop, lower crossing and narrow curved aperture. Dimensional shading omitted for themed tint; same 5dp adaptive inset as the raster."
+    }
+  ],
+  "consumers": {
+    "macos": "script/build_and_run.sh selects this source; macos/Scripts/make_app_icon.swift clips full-bleed artwork to an 824px rounded tile within a 1024px transparent canvas.",
+    "android": "ic_launcher_foreground.xml draws the 1024px derivative with 5dp inset in the 108dp adaptive layer. ic_launcher_background is #FF063B86. ic_launcher_monochrome.xml supplies themed silhouette. Existing test-badge foreground continues to wrap the production foreground."
+  },
+  "previous_asset": "app/src/main/res/drawable-nodpi/ic_launcher_art.png retained unchanged",
+  "constraints": "Original paired-path symbol; no text, Apple fruit or logo, screenshot content, runtime dependencies or identifier changes."
+}

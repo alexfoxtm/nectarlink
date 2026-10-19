@@ -1,15 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
-<!-- Themed (monochrome) icon, Android 13+: the mark in one color; the system tints it. -->
+<!-- Themed (monochrome) icon, Android 13+: the Waypair v2 outline traced
+     against the 1254 px source artwork, in one color; the system tints it. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp" android:height="108dp" android:viewportWidth="100" android:viewportHeight="100">
-    <group android:pivotX="50" android:pivotY="50" android:scaleX="0.72" android:scaleY="0.72" android:rotation="-25">
-        <path android:pathData="M41.5,42.5C26,24 13.5,31 13.5,50C13.5,69 26,76 41.5,57.5"
-            android:strokeColor="#FFFFFF" android:strokeWidth="11.4" android:strokeLineCap="round"
-            android:fillColor="#00000000" />
-        <path android:pathData="M58.5,42.5C74,24 86.5,31 86.5,50C86.5,69 74,76 58.5,57.5"
-            android:strokeColor="#FFFFFF" android:strokeWidth="11.4" android:strokeLineCap="round"
-            android:fillColor="#00000000" />
-        <path android:pathData="M50,41.2a8.8,8.8 0,1 1,0 17.6a8.8,8.8 0,1 1,0 -17.6z" android:fillColor="#FFFFFF" />
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="1254"
+    android:viewportHeight="1254">
+    <group
+        android:pivotX="627"
+        android:pivotY="627"
+        android:scaleX="0.9074074"
+        android:scaleY="0.9074074">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:fillType="evenOdd"
+            android:pathData="M270,385 C270,346 301,315 341,315 C380,315 411,346 411,385 L411,650 C411,730 438,763 488,762 C510,762 527,757 544,747 C512,709 493,655 493,598 C493,523 552,462 626,462 C701,462 760,522 760,598 C760,655 740,712 707,748 C727,757 747,762 768,762 C818,762 842,725 842,650 L842,385 C842,346 873,315 912,315 C951,315 982,346 982,385 L982,652 C982,789 886,889 767,890 C711,890 664,872 626,844 C589,872 542,890 488,890 C366,890 270,789 270,652 Z M627,579 C617,602 617,625 628,648 C637,625 638,602 627,579 Z" />
     </group>
 </vector>
