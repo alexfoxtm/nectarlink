@@ -88,7 +88,8 @@ pub fn render(size: usize) -> Vec<u8> {
                         continue;
                     }
                     covered += 1;
-                    let tile = mix(TILE_TOP, TILE_BOTTOM, ((y - g.inset) / (100.0 - 2.0 * g.inset)).clamp(0.0, 1.0));
+                    let tile =
+                        mix(TILE_TOP, TILE_BOTTOM, ((y - g.inset) / (100.0 - 2.0 * g.inset)).clamp(0.0, 1.0));
                     let near_crossing = (x - CROSSING.0).hypot(y - CROSSING.1) <= g.stroke;
                     let in_gap = near_crossing && {
                         let front = distance_to(&over, (x, y));

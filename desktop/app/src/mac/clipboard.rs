@@ -118,7 +118,11 @@ impl Image {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Clip {
-    Text { text: String, html: Option<String>, rtf: Option<String> },
+    Text {
+        text: String,
+        html: Option<String>,
+        rtf: Option<String>,
+    },
     #[allow(dead_code)]
     Image(Image),
     Private,
