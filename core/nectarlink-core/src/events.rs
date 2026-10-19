@@ -231,6 +231,14 @@ pub enum NodeEvent {
         request_id: String,
         mode: CameraCaptureMode,
     },
+    /// A paired phone accepted a Continuity Camera capture request
+    /// (`camera.capture.ok`): it showed the request to its user. This is
+    /// not a completed capture; the image arrives as
+    /// [`NodeEvent::CameraCaptureReceived`] or the request is cancelled.
+    CameraCaptureAccepted {
+        device: DeviceId,
+        request_id: String,
+    },
     /// A paired phone completed a Continuity Camera capture and sent the image to this PC.
     CameraCaptureReceived {
         device: DeviceId,

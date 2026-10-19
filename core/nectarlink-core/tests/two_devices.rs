@@ -4141,6 +4141,73 @@ async fn continuity_camera_photo_and_scan_flow() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn continuity_camera_capture_now_never_queues_and_emits_accepted() {
+    use nectarlink_core::CameraCaptureMode;
+
+    let mut pc = device_with("pc", DeviceKind::Desktop, &["camera.continuity"]).await;
+    let mut phone = device_with("phone", DeviceKind::Phone, &["camera.capture"]).await;
+    pair_qr(&mut pc, &mut phone).await;
+    let (pc_id, phone_id) = (pc.node.device_id(), phone.node.device_id());
+
+    // Live: request_now reaches the phone, which accepts, and nothing queues.
+    with_timeout(
+        "request capture now",
+        pc.node.request_camera_capture_now(phone_id, "req-now-1".into(), CameraCaptureMode::Photo),
+    )
+    .await
+    .unwrap();
+    wait_for(&mut phone, "capture now requested", |e| match e {
+        NodeEvent::CameraCaptureRequested { request_id, .. } if request_id == "req-now-1" => Some(()),
+        _ => None,
+    })
+    .await;
+    let (accepted_peer, accepted_id) = wait_for(&mut pc, "capture now accepted", |e| match e {
+        NodeEvent::CameraCaptureAccepted { device, request_id } => Some((*device, request_id.clone())),
+        _ => None,
+    })
+    .await;
+    assert_eq!(accepted_peer, phone_id);
+    assert_eq!(accepted_id, "req-now-1");
+    assert!(pc.node.send_queue(Some(phone_id)).unwrap().is_empty());
+
+    // Refusal: photos toggle off blocks request_now and leaves the queue empty.
+    pc.node.set_device_toggle(phone_id, "photos", false).unwrap();
+    let denied =
+        pc.node.request_camera_capture_now(phone_id, "req-now-denied".into(), CameraCaptureMode::Photo).await;
+    assert!(matches!(denied, Err(Error::Denied)), "expected Denied, got {denied:?}");
+    assert!(pc.node.send_queue(Some(phone_id)).unwrap().is_empty());
+    pc.node.set_device_toggle(phone_id, "photos", true).unwrap();
+
+    // Offline: request_now returns Offline and never queues, while the
+    // existing request() still queues for later delivery.
+    phone.node.shutdown().await;
+    wait_for(&mut pc, "phone offline", |e| match e {
+        NodeEvent::LinkChanged { device, link: LinkState::Offline { .. } } if *device == phone_id => Some(()),
+        _ => None,
+    })
+    .await;
+    let offline = pc
+        .node
+        .request_camera_capture_now(phone_id, "req-now-offline".into(), CameraCaptureMode::Photo)
+        .await;
+    assert!(matches!(offline, Err(Error::Offline)), "expected Offline, got {offline:?}");
+    assert!(
+        pc.node.send_queue(Some(phone_id)).unwrap().is_empty(),
+        "request_camera_capture_now must not enqueue"
+    );
+    with_timeout(
+        "queued request still queues offline",
+        pc.node.request_camera_capture(phone_id, "req-queued-1".into(), CameraCaptureMode::Photo),
+    )
+    .await
+    .unwrap();
+    assert_eq!(pc.node.send_queue(Some(phone_id)).unwrap().len(), 1);
+
+    let _ = pc_id;
+    pc.node.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn continuity_camera_cancel_propagates() {
     use nectarlink_core::CameraCaptureMode;
 

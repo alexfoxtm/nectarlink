@@ -2627,6 +2627,22 @@ impl Node {
         crate::continuity_camera::request(&self.shared, peer, request_id, mode).await
     }
 
+    /// Asks a paired phone to capture now, without queueing: fails with
+    /// [`Error::Offline`] when there is no live session (and with
+    /// [`Error::NotPaired`]/[`Error::Denied`] for the usual gates) instead
+    /// of enqueueing a request for later delivery. Unlike
+    /// [`Node::request_camera_capture`], `Ok` means the request was sent on
+    /// a live session; phone acceptance is reported separately as
+    /// [`NodeEvent::CameraCaptureAccepted`](crate::NodeEvent::CameraCaptureAccepted).
+    pub async fn request_camera_capture_now(
+        &self,
+        peer: DeviceId,
+        request_id: String,
+        mode: crate::CameraCaptureMode,
+    ) -> Result<()> {
+        crate::continuity_camera::request_now(&self.shared, peer, request_id, mode).await
+    }
+
     /// Cancels an in-flight Continuity Camera request on either side.
     pub async fn cancel_camera_capture(
         &self,

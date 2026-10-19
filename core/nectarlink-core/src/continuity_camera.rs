@@ -84,6 +84,30 @@ pub(crate) async fn request(
     Ok(())
 }
 
+/// Like [`request`], but never queues: requires a live session and returns
+/// [`Error::Offline`] when there is none, or the send error when the live
+/// send fails. Callers that cannot wait for a queued request (a macOS
+/// Service blocked on this call) use this so `Ok` always means the request
+/// actually reached the phone's session.
+pub(crate) async fn request_now(
+    shared: &Shared,
+    peer: DeviceId,
+    request_id: String,
+    mode: CameraCaptureMode,
+) -> Result<()> {
+    if !valid_request_id(&request_id) {
+        return Err(Error::Protocol("invalid continuity camera request_id".into()));
+    }
+    if !shared.store.is_paired(&peer)? {
+        return Err(Error::NotPaired);
+    }
+    if !shared.toggle_on(&peer, TOGGLE) {
+        return Err(Error::Denied);
+    }
+    let session = shared.session(&peer).ok_or(Error::Offline)?;
+    request_on_session(shared, &session, request_id, mode).await
+}
+
 /// Cancels an in-flight Continuity Camera capture request on either side.
 pub(crate) async fn cancel(
     shared: &Shared,
@@ -149,6 +173,7 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
             if !valid_request_id(&ok.request_id) {
                 return Err(Error::Protocol("invalid continuity camera request_id".into()));
             }
+            shared.emit(NodeEvent::CameraCaptureAccepted { device: session.peer, request_id: ok.request_id });
             Ok(true)
         }
         types::CAMERA_CAPTURE_CANCEL => {

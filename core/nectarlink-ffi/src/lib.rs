@@ -2422,6 +2422,7 @@ impl Event {
             }
             NodeEvent::Webcam { device, on } => Event::Webcam { id: device.to_string(), on },
             NodeEvent::CameraCaptureRequested { .. }
+            | NodeEvent::CameraCaptureAccepted { .. }
             | NodeEvent::CameraCaptureReceived { .. }
             | NodeEvent::CameraCaptureCancelled { .. }
             | NodeEvent::PcMirrorRequested { .. }
