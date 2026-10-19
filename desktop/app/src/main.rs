@@ -444,6 +444,21 @@ fn run_setup_window(mode: setup::Mode) -> ExitCode {
     ExitCode::from(u8::try_from(code).unwrap_or(1))
 }
 
+/// Connects `QCoreApplication::aboutToQuit` so a Services wait is cancelled
+/// on the nested run-loop slice that observes Quit, before `exec` returns.
+/// Tray Quit and QML `Qt.quit()` both emit the signal. The guard must be
+/// held across `exec`; dropping it disconnects the slot.
+#[cfg(target_os = "macos")]
+fn connect_services_about_to_quit(
+    app: Option<std::pin::Pin<&mut QGuiApplication>>,
+) -> Option<cxx_qt::QMetaObjectConnectionGuard> {
+    use cxx_qt::casting::Upcast;
+    Some(
+        app?.upcast_pin()
+            .connect_about_to_quit(|_| win::services::unregister(), cxx_qt::ConnectionType::DirectConnection),
+    )
+}
+
 fn main() -> ExitCode {
     let options = parse_options();
     if let Some(installer) = options.setup.clone().filter(|p| !p.as_os_str().is_empty()) {
@@ -647,7 +662,15 @@ fn main() -> ExitCode {
     // provider is set, so the core and the UI must already be up.
     #[cfg(target_os = "macos")]
     win::services::register();
-    let code = app.as_mut().map_or(1, |app| app.exec());
+    // The connection lives for exec. aboutToQuit runs inside a nested
+    // Services run-loop slice, before exec returns, and calls the same
+    // idempotent unregister used below. The guard drops while the
+    // application object is still alive.
+    let code = {
+        #[cfg(target_os = "macos")]
+        let _services_quit = connect_services_about_to_quit(app.as_mut());
+        app.as_mut().map_or(1, |app| app.exec())
+    };
 
     tracing::info!(code, "shutting down");
     // The Services provider goes first, so no new Service invocation can

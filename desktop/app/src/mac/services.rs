@@ -4,9 +4,10 @@
 //!
 //! AppKit calls `waypairCapture:userData:error:` on the main run loop
 //! with the *caller's* pasteboard. The method blocks the caller, so it
-//! waits here on the main thread, running the current run loop in short
-//! slices (Qt and the main GCD queue keep working) while polling the
-//! Service waiter in `crate::continuity_camera`. Deadlines, from entry:
+//! waits here on the main thread, pumping `NSApplication` events in the
+//! real default run-loop mode (`kCFRunLoopDefaultMode`) in short slices.
+//! That keeps Qt posted events and timers running and lets the Waypair
+//! window Cancel or Quit. Deadlines, from entry:
 //! phone acknowledgement 10 s, total 90 s. There is deliberately **no**
 //! general-clipboard fallback: on timeout, cancel, disconnect, or any
 //! failure the caller gets an error and nothing is written anywhere; a
@@ -99,17 +100,48 @@ fn refusal_message(refusal: &ServiceRefusal) -> String {
     }
 }
 
-/// Runs the main run loop for at most one slice, so Qt windows, timers,
-/// and the main GCD queue (which `mac/clipboard.rs` needs) keep running
-/// while the Service caller is blocked on this thread.
-fn run_loop_slice() {
-    use objc2_foundation::{NSDate, NSRunLoop};
-    let run_loop = NSRunLoop::currentRunLoop();
-    // `NSRunLoopMode` is an `NSString` typed enum; the default mode's
-    // value is its own name (as in `mac/clipboard.rs`, no extern static).
-    let mode = NSString::from_str("NSDefaultRunLoopMode");
+/// Value of Foundation's `NSDefaultRunLoopMode`. The constant's name is
+/// not the mode string; waiting in a mode that has no sources returns
+/// immediately.
+const DEFAULT_RUN_LOOP_MODE: &str = "kCFRunLoopDefaultMode";
+
+/// Uncompressed RGBA size at which TIFF is skipped. PNG still satisfies
+/// the declared return types. Phone bytes are decoded with the existing
+/// bounded Qt path before this is measured.
+const MAX_TIFF_UNCOMPRESSED_BYTES: u64 = 64 * 1024 * 1024;
+
+fn tiff_pixels_within_bound(width: u32, height: u32) -> bool {
+    let pixels = u64::from(width).saturating_mul(u64::from(height));
+    width > 0 && height > 0 && pixels.saturating_mul(4) <= MAX_TIFF_UNCOMPRESSED_BYTES
+}
+
+/// Pumps one slice of AppKit events in the real default run-loop mode.
+/// `nextEventMatchingMask` runs that mode until an event arrives or the
+/// slice ends, so Qt posted events and timers keep firing and the window
+/// can Cancel or Quit. An early return with no event sleeps out the
+/// rest of the slice, so an empty mode cannot spin.
+fn pump_slice() {
+    use objc2_app_kit::{NSApplication, NSEventMask};
+    use objc2_foundation::NSDate;
+    let Some(mtm) = MainThreadMarker::new() else {
+        std::thread::sleep(SLICE);
+        return;
+    };
+    let started = Instant::now();
+    let app = NSApplication::sharedApplication(mtm);
+    let mode = NSString::from_str(DEFAULT_RUN_LOOP_MODE);
     let until = NSDate::dateWithTimeIntervalSinceNow(SLICE.as_secs_f64());
-    run_loop.runMode_beforeDate(&mode, &until);
+    let event =
+        app.nextEventMatchingMask_untilDate_inMode_dequeue(NSEventMask::Any, Some(&until), &mode, true);
+    if let Some(event) = event {
+        app.sendEvent(&event);
+        app.updateWindows();
+        return;
+    }
+    let spent = started.elapsed();
+    if spent < SLICE {
+        std::thread::sleep(SLICE - spent);
+    }
 }
 
 /// The frontmost app at entry, labelled the requesting app in banners.
@@ -130,29 +162,39 @@ fn requesting_app_name() -> String {
 
 /// Converts the phone's image into the declared return types. PNG is
 /// the phone's PNG bytes only when they really are PNG; anything else
-/// goes through the existing bounded decode + PNG encode. TIFF comes
-/// from `NSBitmapImageRep` over the original bytes (Qt's TIFF plugin
-/// isn't deployed). Either may be absent; only real conversions are
-/// ever written to the caller's pasteboard.
+/// goes through the existing bounded decode + PNG encode. TIFF is the
+/// Qt-normalized PNG of that decode, and only when the raster is within
+/// [`MAX_TIFF_UNCOMPRESSED_BYTES`]. The original phone bytes are not
+/// handed to AppKit. A larger image still returns PNG. Either may be
+/// absent; only real conversions are ever written to the caller's
+/// pasteboard.
 fn encoded_images(mime: &str, data: &[u8]) -> Result<(Option<Vec<u8>>, Option<Vec<u8>>), String> {
     if data.is_empty() || data.len() as u64 > nectarlink_core::CAMERA_CAPTURE_MAX_IMAGE_BYTES {
         return Err("the image from the phone is empty or too large".into());
     }
-    let png = if mime == "image/png" && data.starts_with(b"\x89PNG\r\n\x1a\n") {
+    let png_passthrough = mime == "image/png" && data.starts_with(b"\x89PNG\r\n\x1a\n");
+    let decoded = crate::win::image::decode(data);
+    let png = if png_passthrough {
         Some(data.to_vec())
     } else {
-        let bitmap = crate::win::image::decode(data)?;
-        crate::win::image::encode_png(&bitmap).ok()
+        decoded.as_ref().ok().and_then(|bitmap| crate::win::image::encode_png(bitmap).ok())
     };
-    let tiff = tiff_bytes(data).or_else(|| png.as_deref().and_then(tiff_bytes));
+    let tiff = decoded.as_ref().ok().and_then(|bitmap| {
+        if !tiff_pixels_within_bound(bitmap.width, bitmap.height) {
+            return None;
+        }
+        let normalized = crate::win::image::encode_png(bitmap).ok()?;
+        tiff_bytes(&normalized)
+    });
     if png.is_none() && tiff.is_none() {
         return Err("the image from the phone couldn’t be converted".into());
     }
     Ok((png, tiff))
 }
 
-/// TIFF representation of a decodable image, or `None` when AppKit
-/// can't decode it. Main thread (AppKit image objects).
+/// TIFF of an already size-checked image, or `None` when AppKit can't
+/// decode it or the TIFF itself exceeds [`MAX_TIFF_UNCOMPRESSED_BYTES`].
+/// Main thread (AppKit image objects).
 fn tiff_bytes(data: &[u8]) -> Option<Vec<u8>> {
     use objc2::AnyThread;
     use objc2_app_kit::NSBitmapImageRep;
@@ -160,7 +202,8 @@ fn tiff_bytes(data: &[u8]) -> Option<Vec<u8>> {
         return None;
     }
     let rep = NSBitmapImageRep::initWithData(NSBitmapImageRep::alloc(), &NSData::with_bytes(data))?;
-    rep.TIFFRepresentation().map(|tiff| tiff.to_vec())
+    let tiff = rep.TIFFRepresentation()?.to_vec();
+    if tiff.len() as u64 > MAX_TIFF_UNCOMPRESSED_BYTES { None } else { Some(tiff) }
 }
 
 /// Writes the converted image to the *caller's* pasteboard only. The
@@ -181,6 +224,64 @@ fn write_caller_pasteboard(
     if wrote { Ok(()) } else { Err("couldn’t put the image on the requesting app’s pasteboard".into()) }
 }
 
+/// Inputs to [`wait_stop`]. Evaluated before the next queued
+/// [`ServiceEvent`] is read.
+#[derive(Clone, Copy)]
+struct WaitGate {
+    shutting_down: bool,
+    elapsed: Duration,
+    acked: bool,
+}
+
+/// Why the wait must stop without delivering a queued image or treating
+/// a late acknowledgement as success. The 10 s ack deadline and the 90 s
+/// total deadline stay distinct.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WaitStop {
+    Shutdown,
+    NoAck,
+    Expired,
+}
+
+fn wait_stop(gate: WaitGate) -> Option<WaitStop> {
+    if gate.shutting_down {
+        return Some(WaitStop::Shutdown);
+    }
+    if !gate.acked && gate.elapsed >= ACK_TIMEOUT {
+        return Some(WaitStop::NoAck);
+    }
+    if gate.elapsed >= TOTAL_TIMEOUT {
+        return Some(WaitStop::Expired);
+    }
+    None
+}
+
+fn finish_wait(
+    ticket: &ServiceTicket,
+    requesting_app: &str,
+    stop: WaitStop,
+) -> Result<(String, Vec<u8>), String> {
+    match stop {
+        WaitStop::Shutdown => {
+            continuity_camera::cancel_service("cancelled");
+            Err(tr!("MacServices", "Camera capture cancelled on %1.", ticket.device_name))
+        }
+        WaitStop::NoAck => {
+            continuity_camera::cancel_service("no_ack");
+            Err(tr!("MacServices", "%1 didn’t answer the capture request.", ticket.device_name))
+        }
+        WaitStop::Expired => {
+            continuity_camera::cancel_service("expired");
+            Err(tr!(
+                "MacServices",
+                "The capture from %1 didn’t finish in time, so nothing was returned to %2.",
+                ticket.device_name,
+                requesting_app
+            ))
+        }
+    }
+}
+
 /// Waits for the ticket's terminal event, running the main run loop in
 /// slices. On success returns the image's `(mime, data)`; on any failure
 /// returns the banner/error text (already localized, device named).
@@ -188,6 +289,18 @@ fn wait_for_image(ticket: &ServiceTicket, requesting_app: &str) -> Result<(Strin
     let started = Instant::now();
     let mut acked = false;
     loop {
+        // Quit, the ack deadline, and the total deadline are decided
+        // before this iteration reads a queued event. A result or a
+        // first acknowledgement that becomes visible only after one of
+        // those limits is not delivered. A run-loop slice is not itself
+        // a preemption bound.
+        if let Some(stop) = wait_stop(WaitGate {
+            shutting_down: SHUTTING_DOWN.load(Ordering::Acquire),
+            elapsed: started.elapsed(),
+            acked,
+        }) {
+            return finish_wait(ticket, requesting_app, stop);
+        }
         match ticket.receiver.try_recv() {
             Ok(ServiceEvent::Accepted) => {
                 acked = true;
@@ -248,24 +361,7 @@ fn wait_for_image(ticket: &ServiceTicket, requesting_app: &str) -> Result<(Strin
                 return Err(tr!("MacServices", "%1 isn’t connected.", ticket.device_name));
             }
         }
-        if SHUTTING_DOWN.load(Ordering::Acquire) {
-            continuity_camera::cancel_service("cancelled");
-            return Err(tr!("MacServices", "Camera capture cancelled on %1.", ticket.device_name));
-        }
-        if !acked && started.elapsed() >= ACK_TIMEOUT {
-            continuity_camera::cancel_service("no_ack");
-            return Err(tr!("MacServices", "%1 didn’t answer the capture request.", ticket.device_name));
-        }
-        if started.elapsed() >= TOTAL_TIMEOUT {
-            continuity_camera::cancel_service("expired");
-            return Err(tr!(
-                "MacServices",
-                "The capture from %1 didn’t finish in time, so nothing was returned to %2.",
-                ticket.device_name,
-                requesting_app
-            ));
-        }
-        run_loop_slice();
+        pump_slice();
     }
 }
 
@@ -283,6 +379,11 @@ fn handle_capture(pboard: &NSPasteboard, user_data: &str) -> Result<(), String> 
         return Err(format!("Waypair Link doesn’t know the capture kind “{user_data}”"));
     };
     let requesting_app = requesting_app_name();
+    // After shutdown, including a quit that arrived on a nested run-loop
+    // slice, refuse before any new Service request is installed.
+    if SHUTTING_DOWN.load(Ordering::Acquire) {
+        return Err("Waypair Link is closing".into());
+    }
     let ticket = match continuity_camera::begin_service(mode) {
         Ok(ticket) => ticket,
         Err(refusal) => {
@@ -370,17 +471,19 @@ mod provider {
             fn capture(
                 &self,
                 pboard: &NSPasteboard,
-                user_data: &NSString,
+                user_data: Option<&NSString>,
                 error: *mut *mut NSString,
             ) {
-                if let Err(message) = super::handle_capture(pboard, &user_data.to_string())
+                let user_data = user_data.map(|value| value.to_string()).unwrap_or_default();
+                if let Err(message) = super::handle_capture(pboard, &user_data)
                     && !error.is_null()
                 {
-                    // SAFETY: `error` is the caller's `NSString**` out
-                    // slot (or null); the string is autoreleased, as
-                    // AppKit expects for an error it only logs.
+                    // SAFETY: `error` is the caller's non-null `NSString**`
+                    // out slot. `autorelease_ptr` hands AppKit a +0 string
+                    // in the current pool, which it reads before the pool
+                    // drains.
                     unsafe {
-                        *error = Retained::autorelease_return(NSString::from_str(&message));
+                        *error = Retained::autorelease_ptr(NSString::from_str(&message));
                     }
                 }
             }
@@ -405,6 +508,9 @@ use provider::ServiceProvider;
 #[allow(unsafe_code)]
 pub fn register() {
     use objc2_app_kit::NSApplication;
+    if SHUTTING_DOWN.load(Ordering::Acquire) {
+        return;
+    }
     if REGISTERED.swap(true, Ordering::AcqRel) {
         return;
     }
@@ -436,8 +542,10 @@ pub fn register() {
 }
 
 /// Unregisters the provider and cancels any in-flight Service capture.
-/// Called before the QML engine and the core are dropped, so no Service
-/// invocation can start or outlive the app that would answer it.
+/// Idempotent. `aboutToQuit` calls this while a nested run-loop slice may
+/// still be inside [`wait_for_image`], so quit does not wait out the
+/// remaining deadline; `main` calls it again after `app.exec()` returns.
+/// A provider this process did not install is left in place.
 #[allow(unsafe_code)]
 pub fn unregister() {
     use objc2_app_kit::NSApplication;
@@ -464,6 +572,21 @@ mod tests {
         assert_eq!(mode_from_user_data("scan"), Some(CameraCaptureMode::Scan));
         assert_eq!(mode_from_user_data(""), None);
         assert_eq!(mode_from_user_data("video"), None);
+    }
+
+    #[test]
+    fn shutdown_and_expiry_beat_a_queued_result() {
+        // `wait_for_image` applies this gate before `try_recv`. None is
+        // the only state in which a queued image may be returned.
+        let open = WaitGate { shutting_down: false, elapsed: Duration::from_secs(1), acked: true };
+        assert_eq!(wait_stop(open), None);
+        assert_eq!(wait_stop(WaitGate { shutting_down: true, ..open }), Some(WaitStop::Shutdown));
+        assert_eq!(wait_stop(WaitGate { elapsed: TOTAL_TIMEOUT, ..open }), Some(WaitStop::Expired));
+        assert_eq!(wait_stop(WaitGate { elapsed: ACK_TIMEOUT, acked: false, ..open }), Some(WaitStop::NoAck));
+        // A first acknowledgement after 10 s does not clear that
+        // deadline, and an ack does not extend the 90 s total.
+        assert_eq!(wait_stop(WaitGate { elapsed: ACK_TIMEOUT, ..open }), None);
+        assert_eq!(wait_stop(WaitGate { elapsed: TOTAL_TIMEOUT - Duration::from_millis(1), ..open }), None);
     }
 
     #[test]

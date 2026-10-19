@@ -55,7 +55,11 @@ struct ServiceWaiter {
 
 /// Events delivered to a waiting Service invocation, matched strictly by
 /// `(device, request_id)` — never by device alone.
+///
+/// macOS reads these. Windows compiles the shared waiter and never
+/// receives from it, so the unread fields are allowed there only.
 #[derive(Debug)]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub enum ServiceEvent {
     /// The phone accepted (`camera.capture.ok`); the capture is still open.
     Accepted,
@@ -74,6 +78,7 @@ pub enum ServiceEvent {
 /// Why a Service capture could not be started. Checked locally, before
 /// anything is sent; a Service never queues.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub enum ServiceRefusal {
     /// Another capture (window or Service) is already in progress.
     Busy,
@@ -92,20 +97,24 @@ pub enum ServiceRefusal {
 
 /// Handle for one started Service capture. The receiver is fed by
 /// [`on_event`] (and by the spawned send task on failure) until exactly
-/// one terminal [`ServiceEvent`] arrives.
+/// one terminal [`ServiceEvent`] arrives. Correlation stays on the
+/// waiter (`device` + `request_id`); this ticket only carries what the
+/// provider wait needs to banner and to receive.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub struct ServiceTicket {
-    pub device: DeviceId,
     pub device_name: String,
-    pub request_id: String,
     pub mode: CameraCaptureMode,
     pub receiver: mpsc::Receiver<ServiceEvent>,
 }
 
-/// How many finished Service request ids are remembered. A result that
-/// arrives for one of these (after timeout, cancel, or delivery) is
-/// dropped here and never reaches the general clipboard or a later,
-/// unrelated request.
+/// How many finished Service request ids are remembered. The ring is a
+/// bounded cache, not the safety boundary: every id in
+/// [`SERVICE_REQUEST_PREFIX`] is reserved, so a late result is dropped
+/// even after eviction or a process restart.
 const MAX_CLOSED_SERVICE_IDS: usize = 32;
+
+/// Prefix of every Service request id. Ordinary captures use `cc-`.
+const SERVICE_REQUEST_PREFIX: &str = "mac-svc-";
 
 #[derive(Debug, Default)]
 struct ContinuityState {
@@ -350,8 +359,9 @@ pub fn start_for_index(preferred_index: usize, mode_raw: &str) {
     });
 }
 
-/// Records a Service request id as closed, so a late result for it is
-/// dropped instead of reaching the general clipboard or another request.
+/// Records a Service request id as closed. Eviction does not make the
+/// id ordinary: [`is_reserved_service_id`] still keeps it out of
+/// clipboard delivery.
 fn tombstone_locked(state: &mut ContinuityState, request_id: &str) {
     if state.closed_service_ids.iter().any(|id| id == request_id) {
         return;
@@ -379,10 +389,55 @@ fn take_service_locked(
     Some(waiter)
 }
 
+fn is_reserved_service_id(request_id: &str) -> bool {
+    request_id.starts_with(SERVICE_REQUEST_PREFIX)
+}
+
+/// Where a Service-namespaced capture event goes. Exact `(device, request_id)`
+/// match is preferred; every other reserved id is dropped, including after
+/// the closed-id ring evicts it or the process restarts with an empty ring.
+enum ServiceRoute<T> {
+    Matched(T),
+    Dropped,
+    Ordinary,
+}
+
+fn service_id_excluded(state: &ContinuityState, request_id: &str) -> bool {
+    is_reserved_service_id(request_id) || state.closed_service_ids.iter().any(|id| id == request_id)
+}
+
+fn route_service_ack(
+    state: &ContinuityState,
+    device: &DeviceId,
+    request_id: &str,
+) -> ServiceRoute<mpsc::Sender<ServiceEvent>> {
+    if let Some(sender) = state
+        .service
+        .as_ref()
+        .filter(|w| w.device == *device && w.request_id == request_id)
+        .map(|w| w.sender.clone())
+    {
+        return ServiceRoute::Matched(sender);
+    }
+    if service_id_excluded(state, request_id) { ServiceRoute::Dropped } else { ServiceRoute::Ordinary }
+}
+
+fn route_service_terminal(
+    state: &mut ContinuityState,
+    device: &DeviceId,
+    request_id: &str,
+) -> ServiceRoute<ServiceWaiter> {
+    if let Some(waiter) = take_service_locked(state, device, request_id) {
+        return ServiceRoute::Matched(waiter);
+    }
+    if service_id_excluded(state, request_id) { ServiceRoute::Dropped } else { ServiceRoute::Ordinary }
+}
+
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn next_service_request_id() -> String {
     let ms = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
     let seq = REQUEST_SEQ.fetch_add(1, Ordering::Relaxed);
-    format!("mac-svc-{ms}-{seq}")
+    format!("{SERVICE_REQUEST_PREFIX}{ms}-{seq}")
 }
 
 /// Starts a capture for a macOS Service invocation. All readiness checks
@@ -392,6 +447,7 @@ fn next_service_request_id() -> String {
 /// Continuity Camera. The request itself uses the core's live-only
 /// `request_camera_capture_now`, so `Ok` from the send is never a queue
 /// receipt; acceptance arrives as [`ServiceEvent::Accepted`].
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn begin_service(mode: CameraCaptureMode) -> Result<ServiceTicket, ServiceRefusal> {
     {
         let guard = STATE.lock().unwrap_or_else(|e| e.into_inner());
@@ -449,13 +505,7 @@ pub fn begin_service(mode: CameraCaptureMode) -> Result<ServiceTicket, ServiceRe
     }
     notify_continuity();
 
-    let ticket = ServiceTicket {
-        device: device_id,
-        device_name: device_name.clone(),
-        request_id: request_id.clone(),
-        mode,
-        receiver,
-    };
+    let ticket = ServiceTicket { device_name: device_name.clone(), mode, receiver };
     core_host::spawn(async move {
         if let Err(err) = node.request_camera_capture_now(device_id, request_id.clone(), mode).await {
             let message = match err {
@@ -474,6 +524,7 @@ pub fn begin_service(mode: CameraCaptureMode) -> Result<ServiceTicket, ServiceRe
 
 /// Reports a failed live send to the waiter for `request_id`, if it is
 /// still the current Service request, and closes it.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn fail_service(request_id: &str, message: String) {
     let waiter = {
         let mut guard = STATE.lock().unwrap_or_else(|e| e.into_inner());
@@ -584,63 +635,58 @@ fn spawn_focus_and_paste(hwnd: isize) {
 }
 
 /// Routes one event to the Service waiter when it belongs to it.
-/// Returns `true` when the event was consumed (or dropped as a late
-/// Service response) and ordinary delivery must not see it. Matching is
-/// strict: the same device *and* the waiter's current request id.
+/// Returns `true` when the event was consumed (or dropped as a reserved
+/// Service response) and ordinary delivery must not see it. An active
+/// waiter matches only the same device *and* its current request id.
+/// Any other `mac-svc-` id is dropped, whether or not it is still in the
+/// closed-id ring.
 fn intercept_service_event(event: &NodeEvent) -> bool {
     match event {
         NodeEvent::CameraCaptureAccepted { device, request_id } => {
-            let sender = {
+            let route = {
                 let guard = STATE.lock().unwrap_or_else(|e| e.into_inner());
-                guard
-                    .service
-                    .as_ref()
-                    .filter(|w| w.device == *device && w.request_id == *request_id)
-                    .map(|w| w.sender.clone())
+                route_service_ack(&guard, device, request_id)
             };
-            match sender {
-                Some(sender) => {
+            match route {
+                ServiceRoute::Matched(sender) => {
                     let _ = sender.send(ServiceEvent::Accepted);
                     true
                 }
-                None => false,
+                ServiceRoute::Dropped => true,
+                ServiceRoute::Ordinary => false,
             }
         }
         NodeEvent::CameraCaptureReceived { device, request_id, mime, data, .. } => {
-            let waiter = {
+            let route = {
                 let mut guard = STATE.lock().unwrap_or_else(|e| e.into_inner());
-                if guard.closed_service_ids.iter().any(|id| id == request_id) {
-                    // Late Service response: the core already saved it,
-                    // but it must not reach the general clipboard.
-                    return true;
-                }
-                take_service_locked(&mut guard, device, request_id)
+                route_service_terminal(&mut guard, device, request_id)
             };
-            match waiter {
-                Some(waiter) => {
+            match route {
+                ServiceRoute::Matched(waiter) => {
                     let _ =
                         waiter.sender.send(ServiceEvent::Received { mime: mime.clone(), data: data.clone() });
                     notify_continuity();
                     true
                 }
-                None => false,
+                // Late Service response: the core already saved it, but it
+                // must not reach the general clipboard or another request.
+                ServiceRoute::Dropped => true,
+                ServiceRoute::Ordinary => false,
             }
         }
         NodeEvent::CameraCaptureCancelled { device, request_id, reason } => {
-            let waiter = {
+            let route = {
                 let mut guard = STATE.lock().unwrap_or_else(|e| e.into_inner());
-                if guard.closed_service_ids.iter().any(|id| id == request_id) {
-                    return true;
-                }
-                take_service_locked(&mut guard, device, request_id)
+                route_service_terminal(&mut guard, device, request_id)
             };
-            match waiter {
-                Some(waiter) => {
+            match route {
+                ServiceRoute::Matched(waiter) => {
                     let _ = waiter.sender.send(ServiceEvent::Cancelled { reason: reason.clone() });
                     notify_continuity();
                     true
                 }
-                None => false,
+                ServiceRoute::Dropped => true,
+                ServiceRoute::Ordinary => false,
             }
         }
         NodeEvent::LinkChanged { device, link } if !matches!(link, LinkState::Online { .. }) => {
@@ -849,13 +895,19 @@ mod tests {
             }),
             closed_service_ids: VecDeque::new(),
         };
-        // A late result from another request, or from another device,
-        // never resolves this waiter.
-        assert!(take_service_locked(&mut state, &phone, "mac-svc-old-9").is_none());
-        assert!(take_service_locked(&mut state, &other, "mac-svc-1-1").is_none());
+        // A late reserved id, or the right id from another device, never
+        // resolves this waiter and never becomes ordinary delivery.
+        assert!(matches!(route_service_terminal(&mut state, &phone, "mac-svc-old-9"), ServiceRoute::Dropped));
+        assert!(matches!(route_service_terminal(&mut state, &other, "mac-svc-1-1"), ServiceRoute::Dropped));
+        assert!(matches!(route_service_ack(&state, &phone, "mac-svc-old-9"), ServiceRoute::Dropped));
+        // An ordinary id is left for the clipboard path.
+        assert!(matches!(route_service_terminal(&mut state, &phone, "cc-old"), ServiceRoute::Ordinary));
         assert!(state.service.is_some());
         // The exact (device, request_id) pair does, and closes the id.
-        assert!(take_service_locked(&mut state, &phone, "mac-svc-1-1").is_some());
+        assert!(matches!(
+            route_service_terminal(&mut state, &phone, "mac-svc-1-1"),
+            ServiceRoute::Matched(_)
+        ));
         assert!(state.service.is_none());
         assert!(state.closed_service_ids.iter().any(|id| id == "mac-svc-1-1"));
         // Closing is idempotent and bounded.
@@ -864,6 +916,26 @@ mod tests {
             tombstone_locked(&mut state, &format!("mac-svc-x-{n}"));
         }
         assert_eq!(state.closed_service_ids.len(), MAX_CLOSED_SERVICE_IDS);
+        assert!(!state.closed_service_ids.iter().any(|id| id == "mac-svc-1-1"));
+        // Eviction must not let the late image replace the clipboard or
+        // consume a same-device ordinary capture. An empty ring (restart)
+        // keeps the same exclusion.
+        state.active = Some(ActiveRequest {
+            request_id: "cc-9-9".into(),
+            device: phone,
+            device_name: "Pixel".into(),
+            mode: CameraCaptureMode::Photo,
+            target_hwnd: None,
+            target_title: String::new(),
+            queued_offline: false,
+        });
+        assert!(matches!(route_service_terminal(&mut state, &phone, "mac-svc-1-1"), ServiceRoute::Dropped));
+        assert!(matches!(route_service_ack(&state, &phone, "mac-svc-1-1"), ServiceRoute::Dropped));
+        state.closed_service_ids.clear();
+        assert!(matches!(route_service_terminal(&mut state, &phone, "mac-svc-1-1"), ServiceRoute::Dropped));
+        assert!(state.active.as_ref().is_some_and(|active| active.request_id == "cc-9-9"));
+        assert!(matches!(route_service_terminal(&mut state, &phone, "cc-9-9"), ServiceRoute::Ordinary));
+        assert!(state.active.as_ref().is_some_and(|active| active.request_id == "cc-9-9"));
     }
 
     #[test]
