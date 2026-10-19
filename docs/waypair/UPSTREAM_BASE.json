@@ -21,11 +21,11 @@
       "id": "main",
       "kind": "branch",
       "ref": "refs/heads/main",
-      "sha": "f8f725474570f7da31bb3559623332830f3bda4d",
+      "sha": "e4b279a14eb4ef3976ba6c3aa825f766d527f29e",
       "author": "Bee <302257494+thtbee@users.noreply.github.com>",
-      "subject": "Changelog: the window remembers where it was",
+      "subject": "PC: open the main window again, and keep its place on Windows",
       "in_port": true,
-      "role": "Canonical upstream main at last review. macos-pr24 is 6 commits ahead of it and 0 behind, so the port contains it."
+      "role": "Canonical main checked 2026-10-19. Reviewed MainWindow geometry fix adopted by history-preserving merge126cc12c1fc75e0e6f0fa312c82b839fcdaab184; Waypair title and monochrome mark retained. PR24 remains independently pinned below."
     },
     {
       "id": "macos-pr24",

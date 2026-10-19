@@ -121,7 +121,7 @@ NativeWindow {
 
     width: normalWidth
     height: normalHeight
-    title: "Waypair Link"
+    title: "Waypair Link" + (Qt.application.arguments.indexOf("--data-dir") >= 0 ? " — Test profile" : "")
 
     function screenKey(s) {
         if (!s) return ""
