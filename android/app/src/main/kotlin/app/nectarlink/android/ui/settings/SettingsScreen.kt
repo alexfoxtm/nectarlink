@@ -85,6 +85,7 @@ import app.nectarlink.android.core.BackgroundAccess
 import app.nectarlink.android.core.CoreState
 import app.nectarlink.android.core.Device
 import androidx.compose.ui.draw.drawBehind
+import app.nectarlink.android.notifications.NotificationFilterPage
 import app.nectarlink.android.notifications.NotificationListener
 import app.nectarlink.android.ui.guide.GuideHighlightTarget
 import app.nectarlink.android.ui.theme.Appearance
@@ -128,6 +129,7 @@ fun SettingsScreen(
     onHighlightConsumed: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    var notificationFilterOpen by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     var confirmUnpair by remember { mutableStateOf<Device?>(null) }
     var confirmClearEverything by remember { mutableStateOf(false) }
     var pickLanguage by remember { mutableStateOf(false) }
@@ -187,6 +189,10 @@ fun SettingsScreen(
         }
     }
 
+    if (notificationFilterOpen) {
+        NotificationFilterPage(onBack = { notificationFilterOpen = false }, modifier = modifier)
+    }
+    if (!notificationFilterOpen) {
     LazyColumn(
         state = listState,
         modifier = modifier.glassModalBlur(isGlass && anyDialogOpen),
@@ -572,7 +578,9 @@ fun SettingsScreen(
                     title = stringResource(R.string.settings_notifications),
                     highlighted = pulsingSectionKey == "notifications",
                 ) {
-                    NotificationAccess(state.notificationAccess)
+                    NotificationAccess(state.notificationAccess, onChooseFilter = {
+                        notificationFilterOpen = true
+                    })
                 }
             }
 
@@ -1018,6 +1026,7 @@ fun SettingsScreen(
             },
         )
     }
+    }
 }
 
 private tailrec fun Context.findActivity(): Activity? = when (this) {
@@ -1051,7 +1060,7 @@ private fun openDeveloperOptionsSettings(context: Context) {
  * "restricted settings" there.
  */
 @Composable
-private fun NotificationAccess(granted: Boolean) {
+private fun NotificationAccess(granted: Boolean, onChooseFilter: () -> Unit) {
     val context = LocalContext.current
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.weight(1f).padding(end = 12.dp)) {
@@ -1068,6 +1077,9 @@ private fun NotificationAccess(granted: Boolean) {
         } else {
             Button(onClick = open) { Text(stringResource(R.string.action_allow)) }
         }
+    }
+    TextButton(onClick = onChooseFilter, modifier = Modifier.padding(top = 4.dp)) {
+        Text("Choose apps and types")
     }
     if (!granted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {

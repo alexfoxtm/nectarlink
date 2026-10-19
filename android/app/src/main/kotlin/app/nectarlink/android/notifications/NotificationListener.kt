@@ -24,6 +24,7 @@ import app.nectarlink.android.NectarlinkApplication
 class NotificationListener : NotificationListenerService() {
     private val core get() = (application as NectarlinkApplication).core
     private val reader by lazy { NotificationReader(this) }
+    private val filters by lazy { NotificationFilterStore.create(this) }
     private val limiter = LiveRateLimiter { notification -> core.notificationPosted(notification) }
     private val worker = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
         Thread(r, "nectarlink-notif-reader").apply { isDaemon = true }
@@ -40,7 +41,7 @@ class NotificationListener : NotificationListenerService() {
             val ranking = runCatching { currentRanking }.getOrNull()
             limiter.clear()
             sent.clear()
-            val items = snapshot.mapNotNull { reader.read(it, ranking, update = false) }
+            val items = snapshot.mapNotNull { mirrored(it, ranking, update = false) }
             sent.addAll(items.map { it.key })
             core.notificationAccessChanged(true, items)
         }
@@ -58,7 +59,7 @@ class NotificationListener : NotificationListenerService() {
     override fun onNotificationPosted(sbn: StatusBarNotification, rankingMap: RankingMap?) {
         val key = sbn.key
         work {
-            val notification = reader.read(sbn, rankingMap, update = key in sent)
+            val notification = mirrored(sbn, rankingMap, update = key in sent)
             if (notification == null) {
                 // Something we mirrored may have turned into something we don't
                 // (e.g. it became ongoing); take it away on the PC.
@@ -106,15 +107,38 @@ class NotificationListener : NotificationListenerService() {
     }
 
     /** Re-reads active notifications after Elevated grants sensitive notification access. */
-    internal fun refreshActive() {
+    internal fun refreshActive() = applyFilter()
+
+    /**
+     * Replaces the mirrored set with notifications the current filter still
+     * allows. Called after the user changes apps or types.
+     */
+    internal fun applyFilter() {
         work {
             val items = runCatching {
                 val ranking = currentRanking
-                activeNotifications.orEmpty().mapNotNull { reader.read(it, ranking, update = true) }
-            }.getOrDefault(emptyList())
+                activeNotifications.orEmpty().mapNotNull { mirrored(it, ranking, update = true) }
+            }.getOrNull() ?: return@work
+            sent.clear()
             sent.addAll(items.map { it.key })
             core.notificationsRefreshed(items)
         }
+    }
+
+    /**
+     * App, type, user, and structural eligibility before any title or body
+     * is read. SMS and Gmail code readers are not consulted.
+     */
+    private fun mirrored(sbn: StatusBarNotification, ranking: RankingMap?, update: Boolean): app.nectarlink.core.Notification? {
+        val n = sbn.notification
+        val currentUser = sbn.user == android.os.Process.myUserHandle()
+        if (currentUser) filters.notePackage(sbn.packageName, packageName)
+        val groupSummary = n.flags and android.app.Notification.FLAG_GROUP_SUMMARY != 0
+        val localOnly = n.flags and android.app.Notification.FLAG_LOCAL_ONLY != 0
+        if (!currentUser || groupSummary || localOnly || sbn.packageName == packageName) return null
+        // Category only. The body stays unread until the saved filter allows it.
+        if (!filters.load().allows(sbn.packageName, NotificationFilterPolicy.kindOf(n))) return null
+        return reader.read(sbn, ranking, update)
     }
 
     /** What a PC asks for, on the listener that's connected now. */
