@@ -91,9 +91,19 @@ this section is a shipping checklist.
 2. **Keychain integration:** macOS `KeyProtector` for the device identity
    (today's non-Windows default stores `identity.key` unprotected) with
    release code identity, before any real pairing.
-3. **R2 updater:** single updater on the existing R2 appcast with Sparkle
-   Ed25519 verification and rollback; upstream's GitHub-Releases updater is
-   not the shipping channel.
+3. **R2 updater (implemented in source; Root compiles/tests):** a native
+   Sparkle 2.10 helper (`scripts/macos/WaypairUpdater.swift`, public
+   `SPUUpdater` with the host/parent bundle and `checkForUpdates()`) is
+   spawned by Rust's macOS updater path on a user-initiated `--check`; the
+   bundle carries `Sparkle.framework` (verified 2.10.0 source:
+   `/Applications/Waypair.app/Contents/Frameworks/Sparkle.framework`),
+   `SUFeedURL` pointing at the dedicated Nectar feed
+   (`waypair/nectar/macos/stable/appcast.xml`, never the legacy Swift
+   appcast), and the existing pinned
+   `SUPublicEDKey`. Upstream's GitHub-Releases installer path and any
+   SHA-only trust are never used on macOS; an unbundled helper is reported
+   truthfully as unavailable. Remaining: Root's Swift compile/sign, the
+   (Alex-authorized) R2 publication of that dedicated appcast, and rollback proof.
 4. **Notarization / distribution channel:** the free Apple Development owner
    channel ceiling stands until a separate Developer ID decision; first
    launch Gatekeeper behaviour must be documented, not hidden.

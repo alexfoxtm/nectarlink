@@ -26,6 +26,13 @@ BUILD_VERSION=""
 MACDEPLOYQT_ARG=""
 QT_BIN_DIR="${QT_BIN_DIR:-}"
 QML_DIR=""
+UPDATER_HELPER=""
+SPARKLE_FRAMEWORK_ARG=""
+# Dedicated Nectar feed (Alex-authorized, Root-published): never the legacy
+# Swift appcast, whose items must not offer themselves to this app; Sparkle
+# also only installs versions newer than the host bundle's CFBundleVersion.
+UPDATE_FEED="https://pub-a57457f4da43415ea6335550ee9e2983.r2.dev/waypair/nectar/macos/stable/appcast.xml"
+UPDATE_ED_KEY="uMzztqVF0M7BMYkWsL48ZJDvSxrqoVNSvqBKxYdu8ss="
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
@@ -51,6 +58,15 @@ Options:
   --macdeployqt <path>   Explicit macdeployqt. Wins over all discovery.
   --qt-bin-dir <dir>     Directory containing macdeployqt (or set QT_BIN_DIR).
   --qml-dir <dir>        QML sources for macdeployqt -qmldir. Default: desktop/app/qml in this repo.
+  --updater-helper <p>   Compiled WaypairUpdater (scripts/macos/WaypairUpdater.swift,
+                         built/signed by Root) to bundle at Contents/MacOS/WaypairUpdater.
+  --sparkle-framework <p> Sparkle.framework to bundle. Default: SPARKLE_FRAMEWORK env,
+                         else /Applications/Waypair.app/Contents/Frameworks/Sparkle.framework
+                         when present (verified Sparkle 2.10.0 source; never downloaded).
+  --update-feed <url>    SUFeedURL written to Info.plist. Default: the separate Nectar
+                         dedicated Nectar feed (NOT the legacy Swift appcast).
+  --update-ed-key <key>  SUPublicEDKey written to Info.plist. Default: the existing
+                         pinned Waypair Ed25519 public key.
   -h, --help             Show this help.
 
 Discovery order for macdeployqt: --macdeployqt (explicit), then
@@ -73,6 +89,10 @@ while [[ $# -gt 0 ]]; do
         --macdeployqt)  [[ $# -ge 2 ]] || fail "--macdeployqt needs a value"; MACDEPLOYQT_ARG="$2"; shift 2 ;;
         --qt-bin-dir)   [[ $# -ge 2 ]] || fail "--qt-bin-dir needs a value"; QT_BIN_DIR="$2"; shift 2 ;;
         --qml-dir)      [[ $# -ge 2 ]] || fail "--qml-dir needs a value"; QML_DIR="$2"; shift 2 ;;
+        --updater-helper) [[ $# -ge 2 ]] || fail "--updater-helper needs a value"; UPDATER_HELPER="$2"; shift 2 ;;
+        --sparkle-framework) [[ $# -ge 2 ]] || fail "--sparkle-framework needs a value"; SPARKLE_FRAMEWORK_ARG="$2"; shift 2 ;;
+        --update-feed)  [[ $# -ge 2 ]] || fail "--update-feed needs a value"; UPDATE_FEED="$2"; shift 2 ;;
+        --update-ed-key) [[ $# -ge 2 ]] || fail "--update-ed-key needs a value"; UPDATE_ED_KEY="$2"; shift 2 ;;
         -h|--help)      usage; exit 0 ;;
         *)              fail "unknown argument: $1 (try --help)" ;;
     esac
@@ -107,6 +127,22 @@ xml_escape() {
     value="${value//\'/&apos;}"
     printf '%s' "$value"
 }
+[[ "$UPDATE_FEED" == https://* && "$UPDATE_FEED" != *[[:cntrl:]\<\>\"\'\ ]* ]] || fail "invalid --update-feed (expected a clean https URL): $UPDATE_FEED"
+[[ "$UPDATE_ED_KEY" =~ ^[A-Za-z0-9+/]{43}=$ ]] || fail "invalid --update-ed-key (expected the 44-character base64 Ed25519 public key)"
+if [[ -n "$UPDATER_HELPER" ]]; then
+    [[ -f "$UPDATER_HELPER" && -x "$UPDATER_HELPER" ]] || fail "updater helper not found or not executable: $UPDATER_HELPER (Root compiles scripts/macos/WaypairUpdater.swift; this script never compiles)"
+fi
+SPARKLE_FRAMEWORK=""
+if [[ -n "$UPDATER_HELPER" ]]; then
+    if [[ -n "$SPARKLE_FRAMEWORK_ARG" ]]; then
+        SPARKLE_FRAMEWORK="$SPARKLE_FRAMEWORK_ARG"
+    elif [[ -n "${SPARKLE_FRAMEWORK:-}" ]]; then
+        SPARKLE_FRAMEWORK="$SPARKLE_FRAMEWORK"
+    elif [[ -d "/Applications/Waypair.app/Contents/Frameworks/Sparkle.framework" ]]; then
+        SPARKLE_FRAMEWORK="/Applications/Waypair.app/Contents/Frameworks/Sparkle.framework"
+    fi
+    [[ -n "$SPARKLE_FRAMEWORK" && -d "$SPARKLE_FRAMEWORK" ]] || fail "Sparkle.framework not found. Pass --sparkle-framework; nothing is downloaded. Updater cannot be bundled without it."
+fi
 if [[ "$BUNDLE_ID" == "com.waypair.mac" ]]; then
     fail "--bundle-id com.waypair.mac is refused during qualification: it would collide with the installed legacy app. Pick a distinct id; final id selection is a Root release decision."
 fi
@@ -150,6 +186,7 @@ EXEC_NAME="nectarlink-desktop"
 cp "$BINARY" "$APP_PATH/Contents/MacOS/$EXEC_NAME"
 chmod +x "$APP_PATH/Contents/MacOS/$EXEC_NAME"
 
+PLIST_UPDATE_FEED="$(xml_escape "$UPDATE_FEED")"
 PLIST_BUNDLE_ID="$(xml_escape "$BUNDLE_ID")"
 PLIST_APP_NAME="$(xml_escape "$APP_NAME")"
 PLIST_VERSION="$(xml_escape "$VERSION")"
@@ -189,6 +226,13 @@ cat > "$APP_PATH/Contents/Info.plist" <<EOF
     <array>
         <string>_nectarlink._udp</string>
     </array>
+    <!-- Sparkle (native helper, Contents/MacOS/WaypairUpdater) reads these.
+         Dedicated Nectar feed; the pinned
+         key is the existing Waypair Ed25519 public key, unchanged. -->
+    <key>SUFeedURL</key>
+    <string>$PLIST_UPDATE_FEED</string>
+    <key>SUPublicEDKey</key>
+    <string>$UPDATE_ED_KEY</string>
 </dict>
 </plist>
 EOF
@@ -201,6 +245,17 @@ mkdir -p "$APP_PATH/Contents/Resources/LICENSES"
 # let any copy error abort the packaging (set -e): notices must not be
 # silently dropped.
 cp -R "$REPO_ROOT/LICENSES/." "$APP_PATH/Contents/Resources/LICENSES/" || fail "failed to copy LICENSES/ into the bundle"
+
+# Native Sparkle updater: helper binary beside the main executable and the
+# framework under Contents/Frameworks (macOS loader path @executable_path/../Frameworks
+# is set when Root compiles the helper). Missing pieces already failed above.
+if [[ -n "$UPDATER_HELPER" ]]; then
+    cp "$UPDATER_HELPER" "$APP_PATH/Contents/MacOS/WaypairUpdater" || fail "failed to copy the updater helper into the bundle"
+    chmod +x "$APP_PATH/Contents/MacOS/WaypairUpdater"
+    mkdir -p "$APP_PATH/Contents/Frameworks"
+    cp -R "$SPARKLE_FRAMEWORK" "$APP_PATH/Contents/Frameworks/Sparkle.framework" || fail "failed to copy Sparkle.framework into the bundle"
+    printf 'Bundled Sparkle updater: %s (framework: %s)\n' "$UPDATER_HELPER" "$SPARKLE_FRAMEWORK"
+fi
 
 # Bundle Qt frameworks/plugins. -no-codesign: this script never signs; any
 # production signature is applied later by Root's release process.

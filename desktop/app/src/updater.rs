@@ -104,11 +104,63 @@ pub fn set_auto_install(on: bool) {
 /// Whether this copy updates itself (an installed one, not a build run
 /// from its folder).
 pub fn can_update() -> bool {
+    if cfg!(target_os = "macos") {
+        return macos_update_helper().is_some();
+    }
     std::env::current_exe().is_ok_and(|exe| autostart::is_installed(&exe))
 }
 
+/// macOS only: the bundled native Sparkle helper sitting next to this
+/// executable, present only when the packaged bundle also carries
+/// `Contents/Frameworks/Sparkle.framework`. Returns `None` (truthfully
+/// "updater unavailable") for a bare cargo binary or an incomplete bundle;
+/// the legacy GitHub-installer path below is never used on macOS, and no
+/// SHA-only download is ever trusted there.
+#[cfg(target_os = "macos")]
+fn macos_update_helper() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let macos_dir = exe.parent()?;
+    let helper = macos_dir.join("WaypairUpdater");
+    if !helper.is_file() {
+        return None;
+    }
+    let bundle = macos_dir.parent()?.parent()?;
+    bundle.join("Frameworks").join("Sparkle.framework").is_dir().then_some(helper)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn macos_update_helper() -> Option<PathBuf> {
+    None
+}
+
+/// Launches the Sparkle helper for a user-initiated check. Sparkle (inside
+/// the helper) reads `SUFeedURL`/`SUPublicEDKey` from the host bundle,
+/// verifies the Ed25519 appcast signature, and only ever offers a version
+/// newer than the host bundle's, so the dedicated Nectar feed cannot
+/// install the older Swift app over this one.
+#[cfg(target_os = "macos")]
+fn macos_user_check() -> Result<(), String> {
+    let helper = macos_update_helper()
+        .ok_or_else(|| "The macOS update helper isn't bundled in this build.".to_string())?;
+    std::process::Command::new(&helper)
+        .arg("--check")
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("Couldn't start the update helper: {e}"))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn macos_user_check() -> Result<(), String> {
+    Err("unavailable".into())
+}
+
 /// Checks soon after startup, then daily, while automatic checks are on.
+/// On macOS there is no background thread: checks are user-initiated
+/// through the bundled Sparkle helper (see `macos_user_check`).
 pub fn start() {
+    if cfg!(target_os = "macos") {
+        return;
+    }
     if !can_update() {
         return;
     }
@@ -147,6 +199,15 @@ pub fn start() {
 /// Checks now (blocking). `told`: the user asked, so say "up to date" too.
 /// Returns what to tell the user.
 pub fn check_now(told: bool) -> Option<String> {
+    if cfg!(target_os = "macos") {
+        return match macos_user_check() {
+            Ok(()) => Some(tr!("Updater", "Checking for updates…")),
+            Err(e) => {
+                tracing::info!(error = %e, "macOS update helper unavailable");
+                told.then(|| tr!("Updater", "This build can't check for updates yet."))
+            }
+        };
+    }
     if CHECKING.swap(true, Ordering::AcqRel) {
         return None;
     }
@@ -331,6 +392,12 @@ fn task_registered() -> bool {
 /// Blocking. Returns what went wrong, in words for the user. On success the
 /// app is about to quit for the installer.
 pub fn install(progress: impl FnMut(u64, u64)) -> Result<(), String> {
+    if cfg!(target_os = "macos") {
+        // Sparkle's own UI owns download, verification, install, and any
+        // progress display; the Rust progress callback is not used there.
+        let _ = progress;
+        return macos_user_check();
+    }
     let update = available().ok_or("There's no update to install.")?;
     let staged = stage(&update, progress).map_err(|e| {
         tracing::warn!(error = %e, "update download failed");
