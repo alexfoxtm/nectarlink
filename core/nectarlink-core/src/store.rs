@@ -886,6 +886,87 @@ impl Store {
         })
     }
 
+    /// Rewrites absolute file paths in timeline rows after the received-files
+    /// folder was renamed. Only `file`, `photo`, and `recording` rows are touched;
+    /// `target` paths must equal `old_prefix` or start with `old_prefix/` (path
+    /// component boundary). `detail` is updated only on exact matches in
+    /// `old_detail_labels`.
+    pub fn rewrite_timeline_downloads_path_prefix(
+        &self,
+        old_prefix: &Path,
+        new_prefix: &Path,
+        old_detail_labels: &[&str],
+        new_detail_label: &str,
+    ) -> Result<u32> {
+        let old = old_prefix.to_string_lossy();
+        let new = new_prefix.to_string_lossy();
+        if old.is_empty() || new.is_empty() {
+            return Ok(0);
+        }
+        // This connection is opened only for the migration. FULL plus a finished
+        // checkpoint makes the commit durable before the caller writes its done marker.
+        // The app's later store stays at synchronous=NORMAL.
+        let (updated, busy) = self.with(|c| {
+            c.pragma_update(None, "synchronous", "FULL")?;
+            let rows = {
+                let mut stmt = c.prepare(
+                    "SELECT id, target, detail FROM timeline WHERE kind IN ('file', 'photo', 'recording')",
+                )?;
+                stmt.query_map([], |row| {
+                    Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()?
+            };
+            let mut updated = 0u32;
+            let tx = c.unchecked_transaction()?;
+            for (id, target, detail) in rows {
+                let Some(new_target) = rewrite_timeline_target_prefix(&target, &old, &new) else {
+                    continue;
+                };
+                let new_detail = if old_detail_labels.iter().any(|label| detail == *label) {
+                    new_detail_label
+                } else {
+                    detail.as_str()
+                };
+                let changed = tx.execute(
+                    "UPDATE timeline SET target = ?2, detail = ?3 WHERE id = ?1",
+                    params![id, new_target, new_detail],
+                )?;
+                if changed > 0 {
+                    updated += 1;
+                }
+            }
+            tx.commit()?;
+            let busy: i64 = c.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| row.get(0))?;
+            Ok((updated, busy))
+        })?;
+        if busy != 0 {
+            return Err(Error::Storage(
+                "timeline rewrite checkpoint did not finish; history was not marked migrated".into(),
+            ));
+        }
+        Ok(updated)
+    }
+
+    fn timeline_targets_use_prefix(&self, prefix: &Path) -> Result<bool> {
+        let old = prefix.to_string_lossy();
+        if old.is_empty() {
+            return Ok(false);
+        }
+        self.with(|c| {
+            let mut stmt =
+                c.prepare("SELECT target FROM timeline WHERE kind IN ('file', 'photo', 'recording')")?;
+            let mut rows = stmt.query([])?;
+            while let Some(row) = rows.next()? {
+                let target: String = row.get(0)?;
+                if timeline_target_uses_prefix(&target, &old) {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        })
+    }
+
     pub fn delete_timeline(&self, id: i64) -> Result<bool> {
         self.with(|c| c.execute("DELETE FROM timeline WHERE id = ?1", [id]).map(|n| n > 0))
     }
@@ -2479,10 +2560,207 @@ fn cleanup_peers(conn: &Connection, keep_id: Option<&DeviceId>) -> rusqlite::Res
     Ok(())
 }
 
+fn line_has_downloads_prefix(line: &str, old_prefix: &str) -> bool {
+    if old_prefix.is_empty() {
+        return false;
+    }
+    line == old_prefix || line.strip_prefix(old_prefix).is_some_and(|suffix| suffix.starts_with('/'))
+}
+
+fn timeline_target_uses_prefix(target: &str, old_prefix: &str) -> bool {
+    target.split('\n').any(|line| line_has_downloads_prefix(line, old_prefix))
+}
+
+fn rewrite_timeline_target_prefix(target: &str, old_prefix: &str, new_prefix: &str) -> Option<String> {
+    let mut any = false;
+    let rewritten = target
+        .split('\n')
+        .map(|line| {
+            if line_has_downloads_prefix(line, old_prefix) {
+                any = true;
+                if line == old_prefix {
+                    new_prefix.to_owned()
+                } else {
+                    format!("{new_prefix}{}", &line[old_prefix.len()..])
+                }
+            } else {
+                line.to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    any.then_some(rewritten)
+}
+
+/// Opens the store under `data_dir` and rewrites timeline file paths after a
+/// received-files folder rename (see [`Store::rewrite_timeline_downloads_path_prefix`]).
+pub fn rewrite_timeline_downloads_path_prefix(
+    data_dir: &Path,
+    old_prefix: &Path,
+    new_prefix: &Path,
+    old_detail_labels: &[&str],
+    new_detail_label: &str,
+) -> Result<u32> {
+    let store = Store::open(data_dir)?;
+    store.rewrite_timeline_downloads_path_prefix(old_prefix, new_prefix, old_detail_labels, new_detail_label)
+}
+
+/// True when a `file`, `photo`, or `recording` target still uses `prefix`.
+///
+/// The downloads migration uses this to avoid marking a failed rename done while
+/// history links still point at the old folder. Other kinds are ignored.
+pub fn timeline_targets_use_prefix(data_dir: &Path, prefix: &Path) -> Result<bool> {
+    let store = Store::open(data_dir)?;
+    store.timeline_targets_use_prefix(prefix)
+}
+
+/// Inserts one timeline row. The desktop migration tests use this to seed history.
+#[doc(hidden)]
+pub fn insert_timeline_path_row(data_dir: &Path, kind: &str, target: &str, detail: &str) -> Result<i64> {
+    let store = Store::open(data_dir)?;
+    let device = [4u8; 32];
+    store.with(|c| {
+        c.execute(
+            "INSERT INTO timeline (
+                kind, device_id, device_name, incoming, timestamp,
+                title, detail, target, size_bytes, duration_secs, ref_id
+             ) VALUES (?1, ?2, 'P', 1, 1, 't', ?3, ?4, 0, 0, NULL)",
+            params![kind, &device[..], detail, target],
+        )?;
+        Ok(c.last_insert_rowid())
+    })
+}
+
+/// `(kind, target, detail)` for every timeline row, oldest id first.
+#[doc(hidden)]
+pub fn timeline_path_rows(data_dir: &Path) -> Result<Vec<(String, String, String)>> {
+    let store = Store::open(data_dir)?;
+    store.with(|c| {
+        let mut stmt = c.prepare("SELECT kind, target, detail FROM timeline ORDER BY id")?;
+        let rows = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use nectarlink_protocol::messages::{ScreenCorners, ScreenRect};
+    use std::path::Path;
+
+    #[test]
+    fn rewrite_timeline_target_prefix_respects_component_boundary() {
+        let old = "/Users/me/Downloads/Nectarlink";
+        let new = "/Users/me/Downloads/Waypair Link";
+        let one = format!("{old}/a.jpg");
+        let out = rewrite_timeline_target_prefix(&one, old, new).unwrap();
+        assert_eq!(out, format!("{new}/a.jpg"));
+        assert!(rewrite_timeline_target_prefix("/Users/me/Downloads/NectarlinkX/a.jpg", old, new).is_none());
+    }
+
+    #[test]
+    fn rewrite_timeline_downloads_path_prefix_updates_rows() {
+        let dir = std::env::temp_dir().join(format!("nl-timeline-rewrite-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(&dir).unwrap();
+        let old = Path::new("/tmp/Downloads/Nectarlink");
+        let new = Path::new("/tmp/Downloads/Waypair Link");
+        let now = 1_700_000_000i64;
+        let old_s = old.display().to_string();
+        let new_s = new.display().to_string();
+        store
+            .insert_timeline(
+                &NewTimelineEntry {
+                    kind: TimelineKind::File,
+                    device_id: DeviceId([2; 32]),
+                    device_name: "P".into(),
+                    incoming: true,
+                    timestamp: now,
+                    title: "x".into(),
+                    detail: r"Downloads\Nectarlink".into(),
+                    target: format!("{old_s}/x.bin"),
+                    size_bytes: 1,
+                    duration_secs: 0,
+                    ref_id: Some("f1".into()),
+                },
+                now,
+            )
+            .unwrap();
+        store
+            .insert_timeline(
+                &NewTimelineEntry {
+                    kind: TimelineKind::File,
+                    device_id: DeviceId([2; 32]),
+                    device_name: "P".into(),
+                    incoming: true,
+                    timestamp: now,
+                    title: "many".into(),
+                    detail: "keep-me".into(),
+                    target: format!("{old_s}/a.jpg\n{old_s}/b.jpg\n/tmp/Custom/z.bin"),
+                    size_bytes: 2,
+                    duration_secs: 0,
+                    ref_id: Some("f2".into()),
+                },
+                now,
+            )
+            .unwrap();
+        store
+            .insert_timeline(
+                &NewTimelineEntry {
+                    kind: TimelineKind::Clip,
+                    device_id: DeviceId([2; 32]),
+                    device_name: "P".into(),
+                    incoming: true,
+                    timestamp: now,
+                    title: "clip".into(),
+                    detail: r"Downloads\Nectarlink".into(),
+                    target: format!("{old_s}/clip.bin"),
+                    size_bytes: 0,
+                    duration_secs: 0,
+                    ref_id: Some("c1".into()),
+                },
+                now,
+            )
+            .unwrap();
+        let peer_id = DeviceId([3; 32]);
+        store.upsert_peer(&peer_id, &info("Pixel"), now).unwrap();
+        store.set_timeline_retention(TimelineRetention { max_days: 12, max_entries: 34 }, now).unwrap();
+        let n = store
+            .rewrite_timeline_downloads_path_prefix(
+                old,
+                new,
+                &[r"Downloads\Nectarlink"],
+                "Downloads/Waypair Link",
+            )
+            .unwrap();
+        assert_eq!(n, 2);
+        let row = store.get_timeline(1).unwrap().unwrap();
+        assert_eq!(row.target, format!("{new_s}/x.bin"));
+        assert_eq!(row.detail, "Downloads/Waypair Link");
+        let multi = store.get_timeline(2).unwrap().unwrap();
+        assert_eq!(multi.target, format!("{new_s}/a.jpg\n{new_s}/b.jpg\n/tmp/Custom/z.bin"));
+        assert_eq!(multi.detail, "keep-me");
+        let clip = store.get_timeline(3).unwrap().unwrap();
+        assert_eq!(clip.kind, TimelineKind::Clip);
+        assert_eq!(clip.target, format!("{old_s}/clip.bin"));
+        assert_eq!(clip.detail, r"Downloads\Nectarlink");
+        let again = store
+            .rewrite_timeline_downloads_path_prefix(
+                old,
+                new,
+                &[r"Downloads\Nectarlink"],
+                "Downloads/Waypair Link",
+            )
+            .unwrap();
+        assert_eq!(again, 0);
+        assert_eq!(store.get_peer(&peer_id).unwrap().unwrap().info.name, "Pixel");
+        let retention = store.timeline_retention().unwrap();
+        assert_eq!((retention.max_days, retention.max_entries), (12, 34));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     fn info(name: &str) -> DeviceInfo {
         DeviceInfo {

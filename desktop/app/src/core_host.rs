@@ -370,9 +370,9 @@ async fn run(data_dir: PathBuf, platform: Arc<dyn Platform>) {
     }
 }
 
-/// Where files from phones go: `Downloads\Nectarlink`.
+/// Where files from phones go (see [`crate::downloads`]).
 pub fn downloads_dir() -> PathBuf {
-    dirs::download_dir().unwrap_or_else(|| host().data_dir.join("received")).join("Nectarlink")
+    crate::downloads::received_dir()
 }
 
 /// How this PC presents itself to phones.
@@ -383,10 +383,22 @@ fn this_device() -> DeviceInfo {
         kind: if crate::win::is_laptop() { DeviceKind::Laptop } else { DeviceKind::Desktop },
         os: std::env::consts::OS.into(),
         os_ver: crate::win::os_version(),
-        model: None,
+        model: display_model(),
         accent: None,
         screen: None,
         install_id: crate::win::machine_guid().as_deref().and_then(nectarlink_core::install_id_from),
+    }
+}
+
+/// Visible device model only. Not an install id, key, or protocol fingerprint.
+fn display_model() -> Option<String> {
+    #[cfg(target_os = "macos")]
+    {
+        Some("Waypair Link".to_owned())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        None
     }
 }
 

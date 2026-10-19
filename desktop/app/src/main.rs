@@ -18,6 +18,7 @@ mod continuity_camera;
 mod core_host;
 mod deck;
 mod doctor;
+mod downloads;
 mod folder_sync;
 mod i18n;
 mod icons;
@@ -542,6 +543,10 @@ fn main() -> ExitCode {
     // Before any window: toasts and the taskbar both go by this ID.
     win::toast::set_process_id();
     win::jumplist::register(options.data_dir.as_deref());
+    let normal_profile = options.data_dir.is_none();
+    if let Err(e) = downloads::maybe_migrate_received_folder(&data_dir, normal_profile) {
+        tracing::error!(error = %e, "downloads folder migration failed; continuing startup");
+    }
     if let Err(e) = core_host::start(data_dir.clone(), Arc::new(DesktopPlatform)) {
         tracing::error!(error = %e, "can't start the core runtime");
         return ExitCode::FAILURE;

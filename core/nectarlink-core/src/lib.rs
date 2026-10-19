@@ -152,7 +152,8 @@ pub use store::{
     CHAT_RETENTION_SECS, ChatMessageRecord, ChatThreadRecord, MAX_CHAT_MESSAGES_PER_THREAD,
     MAX_CHAT_THREADS_PER_PEER, MAX_QUEUE_ACTIVE_BYTES, MAX_QUEUE_ACTIVE_ITEMS,
     MAX_QUEUE_CLIPBOARD_IMAGE_BYTES, QueueItem, QueueKind, QueuePayload, QueueStatus, QueuedFileSpec,
-    chat_thread_id, file_mtime_ms,
+    chat_thread_id, file_mtime_ms, insert_timeline_path_row, rewrite_timeline_downloads_path_prefix,
+    timeline_path_rows, timeline_targets_use_prefix,
 };
 pub use timeline::{
     DEFAULT_TIMELINE_MAX_DAYS, DEFAULT_TIMELINE_MAX_ENTRIES, DEFAULT_TIMELINE_PAGE_LIMIT,
