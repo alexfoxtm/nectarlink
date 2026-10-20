@@ -137,7 +137,8 @@ pub fn is_parameter_only(data: &[u8]) -> bool {
 }
 
 /// Extracts only SPS (NAL 7) and PPS (NAL 8) units from `data` with 4-byte Annex-B start codes.
-pub fn extract_sps_pps(data: &[u8]) -> Option<Vec<u8>> {
+#[cfg(test)]
+fn extract_sps_pps(data: &[u8]) -> Option<Vec<u8>> {
     let mut out = Vec::new();
     for nal in split_annexb(data) {
         if matches!(nal_type(nal), Some(7 | 8)) {
@@ -415,15 +416,15 @@ impl MirrorRecorder {
                         self.poison = Some(msg.clone());
                         return Err(msg);
                     }
-                    if let Some((rw, rh)) = self.recorded_dims {
-                        if rw != self.width || rh != self.height {
-                            let msg = format!(
-                                "resolution change from {rw}x{rh} to {}x{} after recording started",
-                                self.width, self.height
-                            );
-                            self.poison = Some(msg.clone());
-                            return Err(msg);
-                        }
+                    if let Some((rw, rh)) = self.recorded_dims
+                        && (rw != self.width || rh != self.height)
+                    {
+                        let msg = format!(
+                            "resolution change from {rw}x{rh} to {}x{} after recording started",
+                            self.width, self.height
+                        );
+                        self.poison = Some(msg.clone());
+                        return Err(msg);
                     }
                     Some((cur_sps, cur_pps))
                 }
@@ -486,11 +487,7 @@ impl MirrorRecorder {
             return Err("recording file size exceeds the limit".into());
         }
 
-        if let Err(e) = self.ensure_file_open() {
-            // `ensure_file_open` already poisoned on creation/header failure
-            // to retain owned cleanup; surface the same error here.
-            return Err(e);
-        }
+        self.ensure_file_open()?;
         // A poison set by a racing `on_config`/`set_sps_pps` between validation
         // and file creation must not produce a valid-looking sample.
         if let Some(err) = self.poison.clone() {
@@ -579,10 +576,10 @@ impl MirrorRecorder {
         let file = self.file.as_mut().ok_or("recording file is not open")?;
         // Fail closed when any sticky reconfig arrived between the last sample
         // and finalization (e.g. via `set_sps_pps` with no further packet).
-        if let Some((rw, rh)) = self.recorded_dims {
-            if rw != self.width || rh != self.height {
-                return Err("resolution changed after recording started".into());
-            }
+        if let Some((rw, rh)) = self.recorded_dims
+            && (rw != self.width || rh != self.height)
+        {
+            return Err("resolution changed after recording started".into());
         }
         let default_delta = (TIMESCALE / self.fps.max(1)).max(1);
         let mut sample_deltas = Vec::with_capacity(self.pts.len());
@@ -602,10 +599,10 @@ impl MirrorRecorder {
         // No fallback: both sets must be present and bounded.
         let (sps, pps) = extract_sps_and_pps_vecs(&self.sps_pps)?;
         // The finalized description must match the recorded samples.
-        if !self.recorded_sps.is_empty() || !self.recorded_pps.is_empty() {
-            if sps != self.recorded_sps || pps != self.recorded_pps {
-                return Err("SPS/PPS changed after recording started".into());
-            }
+        if (!self.recorded_sps.is_empty() || !self.recorded_pps.is_empty())
+            && (sps != self.recorded_sps || pps != self.recorded_pps)
+        {
+            return Err("SPS/PPS changed after recording started".into());
         }
         if sps.len() > u16::MAX as usize || pps.len() > u16::MAX as usize {
             return Err("SPS/PPS exceeds the avcC length limit".into());
@@ -644,14 +641,14 @@ impl MirrorRecorder {
         if let Some(err) = self.poison.clone() {
             return Err(err);
         }
-        if let Some(parent) = self.path.parent() {
-            if !parent.as_os_str().is_empty() {
-                fs::create_dir_all(parent).map_err(|e| {
-                    let msg = e.to_string();
-                    self.poison = Some(msg.clone());
-                    msg
-                })?;
-            }
+        if let Some(parent) = self.path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            fs::create_dir_all(parent).map_err(|e| {
+                let msg = e.to_string();
+                self.poison = Some(msg.clone());
+                msg
+            })?;
         }
         let ftyp = build_ftyp();
         let file = match File::options().write(true).create_new(true).open(&self.path) {

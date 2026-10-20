@@ -2280,7 +2280,7 @@ mod mac_receive_fixture {
     }
 
     fn assert_solid_red(bgra: &[u8]) {
-        assert!(!bgra.is_empty() && bgra.len() % 4 == 0);
+        assert!(!bgra.is_empty() && bgra.len().is_multiple_of(4));
         for px in bgra.as_chunks::<4>().0.iter().step_by(257) {
             assert!(px[0] <= 10 && px[1] <= 10 && px[2] >= 244, "expected the red fixture frame, got {px:?}");
         }
@@ -2302,8 +2302,10 @@ mod mac_receive_fixture {
         let directory = tempfile::tempdir().expect("disposable receiver state");
         crate::core_host::start_receiver_fixture(directory.path().to_path_buf());
         // The Mac receive seam is present; capture and audio stay refused.
-        assert!(super::VIEW_ONLY, "mac stays view-only until native acceptance");
-        assert!(!super::OPTIONS.audio, "mac never asks for the phone's sound");
+        const {
+            assert!(super::VIEW_ONLY, "mac stays view-only until native acceptance");
+            assert!(!super::OPTIONS.audio, "mac never asks for the phone's sound");
+        }
 
         // View-only gates: no app windows, no input, no control requests.
         let device = DeviceId([0x4D; 32]);
