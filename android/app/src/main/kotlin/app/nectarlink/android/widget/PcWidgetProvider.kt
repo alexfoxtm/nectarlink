@@ -198,7 +198,7 @@ class PcWidgetProvider : AppWidgetProvider() {
                             PeerOnlineLabel.AWAY -> "Relay"
                             PeerOnlineLabel.USB -> "USB"
                             PeerOnlineLabel.WIFI -> "Wi‑Fi"
-                            PeerOnlineLabel.CELLULAR -> pc.battery?.cellType?.trim()?.takeIf { it.isNotEmpty() } ?: "Cellular"
+                            PeerOnlineLabel.CELLULAR -> "Cellular"
                             PeerOnlineLabel.ETHERNET -> "Ethernet"
                             PeerOnlineLabel.CONNECTED -> "Connected"
                         }

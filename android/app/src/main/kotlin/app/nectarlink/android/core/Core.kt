@@ -412,7 +412,7 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
             scope.launch(Dispatchers.IO) {
                 _state
                     .map { s ->
-                        s.devices.map { d -> listOf(d.id, d.name, d.online, d.canWake, d.wakeState) }
+                        s.devices.map { d -> listOf(d.id, d.name, d.online, d.canWake, d.wakeState, d.displayPath, d.usbMedium, d.routeTransport) }
                     }
                     .distinctUntilChanged()
                     .collect {

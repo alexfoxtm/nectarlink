@@ -47,9 +47,3 @@ internal fun resolvePeerOnlineLabel(
         else -> PeerOnlineLabel.CONNECTED
     }
 }
-
-/** Cellular display name: the proven network type when known, else the fallback label. */
-internal fun cellularLabelName(cellType: String?, fallbackName: String): String {
-    val type = cellType?.trim().orEmpty()
-    return type.ifEmpty { fallbackName }
-}
