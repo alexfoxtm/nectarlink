@@ -52,6 +52,12 @@ has a Stop button. Choosing another
   choose the phone's hotspot from the Wi-Fi networks this PC has saved.
   When Instant Hotspot on Home turns the phone's hotspot on, the PC joins
   it by itself. Windows keeps the password; NectarLink never sees it.
+- **Turn off the background connection.** In the phone's **Settings ›
+  Background & battery**, or with **Turn off** on its notification. NectarLink
+  then connects only while the app is open, and the notification goes
+  away. Mirroring, file transfers, the webcam and the mic still finish
+  before it disconnects. Thanks to Abinanthan
+  ([#22](https://github.com/thtbee/nectarlink/pull/22)).
 - **Pair a phone with a tablet (or another phone).** In NectarLink's
   pairing screen, **Pair a phone or tablet instead** shows a code to scan
   from the other device. Once paired, each shows the other on Home with its
