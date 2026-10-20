@@ -5534,214 +5534,225 @@ What it needs
 <context>
     <name>PhoneBrowserPage</name>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="17"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="21"/>
         <source>your phone</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="37"/>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="335"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="41"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="341"/>
         <source>Phone storage</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="57"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="58"/>
         <source>Empty file</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="58"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="59"/>
         <source>%1 B</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="59"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="60"/>
         <source>%1 KB</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="59"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="60"/>
         <source>%1 MB</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="59"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="60"/>
         <source>%1 GB</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="59"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="60"/>
         <source>%1 TB</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="122"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="127"/>
         <source>Saved “%1”</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="123"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="128"/>
         <source>Couldn&apos;t save “%1”</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="149"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="154"/>
         <source>Save “%1” to</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="178"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="183"/>
         <source>Up one folder</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="207"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="212"/>
         <source>%1+ items</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="208"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="213"/>
         <source>1 item</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="208"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="213"/>
         <source>%1 items</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="250"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="255"/>
         <source>Saving “%1”…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="259"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="264"/>
         <source>Refresh</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="291"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="296"/>
         <source>Showing the first %1 items in this folder.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="307"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="312"/>
         <source>Loading folder</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="336"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="342"/>
         <source>Phone storage isn&apos;t available</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="337"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="343"/>
         <source>%1 isn&apos;t connected</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="338"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="344"/>
         <source>Allow this Mac on %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="339"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="345"/>
         <source>Share folders on %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="340"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="346"/>
         <source>This folder is gone</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="341"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="347"/>
         <source>This folder can&apos;t be opened</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="342"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="348"/>
         <source>Couldn&apos;t load this folder</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="343"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="349"/>
         <source>This folder is empty</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="358"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="364"/>
         <source>Pair your phone to browse its shared folders.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="359"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="365"/>
+        <source>See the folders %1 shares with this Mac. Nothing is read until you choose to browse, and access ends when you leave this page.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="366"/>
         <source>Browsing phone folders isn&apos;t available in this version yet.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="360"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="367"/>
         <source>Connect %1 to browse its storage.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="361"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="368"/>
         <source>Tap Allow on the storage request on %1, or turn on its storage switch for this Mac in Settings › Devices. Then try again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="362"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="369"/>
         <source>On %1, turn on All files access or add a folder under Selected folders only in Settings › Permissions › Photos and videos. Then try again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="363"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="370"/>
         <source>It may have been moved or deleted on %1.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="364"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="371"/>
         <source>Go back to the top of the phone&apos;s storage.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="365"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="372"/>
         <source>Check that %1 is nearby and unlocked, then try again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="381"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="389"/>
+        <source>Browse shared folders</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="398"/>
         <source>Go up</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="389"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="406"/>
         <source>Back to top</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="397"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="389"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="414"/>
         <source>Try again</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="419"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="436"/>
         <source>Files and folders in %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="455"/>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="455"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="472"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="472"/>
         <source>Folder</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="562"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="579"/>
         <source>Save…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="565"/>
+        <location filename="../../qml/pages/PhoneBrowserPage.qml" line="582"/>
         <source>Save %1</source>
         <translation type="unfinished"></translation>
     </message>

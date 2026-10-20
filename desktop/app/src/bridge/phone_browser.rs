@@ -4,7 +4,8 @@
 //! List roles, from Qt.UserRole: name, path, isDir, size, modified. Rows are
 //! opened and saved by their `path` role, which stays right when a refresh
 //! moves rows. `saveFinished(bool)` fires when an explicit save settles. There
-//! is no preview API.
+//! is no preview API. `device` is empty until `open` and again once the
+//! consent ends.
 
 use std::{path::PathBuf, pin::Pin};
 
@@ -100,6 +101,8 @@ pub mod qobject {
         #[cxx_name = "rowCount"]
         fn row_count(self: &PhoneBrowser, parent: &QModelIndex) -> i32;
 
+        /// Only for the user's explicit "Browse shared folders" action: it is
+        /// the consent every later listing and save needs, until `close`.
         #[qinvokable]
         fn open(self: &PhoneBrowser, device: &QString);
         #[qinvokable]

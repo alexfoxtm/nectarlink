@@ -5,7 +5,9 @@ import app.nectarlink
 
 // Phone storage: browse the folders a paired phone shares and save single
 // files to a folder chosen on this Mac. Read-only: no preview, upload, rename
-// or delete. The listing is dropped whenever the page is hidden or destroyed.
+// or delete. Nothing is listed until the user picks Browse shared folders for
+// this phone; leaving the page or switching phones ends that and drops the
+// listing.
 Item {
     id: page
     property bool active: false
@@ -14,19 +16,21 @@ Item {
 
     readonly property bool validDevice: page.deviceId.trim().length > 0
     readonly property bool shouldOpen: page.active && PhoneBrowser.enabled && page.validDevice
+    readonly property bool consented: page.shouldOpen && PhoneBrowser.device.length > 0
+        && PhoneBrowser.device === page.deviceId
     readonly property string phoneName: page.deviceName.length > 0 ? page.deviceName : qsTr("your phone")
     readonly property string status: PhoneBrowser.status
     readonly property bool loading: page.status === "loading"
-    readonly property bool browsing: page.validDevice && PhoneBrowser.enabled && page.status !== "offline"
+    readonly property bool browsing: page.consented
 
     // The one message shown instead of the listing, or "" when the list (or a
     // spinner) owns the content area.
     readonly property string stateKind: {
         if (!page.validDevice) return "noDevice"
         if (!PhoneBrowser.enabled) return "off"
-        if (page.status === "offline") return "offline"
-        if (["denied", "unsupported", "notFound", "invalid", "failed"].indexOf(page.status) >= 0)
-            return page.status
+        if (["offline", "denied", "unsupported"].indexOf(page.status) >= 0) return page.status
+        if (!page.consented) return "consent"
+        if (["notFound", "invalid", "failed"].indexOf(page.status) >= 0) return page.status
         if (page.status === "ready" && PhoneBrowser.count === 0) return "empty"
         return ""
     }
@@ -44,13 +48,10 @@ Item {
     property string saveMessage: ""
     property bool saveFailed: false
 
-    function sync() {
-        if (page.shouldOpen) {
-            if (PhoneBrowser.status === "hidden" || PhoneBrowser.device !== page.deviceId)
-                PhoneBrowser.open(page.deviceId)
-        } else {
-            PhoneBrowser.close()
-        }
+    // The explicit consent for the selected phone, and the only caller of open.
+    function browse() {
+        if (page.shouldOpen)
+            PhoneBrowser.open(page.deviceId)
     }
 
     function formatBytes(bytes) {
@@ -99,13 +100,17 @@ Item {
             page.requestSave(item.name, item.path)
     }
 
-    onShouldOpenChanged: page.sync()
+    onShouldOpenChanged: PhoneBrowser.close()
     onDeviceIdChanged: {
         page.cancelPendingSave()
         page.saveMessage = ""
-        page.sync()
+        PhoneBrowser.close()
     }
-    Component.onCompleted: page.sync()
+    onConsentedChanged: {
+        if (!page.consented)
+            page.cancelPendingSave()
+    }
+    Component.onCompleted: PhoneBrowser.close()
     Component.onDestruction: PhoneBrowser.close()
 
     visible: active
@@ -151,7 +156,7 @@ Item {
             const path = pendingPath
             const name = pendingName
             page.cancelPendingSave()
-            if (path.length === 0 || PhoneBrowser.saving)
+            if (path.length === 0 || PhoneBrowser.saving || !page.consented)
                 return
             page.saveMessage = ""
             page.savingName = name
@@ -332,7 +337,8 @@ Item {
                 size: 16
                 text: {
                     switch (page.stateKind) {
-                    case "noDevice": return qsTr("Phone storage")
+                    case "noDevice":
+                    case "consent": return qsTr("Phone storage")
                     case "off": return qsTr("Phone storage isn't available")
                     case "offline": return qsTr("%1 isn't connected").arg(page.phoneName)
                     case "denied": return qsTr("Allow this Mac on %1").arg(page.phoneName)
@@ -356,6 +362,7 @@ Item {
                 text: {
                     switch (page.stateKind) {
                     case "noDevice": return qsTr("Pair your phone to browse its shared folders.")
+                    case "consent": return qsTr("See the folders %1 shares with this Mac. Nothing is read until you choose to browse, and access ends when you leave this page.").arg(page.phoneName)
                     case "off": return qsTr("Browsing phone folders isn't available in this version yet.")
                     case "offline": return qsTr("Connect %1 to browse its storage.").arg(page.phoneName)
                     case "denied": return qsTr("Tap Allow on the storage request on %1, or turn on its storage switch for this Mac in Settings › Devices. Then try again.").arg(page.phoneName)
@@ -370,8 +377,18 @@ Item {
             Row {
                 anchors.horizontalCenter: parent.horizontalCenter
                 spacing: 8
-                visible: upStateButton.visible || topButton.visible || retryButton.visible
+                visible: browseButton.visible || upStateButton.visible || topButton.visible || retryButton.visible
 
+                Button {
+                    id: browseButton
+                    visible: page.shouldOpen
+                        && ["consent", "offline", "denied", "unsupported"].indexOf(page.stateKind) >= 0
+                    variant: page.stateKind === "consent" ? "fill" : "text"
+                    size: "sm"
+                    iconPath: page.stateKind === "consent" ? Icons.folder : ""
+                    text: page.stateKind === "consent" ? qsTr("Browse shared folders") : qsTr("Try again")
+                    onClicked: page.browse()
+                }
                 Button {
                     id: upStateButton
                     visible: page.stateKind === "notFound" && PhoneBrowser.canUp
@@ -383,16 +400,16 @@ Item {
                 }
                 Button {
                     id: topButton
-                    visible: (page.stateKind === "notFound" || page.stateKind === "invalid") && page.shouldOpen
+                    visible: (page.stateKind === "notFound" || page.stateKind === "invalid") && page.consented
                     variant: upStateButton.visible ? "text" : "tonal"
                     size: "sm"
                     text: qsTr("Back to top")
-                    onClicked: PhoneBrowser.open(page.deviceId)
+                    onClicked: page.browse()
                 }
                 Button {
                     id: retryButton
-                    visible: page.stateKind === "failed" || page.stateKind === "denied" || page.stateKind === "unsupported"
-                    variant: page.stateKind === "failed" ? "tonal" : "text"
+                    visible: page.stateKind === "failed" && page.consented
+                    variant: "tonal"
                     size: "sm"
                     text: qsTr("Try again")
                     onClicked: PhoneBrowser.refresh()

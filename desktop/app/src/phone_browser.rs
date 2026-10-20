@@ -6,6 +6,12 @@
 //! advertise capabilities, change either device's `storage` toggle, or mount
 //! anything in Finder.
 //!
+//! Nothing is listed or saved until [`open`], the page's explicit "Browse
+//! shared folders" action for one phone. That consent lives only in this
+//! session and ends on [`close`], another phone, a disconnect or removal, or
+//! the phone refusing access; every later listing needs it, checked under the
+//! same lock that starts the listing.
+//!
 //! A save streams on the core runtime and writes on a blocking thread: a
 //! temporary file made with `create_new` in the chosen folder, then linked
 //! into place (never over an existing file) under the state lock, so closing,
@@ -339,7 +345,9 @@ impl State {
                         BrowseStatus::Denied | BrowseStatus::Unsupported | BrowseStatus::Offline
                     );
                     if self.session.fail_list(command, status) && lost {
-                        // Access to this phone's files is gone, so is the file being saved.
+                        // Access to this phone's files is gone, so are the consent
+                        // to browse it and the file being saved.
+                        self.session.forget(status);
                         self.cancel_save(true);
                     }
                 }
@@ -353,6 +361,54 @@ impl State {
             self.inflight = Some(cmd.generation);
         }
         next
+    }
+
+    /// The explicit "Browse shared folders" action for `device`: the only way
+    /// the session gets a phone.
+    fn open(&mut self, device: DeviceId) -> Option<ListCommand> {
+        if self.session.device.is_some_and(|open| open != device) {
+            // Another phone: a save from the last one stops.
+            self.cancel_save(true);
+        }
+        self.start_list(device, "")
+    }
+
+    /// A toggle, a capability or the phone's offer changed for `device`: its
+    /// save and any queued listing end now, its names stay hidden, and core
+    /// admits the folder again (or refuses, which ends the consent).
+    fn access_changed(&mut self, device: DeviceId) -> Option<ListCommand> {
+        if self.session.device != Some(device) {
+            return None;
+        }
+        self.queued = None;
+        self.cancel_save(true);
+        self.relist(|session| Some(session.path.clone()))
+    }
+
+    /// Lists `choose`'s folder on the phone already opened; nothing without one.
+    fn relist(&mut self, choose: impl FnOnce(&mut Session) -> Option<String>) -> Option<ListCommand> {
+        let device = self.session.device?;
+        let path = choose(&mut self.session)?;
+        self.start_list(device, &path)
+    }
+
+    fn start_list(&mut self, device: DeviceId, path: &str) -> Option<ListCommand> {
+        let cmd = self.session.begin_list(device, path).ok()?;
+        if self.inflight.is_some() {
+            self.queued = Some(cmd);
+            None
+        } else {
+            self.inflight = Some(cmd.generation);
+            Some(cmd)
+        }
+    }
+
+    /// Ends the consent: no phone, no names, nothing queued, no save.
+    fn close(&mut self) {
+        self.session.forget(BrowseStatus::Idle);
+        self.queued = None;
+        self.cancel_save(false);
+        self.save_notice = None;
     }
 }
 
@@ -420,61 +476,33 @@ pub fn take_save_notice() -> Option<bool> {
     lock().save_notice.take()
 }
 
+/// The user chose "Browse shared folders" for `device`.
 pub fn open(device: DeviceId) {
-    request_list(device, "");
+    request_list(|st| st.open(device));
 }
 
 pub fn up() {
-    if !ENABLED {
-        return;
-    }
-    let (device, path) = {
-        let st = lock();
-        let Some(device) = st.session.device else { return };
-        (device, parent_path(&st.session.path))
-    };
-    request_list(device, &path);
+    request_list(|st| st.relist(|session| Some(parent_path(&session.path))));
 }
 
 /// Opens the listed folder at `path`.
 pub fn open_folder(path: &str) {
-    if !ENABLED {
-        return;
-    }
-    let device = {
-        let st = lock();
-        let Some(device) = st.session.device else { return };
-        if !st.session.rows.iter().any(|row| row.is_dir && row.path == path) {
-            return;
-        }
-        device
-    };
-    request_list(device, path);
+    request_list(|st| {
+        st.relist(|session| {
+            session.rows.iter().any(|row| row.is_dir && row.path == path).then(|| path.to_owned())
+        })
+    });
 }
 
 pub fn refresh() {
-    if !ENABLED {
-        return;
-    }
-    let (device, path) = {
-        let st = lock();
-        let Some(device) = st.session.device else { return };
-        (device, st.session.path.clone())
-    };
-    request_list(device, &path);
+    request_list(|st| st.relist(|session| Some(session.path.clone())));
 }
 
 pub fn close() {
     if !ENABLED {
         return;
     }
-    {
-        let mut st = lock();
-        st.session.forget(BrowseStatus::Idle);
-        st.queued = None;
-        st.cancel_save(false);
-        st.save_notice = None;
-    }
+    lock().close();
     notify();
 }
 
@@ -509,8 +537,9 @@ pub fn on_event(event: &NodeEvent) {
         NodeEvent::StorageChanged { device, path } => {
             recheck_if(*device, |session| covers(path, &session.path));
         }
-        // A toggle, a capability or the phone's own offer changed: access may have.
-        NodeEvent::Capabilities(matrix) => recheck_if(matrix.device, |_| true),
+        // Emitted only when the matrix changed; battery and round-trip times
+        // arrive as other events.
+        NodeEvent::Capabilities(matrix) => request_list(|st| st.access_changed(matrix.device)),
         NodeEvent::PeerInfoChanged { device, .. } => recheck_if(*device, |_| true),
         // Relay access has its own switch; only a new path matters, not round-trip times.
         NodeEvent::LinkChanged { device, link: LinkState::Online { path, .. } } => {
@@ -529,14 +558,11 @@ pub fn on_event(event: &NodeEvent) {
 /// access, or this folder, changed. Core checks access again on the way, and
 /// a refusal ends a running save too.
 fn recheck_if(device: DeviceId, changed: impl FnOnce(&mut Session) -> bool) {
-    let path = {
-        let mut st = lock();
-        if st.session.device != Some(device) || !changed(&mut st.session) {
-            return;
-        }
-        st.session.path.clone()
-    };
-    request_list(device, &path);
+    request_list(|st| {
+        st.relist(|session| {
+            (session.device == Some(device) && changed(session)).then(|| session.path.clone())
+        })
+    });
 }
 
 fn session_lost(device: DeviceId, status: BrowseStatus) {
@@ -552,29 +578,11 @@ fn session_lost(device: DeviceId, status: BrowseStatus) {
     notify();
 }
 
-fn request_list(device: DeviceId, path: &str) {
+fn request_list(start: impl FnOnce(&mut State) -> Option<ListCommand>) {
     if !ENABLED {
         return;
     }
-    let spawn = {
-        let mut st = lock();
-        if st.session.device.is_some_and(|open| open != device) {
-            // Another phone: a save from the last one stops.
-            st.cancel_save(true);
-        }
-        match st.session.begin_list(device, path) {
-            Ok(cmd) => {
-                if st.inflight.is_some() {
-                    st.queued = Some(cmd);
-                    None
-                } else {
-                    st.inflight = Some(cmd.generation);
-                    Some(cmd)
-                }
-            }
-            Err(BrowseReject::InvalidPath) => None,
-        }
-    };
+    let spawn = start(&mut lock());
     if let Some(cmd) = spawn {
         spawn_list(cmd);
     }
@@ -953,5 +961,68 @@ mod tests {
         assert!(covers("Notes/Sub", "Notes/Sub"));
         assert!(!covers("Note", "Notes/Sub"));
         assert!(!covers("Notes/Sub", "Notes"));
+    }
+
+    #[test]
+    fn browsing_needs_consent_that_close_and_lost_access_end() {
+        let dev = device(4);
+        let refresh = |session: &mut Session| Some(session.path.clone());
+        let mut state = State::empty();
+        assert!(state.relist(refresh).is_none());
+        assert_eq!(state.session.device, None);
+
+        // Closing while a listing is in flight: its reply can't bring the phone back.
+        let first = state.open(dev).expect("explicit browse");
+        state.close();
+        assert!(state.finish_list(&first, ListOutcome::Done(Ok(vec![entry("a.txt", false, 3)]))).is_none());
+        assert_eq!(state.session.device, None);
+        assert!(state.session.rows.is_empty());
+        assert!(state.relist(refresh).is_none());
+
+        // The phone refusing access ends the consent; a recheck can't list again.
+        let second = state.open(dev).unwrap();
+        state.session.accept_list(&second, vec![entry("a.txt", false, 3)]);
+        let folder = Path::new("/tmp/phone-browser");
+        let job = state.begin_save("a.txt", Some(folder)).unwrap();
+        let queued = state.relist(refresh);
+        assert!(queued.is_none() && state.queued.is_some());
+        let denied = state.queued.clone().unwrap();
+        state.inflight = Some(denied.generation);
+        assert!(state.finish_list(&denied, ListOutcome::Done(Err(Error::Unsupported))).is_none());
+        assert_eq!(state.session.device, None);
+        assert_eq!(state.session.status, BrowseStatus::Unsupported);
+        assert!(state.relist(refresh).is_none());
+        assert_eq!(state.publish(&job, || panic!("linked after access ended")), Err(SaveError::Cancelled));
+    }
+
+    #[test]
+    fn capability_change_ends_the_save_and_queue_before_core_answers() {
+        let (dev, other) = (device(5), device(6));
+        let mut state = State::empty();
+        let first = state.open(dev).unwrap();
+        let listed = vec![entry("Notes", true, 0), entry("a.txt", false, 3)];
+        assert!(state.finish_list(&first, ListOutcome::Done(Ok(listed))).is_none());
+        let job = state.begin_save("a.txt", Some(Path::new("/tmp/phone-browser"))).unwrap();
+        let inflight = state.relist(|session| Some(session.path.clone())).unwrap();
+        assert!(state.relist(|_| Some("Notes".to_owned())).is_none());
+        let navigation = state.queued.clone().expect("queued behind the listing");
+
+        assert!(state.access_changed(other).is_none());
+        assert!(state.save_is_current(job.epoch, job.device));
+
+        // A listing is still in flight, so core's answer waits, but the save,
+        // the queued listing and the names end now.
+        assert!(state.access_changed(dev).is_none());
+        assert!(!state.save_is_current(job.epoch, job.device));
+        assert_eq!(state.save_notice, Some(false));
+        assert!(state.session.rows.is_empty());
+        let recheck = state.queued.clone().expect("recheck queued");
+        assert!(recheck != navigation && recheck.generation == state.session.generation);
+
+        let next = state.finish_list(&inflight, ListOutcome::Done(Ok(vec![entry("a.txt", false, 3)])));
+        assert!(state.session.rows.is_empty());
+        assert!(next.as_ref() == Some(&recheck));
+        assert!(state.finish_list(&recheck, ListOutcome::Done(Err(Error::Denied))).is_none());
+        assert_eq!(state.session.device, None);
     }
 }

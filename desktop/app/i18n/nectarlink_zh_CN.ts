@@ -5810,214 +5810,225 @@ What it needs
 <context>
     <name>PhoneBrowserPage</name>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="17"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="21"/>
         <source>your phone</source>
         <translation>你的手机</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="37"/>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="335"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="41"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="341"/>
         <source>Phone storage</source>
         <translation>手机存储</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="57"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="58"/>
         <source>Empty file</source>
         <translation>空文件</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="58"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="59"/>
         <source>%1 B</source>
         <translation>%1 B</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="59"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="60"/>
         <source>%1 KB</source>
         <translation>%1 KB</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="59"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="60"/>
         <source>%1 MB</source>
         <translation>%1 MB</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="59"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="60"/>
         <source>%1 GB</source>
         <translation>%1 GB</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="59"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="60"/>
         <source>%1 TB</source>
         <translation>%1 TB</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="122"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="127"/>
         <source>Saved “%1”</source>
         <translation>已保存“%1”</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="123"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="128"/>
         <source>Couldn&apos;t save “%1”</source>
         <translation>无法保存“%1”</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="149"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="154"/>
         <source>Save “%1” to</source>
         <translation>将“%1”保存到</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="178"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="183"/>
         <source>Up one folder</source>
         <translation>上一级文件夹</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="207"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="212"/>
         <source>%1+ items</source>
         <translation>%1+ 个项目</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="208"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="213"/>
         <source>1 item</source>
         <translation>1 个项目</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="208"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="213"/>
         <source>%1 items</source>
         <translation>%1 个项目</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="250"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="255"/>
         <source>Saving “%1”…</source>
         <translation>正在保存“%1”…</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="259"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="264"/>
         <source>Refresh</source>
         <translation>刷新</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="291"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="296"/>
         <source>Showing the first %1 items in this folder.</source>
         <translation>仅显示此文件夹中的前 %1 个项目。</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="307"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="312"/>
         <source>Loading folder</source>
         <translation>正在加载文件夹</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="336"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="342"/>
         <source>Phone storage isn&apos;t available</source>
         <translation>手机存储不可用</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="337"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="343"/>
         <source>%1 isn&apos;t connected</source>
         <translation>%1 未连接</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="338"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="344"/>
         <source>Allow this Mac on %1</source>
         <translation>在 %1 上允许这台 Mac</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="339"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="345"/>
         <source>Share folders on %1</source>
         <translation>在 %1 上共享文件夹</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="340"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="346"/>
         <source>This folder is gone</source>
         <translation>此文件夹已不存在</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="341"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="347"/>
         <source>This folder can&apos;t be opened</source>
         <translation>无法打开此文件夹</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="342"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="348"/>
         <source>Couldn&apos;t load this folder</source>
         <translation>无法加载此文件夹</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="343"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="349"/>
         <source>This folder is empty</source>
         <translation>此文件夹为空</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="358"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="364"/>
         <source>Pair your phone to browse its shared folders.</source>
         <translation>配对手机后即可浏览其共享的文件夹。</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="359"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="365"/>
+        <source>See the folders %1 shares with this Mac. Nothing is read until you choose to browse, and access ends when you leave this page.</source>
+        <translation>查看 %1 与这台 Mac 共享的文件夹。只有在你选择浏览后才会读取内容，离开此页面即会结束访问。</translation>
+    </message>
+    <message>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="366"/>
         <source>Browsing phone folders isn&apos;t available in this version yet.</source>
         <translation>此版本暂不支持浏览手机文件夹。</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="360"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="367"/>
         <source>Connect %1 to browse its storage.</source>
         <translation>连接 %1 后即可浏览其存储。</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="361"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="368"/>
         <source>Tap Allow on the storage request on %1, or turn on its storage switch for this Mac in Settings › Devices. Then try again.</source>
         <translation>在 %1 上的存储请求中点按“允许”，或在设置 › 设备中为这台 Mac 打开存储开关，然后重试。</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="362"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="369"/>
         <source>On %1, turn on All files access or add a folder under Selected folders only in Settings › Permissions › Photos and videos. Then try again.</source>
         <translation>在 %1 上，前往设置 › 权限 › 照片和视频，打开“所有文件访问权限”，或在“仅选定的文件夹”下添加一个文件夹，然后重试。</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="363"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="370"/>
         <source>It may have been moved or deleted on %1.</source>
         <translation>它可能已在 %1 上被移动或删除。</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="364"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="371"/>
         <source>Go back to the top of the phone&apos;s storage.</source>
         <translation>返回手机存储的顶层。</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="365"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="372"/>
         <source>Check that %1 is nearby and unlocked, then try again.</source>
         <translation>请确认 %1 就在附近且已解锁，然后重试。</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="381"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="389"/>
+        <source>Browse shared folders</source>
+        <translation>浏览共享文件夹</translation>
+    </message>
+    <message>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="398"/>
         <source>Go up</source>
         <translation>返回上一级</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="389"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="406"/>
         <source>Back to top</source>
         <translation>返回顶层</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="397"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="389"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="414"/>
         <source>Try again</source>
         <translation>重试</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="419"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="436"/>
         <source>Files and folders in %1</source>
         <translation>%1 中的文件和文件夹</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="455"/>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="455"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="472"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="472"/>
         <source>Folder</source>
         <translation>文件夹</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="562"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="579"/>
         <source>Save…</source>
         <translation>保存…</translation>
     </message>
     <message>
-        <location filename="../qml/pages/PhoneBrowserPage.qml" line="565"/>
+        <location filename="../qml/pages/PhoneBrowserPage.qml" line="582"/>
         <source>Save %1</source>
         <translation>保存 %1</translation>
     </message>
