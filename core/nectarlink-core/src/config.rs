@@ -199,7 +199,8 @@ pub trait Platform: Send + Sync + 'static {
     /// agree) stream it with [`Node::mirror_open`](crate::Node::mirror_open).
     /// Or, with `options.app`, for an app in a window of its own: run it on
     /// a display of its own and stream that (no asking: that's Elevated).
-    /// The stream's config packets carry `options.session`. `Err` (a
+    /// The stream's config packets carry `options.session` and echo
+    /// `options.request`, the generation this request owns. `Err` (a
     /// reason for logs) when it can't.
     fn mirror_requested(
         &self,

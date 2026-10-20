@@ -28,15 +28,21 @@ data class MirrorRequest(
     val audio: Boolean,
     val stayAwake: Boolean = false,
     val screenOff: Boolean = false,
+    /** The requester's generation, echoed in the stream's config (`null` predates correlation). */
+    val request: ULong? = null,
 ) {
-    fun toIntent(intent: Intent): Intent = intent
-        .putExtra("pc", pcId)
-        .putExtra("maxSize", maxSize)
-        .putExtra("fps", fps)
-        .putExtra("bitrate", bitrate)
-        .putExtra("audio", audio)
-        .putExtra("stayAwake", stayAwake)
-        .putExtra("screenOff", screenOff)
+    fun toIntent(intent: Intent): Intent {
+        intent
+            .putExtra("pc", pcId)
+            .putExtra("maxSize", maxSize)
+            .putExtra("fps", fps)
+            .putExtra("bitrate", bitrate)
+            .putExtra("audio", audio)
+            .putExtra("stayAwake", stayAwake)
+            .putExtra("screenOff", screenOff)
+        if (request != null) intent.putExtra("request", request.toLong())
+        return intent
+    }
 
     companion object {
         fun of(intent: Intent): MirrorRequest? = intent.getStringExtra("pc")?.let {
@@ -48,6 +54,7 @@ data class MirrorRequest(
                 intent.getBooleanExtra("audio", false),
                 intent.getBooleanExtra("stayAwake", false),
                 intent.getBooleanExtra("screenOff", false),
+                if (intent.hasExtra("request")) intent.getLongExtra("request", 0L).toULong() else null,
             )
         }
     }

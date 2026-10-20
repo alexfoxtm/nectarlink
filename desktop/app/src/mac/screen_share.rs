@@ -244,6 +244,7 @@ fn run_capture_loop(
                         width,
                         height,
                         session: nectarlink_core::MIRROR_SCREEN,
+                        request: options.request,
                     };
                     if matches!(sender.send(PacketKind::Config, 0, cfg.to_cbor()), MirrorSend::Closed) {
                         break;

@@ -39,6 +39,7 @@ struct RecordingPlatform {
     texts: Mutex<Vec<(Vec<String>, String)>>,
     mms_sent: Mutex<Vec<MmsRecord>>,
     mirror_asks: Mutex<Vec<String>>,
+    mirror_requests: Mutex<Vec<nectarlink_core::MirrorStart>>,
     mirror_reject: std::sync::atomic::AtomicBool,
     watch_offers: Mutex<Vec<String>>,
     mic_asks: Mutex<Vec<String>>,
@@ -137,6 +138,7 @@ impl Platform for RecordingPlatform {
         if self.mirror_reject.load(std::sync::atomic::Ordering::SeqCst) {
             return Err("consent declined".into());
         }
+        self.mirror_requests.lock().unwrap().push(options.clone());
         let sound = if options.audio { " with sound" } else { "" };
         let app = options.app.as_deref().map(|a| format!(" {a} as {}", options.session)).unwrap_or_default();
         let watch = options.watch.as_deref().map(|p| format!(" watching {p}")).unwrap_or_default();
@@ -1791,14 +1793,20 @@ async fn the_phone_screen_streams_to_the_pc() {
         stay_awake: false,
         screen_off: false,
         watch: None,
+        request: None,
     };
     with_timeout("start", pc.node.mirror_start(phone_id, options)).await.unwrap();
     assert_eq!(*phone.platform.mirror_asks.lock().unwrap(), ["start 1920 with sound"]);
 
     // The user agreed: the phone streams.
     let stream = Arc::new(with_timeout("open", phone.node.mirror_open(pc_id)).await.unwrap());
-    let config =
-        nectarlink_core::MirrorConfig { codec: "h264".into(), width: 1080, height: 2400, session: 0 };
+    let config = nectarlink_core::MirrorConfig {
+        codec: "h264".into(),
+        width: 1080,
+        height: 2400,
+        session: 0,
+        request: None,
+    };
     let sender = stream.clone();
     let sent = tokio::task::spawn_blocking(move || {
         [
@@ -1911,6 +1919,7 @@ async fn phone_apps_open_in_windows_of_their_own() {
         stay_awake: false,
         screen_off: false,
         watch: None,
+        request: None,
     };
 
     // Not Elevated yet: no apps, no app windows.
@@ -1940,7 +1949,13 @@ async fn phone_apps_open_in_windows_of_their_own() {
     assert!(pc.node.mirror_start(phone_id, app(0)).await.is_err());
     with_timeout("start", pc.node.mirror_start(phone_id, app(7))).await.unwrap();
     let stream = Arc::new(with_timeout("open", phone.node.mirror_open(pc_id)).await.unwrap());
-    let config = nectarlink_core::MirrorConfig { codec: "h264".into(), width: 720, height: 1280, session: 7 };
+    let config = nectarlink_core::MirrorConfig {
+        codec: "h264".into(),
+        width: 720,
+        height: 1280,
+        session: 7,
+        request: None,
+    };
     let sender = stream.clone();
     let sent = tokio::task::spawn_blocking(move || {
         [
@@ -1987,7 +2002,13 @@ async fn phone_apps_open_in_windows_of_their_own() {
     // with no more pictures to send.
     with_timeout("start again", pc.node.mirror_start(phone_id, app(8))).await.unwrap();
     let stream = Arc::new(with_timeout("open again", phone.node.mirror_open(pc_id)).await.unwrap());
-    let config = nectarlink_core::MirrorConfig { codec: "h264".into(), width: 720, height: 1280, session: 8 };
+    let config = nectarlink_core::MirrorConfig {
+        codec: "h264".into(),
+        width: 720,
+        height: 1280,
+        session: 8,
+        request: None,
+    };
     let sender = stream.clone();
     tokio::task::spawn_blocking(move || sender.send(PacketKind::Config, 0, config.to_cbor())).await.unwrap();
     wait_for(&mut pc, "showing 8", |e| {
@@ -4005,7 +4026,8 @@ async fn timeline_records_files_clips_links_photos_recordings_and_sessions_witho
 
     // 6. Screen mirroring session & webcam session (start/end recorded as one line with duration).
     let mstream = phone.node.mirror_open(pc_id).await.unwrap();
-    let mcfg = MirrorConfig { codec: "h264".into(), width: 1080, height: 2400, session: 0 }.to_cbor();
+    let mcfg =
+        MirrorConfig { codec: "h264".into(), width: 1080, height: 2400, session: 0, request: None }.to_cbor();
     let _ = tokio::task::block_in_place(|| mstream.send(PacketKind::Config, 0, mcfg));
     wait_for(&mut pc, "mirroring started", |e| match e {
         NodeEvent::Mirroring { device, on: true, .. } if *device == phone_id => Some(()),
@@ -5517,11 +5539,17 @@ async fn usb_transport_carries_features_when_wifi_unavailable() {
         stay_awake: false,
         screen_off: false,
         watch: None,
+        request: None,
     };
     with_timeout("start mirror over USB", pc.node.mirror_start(phone_id, options)).await.unwrap();
     let stream = Arc::new(with_timeout("open mirror over USB", phone.node.mirror_open(pc_id)).await.unwrap());
-    let mirror_cfg =
-        nectarlink_core::MirrorConfig { codec: "h264".into(), width: 1080, height: 2400, session: 0 };
+    let mirror_cfg = nectarlink_core::MirrorConfig {
+        codec: "h264".into(),
+        width: 1080,
+        height: 2400,
+        session: 0,
+        request: None,
+    };
     let sender = stream.clone();
     let sent = tokio::task::spawn_blocking(move || {
         [
@@ -5573,6 +5601,7 @@ async fn reverse_mirror_requires_pc_consent_and_remote_input_toggle() {
         stay_awake: false,
         screen_off: false,
         watch: None,
+        request: None,
     };
 
     // (a) A paired phone calling `mirror_start` against a PC is denied by default
@@ -5613,7 +5642,13 @@ async fn reverse_mirror_requires_pc_consent_and_remote_input_toggle() {
     assert_eq!(*pc.platform.mirror_asks.lock().unwrap(), ["start 1280"]);
 
     let stream = Arc::new(with_timeout("pc mirror_open", pc.node.mirror_open(phone_id)).await.unwrap());
-    let cfg = MirrorConfig { codec: "h264".into(), width: 1280, height: 720, session: MIRROR_SCREEN };
+    let cfg = MirrorConfig {
+        codec: "h264".into(),
+        width: 1280,
+        height: 720,
+        session: MIRROR_SCREEN,
+        request: None,
+    };
     let sender = stream.clone();
     let sent = tokio::task::spawn_blocking(move || {
         [
@@ -6211,6 +6246,7 @@ async fn play_on_phone_lets_the_phone_watch_only_what_the_pc_offered() {
         stay_awake: false,
         screen_off: false,
         watch: Some(player.into()),
+        request: None,
     };
 
     // Not offered: the phone can't watch, and the PC isn't asked to share its screen.
@@ -6592,6 +6628,87 @@ async fn a_copied_link_waits_on_the_mac_until_taken_once() {
     assert_eq!(pc.node.take_copied_link(shown.id).as_deref(), Some(url));
     assert_eq!(pc.node.take_copied_link(shown.id), None);
 
+    pc.node.shutdown().await;
+    phone.node.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn correlated_mirror_requires_a_live_request_and_revocation_ends_it() {
+    use nectarlink_core::{
+        MIRROR_CAPTURE, MIRROR_SCREEN, MIRROR_VIEW, MirrorConfig, MirrorSend, MirrorStart, PacketKind,
+    };
+    const CORRELATION: &str = "mirror.correlation";
+    let mut pc = device_with("Desktop", DeviceKind::Desktop, &[MIRROR_VIEW, CORRELATION]).await;
+    let mut phone = device_with("Pixel", DeviceKind::Phone, &[MIRROR_CAPTURE, CORRELATION]).await;
+    pair_qr(&mut pc, &mut phone).await;
+    let (pc_id, phone_id) = (pc.node.device_id(), phone.node.device_id());
+
+    async fn stream(
+        phone: &Node,
+        pc: nectarlink_core::DeviceId,
+        request: Option<u64>,
+    ) -> Arc<nectarlink_core::MirrorStream> {
+        let stream = Arc::new(phone.mirror_open(pc).await.unwrap());
+        let sender = stream.clone();
+        tokio::task::spawn_blocking(move || {
+            let config = MirrorConfig {
+                codec: "h264".into(),
+                width: 640,
+                height: 360,
+                session: MIRROR_SCREEN,
+                request,
+            };
+            assert_eq!(sender.send(PacketKind::Config, 0, config.to_cbor()), MirrorSend::Queued);
+            let _ = sender.send(PacketKind::Keyframe, 1, vec![9; 16]);
+        })
+        .await
+        .unwrap();
+        stream
+    }
+    async fn closed(stream: &nectarlink_core::MirrorStream) {
+        with_timeout("correlated mirror stream closed", async {
+            while !stream.is_closed() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await;
+    }
+
+    // Both peers negotiate: a stream without any requested generation is refused.
+    let unsolicited = stream(&phone.node, pc_id, None).await;
+    closed(&unsolicited).await;
+    assert!(pc.platform.screen.got.lock().unwrap().is_empty());
+
+    let options = MirrorStart {
+        max_size: 640,
+        fps: 30,
+        bitrate: 1_000_000,
+        audio: false,
+        session: MIRROR_SCREEN,
+        app: None,
+        stay_awake: false,
+        screen_off: false,
+        watch: None,
+        request: None,
+    };
+    pc.node.mirror_start(phone_id, options).await.unwrap();
+    let request = phone.platform.mirror_requests.lock().unwrap().last().unwrap().request;
+    assert!(request.is_some(), "production start stamps and forwards its request");
+    let active = stream(&phone.node, pc_id, request).await;
+    wait_for(&mut pc, "correlated mirror accepted", |event| {
+        matches!(event, NodeEvent::Mirroring { on: true, .. }).then_some(())
+    })
+    .await;
+    assert!(pc.platform.screen.got.lock().unwrap().iter().any(|v| v == "config 640x360"));
+
+    // Real permission-off clears request ownership before any network update.
+    pc.node.set_device_toggle(phone_id, "mirroring", false).unwrap();
+    closed(&active).await;
+    pc.node.set_device_toggle(phone_id, "mirroring", true).unwrap();
+    let count = pc.platform.screen.got.lock().unwrap().len();
+    let stale = stream(&phone.node, pc_id, request).await;
+    closed(&stale).await;
+    assert_eq!(pc.platform.screen.got.lock().unwrap().len(), count, "revoked request must not reopen");
     pc.node.shutdown().await;
     phone.node.shutdown().await;
 }

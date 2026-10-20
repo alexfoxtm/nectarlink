@@ -37,6 +37,8 @@ internal class ScreenEncoder(
     private val fps: Int,
     private val bitrate: Int,
     preferredCodec: String = "h264",
+    /** The answered request's generation, echoed in the stream's config (`null` predates correlation). */
+    private val request: ULong? = null,
     private val onEnded: () -> Unit,
 ) {
     private val context = context.applicationContext
@@ -98,7 +100,7 @@ internal class ScreenEncoder(
                 val closed = stream.send(
                     VideoPacketKind.CONFIG,
                     0u,
-                    mirrorConfigCodec(activeCodecName, size.width.toUInt(), size.height.toUInt(), 0u),
+                    mirrorConfigCodec(activeCodecName, size.width.toUInt(), size.height.toUInt(), 0u, request),
                 ) == MirrorSendResult.CLOSED || drain(codec)
                 runCatching { codec.stop() }
                 codec.release()

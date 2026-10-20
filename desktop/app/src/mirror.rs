@@ -51,6 +51,8 @@ const OPTIONS: MirrorStart = MirrorStart {
     stay_awake: false,
     screen_off: false,
     watch: None,
+    // Placeholder: core `mirror::start` stamps the live generation.
+    request: None,
 };
 /// A Mac shows a phone's screen only, until that is validated: no app
 /// windows, no input to the phone, no clipboard sent from a mirror window.

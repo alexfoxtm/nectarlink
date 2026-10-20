@@ -234,6 +234,14 @@ pub(crate) struct Shared {
     pub(crate) deck: crate::deck::Current,
     /// Stop signals for phone screens shown here, by phone.
     pub(crate) mirror_stops: Mutex<HashMap<MirrorStop, Arc<tokio::sync::Notify>>>,
+    /// Request tokens this device sent in `mirror.start`, by peer and
+    /// session: the stream that answers must echo the token back.
+    pub(crate) mirror_outgoing: Mutex<HashMap<(DeviceId, u32), u64>>,
+    /// Request tokens this device accepted in `mirror.start`, by peer and
+    /// session: `mirror.stop` for an older token takes no action.
+    pub(crate) mirror_incoming: Mutex<HashMap<(DeviceId, u32), u64>>,
+    /// Next mirror request generation handed out by [`crate::mirror::start`].
+    pub(crate) mirror_next_request: std::sync::atomic::AtomicU64,
     /// Peers granted one-time reverse-mirror consent for the current session.
     pub(crate) pc_mirror_sessions: Mutex<std::collections::HashSet<DeviceId>>,
     /// Play on phone offers this PC made, by phone: the player and when.
@@ -1323,6 +1331,7 @@ impl Shared {
         self.toggles.remove_peer(peer);
         self.deck.remove_peer(peer);
         self.stop_webcam(peer);
+        self.clear_mirror_peer(peer);
         crate::copied_link::clear(self, Some(peer));
         if !dropped_queue.is_empty() {
             self.emit(NodeEvent::QueueChanged);
@@ -1367,6 +1376,8 @@ impl Shared {
             existing.close(CLOSE_DUPLICATE, b"duplicate");
         }
 
+        // Replacing a connection cannot inherit its prior mirror requests.
+        self.clear_mirror_peer(&peer);
         let remote_device = remote.device.sanitized();
         if let Err(e) = self.store.update_info(&peer, &remote_device) {
             tracing::warn!(error = %e, "failed to update peer info");
@@ -1450,6 +1461,7 @@ impl Shared {
         let current = sessions.get(&ended.peer).is_some_and(|current| Arc::ptr_eq(current, ended));
         if current {
             sessions.remove(&ended.peer);
+            self.clear_mirror_peer(&ended.peer);
             lock(&self.pc_mirror_sessions).remove(&ended.peer);
             lock(&self.watch_offers).remove(&ended.peer);
             lock(&self.storage).remove_peer(&ended.peer);
@@ -1820,6 +1832,9 @@ impl Node {
             tasks: Default::default(),
             deck: Default::default(),
             mirror_stops: Mutex::new(HashMap::new()),
+            mirror_outgoing: Mutex::new(HashMap::new()),
+            mirror_incoming: Mutex::new(HashMap::new()),
+            mirror_next_request: std::sync::atomic::AtomicU64::new(1),
             pc_mirror_sessions: Mutex::new(std::collections::HashSet::new()),
             watch_offers: Mutex::new(HashMap::new()),
             webcam_stops: Mutex::new(HashMap::new()),
@@ -2241,7 +2256,7 @@ impl Node {
             if toggle == crate::mirror::PC_MIRROR_TOGGLE {
                 lock(&self.shared.pc_mirror_sessions).remove(&peer);
             }
-            self.shared.stop_showing_all(&peer);
+            self.shared.clear_mirror_peer(&peer);
             let platform = self.shared.platform.clone();
             drop(
                 self.shared
@@ -2250,7 +2265,7 @@ impl Node {
             );
             if let Some(session) = self.shared.session(&peer) {
                 self.shared.runtime.spawn(async move {
-                    let _ = crate::mirror::stop(&session, crate::MIRROR_SCREEN).await;
+                    let _ = crate::mirror::stop(&session, crate::MIRROR_SCREEN, None).await;
                 });
             }
         }
@@ -2860,11 +2875,14 @@ impl Node {
     }
 
     /// Stops showing a phone's screen or app window (`mirroring`), and
-    /// tells the phone.
+    /// tells the phone. The stop carries this request's generation, so a
+    /// delayed stop can't end a replacement mirroring the phone already
+    /// accepted.
     pub async fn mirror_stop(&self, peer: DeviceId, mirroring: u32) {
         self.shared.stop_showing(&peer, mirroring);
+        let request = self.shared.take_mirror_outgoing(&peer, mirroring);
         if let Ok(session) = self.connected(&peer) {
-            let _ = crate::mirror::stop(&session, mirroring).await;
+            let _ = crate::mirror::stop(&session, mirroring, request).await;
         }
     }
 
@@ -2905,13 +2923,16 @@ impl Node {
     }
 
     /// Opens this phone's video stream to a PC that asked for the screen
-    /// or an app window.
+    /// or an app window. The stream's config packets echo the accepted
+    /// request's generation (see [`crate::MirrorStart::request`]); the
+    /// binding lives in the recorded incoming request, so this stays
+    /// session-agnostic.
     pub async fn mirror_open(&self, peer: DeviceId) -> Result<crate::MirrorStream> {
         self.open_mirror_stream(peer, false).await
     }
 
     /// Opens this phone's sound stream to a PC that asked for the screen
-    /// with its sound.
+    /// with its sound. Answered only while the screen request is live.
     pub async fn mirror_open_audio(&self, peer: DeviceId) -> Result<crate::MirrorStream> {
         self.open_mirror_stream(peer, true).await
     }

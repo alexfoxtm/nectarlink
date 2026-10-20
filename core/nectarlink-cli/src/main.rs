@@ -3192,6 +3192,7 @@ async fn run(cli: &Cli, node: &Node) -> Result<()> {
                 stay_awake: false,
                 screen_off: false,
                 watch: None,
+                request: None,
             };
             node.mirror_start(id, options).await.context("the phone didn't ask its user")?;
             println!(
@@ -3392,6 +3393,7 @@ async fn run(cli: &Cli, node: &Node) -> Result<()> {
                 stay_awake: false,
                 screen_off: false,
                 watch: Some(player.clone()),
+                request: None,
             };
             node.mirror_start(id, options).await.context("the PC didn't stream it")?;
             println!("Watching {player}; recording for {seconds} s after the first frame.");
@@ -5249,7 +5251,9 @@ fn stream_screen(
     pending: &std::sync::Mutex<Option<(u32, u32)>>,
 ) {
     use nectarlink_core::{MirrorSend, PacketKind};
-    let config = nectarlink_core::MirrorConfig { codec: "h264".into(), width, height, session }.to_cbor();
+    let config =
+        nectarlink_core::MirrorConfig { codec: "h264".into(), width, height, session, request: None }
+            .to_cbor();
     if mirror.send(PacketKind::Config, 0, config) == MirrorSend::Closed {
         return;
     }
@@ -5264,8 +5268,14 @@ fn stream_screen(
         }
         let time = started.elapsed().as_micros() as u64;
         if let Some((w, h)) = pending.lock().unwrap().take() {
-            let cfg = nectarlink_core::MirrorConfig { codec: "h264".into(), width: w, height: h, session }
-                .to_cbor();
+            let cfg = nectarlink_core::MirrorConfig {
+                codec: "h264".into(),
+                width: w,
+                height: h,
+                session,
+                request: None,
+            }
+            .to_cbor();
             if mirror.send(PacketKind::Config, time, cfg) == MirrorSend::Closed {
                 break;
             }
