@@ -29,7 +29,9 @@ const PENDING_MARKER: &str = "downloads-waypair-link-v1.pending.json";
 pub fn user_visible_location() -> &'static str {
     #[cfg(target_os = "macos")]
     {
-        "Downloads/Waypair Link"
+        dirs::download_dir()
+            .map(|root| location_label_for_dir(&save_dir(crate::core_host::try_data_dir(), &root)))
+            .unwrap_or("Waypair Link")
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -52,7 +54,16 @@ pub fn legacy_timeline_detail_labels() -> &'static [&'static str] {
 
 #[cfg(target_os = "macos")]
 pub fn branded_timeline_detail_label() -> &'static str {
-    user_visible_location()
+    "Downloads/Waypair Link"
+}
+
+#[cfg(target_os = "macos")]
+fn location_label_for_dir(dir: &Path) -> &'static str {
+    if dir.file_name().is_some_and(|name| name == LEGACY_SUBDIR) {
+        "Downloads/Nectarlink"
+    } else {
+        "Downloads/Waypair Link"
+    }
 }
 
 /// Absolute folder where incoming transfers are saved by default.
@@ -639,6 +650,7 @@ mod tests {
         seed(&data, "clip", &format!("{old_s}/clip.txt"), "Downloads/Nectarlink");
         seed(&data, "file", &format!("{old_s}/d.jpg"), "Holiday");
         assert_eq!(save_dir(Some(&data), &root), legacy);
+        assert_eq!(location_label_for_dir(&save_dir(Some(&data), &root)), "Downloads/Nectarlink");
 
         migrate_received_folder(&data, false, Some(&root)).unwrap();
         assert!(legacy.join("keep.txt").is_file());
@@ -655,6 +667,7 @@ mod tests {
         assert!(done_marker_path(&data).is_file());
         assert!(matches!(probe(&pending_marker_path(&data)).unwrap(), PathState::Absent));
         assert_eq!(save_dir(Some(&data), &root), branded);
+        assert_eq!(location_label_for_dir(&save_dir(Some(&data), &root)), "Downloads/Waypair Link");
 
         let got = rows(&data);
         assert_eq!(got[0].0, "file");
