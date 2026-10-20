@@ -56,6 +56,15 @@ class MirrorService : Service() {
     private var elevatedDisplayListener: android.hardware.display.DisplayManager.DisplayListener? = null
     private var sound: SoundCapture? = null
     private var pcId: String? = null
+    /** The live capture's request generation (`null` predates correlation); stale jobs compare against it. */
+    @Volatile private var activeRequest: ULong? = null
+    /**
+     * Service-local capture generation, incremented on every [tearDownCapture]
+     * (main thread only). Fences jobs whose (pc, request) could match again
+     * after a stop/restart or a legacy `null` request, and fences the old
+     * MediaProjection callback queued by `projection.stop()`.
+     */
+    private var captureEpoch = 0L
     private var stayAwake: Boolean = false
     private var screenOff: Boolean = false
 
@@ -69,9 +78,22 @@ class MirrorService : Service() {
         val pc = intent?.getStringExtra(EXTRA_PC)
         val isElevated = intent?.getBooleanExtra(EXTRA_ELEVATED, false) == true
         val consent = intent?.let { IntentCompat.getParcelableExtra(it, EXTRA_CONSENT, Intent::class.java) }
-        if (pc == null || (!isElevated && consent == null) || projection != null || elevatedSocket != null || elevatedStarting) {
-            if (projection == null && elevatedSocket == null && !elevatedStarting) stopSelf()
+        val requestToken = if (intent?.hasExtra(EXTRA_REQUEST) == true) intent.getLongExtra(EXTRA_REQUEST, 0L).toULong() else null
+        val busy = projection != null || elevatedSocket != null || elevatedStarting
+        if (pc == null || (!isElevated && consent == null)) {
+            if (!busy) stopSelf()
             return START_NOT_STICKY
+        }
+        if (busy && !MirrorSessionPolicy.shouldPreempt(pcId, activeRequest, pc, requestToken)) {
+            // A duplicate delivery, a superseded generation, or another PC:
+            // the live capture stays.
+            return START_NOT_STICKY
+        }
+        if (busy) {
+            // A replacement generation from the same PC (a Mac reconnect):
+            // retire the stale capture first, so its jobs can't outlive or
+            // reopen this request.
+            tearDownCapture()
         }
         val core = (application as NectarlinkApplication).core
         val name = core.state.value.nameOf(pc).orEmpty()
@@ -82,12 +104,13 @@ class MirrorService : Service() {
         val audio = intent.getBooleanExtra(EXTRA_AUDIO, false)
         stayAwake = intent.getBooleanExtra(EXTRA_STAY_AWAKE, false)
         screenOff = intent.getBooleanExtra(EXTRA_SCREEN_OFF, false)
-        val requestToken = if (intent.hasExtra(EXTRA_REQUEST)) intent.getLongExtra(EXTRA_REQUEST, 0L).toULong() else null
 
         if (isElevated) {
             val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE else 0
             ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(name), type)
             pcId = pc
+            activeRequest = requestToken
+            val myEpoch = captureEpoch
             current = this
             _session.value = MirrorSession(
                 active = true,
@@ -98,7 +121,7 @@ class MirrorService : Service() {
             )
             val fallbackRequest = MirrorRequest(pc, maxSize, fps, bitrate, audio, stayAwake, screenOff, requestToken)
             elevatedStarting = true
-            startElevatedStream(core, pc, name, fallbackRequest)
+            startElevatedStream(core, pc, name, fallbackRequest, myEpoch)
             return START_NOT_STICKY
         }
 
@@ -116,6 +139,7 @@ class MirrorService : Service() {
         }
         projection = granted
         pcId = pc
+        activeRequest = requestToken
         current = this
         _session.value = MirrorSession(
             active = true,
@@ -124,28 +148,46 @@ class MirrorService : Service() {
             stayAwake = stayAwake,
             screenOff = screenOff,
         )
+        // Fenced below: a replacement request retires this job before its
+        // stream attaches, and its failure must not stop the replacement.
+        // The epoch also fences the OLD projection callback queued by
+        // tearDownCapture's projection.stop().
+        val myPc = pc
+        val myRequest = requestToken
+        val myEpoch = captureEpoch
         granted.registerCallback(object : MediaProjection.Callback() {
             // The user stopped it (from the status bar, or by locking).
-            override fun onStop() = main.post { stopSharing() }.let {}
+            // Fenced: tearDownCapture's projection.stop() queues the OLD
+            // callback, which must not kill the replacement.
+            override fun onStop() {
+                main.post {
+                    if (!MirrorSessionPolicy.isLive(captureEpoch, pcId, activeRequest, myEpoch, myPc, myRequest)) return@post
+                    stopSharing()
+                }
+            }
         }, main)
         scope.launch {
             val stream = runCatching { core.mirrorOpen(pc) }.getOrElse {
                 Log.w(TAG, "can't stream to the PC", it)
-                main.post { stopSharing() }
+                main.post { if (MirrorSessionPolicy.isLive(captureEpoch, pcId, activeRequest, myEpoch, myPc, myRequest)) stopSharing() }
                 return@launch
             }
             main.post {
+                if (!MirrorSessionPolicy.isLive(captureEpoch, pcId, activeRequest, myEpoch, myPc, myRequest)) {
+                    stream.end()
+                    return@post
+                }
                 val running = projection
                 if (running == null) {
                     stream.end()
                     return@post
                 }
-                encoder = ScreenEncoder(this@MirrorService, running, stream, maxSize, fps, bitrate, request = requestToken) {
-                    main.post { stopSharing() }
+                encoder = ScreenEncoder(this@MirrorService, running, stream, maxSize, fps, bitrate, request = myRequest) {
+                    main.post { if (MirrorSessionPolicy.isLive(captureEpoch, pcId, activeRequest, myEpoch, myPc, myRequest)) stopSharing() }
                 }.also { it.start() }
                 applyPower()
             }
-            if (audio && SoundCapture.canCapture(this@MirrorService)) startSound(core, pc)
+            if (audio && SoundCapture.canCapture(this@MirrorService)) startSound(core, myPc, myRequest, myEpoch)
         }
         return START_NOT_STICKY
     }
@@ -155,7 +197,10 @@ class MirrorService : Service() {
         pc: String,
         pcName: String,
         request: MirrorRequest,
+        myEpoch: Long,
     ) = scope.launch {
+        val myPc = pc
+        val myRequest = request.request
         // The helper's socket: off the main thread, where Android refuses
         // network calls (and the phone then asked for screen-capture consent).
         val (initW, initH, initDpi) = ScreenEncoder.computeScreenSize(this@MirrorService, request.maxSize)
@@ -168,17 +213,24 @@ class MirrorService : Service() {
             request.fps,
             codec,
         )
-        elevatedStarting = false
-        if (socket == null) {
-            main.post {
+        // Ownership handoff on main, atomically: the fence check and the
+        // elevatedStarting/elevatedSocket assignment run together, so a
+        // replacement's tearDownCapture cannot interleave between them.
+        main.post {
+            if (!MirrorSessionPolicy.isLive(captureEpoch, pcId, activeRequest, myEpoch, myPc, myRequest)) {
+                runCatching { socket?.close() }
+                return@post
+            }
+            elevatedStarting = false
+            if (socket == null) {
                 stopSharing()
                 MirrorRequests.show(this@MirrorService, request, pcName)
+                return@post
             }
-            return@launch
+            elevatedSocket = socket
+            watchDisplay(socket, request, initW, initH)
+            scope.launch { streamElevated(core, myPc, pcName, request, socket, codec, myEpoch) }
         }
-        elevatedSocket = socket
-        main.post { watchDisplay(socket, request, initW, initH) }
-        streamElevated(core, pc, pcName, request, socket, codec)
     }
 
     /** Resizes the helper's picture when the phone's screen turns. */
@@ -223,13 +275,14 @@ class MirrorService : Service() {
         request: MirrorRequest,
         socket: java.net.Socket,
         codec: String,
+        myEpoch: Long,
     ) {
         val stream = runCatching { core.mirrorOpen(pc) }.getOrElse {
             Log.w(TAG, "can't stream to the PC", it)
-            main.post { stopSharing() }
+            main.post { if (MirrorSessionPolicy.isLive(captureEpoch, pcId, activeRequest, myEpoch, pc, request.request)) stopSharing() }
             return
         }
-        if (request.audio && SoundCapture.canCapture(this@MirrorService)) startSound(core, pc)
+        if (request.audio && SoundCapture.canCapture(this@MirrorService)) startSound(core, pc, request.request, myEpoch)
         var gotConfig = false
         try {
             val input = java.io.DataInputStream(socket.getInputStream().buffered(1 shl 16))
@@ -267,10 +320,13 @@ class MirrorService : Service() {
             Log.d(TAG, "Elevated screen mirror ended", e)
         } finally {
             stream.end()
-            val shouldFallback = !gotConfig && pcId == pc
+            val fallback = !gotConfig
             main.post {
+                // A superseded job ends its own stream and nothing else: the
+                // replacement's capture stays up, with no stale consent.
+                if (!MirrorSessionPolicy.isLive(captureEpoch, pcId, activeRequest, myEpoch, pc, request.request)) return@post
                 stopSharing()
-                if (shouldFallback) {
+                if (fallback) {
                     MirrorRequests.show(this@MirrorService, request, pcName)
                 }
             }
@@ -295,15 +351,19 @@ class MirrorService : Service() {
     }
 
     /** The sound, on a stream of its own; the screen goes on without it if it can't. */
-    private suspend fun startSound(core: app.nectarlink.android.core.Core, pc: String) {
+    private suspend fun startSound(core: app.nectarlink.android.core.Core, pc: String, request: ULong?, myEpoch: Long) {
         if (!SoundCapture.canCapture(this)) return
         val stream = runCatching { core.mirrorOpenAudio(pc) }.getOrElse {
             Log.w(TAG, "can't send the sound", it)
             return
         }
         main.post {
+            if (!MirrorSessionPolicy.isLive(captureEpoch, pcId, activeRequest, myEpoch, pc, request)) {
+                stream.end()
+                return@post
+            }
             val running = projection
-            if ((running == null && !app.nectarlink.android.elevated.Elevated.running) || pcId != pc) {
+            if ((running == null && !app.nectarlink.android.elevated.Elevated.running) || !MirrorSessionPolicy.isLive(captureEpoch, pcId, activeRequest, myEpoch, pc, request)) {
                 stream.end()
                 return@post
             }
@@ -331,12 +391,30 @@ class MirrorService : Service() {
         screenOff = false
         _session.value = MirrorSession()
         StreamPower.set(this, StreamPower.SCREEN, streaming = false)
+        tearDownCapture()
+        if (current === this) current = null
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
+    /**
+     * Retires the capture (projection, encoder, helper socket and sound)
+     * without stopping the service: a replacement request starts its own
+     * capture right after. Also clears a still-starting job's flag, so its
+     * late completion finds a new generation and ends itself. Runs on main;
+     * bumps [captureEpoch] so the OLD MediaProjection callback queued by
+     * `projection.stop()` and any late job fail their [MirrorSessionPolicy.isLive]
+     * check instead of killing the replacement.
+     */
+    private fun tearDownCapture() {
+        captureEpoch++
         elevatedDisplayListener?.let {
             getSystemService(android.hardware.display.DisplayManager::class.java)?.unregisterDisplayListener(it)
         }
         elevatedDisplayListener = null
         elevatedSocket?.let { runCatching { it.close() } }
         elevatedSocket = null
+        elevatedStarting = false
         encoder?.stop()
         encoder = null
         sound?.stop()
@@ -344,9 +422,7 @@ class MirrorService : Service() {
         projection?.let { runCatching { it.stop() } }
         projection = null
         pcId = null
-        if (current === this) current = null
-        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
-        stopSelf()
+        activeRequest = null
     }
 
     override fun onDestroy() {
