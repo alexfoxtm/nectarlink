@@ -669,6 +669,7 @@
     <string name="pc_files_saved">已将 %1$s 保存到“下载”</string>
     <string name="pc_files_failed">无法下载 %1$s</string>
     <string name="pc_files_not_shared">在 %1$s 上的 Waypair Link 设置中打开“口袋里的电脑”。</string>
+    <string name="pc_files_unavailable">这台电脑的文件夹共享已关闭或不可用。</string>
     <string name="pc_files_offline">%1$s 未连接。</string>
     <string name="pc_files_update">请更新 %1$s 上的 Waypair Link 以浏览其文件。</string>
     <string name="pc_files_not_found">此文件夹已不在 %1$s 上。</string>

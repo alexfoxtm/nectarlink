@@ -12,6 +12,7 @@ import app.nectarlink.core.FeatureStatus
 internal const val HOME_FEATURE_INPUT_REMOTE = "input.remote"
 internal const val HOME_FEATURE_INPUT_DECK = "input.deck"
 internal const val HOME_FEATURE_CAMERA_WEBCAM = "camera.webcam"
+internal const val HOME_FEATURE_PC_BROWSE = "files.pc_browse"
 
 /**
  * Control PC runs where the desktop negotiates `input.inject`. While
@@ -29,6 +30,9 @@ internal fun Device.canControlPc(): Boolean =
  * this gates only the Home entry.
  */
 internal fun Device.canOpenDeck(): Boolean = online && has(HOME_FEATURE_INPUT_DECK)
+
+/** Browse PC files only where the desktop advertises `storage.read`. */
+internal fun Device.canBrowsePcFiles(): Boolean = online && has(HOME_FEATURE_PC_BROWSE)
 
 /**
  * Webcam runs only where the desktop negotiates `camera.virtual` plus the

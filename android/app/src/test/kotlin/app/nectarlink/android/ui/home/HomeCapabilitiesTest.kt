@@ -100,4 +100,17 @@ class HomeCapabilitiesTest {
         )
         assertFalse(backendIncomplete.canOpenWebcam())
     }
+
+    @Test
+    fun `Browse PC files requires an available capability and an online device`() {
+        val windows = device(online(), listOf(available(HOME_FEATURE_PC_BROWSE)))
+        assertTrue(windows.canBrowsePcFiles())
+
+        val sharingOff = device(
+            online(),
+            listOf(Feature(HOME_FEATURE_PC_BROWSE, FeatureStatus.Unsupported("notOnThisDevice"))),
+        )
+        assertFalse(sharingOff.canBrowsePcFiles())
+        assertFalse(windows.copy(link = offline()).canBrowsePcFiles())
+    }
 }

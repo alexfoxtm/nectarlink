@@ -67,6 +67,8 @@ pub enum Unlock {
     Addon(&'static str),
     /// Every current app version offers it, so the device's app is too old.
     UpdateApp,
+    /// The missing capability has no app-update or user-grant remedy.
+    Unavailable,
 }
 
 /// One condition a feature depends on.
@@ -484,6 +486,7 @@ fn check(req: &Requirement, ctx: &Context<'_>) -> Check {
                 Unlock::Permission(p) => Check::Unlockable(Upgrade::new(UpgradeAction::GrantPermission(p))),
                 Unlock::Addon(addon) => Check::Unlockable(Upgrade::new(UpgradeAction::EnableAddon(addon))),
                 Unlock::UpdateApp => Check::Unlockable(Upgrade::new(UpgradeAction::UpdateApp(role))),
+                Unlock::Unavailable => Check::Impossible(UnsupportedReason::NotOnThisDevice),
             }
         }
         Requirement::Peer { id, unlock } | Requirement::Here { id, unlock } => {
@@ -498,6 +501,7 @@ fn check(req: &Requirement, ctx: &Context<'_>) -> Check {
                 Unlock::Power(_) | Unlock::UpdateApp => {
                     Check::Unlockable(Upgrade::new(UpgradeAction::UpdateApp(role)))
                 }
+                Unlock::Unavailable => Check::Impossible(UnsupportedReason::NotOnThisDevice),
             }
         }
         Requirement::PowerAtLeast(level) => {
@@ -914,6 +918,12 @@ pub const FEATURES: &[FeatureDef] = &[
             desktop("storage.mount", UPDATE),
             DeviceToggle("storage"),
         ],
+        partial: None,
+    },
+    FeatureDef {
+        id: "files.pc_browse",
+        group: FeatureGroup::Files,
+        requires: &[desktop("storage.read", Unlock::Unavailable)],
         partial: None,
     },
     // Mirroring
@@ -1560,6 +1570,10 @@ mod tests {
         assert_eq!(m.state("contacts.read"), Some(FeatureState::Available));
         assert_eq!(m.state("toggles.volume"), Some(FeatureState::Available));
         assert_eq!(m.state("clipboard.pc_to_phone"), Some(FeatureState::Available));
+        assert_eq!(
+            m.state("files.pc_browse"),
+            Some(FeatureState::Unsupported { reason: UnsupportedReason::NotOnThisDevice })
+        );
 
         // Unsupported macOS features are NOT Available:
         assert_eq!(
@@ -1589,5 +1603,22 @@ mod tests {
             m.state("camera.webcam"),
             Some(locked(UpgradeAction::EnableAddon("vcam"), Effort::Minutes(1)))
         );
+    }
+
+    #[test]
+    fn pc_browser_tracks_the_desktop_storage_read_offer() {
+        let phone = facts(DeviceKind::Phone, "android", "16", PowerLevel::Elevated, BASIC_PHONE);
+        let unavailable = matrix_with(&phone, &pc(), &HashMap::new());
+        assert_eq!(
+            unavailable.state("files.pc_browse"),
+            Some(FeatureState::Unsupported { reason: UnsupportedReason::NotOnThisDevice })
+        );
+
+        let mut shared_caps = PC.to_vec();
+        shared_caps.push("storage.read");
+        let shared_pc =
+            facts(DeviceKind::Laptop, "windows", "10.0.26200", PowerLevel::NotApplicable, &shared_caps);
+        let available = matrix_with(&phone, &shared_pc, &HashMap::new());
+        assert_eq!(available.state("files.pc_browse"), Some(FeatureState::Available));
     }
 }

@@ -779,11 +779,7 @@ fun HomeScreen(
     }
 }
 
-/**
- * Names the reason on a capability-greyed Home action for accessibility
- * (existing `error_unsupported` copy, no new strings). Offline-greyed buttons
- * keep no reason: the status dot and wake UI already explain those.
- */
+/** Names the reason on a capability-greyed Home action for accessibility. */
 private fun Modifier.capabilityReason(show: Boolean, reason: String): Modifier =
     if (!show) this else semantics { stateDescription = reason }
 
@@ -1415,14 +1411,14 @@ private fun PcCard(
             val outline = BorderStroke(1.dp, ink.copy(alpha = if (device.online) 0.45f else 0.15f))
             val statusDotColor = if (device.online) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
             // Per-action capability gates from the negotiated matrix. Desk clock
-            // renders locally and Browse PC files has no negotiable matrix
-            // feature (`files.browse` is announced on neither platform; the wire
-            // admits via `storage.read` and the sheet shows the reason), so both
-            // stay online-gated as before.
+            // renders locally; Browse PC files requires `files.pc_browse` from
+            // the desktop's `storage.read` offer.
             val unsupportedReason = stringResource(R.string.error_unsupported)
+            val pcFilesUnavailableReason = stringResource(R.string.pc_files_unavailable)
             val controlPcEnabled = device.canControlPc()
             val deckEnabled = device.canOpenDeck()
             val webcamEnabled = device.canOpenWebcam()
+            val browsePcEnabled = device.canBrowsePcFiles()
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1645,10 +1641,11 @@ private fun PcCard(
                         }
                         FilledTonalButton(
                             contentPadding = CardButtonPadding,
-                            enabled = device.online,
+                            enabled = browsePcEnabled,
                             colors = tonal,
                             onClick = { onBrowsePcFiles(device.id) },
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(1f)
+                                .capabilityReason(device.online && !browsePcEnabled, pcFilesUnavailableReason),
                         ) {
                             Icon(
                                 imageVector = PcFolderIcon,

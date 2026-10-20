@@ -725,6 +725,7 @@
     <string name="pc_files_saved">Saved %1$s to Downloads</string>
     <string name="pc_files_failed">Couldn’t download %1$s</string>
     <string name="pc_files_not_shared">Turn on “Your PC in your pocket” in Waypair Link’s Settings on %1$s.</string>
+    <string name="pc_files_unavailable">Folder sharing is off or unavailable on this computer.</string>
     <string name="pc_files_offline">%1$s isn’t connected.</string>
     <string name="pc_files_update">Update Waypair Link on %1$s to browse its files.</string>
     <string name="pc_files_not_found">This folder isn’t on %1$s anymore.</string>
