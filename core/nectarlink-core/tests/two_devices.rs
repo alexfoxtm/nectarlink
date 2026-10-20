@@ -58,6 +58,11 @@ struct RecordingPlatform {
     pc_audio_changes: Mutex<Vec<(Option<u8>, Option<bool>)>>,
     tasks: Mutex<Vec<nectarlink_core::TaskNotify>>,
     storage: Mutex<Option<nectarlink_core::FolderStorage>>,
+    /// When set, `storage_open_read` waits twice so a test can revoke access
+    /// while the platform open is in progress.
+    storage_read_barrier: Mutex<Option<Arc<std::sync::Barrier>>>,
+    /// Pipe reader and reported length returned for `hold.bin`.
+    storage_held_read: Mutex<Option<(std::fs::File, u64)>>,
 }
 
 impl Platform for RecordingPlatform {
@@ -525,6 +530,21 @@ impl Platform for RecordingPlatform {
         &self,
         path: &str,
     ) -> Result<nectarlink_core::StorageReadFile, nectarlink_core::StorageError> {
+        let barrier = self.storage_read_barrier.lock().unwrap().clone();
+        if let Some(barrier) = barrier {
+            barrier.wait();
+            barrier.wait();
+        }
+        if path == "hold.bin" {
+            let Some((file, size)) = self.storage_held_read.lock().unwrap().take() else {
+                return Err(nectarlink_core::StorageError::NotFound);
+            };
+            return Ok(nectarlink_core::StorageReadFile {
+                source: FileSource::File(file),
+                size,
+                modified: 0,
+            });
+        }
         let guard = self.storage.lock().unwrap();
         let storage = guard.as_ref().ok_or(nectarlink_core::StorageError::Unsupported)?;
         storage.open_read(path)
@@ -3324,6 +3344,100 @@ async fn phone_storage_lists_reads_ranges_writes_resumes_mutates_and_enforces_se
             pc.node.storage_read(phone_id, "escape_link/outside.txt", 0, None).await,
             Err(Error::Denied | Error::NotFound)
         ));
+    }
+}
+
+/// A normal encrypted read completes. Revoking `storage` while a second read
+/// is past metadata stops that stream, and turning the toggle straight back
+/// on does not let the old stream finish.
+#[tokio::test(flavor = "multi_thread")]
+async fn storage_read_stops_on_revoke_and_reenable_does_not_revive_it() {
+    use std::io::Write;
+
+    use nectarlink_core::{FolderStorage, STORAGE_MOUNT, STORAGE_READ};
+
+    let mut pc = device_with("Desktop", DeviceKind::Desktop, &[STORAGE_MOUNT]).await;
+    let mut phone = device_with("Pixel", DeviceKind::Phone, &[STORAGE_READ]).await;
+    let storage_root = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(storage_root.path().join("Documents")).unwrap();
+    let note = b"note-ok";
+    std::fs::write(storage_root.path().join("Documents/note.txt"), note).unwrap();
+    *phone.platform.storage.lock().unwrap() = Some(FolderStorage::new(storage_root.path()));
+
+    pair_qr(&mut pc, &mut phone).await;
+    let (pc_id, phone_id) = (pc.node.device_id(), phone.node.device_id());
+    phone.node.set_device_toggle(pc_id, "storage", true).unwrap();
+
+    let (meta, bytes) =
+        with_timeout("normal read", pc.node.storage_read(phone_id, "Documents/note.txt", 0, None))
+            .await
+            .unwrap();
+    assert_eq!(meta.length, note.len() as u64);
+    assert_eq!(bytes, note);
+
+    let payload = data(4096, 28);
+    let (reader, mut writer) = std::io::pipe().unwrap();
+    *phone.platform.storage_held_read.lock().unwrap() =
+        Some((file_from_pipe_reader(reader), payload.len() as u64));
+    let barrier = Arc::new(std::sync::Barrier::new(2));
+    *phone.platform.storage_read_barrier.lock().unwrap() = Some(barrier.clone());
+
+    let pc_node = pc.node.clone();
+    let stream_task =
+        tokio::spawn(async move { pc_node.storage_read_stream(phone_id, "hold.bin", 0, None).await });
+    tokio::task::spawn_blocking({
+        let barrier = barrier.clone();
+        move || barrier.wait()
+    })
+    .await
+    .unwrap();
+    tokio::task::spawn_blocking(move || barrier.wait()).await.unwrap();
+
+    let (meta, mut recv) = with_timeout("metadata before revoke", stream_task).await.unwrap().unwrap();
+    assert_eq!(meta.length, payload.len() as u64);
+
+    phone.node.set_device_toggle(pc_id, "storage", false).unwrap();
+    phone.node.set_device_toggle(pc_id, "storage", true).unwrap();
+    let late = payload.clone();
+    tokio::task::spawn_blocking(move || {
+        let _ = writer.write_all(&late);
+    })
+    .await
+    .unwrap();
+
+    let body = tokio::time::timeout(WAIT, async {
+        let mut got = Vec::new();
+        loop {
+            match recv.read_chunk(64 * 1024).await {
+                Ok(Some(chunk)) => got.extend_from_slice(&chunk),
+                Ok(None) => return Ok(got),
+                Err(_) => return Err(()),
+            }
+        }
+    })
+    .await;
+    match body {
+        Ok(Err(())) => {}
+        Ok(Ok(buf)) => panic!("revoked read finished cleanly with {} bytes", buf.len()),
+        Err(_) => panic!("revoked storage read did not stop"),
+    }
+
+    *phone.platform.storage_read_barrier.lock().unwrap() = None;
+    let again =
+        with_timeout("read after re-enable", pc.node.storage_read(phone_id, "Documents/note.txt", 0, None))
+            .await
+            .unwrap();
+    assert_eq!(again.1, note);
+}
+
+fn file_from_pipe_reader(reader: std::io::PipeReader) -> std::fs::File {
+    #[cfg(unix)]
+    {
+        std::fs::File::from(std::os::fd::OwnedFd::from(reader))
+    }
+    #[cfg(windows)]
+    {
+        std::fs::File::from(std::os::windows::io::OwnedHandle::from(reader))
     }
 }
 

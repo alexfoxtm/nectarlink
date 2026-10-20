@@ -107,6 +107,13 @@ struct Supervisor {
     cancel: CancellationToken,
 }
 
+/// What a paired device last offered of its own storage.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct StorageOffer {
+    read: bool,
+    write: bool,
+}
+
 /// A PC's reader of a phone's mirroring: the phone, the session, video or sound.
 pub(crate) type MirrorStop = (DeviceId, u32, &'static str);
 
@@ -129,7 +136,7 @@ pub(crate) struct Shared {
     /// Consecutive direct/QUIC dial failures per peer since last connected.
     dial_failures: Mutex<HashMap<DeviceId, u32>>,
     /// The last capability matrix emitted per device, to emit only changes.
-    matrices: Mutex<HashMap<DeviceId, CapabilityMatrix>>,
+    matrices: Mutex<HashMap<DeviceId, (CapabilityMatrix, StorageOffer)>>,
     pub(crate) away_mode: std::sync::atomic::AtomicBool,
     memory: MemoryLookup,
     /// This device's notifications, when it mirrors them (phones).
@@ -561,7 +568,27 @@ impl Shared {
             .get(&session.peer)
             .is_some_and(|current| std::ptr::eq(current.as_ref(), session) && current.is_alive())
         {
-            self.set_link(session.peer, LinkState::Online { path: session.path(), rtt_ms: session.rtt_ms() });
+            let path = session.path();
+            self.revoke_reads_onto_relay(&session.peer, path);
+            self.set_link(session.peer, LinkState::Online { path, rtt_ms: session.rtt_ms() });
+        }
+    }
+
+    /// A peer moving onto Relay loses its storage reads, before anyone hears
+    /// the new path, unless remote file access (off by default) is on for it.
+    /// Reads are admitted only when they start, so one admitted over LAN
+    /// would otherwise keep streaming over Relay. Round-trip-time updates on
+    /// the same path don't count.
+    fn revoke_reads_onto_relay(&self, peer: &DeviceId, path: ConnectionPath) {
+        if path != ConnectionPath::Relay {
+            return;
+        }
+        let was_relay = matches!(
+            lock(&self.links).get(peer),
+            Some(LinkState::Online { path: ConnectionPath::Relay, .. })
+        );
+        if !was_relay && !self.toggle_on(peer, crate::storage::REMOTE_FILES_TOGGLE) {
+            lock(&self.storage).cancel_reads(peer);
         }
     }
 
@@ -851,7 +878,15 @@ impl Shared {
     /// Computes the capability matrix for a paired device from its last known
     /// capabilities, this device's state and the user's toggles.
     pub fn capability_matrix(&self, peer: &DeviceId) -> Result<CapabilityMatrix> {
+        self.matrix_and_storage_offer(peer).map(|(matrix, _)| matrix)
+    }
+
+    fn matrix_and_storage_offer(&self, peer: &DeviceId) -> Result<(CapabilityMatrix, StorageOffer)> {
         let record = self.store.get_peer(peer)?.ok_or(Error::NotPaired)?;
+        let offer = StorageOffer {
+            read: record.caps.contains(crate::storage::STORAGE_READ),
+            write: record.caps.contains(crate::storage::STORAGE_WRITE),
+        };
         let toggles = self.store.toggles(peer)?;
         let local = {
             let local = self.local.read().unwrap_or_else(|e| e.into_inner());
@@ -867,24 +902,35 @@ impl Shared {
         if self.away_mode() {
             paths.push(ConnectionPath::Relay);
         }
-        Ok(features::compute(
+        let matrix = features::compute(
             *peer,
             MatrixInputs { local: &local, peer: &remote, paths: &paths, toggles: &toggles },
-        ))
+        );
+        Ok((matrix, offer))
     }
 
-    /// Recomputes a device's capability matrix and emits it if it changed.
+    /// Recomputes a device's capability matrix and emits it if it, or the
+    /// device's storage offer, changed.
     pub fn refresh_capabilities(&self, peer: &DeviceId) {
-        let matrix = match self.capability_matrix(peer) {
-            Ok(matrix) => matrix,
+        self.publish_capabilities(peer, false);
+    }
+
+    /// [`Self::refresh_capabilities`], also emitting an unchanged matrix when
+    /// `force` is set. Access to storage can end without changing the matrix
+    /// (it shows the easiest unlock first), as with an explicit privacy
+    /// toggle set off that defaulted off.
+    fn publish_capabilities(&self, peer: &DeviceId, force: bool) {
+        let (matrix, offer) = match self.matrix_and_storage_offer(peer) {
+            Ok(computed) => computed,
             Err(Error::NotPaired) => return,
             Err(e) => {
                 tracing::warn!(peer = %peer.short(), error = %e, "failed to compute capabilities");
                 return;
             }
         };
-        let changed = lock(&self.matrices).insert(*peer, matrix.clone()).as_ref() != Some(&matrix);
-        if changed {
+        let previous = lock(&self.matrices).insert(*peer, (matrix.clone(), offer));
+        let changed = previous.is_none_or(|(old, old_offer)| old != matrix || old_offer != offer);
+        if changed || force {
             self.emit(NodeEvent::Capabilities(matrix));
         }
     }
@@ -1838,8 +1884,26 @@ impl Node {
         if !self.shared.store.is_paired(&peer)? {
             return Err(Error::NotPaired);
         }
+        let storage_toggle =
+            toggle == crate::storage::TOGGLE || toggle == crate::storage::REMOTE_FILES_TOGGLE;
+        let storage_changed =
+            storage_toggle && self.shared.store.toggles(&peer)?.get(toggle).copied() != Some(enabled);
         self.shared.store.set_toggle(&peer, toggle, enabled)?;
-        self.shared.refresh_capabilities(&peer);
+        if storage_toggle {
+            // Reads already admitted end before anyone hears access changed.
+            let mut st = lock(&self.shared.storage);
+            if !enabled {
+                st.cancel_reads(&peer);
+            }
+            if toggle == crate::storage::TOGGLE {
+                if enabled {
+                    st.clear_prompted(&peer);
+                } else {
+                    st.remove_peer(&peer);
+                }
+            }
+        }
+        self.shared.publish_capabilities(&peer, storage_changed);
         if toggle == notifications::TOGGLE {
             self.notifications_toggled(peer, enabled);
         }
@@ -1856,14 +1920,6 @@ impl Node {
             self.shared.runtime.spawn(async move {
                 crate::actions::send_wake_info(&shared, &session).await;
             });
-        }
-        if toggle == crate::storage::TOGGLE {
-            let mut st = self.shared.storage.lock().unwrap_or_else(|e| e.into_inner());
-            if enabled {
-                st.clear_prompted(&peer);
-            } else {
-                st.remove_peer(&peer);
-            }
         }
         if (toggle == crate::mirror::TOGGLE || toggle == crate::mirror::PC_MIRROR_TOGGLE) && !enabled {
             if toggle == crate::mirror::PC_MIRROR_TOGGLE {
@@ -3386,12 +3442,18 @@ impl Node {
     /// Updates this device's power level and the capabilities it offers
     /// beyond the built-in ones (they depend on permissions and add-ons).
     pub async fn update_power(&self, power: PowerLevel, extra_capabilities: Vec<String>) {
-        let caps = {
+        let (caps, read_lost) = {
             let mut local = self.shared.local.write().unwrap_or_else(|e| e.into_inner());
+            let offered_read = local.capabilities().iter().any(|c| c == crate::storage::STORAGE_READ);
             local.power = power;
             local.extra_capabilities = extra_capabilities;
-            local.capabilities()
+            let caps = local.capabilities();
+            let read_lost = offered_read && !caps.iter().any(|c| c == crate::storage::STORAGE_READ);
+            (caps, read_lost)
         };
+        if read_lost {
+            lock(&self.shared.storage).cancel_all_reads();
+        }
         let update = HelloUpdate { power: Some(power), caps: Some(caps), device: None };
         if let Ok(env) = Envelope::new(types::HELLO_UPDATE, &update) {
             self.shared.broadcast(env).await;
@@ -4074,5 +4136,91 @@ async fn deliver_queued_rpc(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use tokio::sync::broadcast::error::TryRecvError;
+
+    use super::*;
+    use crate::{FeatureState, NoopPlatform, PlainKeyProtector, storage};
+
+    fn info(name: &str, kind: DeviceKind, os: &str) -> DeviceInfo {
+        DeviceInfo {
+            name: name.into(),
+            kind,
+            os: os.into(),
+            os_ver: "test".into(),
+            model: None,
+            accent: None,
+            screen: None,
+            install_id: None,
+        }
+    }
+
+    /// A Mac node with a phone that offers its storage on record, paired in
+    /// the store only: nothing dials it.
+    async fn mac_with_phone(dir: &tempfile::TempDir) -> (Node, DeviceId) {
+        let mut config = NodeConfig::new(dir.path(), info("Mac", DeviceKind::Desktop, "macos"), "0.0.1-test");
+        config.lan_discovery = false;
+        config.key_protector = Some(Arc::new(PlainKeyProtector));
+        let node = Node::start(config, Arc::new(NoopPlatform)).await.expect("node starts");
+        let phone = DeviceId([0x5A; 32]);
+        let store = &node.shared.store;
+        store.upsert_peer(&phone, &info("Pixel", DeviceKind::Phone, "android"), crate::now_unix()).unwrap();
+        let offers = BTreeSet::from([storage::STORAGE_READ.to_owned(), storage::STORAGE_WRITE.to_owned()]);
+        store.update_capabilities(&phone, Some(&offers), None).unwrap();
+        (node, phone)
+    }
+
+    /// The matrices emitted for `peer` so far; emission is synchronous.
+    fn emitted(events: &mut broadcast::Receiver<NodeEvent>, peer: DeviceId) -> Vec<CapabilityMatrix> {
+        let mut out = Vec::new();
+        loop {
+            match events.try_recv() {
+                Ok(NodeEvent::Capabilities(matrix)) if matrix.device == peer => out.push(matrix),
+                Ok(_) | Err(TryRecvError::Lagged(_)) => {}
+                Err(_) => return out,
+            }
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn storage_toggle_set_off_is_heard_with_an_unchanged_locked_matrix() {
+        let dir = tempfile::tempdir().unwrap();
+        let (node, phone) = mac_with_phone(&dir).await;
+        let mut events = node.events();
+        node.shared.refresh_capabilities(&phone);
+        emitted(&mut events, phone);
+        let before = node.capabilities(phone).unwrap();
+        assert!(matches!(before.state("files.storage"), Some(FeatureState::Locked { .. })));
+
+        // Unset defaults off, so the matrix stays the same, but access ends.
+        node.set_device_toggle(phone, storage::TOGGLE, false).unwrap();
+        assert_eq!(emitted(&mut events, phone), vec![before.clone()]);
+        node.set_device_toggle(phone, storage::REMOTE_FILES_TOGGLE, false).unwrap();
+        assert_eq!(emitted(&mut events, phone), vec![before]);
+        node.shutdown().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn routine_refreshes_and_repeated_toggles_stay_quiet() {
+        let dir = tempfile::tempdir().unwrap();
+        let (node, phone) = mac_with_phone(&dir).await;
+        let mut events = node.events();
+        node.shared.refresh_capabilities(&phone);
+        emitted(&mut events, phone);
+        node.set_device_toggle(phone, storage::TOGGLE, false).unwrap();
+        assert_eq!(emitted(&mut events, phone).len(), 1);
+
+        node.shared.refresh_capabilities(&phone);
+        node.set_device_toggle(phone, storage::TOGGLE, false).unwrap();
+        // Another toggle set to its default changes nothing either.
+        node.set_device_toggle(phone, "clipboard", true).unwrap();
+        assert!(emitted(&mut events, phone).is_empty());
+        node.shutdown().await;
     }
 }

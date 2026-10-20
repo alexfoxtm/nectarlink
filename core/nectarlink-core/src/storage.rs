@@ -15,7 +15,7 @@ use std::{
 };
 
 use bytes::Bytes;
-use iroh::endpoint::{RecvStream, SendStream};
+use iroh::endpoint::{RecvStream, SendStream, VarInt};
 pub use nectarlink_protocol::messages::{
     StorageChanged, StorageDelete, StorageEntries, StorageEntry, StorageList, StorageMkdir, StorageRead,
     StorageReadMeta, StorageRename, StorageWriteAccept, StorageWriteDone, StorageWriteOffer,
@@ -45,6 +45,9 @@ const STREAM_TIMEOUT: Duration = Duration::from_secs(30);
 const CHUNK_SIZE: usize = 64 * 1024;
 const MAX_OPEN_FOLDERS_PER_PEER: usize = 256;
 const CHANGED_DEBOUNCE: Duration = Duration::from_millis(250);
+/// QUIC reset when a `storage.read` loses access. Not a new public frame:
+/// the peer already treats a failed read stream as an incomplete transfer.
+const READ_REVOKED: u32 = 1;
 
 /// Why a phone storage operation failed on the platform side.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -86,6 +89,50 @@ pub(crate) struct StorageState {
     prompted: HashSet<DeviceId>,
     open_folders: HashMap<DeviceId, HashSet<String>>,
     last_changed: HashMap<(DeviceId, String), Instant>,
+    /// One read-generation token per peer that has registered a `storage.read`.
+    /// Streams share the current token; cancellation replaces it. The map is
+    /// bounded by peers, not by open streams.
+    read_epochs: HashMap<DeviceId, ReadEpoch>,
+}
+
+/// Shared cancellation token for one authenticated peer's current reads.
+#[derive(Debug)]
+struct ReadEpoch {
+    generation: u64,
+    tx: tokio::sync::watch::Sender<u64>,
+}
+
+/// A `storage.read` registered against one peer generation.
+struct ReadTicket {
+    generation: u64,
+    rx: tokio::sync::watch::Receiver<u64>,
+}
+
+impl ReadEpoch {
+    fn new() -> Self {
+        let (tx, _) = tokio::sync::watch::channel(1);
+        Self { generation: 1, tx }
+    }
+
+    fn subscribe(&self) -> ReadTicket {
+        ReadTicket { generation: self.generation, rx: self.tx.subscribe() }
+    }
+
+    /// Notifies current subscribers, then replaces the token so a later
+    /// registration is a different generation.
+    fn revoke(&mut self) {
+        let next = self.generation.wrapping_add(1);
+        self.generation = next;
+        let _ = self.tx.send(next);
+        let (tx, _) = tokio::sync::watch::channel(next);
+        self.tx = tx;
+    }
+}
+
+impl ReadTicket {
+    fn is_cancelled(&self) -> bool {
+        *self.rx.borrow() != self.generation
+    }
 }
 
 impl StorageState {
@@ -135,10 +182,43 @@ impl StorageState {
         peers
     }
 
+    /// Registers `peer`'s current read generation. Call this before admission
+    /// and before opening a file so a revocation cannot land in that window
+    /// unnoticed. The returned ticket stays cancelled after the generation is
+    /// replaced; looking up a newer token does not revive it.
+    fn register_read(&mut self, peer: DeviceId) -> ReadTicket {
+        self.read_epochs.entry(peer).or_insert_with(ReadEpoch::new).subscribe()
+    }
+
+    /// Stops in-flight `storage.read` streams for `peer`.
+    ///
+    /// Replaces that peer's shared generation token. Other peers are left
+    /// alone. Only the in-memory token changes: no platform call and no
+    /// user callback runs here, so it is safe while the storage lock is held.
+    /// A replacement token is not authorization. A read that registers after
+    /// [`Self::remove_peer`] still has to pass pairing and session checks.
+    pub fn cancel_reads(&mut self, peer: &DeviceId) {
+        if let Some(epoch) = self.read_epochs.get_mut(peer) {
+            epoch.revoke();
+        }
+    }
+
+    /// Stops every in-flight `storage.read`, one peer token at a time.
+    pub fn cancel_all_reads(&mut self) {
+        let peers: Vec<DeviceId> = self.read_epochs.keys().copied().collect();
+        for peer in peers {
+            self.cancel_reads(&peer);
+        }
+    }
+
     pub fn remove_peer(&mut self, peer: &DeviceId) {
+        self.cancel_reads(peer);
         self.prompted.remove(peer);
         self.open_folders.remove(peer);
         self.last_changed.retain(|(p, _), _| p != peer);
+        // Drop the replacement token. Subscribers still hold the revoked
+        // generation, so a fresh epoch minted later cannot revive them.
+        self.read_epochs.remove(peer);
     }
 }
 
@@ -412,11 +492,33 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
 /// Serves an incoming `storage/read` stream on the phone (`docs/protocol/storage.md` §4.1).
 pub(crate) async fn serve_read(
     shared: Arc<Shared>,
-    peer: DeviceId,
+    session: Arc<Session>,
     mut send: SendStream,
     mut recv: RecvStream,
 ) {
-    let Ok(Ok(Some(bytes))) = tokio::time::timeout(STREAM_TIMEOUT, read_frame(&mut recv)).await else {
+    // Retain the session that actually accepted this stream. Looking it up
+    // by peer here could bind an old stream to a replacement session.
+    let peer = session.peer;
+    let ticket = {
+        let mut st = shared.storage.lock().unwrap_or_else(|e| e.into_inner());
+        st.register_read(peer)
+    };
+    // Registration precedes admission. A revocation that arrives after this
+    // point hits `ticket` even if it lands during the request read or open.
+    if revoked_read(&shared, &session, &ticket) || !shared.store.is_paired(&peer).unwrap_or(false) {
+        return;
+    }
+
+    let mut phase_cancel = ticket.rx.clone();
+    let request = tokio::select! {
+        biased;
+        _ = phase_cancel.changed() => {
+            reset_revoked_read(&mut send);
+            return;
+        }
+        request = tokio::time::timeout(STREAM_TIMEOUT, read_frame(&mut recv)) => request,
+    };
+    let Ok(Ok(Some(bytes))) = request else {
         return;
     };
     let Ok(env) = Envelope::from_cbor(&bytes) else {
@@ -431,18 +533,43 @@ pub(crate) async fn serve_read(
             return;
         }
     };
+    if revoked_read(&shared, &session, &ticket) {
+        reset_revoked_read(&mut send);
+        return;
+    }
     if let Err((code, msg)) = check_phone_allowed(&shared, &peer, STORAGE_READ) {
         let reply = Envelope::error(code, msg).reply_to(env.id);
         let _ = write_frame(&mut send, &reply.to_cbor()).await;
         let _ = send.finish();
         return;
     }
+    if revoked_read(&shared, &session, &ticket) {
+        reset_revoked_read(&mut send);
+        return;
+    }
 
     let platform = shared.platform.clone();
     let path = req.path.clone();
-    let opened = tokio::task::spawn_blocking(move || platform.storage_open_read(&path))
-        .await
-        .unwrap_or_else(|e| Err(StorageError::Failed(e.to_string())));
+    let opening = tokio::task::spawn_blocking(move || platform.storage_open_read(&path));
+    let opened = tokio::select! {
+        biased;
+        _ = phase_cancel.changed() => {
+            // Dropping the join handle does not interrupt the kernel call.
+            // Its owned result is discarded (and its file closed) on return.
+            reset_revoked_read(&mut send);
+            return;
+        }
+        result = opening => result.unwrap_or_else(|e| Err(StorageError::Failed(e.to_string()))),
+    };
+
+    // `storage_open_read` is a blocking platform call. It cannot be
+    // cancelled in the kernel; once it returns, drop the file if access
+    // was revoked while it ran.
+    if revoked_read(&shared, &session, &ticket) {
+        drop(opened);
+        reset_revoked_read(&mut send);
+        return;
+    }
 
     let file = match opened {
         Ok(f) => f,
@@ -461,7 +588,28 @@ pub(crate) async fn serve_read(
     let Ok(reply) = Envelope::new(types::STORAGE_READ_META, &meta).map(|e| e.reply_to(env.id)) else {
         return;
     };
-    if write_frame(&mut send, &reply.to_cbor()).await.is_err() {
+    if revoked_read(&shared, &session, &ticket) {
+        drop(file);
+        reset_revoked_read(&mut send);
+        return;
+    }
+    let metadata = reply.to_cbor();
+    let written = tokio::select! {
+        biased;
+        _ = phase_cancel.changed() => {
+            reset_revoked_read(&mut send);
+            return;
+        }
+        written = write_frame(&mut send, &metadata) => written,
+    };
+    if written.is_err() {
+        return;
+    }
+    // Metadata is already queued. Revocation resets the stream; it does
+    // not finish a short body as a normal success.
+    if revoked_read(&shared, &session, &ticket) {
+        drop(file);
+        reset_revoked_read(&mut send);
         return;
     }
     if to_send == 0 {
@@ -471,8 +619,14 @@ pub(crate) async fn serve_read(
 
     let offset = req.offset;
     let source = file.source;
+    let generation = ticket.generation;
+    let blocking_cancel = ticket.rx.clone();
+    let mut wait_cancel = ticket.rx.clone();
     let (tx, mut rx) = tokio::sync::mpsc::channel::<std::result::Result<Bytes, String>>(8);
     tokio::task::spawn_blocking(move || {
+        if generation_revoked(&blocking_cancel, generation) {
+            return;
+        }
         let mut std_file: std::fs::File = match source {
             FileSource::Path(p) => match std::fs::File::open(p) {
                 Ok(f) => f,
@@ -483,17 +637,29 @@ pub(crate) async fn serve_read(
             },
             FileSource::File(f) => f,
         };
+        // Open or a later read can return after revocation. Release the
+        // descriptor and do not enqueue those bytes.
+        if generation_revoked(&blocking_cancel, generation) {
+            drop(std_file);
+            return;
+        }
         if offset > 0 && std_file.seek(SeekFrom::Start(offset)).is_err() {
             let _ = tx.blocking_send(Err("seek failed".into()));
             return;
         }
         let mut remaining = to_send;
         while remaining > 0 {
+            if generation_revoked(&blocking_cancel, generation) {
+                return;
+            }
             let want = (remaining as usize).min(CHUNK_SIZE);
             let mut buf = vec![0u8; want];
             match std_file.read(&mut buf) {
                 Ok(0) => break,
                 Ok(n) => {
+                    if generation_revoked(&blocking_cancel, generation) {
+                        return;
+                    }
                     buf.truncate(n);
                     remaining -= n as u64;
                     if tx.blocking_send(Ok(Bytes::from(buf))).is_err() {
@@ -509,17 +675,59 @@ pub(crate) async fn serve_read(
         }
     });
 
-    while let Some(chunk) = rx.recv().await {
-        match chunk {
-            Ok(bytes) => {
-                if send.write_chunk(bytes).await.is_err() {
-                    return;
+    loop {
+        tokio::select! {
+            biased;
+            changed = wait_cancel.changed() => {
+                let _ = changed;
+                // Bytes already passed to `write_chunk` may already be on
+                // the QUIC stream and cannot be recalled. Stop sending and
+                // do not finish successfully.
+                reset_revoked_read(&mut send);
+                return;
+            }
+            chunk = rx.recv() => {
+                match chunk {
+                    Some(Ok(bytes)) => {
+                        tokio::select! {
+                            biased;
+                            _ = wait_cancel.changed() => {
+                                reset_revoked_read(&mut send);
+                                return;
+                            }
+                            sent = send.write_chunk(bytes) => {
+                                if sent.is_err() {
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                    Some(Err(_)) => return,
+                    None => break,
                 }
             }
-            Err(_) => return,
         }
     }
+    if generation_revoked(&wait_cancel, generation) {
+        reset_revoked_read(&mut send);
+        return;
+    }
     let _ = send.finish();
+}
+
+fn generation_revoked(rx: &tokio::sync::watch::Receiver<u64>, generation: u64) -> bool {
+    *rx.borrow() != generation
+}
+
+/// True when this read's generation was replaced, or the session it bound
+/// at registration is no longer the authenticated one.
+fn revoked_read(shared: &Shared, session: &Arc<Session>, ticket: &ReadTicket) -> bool {
+    ticket.is_cancelled()
+        || !shared.session(&session.peer).is_some_and(|current| Arc::ptr_eq(&current, session))
+}
+
+fn reset_revoked_read(send: &mut SendStream) {
+    let _ = send.reset(VarInt::from_u32(READ_REVOKED));
 }
 
 fn staging_file_path(shared: &Shared, peer: &DeviceId, offer: &StorageWriteOffer) -> PathBuf {

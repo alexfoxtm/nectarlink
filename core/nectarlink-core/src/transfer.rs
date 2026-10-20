@@ -1531,7 +1531,7 @@ pub(crate) async fn accept_stream(
                 && h.op == nectarlink_protocol::messages::storage::OP_READ
                 && h.v == nectarlink_protocol::messages::storage::VERSION =>
         {
-            crate::storage::serve_read(shared, session.peer, send, recv).await;
+            crate::storage::serve_read(shared, session, send, recv).await;
         }
         Some(h)
             if h.svc == nectarlink_protocol::messages::storage::SERVICE

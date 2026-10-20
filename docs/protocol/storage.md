@@ -22,6 +22,13 @@ phone, and configurable per device on both sides). While `storage` is off on
 the phone for a PC, the phone rejects every `storage.*` request with `DENIED`
 and prompts the user once so they can allow that PC.
 
+A serving implementation may revoke an in-progress read when storage access or
+its permitted connection path changes. Cancellation terminates the dedicated
+QUIC stream; it does not add a new storage frame or finish a partial body as a
+success. Receivers must still enforce the metadata length. Bytes already
+handed to the transport cannot be recalled. Re-enabling access admits a new
+read, and must not revive a read from the cancelled generation.
+
 ## 2. Relative paths
 
 All paths in `storage.*` messages are UTF-8, `/`-separated, and relative to the

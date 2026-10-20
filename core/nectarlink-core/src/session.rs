@@ -626,6 +626,7 @@ async fn heartbeat(session: &Arc<Session>, shared: &Weak<Shared>) {
     let started = Instant::now();
     let mut interval = tokio::time::interval(HEARTBEAT_INTERVAL);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut last_path = session.path();
     loop {
         interval.tick().await;
         if let Some(shared_arc) = shared.upgrade()
@@ -643,7 +644,10 @@ async fn heartbeat(session: &Arc<Session>, shared: &Weak<Shared>) {
                 if let Some(shared_arc) = shared.upgrade() {
                     let rtt = sent_at.elapsed().as_millis().min(u32::MAX as u128) as u32;
                     let previous = session.rtt_ms.swap(rtt, Ordering::Relaxed);
-                    if previous.abs_diff(rtt) >= 5 {
+                    // A new path can change access (Relay), whatever the round-trip time.
+                    let path = session.path();
+                    let path_changed = std::mem::replace(&mut last_path, path) != path;
+                    if path_changed || previous.abs_diff(rtt) >= 5 {
                         shared_arc.publish_online(session);
                     }
                 }
