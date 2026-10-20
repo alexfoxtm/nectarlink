@@ -151,6 +151,12 @@ data class Device(
         get() = kind == app.nectarlink.core.DeviceKind.PHONE || kind == app.nectarlink.core.DeviceKind.TABLET
 
     val online: Boolean get() = link is Link.Online
+    /** DISPLAY-ONLY selected path class ("lan"/"usb"/"relay") from the live session. */
+    val displayPath: String = "lan",
+    /** DISPLAY-ONLY ADB tunnel origin ("physical"/"network"/"unknown"). */
+    val usbMedium: String = "unknown",
+    /** DISPLAY-ONLY proven route transport ("wifi"/"cellular"/"ethernet"/"usb"), or null when unknown. */
+    val routeTransport: String? = null,
 
     /** Whether a feature works with this device now (the capability matrix). */
     fun has(feature: String): Boolean =
@@ -277,6 +283,27 @@ data class CoreState(
     fun withWakeState(id: String, state: WakeState): CoreState =
         update(id) { it.copy(wakeState = state) }
 
+    /** Folds a display-only session snapshot into the device; no-op when unchanged. */
+    fun withSessionDisplay(
+        id: String,
+        displayPath: String,
+        usbMedium: String,
+        routeTransport: String?,
+    ): CoreState = update(id) {
+        it.copy(displayPath = displayPath, usbMedium = usbMedium, routeTransport = routeTransport)
+    }
+
+    /** Folds display-only session snapshots for the initial device list. */
+    fun withSessionDisplays(
+        displays: Map<String, app.nectarlink.core.SessionDisplay?>,
+    ): CoreState {
+        var next = this
+        for ((id, display) in displays) {
+            val d = display ?: continue
+            next = next.withSessionDisplay(id, d.displayPath, d.tunnelMedium, d.linkTransport)
+        }
+        return next
+    }
     fun withMicEnabled(id: String, enabled: Boolean): CoreState =
         update(id) { it.copy(micEnabled = enabled) }.copy(
             micRequestFrom = if (!enabled && micRequestFrom == id) null else micRequestFrom,

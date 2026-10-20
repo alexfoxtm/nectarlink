@@ -19,6 +19,8 @@ import app.nectarlink.android.core.CoreState
 import app.nectarlink.android.core.Device
 import app.nectarlink.android.core.WakeState
 import app.nectarlink.android.ui.MainActivity
+import app.nectarlink.android.ui.home.PeerOnlineLabel
+import app.nectarlink.android.ui.home.resolvePeerOnlineLabel
 import app.nectarlink.core.Link
 import app.nectarlink.core.MediaAction
 
@@ -189,10 +191,16 @@ class PcWidgetProvider : AppWidgetProvider() {
                         views.setInt(R.id.widget_pc_status, "setBackgroundResource", R.drawable.bg_widget_pill_online)
                         views.setTextColor(R.id.widget_pc_status, COLOR_ONLINE_TEXT)
                         val onlineLink = pc.link as? Link.Online
-                        val transport = when {
-                            onlineLink?.usb == true -> "USB"
-                            onlineLink?.relayed == true -> "Relay"
-                            else -> "Wi‑Fi"
+                        // Same rule as Home: only a proven cable renders USB;
+                        // a tunnel record alone (including wireless ADB) never
+                        // does, and unproven links stay Connected.
+                        val transport = when (resolvePeerOnlineLabel(pc.displayPath, pc.usbMedium, pc.routeTransport)) {
+                            PeerOnlineLabel.AWAY -> "Relay"
+                            PeerOnlineLabel.USB -> "USB"
+                            PeerOnlineLabel.WIFI -> "Wi‑Fi"
+                            PeerOnlineLabel.CELLULAR -> pc.battery?.cellType?.trim()?.takeIf { it.isNotEmpty() } ?: "Cellular"
+                            PeerOnlineLabel.ETHERNET -> "Ethernet"
+                            PeerOnlineLabel.CONNECTED -> "Connected"
                         }
                         val rtt = onlineLink?.rttMs?.takeIf { it > 0u }
                         val deck = pc.deckState

@@ -31,6 +31,13 @@
     <string name="link_online_rtt">已连接 · %1$d 毫秒</string>
     <string name="link_usb">USB连接</string>
     <string name="link_usb_rtt">USB连接 · %1$d 毫秒</string>
+    <string name="link_wifi">Wi-Fi</string>
+    <string name="link_wifi_rtt">Wi-Fi · %1$d 毫秒</string>
+    <string name="link_cellular_name">蜂窝网络</string>
+    <string name="link_cellular_type">%1$s</string>
+    <string name="link_cellular_type_rtt">%1$s · %2$d 毫秒</string>
+    <string name="link_ethernet">以太网</string>
+    <string name="link_ethernet_rtt">以太网 · %1$d 毫秒</string>
     <string name="link_away">远程已连接</string>
     <string name="link_connecting">正在连接…</string>
     <string name="link_offline_seen">离线 · 最后出现于 %1$s</string>

@@ -13,6 +13,7 @@ use nectarlink_core as core;
 use nectarlink_core::{
     ConnectionPath, DeviceId, LinkState, Node, NodeConfig, NodeEvent, PairingEvent,
     features::{CapabilityMatrix, FeatureState},
+    usb::TunnelMedium,
 };
 use tokio::{runtime::Runtime, sync::broadcast::error::RecvError};
 
@@ -141,6 +142,23 @@ pub enum Link {
         usb: bool,
         rtt_ms: u32,
     },
+}
+
+/// DISPLAY-ONLY classification of the live session with a peer, for the Home
+/// badge. Single snapshot: the three fields are read together so they cannot
+/// tear across calls. Enum strings only: no addresses, serials or anything
+/// beyond the closed sets ever leave the core.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct SessionDisplay {
+    /// Selected-path class: "lan", "usb" or "relay". "usb" only when the
+    /// live session's selected remote exactly equals the CURRENT bridge
+    /// address; "lan" when there is no live session.
+    pub display_path: String,
+    /// ADB tunnel origin: "physical", "network" or "unknown".
+    pub tunnel_medium: String,
+    /// Proven route transport ("wifi", "cellular", "ethernet", "usb"),
+    /// or None when unknown. Never guessed from signal bars.
+    pub link_transport: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -3802,6 +3820,27 @@ impl NectarlinkNode {
             let node = self.node.clone();
             self.runtime.spawn(async move { node.refresh_route_hints().await });
         }
+    }
+
+    /// DISPLAY-ONLY classification of the live session with `id` for the Home
+    /// badge (see [`SessionDisplay`]). Unknown peers report lan/unknown/None,
+    /// mirroring the core's own fallbacks; only malformed IDs error.
+    pub fn session_display(&self, id: String) -> Result<SessionDisplay> {
+        let peer = parse_id(&id)?;
+        let display_path = match self.node.display_path(&peer) {
+            ConnectionPath::Lan => "lan",
+            ConnectionPath::Usb => "usb",
+            ConnectionPath::Relay => "relay",
+        }
+        .to_owned();
+        let tunnel_medium = match self.node.tunnel_medium(&peer) {
+            TunnelMedium::PhysicalUsb => "physical",
+            TunnelMedium::Network => "network",
+            TunnelMedium::Unknown => "unknown",
+        }
+        .to_owned();
+        let link_transport = self.node.session_link_transport(&peer).map(|t| t.as_str().to_owned());
+        Ok(SessionDisplay { display_path, tunnel_medium, link_transport })
     }
 
     pub async fn update_device_info(&self, info: DeviceInfo) {

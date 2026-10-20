@@ -385,10 +385,14 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
                 emptyList()
             }
             val initialQueue = runCatching { started.sendQueue(null).map { it.toUi() } }.getOrDefault(emptyList())
+            val initialDisplays = devices.associate { d ->
+                d.id to runCatching { started.sessionDisplay(d.id) }.getOrNull()
+            }
             localsendMulticast?.runCatching { if (lsEnabled) acquire() else release() }
             pruneOldTempCaches()
             _state.update {
-                it.withDevices(devices, pcToggles.storageAllowed, pcToggles.micOff).copy(
+                it.withDevices(devices, pcToggles.storageAllowed, pcToggles.micOff)
+                    .withSessionDisplays(initialDisplays).copy(
                     status = CoreStatus.Ready(started.deviceId()),
                     sendQueue = initialQueue,
                     clipboardHistoryEnabled = clipHistEnabled,
@@ -635,6 +639,16 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
     /** Voice recordings stored on this phone and their delivery status to PCs. */
     val recordings = RecordingsStore(this.context)
 
+    /**
+     * Re-reads the live session's display-only classification (selected path,
+     * tunnel origin, proven transport) after a link or device change. Enum
+     * strings only; failures keep the last snapshot.
+     */
+    private fun refreshSessionDisplay(id: String) {
+        val display = node?.let { n -> runCatching { n.sessionDisplay(id) }.getOrNull() } ?: return
+        _state.update { it.withSessionDisplay(id, display.displayPath, display.tunnelMedium, display.linkTransport) }
+    }
+
     override fun onEvent(event: Event) {
         if (event is Event.Transfer) {
             val transfer = event.transfer
@@ -711,6 +725,7 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
             // A PC that's gone isn't playing for this phone anymore; it
             // sends what plays when it's back.
             is Event.LinkChanged -> {
+                refreshSessionDisplay(event.id)
                 if (event.link is Link.Offline) {
                     scope.launch(Dispatchers.Default) {
                         pcMedia.update(event.id, "", emptyList())
@@ -730,7 +745,10 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
                     }
                 }
             }
-            is Event.DeviceAdded -> ConnectionService.start(context)
+            is Event.DeviceAdded -> {
+                ConnectionService.start(context)
+                refreshSessionDisplay(event.device.id)
+            }
             is Event.DeviceRemoved -> {
                 wakeTimers.remove(event.id)?.cancel()
                 scope.launch(Dispatchers.Default) {
