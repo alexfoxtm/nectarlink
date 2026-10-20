@@ -236,7 +236,7 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
     }
 
     private fun enqueueRemoteOp(op: suspend (NectarlinkNode) -> Unit): Boolean {
-        synchronized(opsLock) {
+        return synchronized(opsLock) {
             if (isRunning && node != null) {
                 remoteOps.trySend(op).isSuccess
             } else {
