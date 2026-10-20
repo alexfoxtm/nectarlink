@@ -267,7 +267,7 @@ pub(crate) struct Shared {
     /// Last published DISPLAY-only selected path per peer, to re-emit the
     /// badge when only the selected display path changed (native wins while
     /// a bridge record exists) while the auth link stayed the same.
-    pub(crate) published_display: Mutex<HashMap<DeviceId, ConnectionPath>>,
+    pub(crate) published_display: Mutex<HashMap<DeviceId, (ConnectionPath, Option<LinkTransport>)>>,
     /// RAM-only route table pushed by the platform (this device's networks);
     /// consulted per session, never sent to peers or logs.
     pub(crate) network_routes: Arc<Mutex<Vec<RouteEntry>>>,
@@ -684,8 +684,8 @@ impl Shared {
 
     /// Publishes the session's current path and round-trip time, if it's
     /// still the peer's session (a replaced one has nothing to say). Also
-    /// re-emits when only the tunnel's display medium or the DISPLAY-only
-    /// selected path changed: the auth link is identical, but the badge must
+    /// re-emits when only the tunnel's display medium, selected path or
+    /// proven route transport changed: the auth link is identical, but the badge must
     /// move between USB and Wi-Fi/cellular (native wins while a bridge record
     /// exists) without waiting for a new path or timer.
     pub fn publish_online(&self, session: &Session) {
@@ -695,14 +695,13 @@ impl Shared {
             .is_some_and(|current| std::ptr::eq(current.as_ref(), session) && current.is_alive())
         {
             let path = session.path();
-            let display = session.display_path();
-            let medium = session.tunnel_medium();
+            let (display, medium, transport) = session.display_metadata();
             let link = LinkState::Online { path, rtt_ms: session.rtt_ms() };
             self.revoke_reads_onto_relay(&session.peer, path);
             let link_changed = self.set_link(session.peer, link.clone());
             let medium_changed = lock(&self.published_mediums).insert(session.peer, medium) != Some(medium);
-            let display_changed =
-                lock(&self.published_display).insert(session.peer, display) != Some(display);
+            let display_changed = lock(&self.published_display).insert(session.peer, (display, transport))
+                != Some((display, transport));
             if !link_changed && (medium_changed || display_changed) {
                 self.emit(NodeEvent::LinkChanged { device: session.peer, link });
             }
@@ -3777,6 +3776,7 @@ impl Node {
     /// safe to run concurrently from out-of-order refresh tasks.
     pub async fn refresh_route_hints(&self) {
         for session in self.shared.live_sessions() {
+            self.shared.publish_online(&session);
             self.shared.refresh_battery_hint(&session).await;
         }
     }
@@ -4747,6 +4747,84 @@ mod tests {
             "bridge present but NOT selected: display stays LAN, never cable"
         );
         node.shutdown().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn route_only_change_publishes_even_with_unchanged_link() {
+        let a_dir = tempfile::tempdir().unwrap();
+        let b_dir = tempfile::tempdir().unwrap();
+        let config = |dir: &std::path::Path, name: &str, kind| {
+            let mut cfg = NodeConfig::new(dir, info(name, kind, "test"), "0.0.1-test");
+            cfg.lan_discovery = false;
+            cfg.key_protector = Some(Arc::new(PlainKeyProtector));
+            cfg
+        };
+        let a = Node::start(config(a_dir.path(), "A", DeviceKind::Desktop), Arc::new(NoopPlatform))
+            .await
+            .unwrap();
+        let b =
+            Node::start(config(b_dir.path(), "B", DeviceKind::Phone), Arc::new(NoopPlatform)).await.unwrap();
+        let uri = a.pairing_start_qr().await.unwrap();
+        b.pairing_join(&uri.to_uri()).await.unwrap();
+        let peer = b.device_id();
+        let session = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if let Some(session) = a.shared.session(&peer)
+                    && session.conn.paths().iter().any(|p| p.is_selected())
+                {
+                    break session;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        let bridge = session
+            .conn
+            .paths()
+            .iter()
+            .find_map(|p| match p.remote_addr() {
+                iroh::TransportAddr::Ip(addr) if p.is_selected() => Some(*addr),
+                _ => None,
+            })
+            .unwrap();
+        // A synthetic CURRENT bridge record on a real authenticated session:
+        // this tests event publication, not physical ADB/interface acceptance.
+        let outer = "192.168.55.10";
+        lock(&a.shared.usb_peers).insert(
+            peer,
+            UsbTunnel {
+                bridge,
+                cancel: tokio_util::sync::CancellationToken::new(),
+                medium: TunnelMedium::Network,
+                adb_endpoint: Some(outer.parse().unwrap()),
+            },
+        );
+        a.set_network_routes(vec![NetworkRouteInfo {
+            transport: "wifi".into(),
+            addresses: vec![outer.into()],
+        }])
+        .await;
+        let before = a.shared.link(&peer, None);
+        let mut events = a.events();
+        a.set_network_routes(vec![NetworkRouteInfo {
+            transport: "cellular".into(),
+            addresses: vec![outer.into()],
+        }])
+        .await;
+        assert_eq!(a.shared.link(&peer, None), before, "auth path and RTT did not change");
+        let heard = std::iter::from_fn(|| events.try_recv().ok())
+            .any(|event| matches!(event, NodeEvent::LinkChanged { device, .. } if device == peer));
+        assert!(heard, "the production route update must publish the display-only change");
+        assert_eq!(a.session_display_snapshot(&peer).2, Some(LinkTransport::Cellular));
+        a.refresh_route_hints().await;
+        assert!(
+            !std::iter::from_fn(|| events.try_recv().ok())
+                .any(|event| matches!(event, NodeEvent::LinkChanged { device, .. } if device == peer)),
+            "unchanged display metadata must remain quiet"
+        );
+        a.shutdown().await;
+        b.shutdown().await;
     }
 
     #[tokio::test(flavor = "multi_thread")]

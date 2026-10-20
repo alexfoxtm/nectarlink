@@ -39,12 +39,8 @@ class PeerStatusTest {
     }
 
     @Test
-    fun `proven cellular resolves with type or fallback name`() {
+    fun `proven cellular resolves without guessing a radio subtype`() {
         assertEquals(PeerOnlineLabel.CELLULAR, resolvePeerOnlineLabel("lan", "unknown", "cellular"))
-        assertEquals("LTE", cellularLabelName("LTE", "Cellular"))
-        assertEquals("Cellular", cellularLabelName(null, "Cellular"))
-        assertEquals("Cellular", cellularLabelName("  ", "Cellular"))
-        assertEquals("5G", cellularLabelName("  5G\n", "Cellular"))
     }
 
     @Test

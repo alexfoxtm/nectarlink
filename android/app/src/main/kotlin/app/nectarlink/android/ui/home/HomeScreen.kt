@@ -1284,7 +1284,7 @@ private fun PeerCard(
                 Text(
                     text = stringResource(
                         if (device.kind == app.nectarlink.core.DeviceKind.TABLET) R.string.peer_kind_tablet else R.string.peer_kind_phone,
-                    ) + " · " + linkText(device.link, device.displayPath, device.usbMedium, device.routeTransport, device.battery?.cellType),
+                    ) + " · " + linkText(device.link, device.displayPath, device.usbMedium, device.routeTransport),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1408,7 +1408,7 @@ private fun PcCard(
                     if (!device.online && device.wakeState == WakeState.Waking) {
                         stringResource(R.string.wake_waking, device.name)
                     } else {
-                        linkText(device.link, device.displayPath, device.usbMedium, device.routeTransport, device.battery?.cellType)
+                        linkText(device.link, device.displayPath, device.usbMedium, device.routeTransport)
                     },
                     style = MaterialTheme.typography.labelLarge,
                     modifier = Modifier.weight(1f),
@@ -2836,7 +2836,6 @@ private fun linkText(
     displayPath: String,
     usbMedium: String,
     routeTransport: String?,
-    cellType: String?,
 ): String = when (link) {
     // USB only on a proven cable (selected CURRENT bridge + physical medium);
     // a tunnel record alone (including wireless ADB) never renders USB.
@@ -2846,7 +2845,7 @@ private fun linkText(
         PeerOnlineLabel.USB -> if (link.rttMs >= 1u) stringResource(R.string.link_usb_rtt, link.rttMs.toInt()) else stringResource(R.string.link_usb)
         PeerOnlineLabel.WIFI -> if (link.rttMs >= 1u) stringResource(R.string.link_wifi_rtt, link.rttMs.toInt()) else stringResource(R.string.link_wifi)
         PeerOnlineLabel.CELLULAR -> {
-            val name = cellularLabelName(cellType, stringResource(R.string.link_cellular_name))
+            val name = stringResource(R.string.link_cellular_name)
             if (link.rttMs >= 1u) stringResource(R.string.link_cellular_type_rtt, name, link.rttMs.toInt()) else stringResource(R.string.link_cellular_type, name)
         }
         PeerOnlineLabel.ETHERNET -> if (link.rttMs >= 1u) stringResource(R.string.link_ethernet_rtt, link.rttMs.toInt()) else stringResource(R.string.link_ethernet)
