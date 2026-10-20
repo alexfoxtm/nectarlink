@@ -11,7 +11,9 @@
 //! `mp4_box`, `mp4_full_box`, `build_ftyp`, `build_moov`, `build_mvhd`,
 //! `build_trak`, `build_tkhd`, `build_mdia`, `build_minf`, `build_stbl`,
 //! `build_stsd`, `build_stts`, `build_stss`, `build_stsc`, `build_stsz`,
-//! `build_stco`, and the `extract_sps_and_pps_vecs` fallback pair.
+//! `build_stco`. The upstream `extract_sps_and_pps_vecs` hardcoded fallback
+//! pair is deliberately not reused: this recorder fails closed without both
+//! valid sets.
 //!
 //! Mac adaptations (minimum, not wholesale copy):
 //! - Video-only: no `ffmpeg` shell-out, no `Command`/`Stdio`, no `libc`;
@@ -30,7 +32,9 @@
 //!   via `SystemTime`). The Linux `local_ymdhms`/`civil_from_days` timezone
 //!   logic is deliberately not ported (no timezone abstraction per task).
 //! - First-keyframe gating with lazy file creation; `finish` without frames
-//!   removes the partial file. `Drop` removes an unfinished partial file.
+//!   fails. `Drop` removes only a file this recorder created (`create_new`
+//!   ownership); an empty recorder never unlinks an existing path. Any I/O
+//!   failure poisons the recorder so `finish` cannot claim a valid file.
 //!
 //! Limitations recorded:
 //! - Audio is video-only by design: `new`/`on_audio_config` accept audio
@@ -38,9 +42,12 @@
 //!   returns `Err` for non-empty PCM.
 //! - `moov` is written at the end (not `faststart`-fronted). Local players
 //!   play it; progressive streaming would need a second pass.
-//! - `avcC` falls back to a hardcoded baseline SPS/PPS pair when the stream
-//!   never yielded both (same fallback as upstream). Dimensions in that
-//!   fallback may not match the stream; real streams provide SPS/PPS.
+//! - No `avcC` fallback: recording and finalization fail closed unless the
+//!   stream yielded a valid SPS and PPS within `MAX_SPS_PPS_BYTES` each.
+//!   A resolution or parameter-set change after the first recorded sample
+//!   is a sticky failure (`on_config`/`set_sps_pps` keep their `()` API);
+//!   the recorder refuses further samples and `finish` fails rather than
+//!   building one `avc1` description over mismatched samples.
 //! - `stco` uses 32-bit offsets, so total file size is capped well below 4 GiB
 //!   (`MAX_MDAT_BYTES`). Longer recordings are refused with an error.
 //! - Callers that expected the old stub (`"not supported on macOS"` from
@@ -78,6 +85,9 @@ const MAX_DURATION_US: u64 = 3 * 3_600 * 1_000_000;
 const MAX_SAMPLE_BYTES: usize = 8 << 20;
 /// Largest `mdat` payload accepted. Keeps 32-bit `stco`/box sizes valid.
 const MAX_MDAT_BYTES: u64 = 1_800_000_000;
+/// Largest SPS or PPS NAL accepted for `avcC`. Matches the Mac decoder-side
+/// parameter-set cap cited in review; also keeps the `u16` length in `avcC` valid.
+const MAX_SPS_PPS_BYTES: usize = 4096;
 
 /// Splits an Annex-B byte stream into individual NAL payloads (without start codes).
 pub fn split_annexb(data: &[u8]) -> Vec<&[u8]> {
@@ -194,6 +204,21 @@ pub struct MirrorRecorder {
     ftyp_len: usize,
     /// Created lazily on the first keyframe; `None` until then.
     file: Option<File>,
+    /// True only when this recorder atomically created `path` via `create_new`.
+    /// Cleanup (`Drop`/`finish` failure) removes the path only when owned, so
+    /// a racing or pre-existing file is never truncated or unlinked.
+    owned: bool,
+    /// Sticky terminal failure. Set on I/O errors, missing/oversized
+    /// parameter sets, or a resolution/parameter-set change after the first
+    /// recorded sample. `on_config`/`set_sps_pps` keep their `()` API and
+    /// report through this state; `on_packet`/`finish` then fail honestly.
+    poison: Option<String>,
+    /// First recorded sample's parameter sets and dimensions. Frozen after
+    /// the first successful sample write; later changes fail instead of
+    /// building one `avc1` description over mismatched samples.
+    recorded_sps: Vec<u8>,
+    recorded_pps: Vec<u8>,
+    recorded_dims: Option<(u32, u32)>,
 }
 
 impl std::fmt::Debug for MirrorRecorder {
@@ -205,9 +230,10 @@ impl std::fmt::Debug for MirrorRecorder {
 impl Drop for MirrorRecorder {
     fn drop(&mut self) {
         // An unfinished recording leaves an unplayable `ftyp`+`mdat` prefix
-        // (no `moov`); remove it so Downloads keeps no corrupt partials.
-        // `finish` consumes `self`, so this only runs on the unfinished path.
-        if self.file.is_some() {
+        // (no `moov`); remove it only when this recorder created it, so a
+        // racing or pre-existing file is never unlinked. `finish` consumes
+        // `self`, so this only runs on the unfinished path.
+        if self.owned && self.file.is_some() {
             self.file.take();
             let _ = fs::remove_file(&self.path);
         }
@@ -243,6 +269,11 @@ impl MirrorRecorder {
             mdat_bytes: 0,
             ftyp_len: 0,
             file: None,
+            owned: false,
+            poison: None,
+            recorded_sps: Vec::new(),
+            recorded_pps: Vec::new(),
+            recorded_dims: None,
         }
     }
 
@@ -255,17 +286,53 @@ impl MirrorRecorder {
     }
 
     /// Seeds cached SPS/PPS NAL units collected before recording started.
+    /// Keeps the `()` API: a parameter-set change after the first recorded
+    /// sample is recorded as a sticky failure and reported by later
+    /// `on_packet`/`finish` calls instead of silently rebuilding `avcC`.
     pub fn set_sps_pps(&mut self, sps_pps: &[u8]) {
-        if !sps_pps.is_empty() {
+        if sps_pps.is_empty() || self.poison.is_some() {
+            return;
+        }
+        if self.frame_count == 0 {
             merge_sps_pps(&mut self.sps_pps, sps_pps);
+            return;
+        }
+        let mut merged = self.sps_pps.clone();
+        merge_sps_pps(&mut merged, sps_pps);
+        match extract_sps_and_pps_vecs(&merged) {
+            Ok((new_sps, new_pps)) => {
+                if new_sps != self.recorded_sps || new_pps != self.recorded_pps {
+                    self.poison = Some("SPS/PPS changed after recording started".into());
+                } else {
+                    self.sps_pps = merged;
+                }
+            }
+            Err(e) => {
+                self.poison = Some(e);
+            }
         }
     }
 
-    /// Updates stream dimensions before the first keyframe initializes the recording.
+    /// Updates stream dimensions before the first recorded sample.
+    /// Keeps the `()` API: a resolution change after the first recorded sample
+    /// is a sticky failure reported by later `on_packet`/`finish` calls instead
+    /// of silently muxing under stale dimensions.
     pub fn on_config(&mut self, width: u32, height: u32) {
-        if !self.got_keyframe && width > 0 && height > 0 {
+        if width == 0 || height == 0 || self.poison.is_some() {
+            return;
+        }
+        // Frozen once the first sample is recorded (`recorded_dims`/`frame_count`);
+        // before that, dimensions may still track the encoder.
+        if self.frame_count == 0 && self.recorded_dims.is_none() {
             self.width = width;
             self.height = height;
+            return;
+        }
+        if width != self.width || height != self.height {
+            self.poison = Some(format!(
+                "resolution change from {}x{} to {width}x{height} after recording started",
+                self.width, self.height
+            ));
         }
     }
 
@@ -275,6 +342,9 @@ impl MirrorRecorder {
 
     /// Processes an incoming Annex-B H.264 access unit, streaming it to disk.
     pub fn on_packet(&mut self, keyframe: bool, time_us: u64, data: &[u8]) -> Result<(), String> {
+        if let Some(err) = self.poison.clone() {
+            return Err(err);
+        }
         if data.is_empty() {
             return Ok(());
         }
@@ -294,6 +364,24 @@ impl MirrorRecorder {
         merge_sps_pps(&mut self.sps_pps, data);
 
         if is_parameter_only(data) {
+            // Parameter-only packets build the cache before the first sample.
+            // After recording started they must not reconfigure the stream:
+            // any change (or invalid oversized set) is a sticky failure.
+            if self.frame_count > 0 {
+                match extract_sps_and_pps_vecs(&self.sps_pps) {
+                    Ok((cur_sps, cur_pps)) => {
+                        if cur_sps != self.recorded_sps || cur_pps != self.recorded_pps {
+                            let msg = "SPS/PPS changed after recording started".to_string();
+                            self.poison = Some(msg.clone());
+                            return Err(msg);
+                        }
+                    }
+                    Err(e) => {
+                        self.poison = Some(e.clone());
+                        return Err(e);
+                    }
+                }
+            }
             return Ok(());
         }
 
@@ -302,8 +390,49 @@ impl MirrorRecorder {
             if !is_keyframe {
                 return Ok(());
             }
+            // First keyframe: require actual valid sets before gating or
+            // creating any file (fail closed, no fallback). No poison here:
+            // no file exists yet, so a later keyframe with valid sets can
+            // still start the recording.
+            extract_sps_and_pps_vecs(&self.sps_pps)?;
             self.got_keyframe = true;
         }
+        // The first recorded sample must be a keyframe; a non-keyframe that
+        // arrives after a failed first-keyframe attempt waits for the next IDR.
+        if self.frame_count == 0 && !is_keyframe {
+            return Ok(());
+        }
+        // Freeze the stream configuration after the first recorded sample.
+        // Any parameter-set change fails honestly instead of building one
+        // `avc1` description over mismatched samples.
+        let first_sets: Option<(Vec<u8>, Vec<u8>)> = if self.frame_count == 0 {
+            Some(extract_sps_and_pps_vecs(&self.sps_pps)?)
+        } else {
+            match extract_sps_and_pps_vecs(&self.sps_pps) {
+                Ok((cur_sps, cur_pps)) => {
+                    if cur_sps != self.recorded_sps || cur_pps != self.recorded_pps {
+                        let msg = "SPS/PPS changed after recording started".to_string();
+                        self.poison = Some(msg.clone());
+                        return Err(msg);
+                    }
+                    if let Some((rw, rh)) = self.recorded_dims {
+                        if rw != self.width || rh != self.height {
+                            let msg = format!(
+                                "resolution change from {rw}x{rh} to {}x{} after recording started",
+                                self.width, self.height
+                            );
+                            self.poison = Some(msg.clone());
+                            return Err(msg);
+                        }
+                    }
+                    Some((cur_sps, cur_pps))
+                }
+                Err(e) => {
+                    self.poison = Some(e.clone());
+                    return Err(e);
+                }
+            }
+        };
         if self.frame_count >= MAX_FRAMES {
             return Err(format!("more than {MAX_FRAMES} frames"));
         }
@@ -357,10 +486,36 @@ impl MirrorRecorder {
             return Err("recording file size exceeds the limit".into());
         }
 
-        self.ensure_file_open()?;
-        let file = self.file.as_mut().ok_or("recording file is not open")?;
-        file.write_all(&sample_bytes).map_err(|e| e.to_string())?;
+        if let Err(e) = self.ensure_file_open() {
+            // `ensure_file_open` already poisoned on creation/header failure
+            // to retain owned cleanup; surface the same error here.
+            return Err(e);
+        }
+        // A poison set by a racing `on_config`/`set_sps_pps` between validation
+        // and file creation must not produce a valid-looking sample.
+        if let Some(err) = self.poison.clone() {
+            return Err(err);
+        }
+        let write_result = self
+            .file
+            .as_mut()
+            .ok_or("recording file is not open")
+            .and_then(|file| file.write_all(&sample_bytes).map_err(|e| e.to_string()));
+        if let Err(e) = write_result {
+            // Partial sample bytes must never be described by later tables:
+            // poison so `finish` refuses and owned cleanup removes the prefix.
+            self.poison = Some(e.clone());
+            return Err(e);
+        }
 
+        // First successful sample freezes the configuration for `avcC`.
+        if self.frame_count == 0 {
+            if let Some((sps, pps)) = first_sets {
+                self.recorded_sps = sps;
+                self.recorded_pps = pps;
+            }
+            self.recorded_dims = Some((self.width, self.height));
+        }
         self.pts.push(rel_us);
         self.sample_sizes.push(sample_bytes.len() as u32);
         if is_keyframe {
@@ -385,17 +540,36 @@ impl MirrorRecorder {
         // `Drop` is implemented (partial-file cleanup), so `self.path` cannot
         // be moved out of `self`; clone the disposable caller path instead.
         let path = self.path.clone();
+        // Sticky failure (I/O, missing/oversized sets, reconfig) refuses to
+        // claim a valid file and removes only owned partial output.
+        if let Some(err) = self.poison.clone() {
+            if self.owned && self.file.is_some() {
+                self.file.take();
+                let _ = fs::remove_file(&path);
+            }
+            return Err(err);
+        }
         if self.frame_count == 0 || !self.got_keyframe || self.file.is_none() {
-            self.file.take();
-            let _ = fs::remove_file(&path);
+            // Empty recording: never unlink a path this recorder did not create.
+            if self.owned && self.file.is_some() {
+                self.file.take();
+                let _ = fs::remove_file(&path);
+            } else {
+                self.file.take();
+            }
             return Err("No video frames were recorded yet.".into());
         }
         let result = self.finish_inner();
-        if result.is_err() {
-            self.file.take();
-            let _ = fs::remove_file(&path);
+        if let Err(e) = result {
+            // Finalization failure: remove only owned partial output.
+            if self.owned {
+                self.file.take();
+                let _ = fs::remove_file(&path);
+            } else {
+                self.file.take();
+            }
+            return Err(e);
         }
-        result?;
         // Success: close the handle without deleting; `Drop` must see `None`.
         self.file.take();
         Ok(path)
@@ -403,6 +577,13 @@ impl MirrorRecorder {
 
     fn finish_inner(&mut self) -> Result<(), String> {
         let file = self.file.as_mut().ok_or("recording file is not open")?;
+        // Fail closed when any sticky reconfig arrived between the last sample
+        // and finalization (e.g. via `set_sps_pps` with no further packet).
+        if let Some((rw, rh)) = self.recorded_dims {
+            if rw != self.width || rh != self.height {
+                return Err("resolution changed after recording started".into());
+            }
+        }
         let default_delta = (TIMESCALE / self.fps.max(1)).max(1);
         let mut sample_deltas = Vec::with_capacity(self.pts.len());
         for (idx, &pts) in self.pts.iter().enumerate() {
@@ -418,7 +599,17 @@ impl MirrorRecorder {
         if sync_samples.is_empty() {
             sync_samples.push(1);
         }
-        let (sps, pps) = extract_sps_and_pps_vecs(&self.sps_pps);
+        // No fallback: both sets must be present and bounded.
+        let (sps, pps) = extract_sps_and_pps_vecs(&self.sps_pps)?;
+        // The finalized description must match the recorded samples.
+        if !self.recorded_sps.is_empty() || !self.recorded_pps.is_empty() {
+            if sps != self.recorded_sps || pps != self.recorded_pps {
+                return Err("SPS/PPS changed after recording started".into());
+            }
+        }
+        if sps.len() > u16::MAX as usize || pps.len() > u16::MAX as usize {
+            return Err("SPS/PPS exceeds the avcC length limit".into());
+        }
         let ftyp = build_ftyp();
         let chunk_offset = (ftyp.len() + 8) as u32;
         let moov = build_moov(
@@ -441,25 +632,61 @@ impl MirrorRecorder {
         Ok(())
     }
 
-    /// Creates/truncates the output file and streams `ftyp` + `mdat` header.
+    /// Atomically reserves the output file and streams `ftyp` + `mdat` header.
+    /// Uses `create_new` so an existing path is never truncated; only the
+    /// recorder that created the path owns it for cleanup. Header I/O
+    /// failures keep the owned handle and poison the recorder so `finish`
+    /// cannot claim a valid file and no orphan partial remains.
     fn ensure_file_open(&mut self) -> Result<(), String> {
         if self.file.is_some() {
             return Ok(());
         }
+        if let Some(err) = self.poison.clone() {
+            return Err(err);
+        }
         if let Some(parent) = self.path.parent() {
             if !parent.as_os_str().is_empty() {
-                fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+                fs::create_dir_all(parent).map_err(|e| {
+                    let msg = e.to_string();
+                    self.poison = Some(msg.clone());
+                    msg
+                })?;
             }
         }
         let ftyp = build_ftyp();
-        let mut file =
-            File::create(&self.path).map_err(|e| format!("create {}: {e}", self.path.display()))?;
-        file.write_all(&ftyp).map_err(|e| e.to_string())?;
-        file.write_all(&0u32.to_be_bytes()).map_err(|e| e.to_string())?;
-        file.write_all(b"mdat").map_err(|e| e.to_string())?;
-        self.ftyp_len = ftyp.len();
+        let file = match File::options().write(true).create_new(true).open(&self.path) {
+            Ok(file) => file,
+            Err(e) => {
+                // Collision or permission: never truncate or unlink the
+                // existing path. Poison so `finish` fails instead of
+                // claiming an unrelated file.
+                let msg = format!("create {}: {e}", self.path.display());
+                self.poison = Some(msg.clone());
+                return Err(msg);
+            }
+        };
+        // This recorder created the path: own it for `Drop`/`finish` cleanup.
+        self.owned = true;
         self.file = Some(file);
-        Ok(())
+        let header_result: Result<usize, String> = (|| {
+            let file = self.file.as_mut().ok_or("recording file is not open")?;
+            file.write_all(&ftyp).map_err(|e| e.to_string())?;
+            file.write_all(&0u32.to_be_bytes()).map_err(|e| e.to_string())?;
+            file.write_all(b"mdat").map_err(|e| e.to_string())?;
+            Ok(ftyp.len())
+        })();
+        match header_result {
+            Ok(len) => {
+                self.ftyp_len = len;
+                Ok(())
+            }
+            Err(e) => {
+                // Keep `self.file` + `owned` so `Drop`/`finish` remove the
+                // owned prefix; poison so `finish` cannot finalize it.
+                self.poison = Some(e.clone());
+                Err(e)
+            }
+        }
     }
 }
 
@@ -485,7 +712,10 @@ fn mp4_full_box(fourcc: &[u8; 4], version: u8, flags: u32, body: &[u8]) -> Vec<u
     out
 }
 
-fn extract_sps_and_pps_vecs(sps_pps: &[u8]) -> (Vec<u8>, Vec<u8>) {
+/// Extracts the cached SPS and PPS NALs, failing closed when either set is
+/// missing or exceeds `MAX_SPS_PPS_BYTES`. No hardcoded fallback: the caller
+/// must provide actual valid sets before the first recorded IDR/finalization.
+fn extract_sps_and_pps_vecs(sps_pps: &[u8]) -> Result<(Vec<u8>, Vec<u8>), String> {
     let mut sps = None;
     let mut pps = None;
     for nal in split_annexb(sps_pps) {
@@ -495,11 +725,15 @@ fn extract_sps_and_pps_vecs(sps_pps: &[u8]) -> (Vec<u8>, Vec<u8>) {
             _ => {}
         }
     }
-    // Same hardcoded baseline fallback as upstream when the stream never
-    // yielded both parameter sets.
-    let sps = sps.unwrap_or_else(|| vec![0x67, 0x42, 0xC0, 0x1F, 0xDA, 0x01, 0x40, 0x16, 0xEC, 0x04, 0x40]);
-    let pps = pps.unwrap_or_else(|| vec![0x68, 0xCE, 0x3C, 0x80]);
-    (sps, pps)
+    let sps = sps.ok_or("missing SPS (NAL 7) for avcC".to_string())?;
+    let pps = pps.ok_or("missing PPS (NAL 8) for avcC".to_string())?;
+    if sps.len() > MAX_SPS_PPS_BYTES {
+        return Err(format!("SPS of {} bytes exceeds the limit", sps.len()));
+    }
+    if pps.len() > MAX_SPS_PPS_BYTES {
+        return Err(format!("PPS of {} bytes exceeds the limit", pps.len()));
+    }
+    Ok((sps, pps))
 }
 
 fn build_ftyp() -> Vec<u8> {
@@ -815,9 +1049,14 @@ mod tests {
         let mp4_path = dir.path().join("red-32x32.mp4");
         let fixture = include_bytes!("testdata/red-32x32.annexb");
 
+        // The fixture must provide real valid sets: no fallback is allowed.
+        let (fixture_sps, fixture_pps) =
+            extract_sps_and_pps_vecs(fixture).expect("fixture must carry valid SPS/PPS");
+
         let mut rec = MirrorRecorder::new(mp4_path.clone(), 32, 32, 30, None);
         rec.on_packet(false, 0, fixture).unwrap();
         // A second fixture frame exercises the monotonic timestamp fix-up.
+        // Same SPS/PPS and dimensions: must still succeed (no false reconfig).
         rec.on_packet(false, 0, fixture).unwrap();
         let saved = rec.finish().unwrap();
         assert_eq!(saved, mp4_path);
@@ -828,6 +1067,15 @@ mod tests {
         assert!(contains_subslice(&bytes, b"mdat"), "missing mdat box");
         assert!(contains_subslice(&bytes, b"avc1"), "missing avc1 sample entry");
         assert!(contains_subslice(&bytes, b"avcC"), "missing avcC config box");
+        // The finalized file must describe the real stream, not a fallback.
+        assert!(
+            contains_subslice(&bytes, &fixture_sps),
+            "moov must carry the fixture SPS"
+        );
+        assert!(
+            contains_subslice(&bytes, &fixture_pps),
+            "moov must carry the fixture PPS"
+        );
     }
 
     #[test]
@@ -846,6 +1094,88 @@ mod tests {
         assert!(rec.on_audio(0, &[0u8; 480]).is_err());
         assert!(rec.finish().is_err());
         assert!(!mp4_path.exists(), "empty recording must leave no file");
+
+        // Empty finish must never unlink a pre-existing path it did not create.
+        let preoccupied = dir.path().join("preoccupied.mp4");
+        std::fs::write(&preoccupied, b"owner").unwrap();
+        let rec = MirrorRecorder::new(preoccupied.clone(), 32, 32, 30, None);
+        assert!(rec.finish().is_err());
+        assert_eq!(
+            std::fs::read(&preoccupied).unwrap(),
+            b"owner".to_vec(),
+            "empty finish must not unlink an existing path"
+        );
+
+        // Path collision: `create_new` fails instead of truncating, the owner
+        // file is preserved, and finalization refuses without unlinking it.
+        let collision = dir.path().join("collision.mp4");
+        std::fs::write(&collision, b"owner-bytes").unwrap();
+        let mut rec = MirrorRecorder::new(collision.clone(), 32, 32, 30, None);
+        assert!(
+            rec.on_packet(false, 0, fixture).is_err(),
+            "collision must fail, not truncate"
+        );
+        assert_eq!(
+            std::fs::read(&collision).unwrap(),
+            b"owner-bytes".to_vec()
+        );
+        assert!(rec.finish().is_err());
+        assert_eq!(
+            std::fs::read(&collision).unwrap(),
+            b"owner-bytes".to_vec(),
+            "failure cleanup must not unlink an unowned file"
+        );
+
+        // Missing sets fail closed: an IDR slice alone without SPS/PPS cannot
+        // fall back to a fabricated baseline configuration.
+        let idr_only: Vec<u8> = vec![0, 0, 0, 1, 0x65, 0x88, 0x84, 0x21];
+        let missing_path = dir.path().join("missing-sets.mp4");
+        let mut rec = MirrorRecorder::new(missing_path.clone(), 32, 32, 30, None);
+        assert!(
+            rec.on_packet(true, 0, &idr_only).is_err(),
+            "missing SPS/PPS must fail, no fallback"
+        );
+        assert!(rec.finish().is_err());
+        assert!(
+            !missing_path.exists(),
+            "failed first sample must leave no orphan partial"
+        );
+
+        // Resolution change after the first sample is a sticky failure:
+        // the next sample and `finish` refuse, and owned cleanup removes the
+        // partial instead of finalizing mismatched dimensions.
+        let reconfig_path = dir.path().join("reconfig.mp4");
+        let mut rec = MirrorRecorder::new(reconfig_path.clone(), 32, 32, 30, None);
+        rec.on_packet(false, 0, fixture).unwrap();
+        rec.on_config(64, 64);
+        assert!(
+            rec.on_packet(false, 33_333, fixture).is_err(),
+            "resolution change must fail honestly"
+        );
+        assert!(rec.finish().is_err());
+        assert!(
+            !reconfig_path.exists(),
+            "poisoned recording must not finalize a partial"
+        );
+
+        // Parameter-set change after the first sample is likewise sticky.
+        let sps_change_path = dir.path().join("sps-change.mp4");
+        let mut rec = MirrorRecorder::new(sps_change_path.clone(), 32, 32, 30, None);
+        rec.on_packet(false, 0, fixture).unwrap();
+        let mut other = extract_sps_pps(fixture).expect("fixture has SPS and PPS");
+        if other.len() > 6 {
+            other[6] ^= 0x01;
+        }
+        rec.set_sps_pps(&other);
+        assert!(
+            rec.on_packet(false, 33_333, fixture).is_err(),
+            "SPS change must fail honestly"
+        );
+        assert!(rec.finish().is_err());
+        assert!(
+            !sps_change_path.exists(),
+            "SPS-poisoned recording must not finalize a partial"
+        );
     }
 
     #[test]
