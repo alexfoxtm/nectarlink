@@ -1,0 +1,61 @@
+libyuv in CameraX core 1.6.2 (androidx.camera:camera-core:1.6.2)
+Used by Waypair Link for camera capture.
+
+Shipped binary: camera-core-1.6.2.aar from Google Maven, SHA-256
+ebd66f090414f4c12f23a55b5023aeee1b096da8a06c02a0b6fb3520c4ddadf6. Its native
+library lib/<abi>/libimage_processing_util_jni.so (arm64-v8a SHA-256
+0292b063fafccf734472cbb59588e756c2dbca907c72021ba6fbf126385508a2) contains
+libyuv, linked statically. The AAR carries only the Apache-2.0 text
+(Apache-2.0.txt); its POM also declares BSD-3-Clause, for libyuv.
+
+Source: CameraX 1.6.2 is commit 9046f07948c1e7a89aaec581463730f4d666611b of
+https://android.googlesource.com/platform/frameworks/support (the end of the
+1.6.2 range in the CameraX release notes). There:
+  camera/camera-core/src/main/cpp/CMakeLists.txt links
+    image_processing_util_jni with libyuv::yuv (find_package(libyuv)).
+  camera/camera-core/build.gradle says "This library includes code from
+    libyuv, which is licensed under the BSD-3-Clause license."
+  external/libyuv/build.gradle builds the static "yuv" target from the
+    checkout's external/libyuv
+    (https://android.googlesource.com/platform/external/libyuv).
+
+The exact libyuv revision in this build is not recorded by the AAR or by that
+commit. The LICENSE below is the one at
+https://android.googlesource.com/platform/external/libyuv main
+(daeff19e274f52902036ae141c56e946018bc4e8, 2025-03-26), SHA-256
+2b2cc1180c7e6988328ad2033b04b80117419db9c4c584918bbb3cfec7e9364f, which is
+byte-identical to upstream https://chromium.googlesource.com/libyuv/libyuv
+main. libyuv also has an additional patent grant in its PATENTS file.
+
+==============================================================================
+libyuv: LICENSE
+==============================================================================
+Copyright 2011 The LibYuv Project Authors. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+  * Redistributions of source code must retain the above copyright
+    notice, this list of conditions and the following disclaimer.
+
+  * Redistributions in binary form must reproduce the above copyright
+    notice, this list of conditions and the following disclaimer in
+    the documentation and/or other materials provided with the
+    distribution.
+
+  * Neither the name of Google nor the names of its contributors may
+    be used to endorse or promote products derived from this software
+    without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.

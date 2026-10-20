@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.graphicsLayer
@@ -1013,20 +1012,7 @@ fun SettingsScreen(
     }
 
     if (showLicenses) {
-        AlertDialog(
-            onDismissRequest = { showLicenses = false },
-            containerColor = glassModalContainerColor(),
-            title = { Text(stringResource(R.string.about_licenses_title)) },
-            text = {
-                Text(
-                    stringResource(R.string.about_licenses_text),
-                    modifier = Modifier.verticalScroll(rememberScrollState()),
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { showLicenses = false }) { Text(stringResource(R.string.action_done)) }
-            },
-        )
+        LicensesDialog(onDismiss = { showLicenses = false })
     }
 
     confirmUnpair?.let { device ->

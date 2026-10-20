@@ -1,5 +1,11 @@
 # Android build — Waypair Link fork build
 
+Alex's daily development uses the normal signed `com.waypair` app and its
+existing data and pairing. Do not install separate QA/test apps or create
+alternate identities. The generic debug/CI instructions below remain for
+upstream compatibility; they are not a second installed development app.
+Run code checks and synthetic data fixtures, then update the same signed app.
+
 This is the independently maintained **Waypair Link** Android fork, based on
 NectarLink. The app label is **Waypair Link**; About identifies it as an
 **independently maintained fork**. These builds are for Alex's personal use.
@@ -39,7 +45,7 @@ Package identity is preserved, not migrated:
 - **Device identity in the Android Keystore.** `KeystoreKeyProtector` seals
   the identity key with a non-exportable AES-GCM Keystore key.
 
-Current published personal-use release, built from source
+Historical branding release, built from source
 `405256518f8601cd4ef802cb3a4193afc027bef0`:
 
 | | |
@@ -143,7 +149,7 @@ An update is offered when the manifest's tag is newer than the running
 `versionName`. Android installs it only over the same package and signer,
 with a higher `versionCode`.
 
-The current published release is `0.1.4-local.3` / code 96 under
+That historical branding release is `0.1.4-local.3` / code 96 under
 `waypair/nectar/android/releases/v0.1.4-local.3/`; its stable manifest uses
 the dedicated fork-only route above. The qualification receipt below records
 the APK identity and local runtime evidence. The R2 publication/readback record
@@ -167,3 +173,158 @@ is maintained separately from that qualification.
 The Android app is GPL-3.0-or-later with `LICENSES/APP-STORE-EXCEPTION.md`,
 the core MPL-2.0. Retain notices and keep the source of the exact built
 commit available; the source archive is published beside each APK.
+
+### What the app carries
+
+About › Open-source licenses lists every file under the APK's
+`assets/licenses/`:
+
+- `LICENSE.txt` and `LICENSES/*` from the repository;
+- the reviewed notices in `android/app/notices/`, with
+  `THIRD-PARTY-NOTICES.txt` as the index;
+- the fonts' `OFL-*.txt`;
+- `MAVEN-COMPONENTS.txt`, the Maven modules the build resolved.
+
+`RUST-CRATES.inputs` and `RUST-CRATES.spdx-texts.json` stay out of the APK.
+
+The build fails when:
+
+- a resolved Maven group is not in `reviewedMavenGroups`. Add its notice to
+  `notices/` before adding the group.
+- `RUST-CRATES.txt` no longer matches its recorded inputs (below).
+
+### Source link
+
+`BuildConfig.SOURCE_URL` is chosen in this order:
+
+1. `-Pwaypair.sourceUrl=<https URL>`, if given.
+2. If `waypair.versionName` is set, the release archive
+   `https://pub-a57457f4da43415ea6335550ee9e2983.r2.dev/waypair/nectar/android/releases/v<version>/Waypair-Link-<version>-android-source.tar.gz`.
+3. Otherwise, the fork repository.
+
+The chosen URL must be https and use URL characters only, or configuration
+fails. A release must publish its source archive under exactly that name, or
+pass `-Pwaypair.sourceUrl`. `publish-r2.py` uploads the archive under its
+local file name.
+
+Only the first two cases set `SOURCE_URL_IS_EXACT`. Without it, About shows
+no "source of this version" link and says that the build is not a published
+release.
+
+### Rust crate notices
+
+`notices/RUST-CRATES.txt` is `cargo xtask notices` output for
+`nectarlink-ffi` on `aarch64-linux-android`. It is the graph of the arm64-v8a
+release build.
+
+`notices/RUST-CRATES.inputs` records:
+
+- the generator command, package and target;
+- the crate count and the SHA-256 of the sorted `name version` list;
+- one `covers` line per other target whose normal crate graph lies within the
+  file, with that graph's count and SHA-256. Today that is
+  `armv7-linux-androideabi`: 325 crates, the arm64 graph without
+  `cpufeatures` 0.2.17 and 0.3.1;
+- the SHA-256 of `Cargo.toml`, `Cargo.lock`, `.cargo/config.toml`, every
+  workspace member's `Cargo.toml`, the SPDX pin and `RUST-CRATES.txt`.
+
+Every build checks each entry. It fails if:
+
+- any of those files changed since the notices were written;
+- a workspace member's manifest is not recorded;
+- the file's title or crate count differs from the record;
+- a `covers` line is malformed, repeats a target, or counts more crates than
+  the file.
+
+A release also fails if `nectarlink.abis` names an ABI whose Rust target is
+neither the file's nor covered. So releases may build `arm64-v8a` (Root's
+releases) or `arm64-v8a,armeabi-v7a` (upstream `release.yml`). Other builds
+only warn. The x86_64 emulator graph is not covered: it adds the proc-macro
+`curve25519-dalek-derive`.
+
+To regenerate after any change to those inputs, run these commands with bash
+from the repository root:
+
+```sh
+# 1. The pinned SPDX texts, fetched and checked against the pin.
+texts=~/orca/tmp/spdx-texts-31ba1a50
+python3 - android/app/notices/RUST-CRATES.spdx-texts.json "$texts" <<'EOF'
+import hashlib, json, pathlib, sys, urllib.request
+pin, out = json.load(open(sys.argv[1])), pathlib.Path(sys.argv[2])
+out.mkdir(parents=True, exist_ok=True)
+for f in pin["files"]:
+    data = urllib.request.urlopen(f["url"]).read()
+    if hashlib.sha256(data).hexdigest() != f["sha256"]:
+        raise SystemExit(f"{f['id']}: checksum mismatch")
+    (out / f"{f['id']}.txt").write_bytes(data)
+EOF
+
+# 2. The notices.
+cargo xtask notices android/app/notices/RUST-CRATES.txt \
+  --target aarch64-linux-android --package nectarlink-ffi --license-texts "$texts"
+
+# 3. The record of their inputs.
+members=$(sed -n '/^members = \[/,/^\]/p' Cargo.toml | sed -n 's/.*"\(.*\)".*/\1\/Cargo.toml/p')
+crates=$(python3 - <<'EOF'
+import hashlib, re
+lines, crates = open("android/app/notices/RUST-CRATES.txt", encoding="utf-8").read().splitlines(), []
+for line in lines[lines.index(next(l for l in lines if l.startswith("Rust crates ("))) + 1:]:
+    if line == "Standard license texts":
+        break
+    if m := re.match(r"^(\S+) (\S+)  ·  ", line):
+        crates.append(f"{m[1]} {m[2]}\n")
+print(len(crates), hashlib.sha256("".join(sorted(crates)).encode()).hexdigest())
+EOF
+)
+# Each other target's normal graph, as the generator walks it; refused unless
+# every crate in it is in RUST-CRATES.txt.
+covers=$(python3 - armv7-linux-androideabi <<'EOF'
+import collections, hashlib, json, re, subprocess, sys
+lines, listed = open("android/app/notices/RUST-CRATES.txt", encoding="utf-8").read().splitlines(), set()
+for line in lines[lines.index(next(l for l in lines if l.startswith("Rust crates ("))) + 1:]:
+    if line == "Standard license texts":
+        break
+    if m := re.match(r"^(\S+) (\S+)  ·  ", line):
+        listed.add(f"{m[1]} {m[2]}")
+for target in sys.argv[1:]:
+    meta = json.loads(subprocess.run(
+        ["cargo", "metadata", "--format-version", "1", "--locked", "--offline", "--filter-platform", target],
+        check=True, capture_output=True).stdout)
+    packages, members = {p["id"]: p for p in meta["packages"]}, set(meta["workspace_members"])
+    nodes = {n["id"]: n for n in meta["resolve"]["nodes"]}
+    start = next(i for i, p in packages.items() if p["name"] == "nectarlink-ffi" and i in members)
+    seen, queue = {start}, collections.deque([start])
+    while queue:
+        for dep in nodes.get(queue.popleft(), {"deps": []})["deps"]:
+            if any(k["kind"] is None for k in dep["dep_kinds"]) and dep["pkg"] not in seen:
+                seen.add(dep["pkg"])
+                queue.append(dep["pkg"])
+    crates = sorted(f"{packages[i]['name']} {packages[i]['version']}" for i in seen - members)
+    if extra := set(crates) - listed:
+        raise SystemExit(f"{target} has crates RUST-CRATES.txt lacks: {sorted(extra)}")
+    print("covers", target, len(crates), hashlib.sha256("".join(c + "\n" for c in crates).encode()).hexdigest())
+EOF
+) && {
+  head -6 android/app/notices/RUST-CRATES.inputs   # the comment, command, package and target lines
+  echo "crates $crates"
+  echo "$covers"
+  shasum -a 256 Cargo.toml Cargo.lock .cargo/config.toml $members \
+    android/app/notices/RUST-CRATES.spdx-texts.json android/app/notices/RUST-CRATES.txt
+} > "$texts/RUST-CRATES.inputs" && mv "$texts/RUST-CRATES.inputs" android/app/notices/RUST-CRATES.inputs
+```
+
+If a covered target gains a crate the file lacks, step 3 stops. Either drop
+that ABI from releases, or write its own notices. Then review the crate diff
+(`git diff --stat android/app/notices/`). New
+crates that ship no license file may need another SPDX text: the generator
+names the missing file. Add it to the pin with its upstream URL and SHA-256
+from the same SPDX commit.
+
+### Remaining notice gaps
+
+Recorded in `THIRD-PARTY-NOTICES.txt` and in the per-library files:
+
+- The exact libyuv revision linked into CameraX 1.6.2 is not recorded
+  upstream.
+- The BoringSSL version inside Conscrypt 2.7.0 is unverified.
+- Binary-to-source equivalence of the JitPack AARs is unverified.

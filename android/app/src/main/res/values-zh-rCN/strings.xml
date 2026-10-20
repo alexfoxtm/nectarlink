@@ -224,7 +224,13 @@
     <string name="about_version">Waypair Link %1$s · 独立维护的分支</string>
     <string name="about_licenses_title">开源许可</string>
     <string name="about_licenses_body">许可证、版权与源代码署名</string>
-    <string name="about_licenses_text">Waypair Link 是自由软件，依据 GNU 通用公共许可证第 3 版或更高版本（GPL-3.0-or-later）发布，不提供任何担保。部分文件依据其文件头所述，采用 LGPL-3.0、MPL-2.0 或 CC-BY-4.0 许可。\n\n它基于 NectarLink 源代码（github.com/thtbee/nectarlink）构建。原始版权、许可声明和作者署名归其作者所有，并在源代码中保持不变。\n\n完整许可证文本位于源代码的 LICENSE 文件和 LICENSES 文件夹中。</string>
+    <string name="about_licenses_text">Waypair Link 是 NectarLink 的独立维护分支，是依据 GNU 通用公共许可证第 3 版或更高版本（GPL-3.0-or-later）发布的自由软件，不提供任何担保。部分文件依据其文件头所述，采用 LGPL-3.0、MPL-2.0 或 CC-BY-4.0 许可。\n\n它基于 NectarLink 源代码（github.com/thtbee/nectarlink）构建，Copyright (C) 2026 The NectarLink contributors。原始版权、许可声明和作者署名归其作者所有，并保持不变。\n\n完整许可证文本以及应用所含第三方软件的声明列于下方。</string>
+    <string name="about_source_title">源代码</string>
+    <string name="about_source_build">此版本的源代码</string>
+    <string name="about_source_unpublished">此版本不是已发布的 Waypair Link 版本，因此没有对应的源代码归档。下方的分支代码库包含已发布的代码，此版本可能与之不同。</string>
+    <string name="about_source_fork">分支代码库（github.com/alexfoxtm/nectarlink）</string>
+    <string name="about_licenses_documents">许可证文本与声明</string>
+    <string name="about_license_unavailable">无法打开此文件。</string>
     <string name="unpair_title">取消与 %1$s 的配对？</string>
     <string name="unpair_text">两台设备将互相忘记。你随时可以重新配对。</string>
     <string name="core_failed">Waypair Link 无法启动：%1$s</string>

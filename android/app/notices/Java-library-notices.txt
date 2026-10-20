@@ -1,0 +1,126 @@
+License files carried by other Java libraries in this app
+
+JNA 5.19.1 (net.java.dev.jna:jna:5.19.1), used to call the Rust core. Its
+native library is lib/<abi>/libjnidispatch.so.
+  Source: https://github.com/java-native-access/jna tag 5.19.1 (commit 1a91122853f6ab6f1fb2a4a284a6cf2ed8af0a4d)
+  Shipped binary: jna-5.19.1.aar, SHA-256 b57125cb7d16253f0d65a80f7d3a4c3664effa711b8bdbb7f87fb572ce1624ed
+  Its full license texts are Apache-2.0.txt and LGPL-2.1.txt in this list.
+
+Checker Framework qualifiers 3.43.0 (org.checkerframework:checker-qual:3.43.0)
+  Source: https://github.com/typetools/checker-framework tag checker-framework-3.43.0
+    (commit 842c4d0080063ff37dc622398e8740731d96e801)
+  Shipped binary: checker-qual-3.43.0.jar, SHA-256 3fbc2e98f05854c3df16df9abaa955b91b15b3ecac33623208ed6424640ef0f6
+
+Jakarta Dependency Injection 2.0.1 (jakarta.inject:jakarta.inject-api:2.0.1)
+  Source: https://github.com/jakartaee/inject tag 2.0.1 (commit 80c9e1267db53d0d5fd7b2afb2fe6a6283a3f43a)
+  Shipped binary: jakarta.inject-api-2.0.1.jar, SHA-256 f7dc98062fccf14126abb751b64fab12c312566e8cbdc8483598bffcea93af7c
+  Its license is Apache-2.0 (Apache-2.0.txt in this list).
+
+The files below are copied verbatim from those jars.
+
+==============================================================================
+jna 5.19.1: classes.jar META-INF/LICENSE
+SHA-256 07c938b23950ab7d47a24ef35f9f5da3a05ae164278dc959ad6994135ed59ff1
+==============================================================================
+
+SPDX-License-Identifier: Apache-2.0 OR LGPL-2.1-or-later
+
+Java Native Access (JNA) is licensed under the LGPL, version 2.1
+or later, or (from version 4.0 onward) the Apache License,
+version 2.0.
+
+You can freely decide which license you want to apply to the project.
+
+You may obtain a copy of the LGPL License at:
+
+http://www.gnu.org/licenses/licenses.html
+
+A copy is also included in the downloadable source code package
+containing JNA, in file "LGPL2.1", under the same directory
+as this file.
+
+You may obtain a copy of the Apache License at:
+
+http://www.apache.org/licenses/
+
+A copy is also included in the downloadable source code package
+containing JNA, in file "AL2.0", under the same directory
+as this file.
+
+Commercial support may be available, please e-mail
+twall[at]users[dot]sf[dot]net.
+
+==============================================================================
+checker-qual 3.43.0: META-INF/LICENSE.txt
+SHA-256 e90eaa08dea089df10f2bf7f9dba63a5f6237c01562c4741e2e86773e78582d5
+==============================================================================
+
+Checker Framework qualifiers
+Copyright 2004-present by the Checker Framework developers
+
+MIT License:
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+==============================================================================
+jakarta.inject-api 2.0.1: META-INF/NOTICE.md
+SHA-256 992ed62dd3ee17d73ce6a4a5e02dd0fed9eb326bf386aa5304e6a512214df540
+==============================================================================
+
+# Notices for Eclipse Jakarta Dependency Injection
+
+This content is produced and maintained by the Eclipse Jakarta Dependency Injection project.
+
+* Project home: https://projects.eclipse.org/projects/cdi.batch
+
+## Trademarks
+
+Jakarta Dependency Injection is a trademark of the Eclipse Foundation.
+
+## Copyright
+
+All content is the property of the respective authors or their employers. For
+more information regarding authorship of content, please consult the listed
+source code repository logs.
+
+## Declared Project Licenses
+
+This program and the accompanying materials are made available under the terms
+of the Apache License, Version 2.0 which is available at
+https://www.apache.org/licenses/LICENSE-2.0.
+
+SPDX-License-Identifier: Apache-2.0
+
+## Source Code
+
+The project maintains the following source code repositories:
+
+https://github.com/eclipse-ee4j/injection-api
+https://github.com/eclipse-ee4j/injection-spec
+https://github.com/eclipse-ee4j/injection-tck
+
+## Third-party Content
+
+This project leverages the following third party content.
+
+None
+
+## Cryptography
+
+None

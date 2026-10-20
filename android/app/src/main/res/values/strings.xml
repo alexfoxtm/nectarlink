@@ -230,7 +230,13 @@
     <string name="about_version">Waypair Link %1$s · independently maintained fork</string>
     <string name="about_licenses_title">Open-source licenses</string>
     <string name="about_licenses_body">Licenses, copyrights and source attribution</string>
-    <string name="about_licenses_text">Waypair Link is free software under the GNU General Public License, version 3 or later (GPL-3.0-or-later), and comes with no warranty. Some files are under LGPL-3.0, MPL-2.0 or CC-BY-4.0, as their headers state.\n\nIt is built from the NectarLink source code (github.com/thtbee/nectarlink). Original copyrights, license notices and author attributions remain with their authors and are kept unchanged in the source.\n\nThe full license texts are in the LICENSE file and LICENSES folder of the source.</string>
+    <string name="about_licenses_text">Waypair Link is an independently maintained fork of NectarLink. It is free software under the GNU General Public License, version 3 or later (GPL-3.0-or-later), and comes with no warranty. Some files are under LGPL-3.0, MPL-2.0 or CC-BY-4.0, as their headers state.\n\nIt is built from the NectarLink source code (github.com/thtbee/nectarlink), Copyright (C) 2026 The NectarLink contributors. Original copyrights, license notices and author attributions remain with their authors and are kept unchanged.\n\nThe full license texts, and the notices of the third-party software included in the app, are listed below.</string>
+    <string name="about_source_title">Source code</string>
+    <string name="about_source_build">Source code of this version</string>
+    <string name="about_source_unpublished">This build is not a published Waypair Link release, so no source archive exists for it. The fork repository below holds the published code; this build may differ from it.</string>
+    <string name="about_source_fork">Fork repository (github.com/alexfoxtm/nectarlink)</string>
+    <string name="about_licenses_documents">License texts and notices</string>
+    <string name="about_license_unavailable">This file could not be opened.</string>
     <string name="unpair_title">Unpair %1$s?</string>
     <string name="unpair_text">Both devices forget each other. You can pair them again any time.</string>
     <string name="core_failed">Waypair Link couldn\'t start: %1$s</string>

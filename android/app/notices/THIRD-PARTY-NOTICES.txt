@@ -1,0 +1,102 @@
+Waypair Link for Android: licenses and third-party notices
+==========================================================
+
+Waypair Link is an independently maintained fork of NectarLink. It is free
+software under the GNU General Public License, version 3 or later
+(GPL-3.0-or-later.txt), with the additional permission in
+APP-STORE-EXCEPTION.md; its core libraries are under MPL-2.0 (MPL-2.0.txt) and
+some files under LGPL-3.0 or CC-BY-4.0, as LICENSE.txt and their headers
+state. It comes with no warranty. NectarLink's copyrights, license notices and
+author attributions are kept unchanged.
+
+The app includes the software below, under these terms. Every file named here
+is in this list.
+
+
+Source code
+-----------
+
+Waypair Link: the exact source of each release is published beside its APK,
+as Waypair-Link-<version>-android-source.tar.gz under
+https://pub-a57457f4da43415ea6335550ee9e2983.r2.dev/waypair/nectar/android/releases/v<version>/
+About › Open-source licenses links the archive for this build. The fork's
+repository is https://github.com/alexfoxtm/nectarlink, and NectarLink's is
+https://github.com/thtbee/nectarlink.
+
+Third-party code: each section below and each file it names gives the
+source location, tag and commit for the version this app uses.
+
+
+Rust crates
+-----------
+
+RUST-CRATES.txt, written by `cargo xtask notices` for nectarlink-ffi on
+aarch64-linux-android (the arm64-v8a build) from the workspace's Cargo.lock and
+Cargo manifests: every crate compiled into the Rust core (libnectarlink_ffi.so,
+and the iroh libraries packaged beside it), with the license it declares, the
+license files it ships, and the standard text of each license for crates that
+ship none. The armeabi-v7a build (armv7-linux-androideabi) compiles a subset
+of these crates, all but cpufeatures 0.2.17 and 0.3.1, so the file covers it
+too. A release build fails unless those inputs are the ones the file was
+written from and each of its ABIs is one of these two.
+
+
+Android and Java libraries
+--------------------------
+
+MAVEN-COMPONENTS.txt, written when the app is built, lists every Maven module
+the build resolved, with its exact version. The licenses below were read from
+each module's POM and license files for the versions resolved at source
+2ea306b633e5d4b793e811a2817f8e0161863518 (0.1.4-local.5).
+
+Apache License 2.0 (Apache-2.0.txt), as each module's POM declares:
+  Android Jetpack libraries (androidx.*), including Jetpack Compose, CameraX,
+    Lifecycle and Media3.
+  Kotlin standard library (org.jetbrains.kotlin), kotlinx.coroutines,
+    kotlinx.serialization and atomicfu (org.jetbrains.kotlinx), and JetBrains
+    annotations (org.jetbrains).
+  Guava, failureaccess and listenablefuture (com.google.guava), Dagger
+    (com.google.dagger), Error Prone annotations (com.google.errorprone),
+    J2ObjC annotations (com.google.j2objc), AutoValue annotations
+    (com.google.auto.value), JSR 305 annotations (com.google.code.findbugs),
+    ZXing core (com.google.zxing), javax.inject, Jakarta Dependency Injection
+    (jakarta.inject) and JSpecify (org.jspecify).
+
+CameraX core (androidx.camera:camera-core) also declares BSD-3-Clause in its
+POM, for the libyuv code statically linked into its native library; its AAR
+carries only the Apache-2.0 text. libyuv's license is in
+CameraX-1.6.2-libyuv.txt.
+
+Libraries with their own notices, each in its own file:
+  libyuv in CameraX core 1.6.2 (BSD-3-Clause): CameraX-1.6.2-libyuv.txt
+  libadb-android 3.1.1 (GPL-3.0-or-later or Apache-2.0, with BSD-3-Clause and
+    MIT parts): libadb-android-3.1.1.txt
+  spake2-android 2.2.1 (LGPL-3.0; its native library also has
+    LGPL-2.1-or-later, MIT and other permissive parts):
+    spake2-android-2.2.1.txt
+  Conscrypt 2.7.0 and the BoringSSL in its native library (Apache-2.0):
+    Conscrypt-2.7.0-and-BoringSSL.txt
+  Bouncy Castle Provider 1.81 (Bouncy Castle Licence): BouncyCastle-1.81.txt
+  JNA 5.19.1 (LGPL-2.1-or-later or Apache-2.0), Checker Framework qualifiers
+    3.43.0 (MIT) and Jakarta Dependency Injection 2.0.1 (Apache-2.0):
+    Java-library-notices.txt
+
+
+Fonts
+-----
+
+Figtree, Instrument Serif and Space Mono, under the SIL Open Font License 1.1:
+OFL-Figtree.txt, OFL-InstrumentSerif.txt and OFL-SpaceMono.txt.
+
+
+License texts
+-------------
+
+LICENSE.txt                NectarLink's license table
+GPL-3.0-or-later.txt       GNU General Public License v3
+LGPL-3.0-only.txt          GNU Lesser General Public License v3
+LGPL-2.1.txt               GNU Lesser General Public License v2.1
+MPL-2.0.txt                Mozilla Public License 2.0
+CC-BY-4.0.txt              Creative Commons Attribution 4.0
+APP-STORE-EXCEPTION.md     NectarLink's additional permission
+Apache-2.0.txt             Apache License 2.0
