@@ -56,7 +56,7 @@ const OPTIONS: MirrorStart = MirrorStart {
 };
 /// A Mac shows a phone's screen only, until that is validated: no app
 /// windows, no input to the phone, no clipboard sent from a mirror window.
-const VIEW_ONLY: bool = cfg!(target_os = "macos");
+pub(crate) const VIEW_ONLY: bool = cfg!(target_os = "macos");
 /// Packets waiting for the decoder, at most (about two seconds).
 const BACKLOG: usize = 120;
 /// Packets in a row that may fail to decode, each retried from a fresh
@@ -3516,7 +3516,6 @@ mod mac_receive_fixture {
 
     #[test]
     fn production_sink_recording_writes_video_only_mp4() {
-        use nectarlink_core::MirrorAudioConfig;
         use std::collections::HashMap;
         use std::sync::atomic::Ordering;
 
@@ -3562,6 +3561,7 @@ mod mac_receive_fixture {
         assert_eq!((width, height), (128, 128), "live format is the recording format");
         let mut seeded =
             crate::win::mp4::MirrorRecorder::new(path.clone(), width, height, super::OPTIONS.fps, None);
+        assert!(seeded.on_audio(0, &[0u8; 480]).is_err(), "video-only recorder refuses PCM");
         if let Some(sps_pps) = super::LAST_SPS_PPS
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -3579,26 +3579,17 @@ mod mac_receive_fixture {
         assert!(super::is_recording(&window), "begin while live is visible to QML");
         assert!(super::recording_started_ms(&window) > 0, "QML elapsed timer has a start");
 
-        // Auth H.264 through the existing record callbacks: config/keys to both
+        // Synthetic H.264 through the existing record callbacks: config/keys to both
         // decoder and recorder. Bounded: three more IDRs (four total with live).
         sink.packet(true, 33_333, idr.clone());
         sink.packet(true, 66_666, idr.clone());
-        // Video-only honesty: audio config is accepted for API stability, PCM is
-        // refused by the recorder and must not poison the video file.
-        sink.audio_config(MirrorAudioConfig { codec: "pcm_s16le".into(), rate: 48_000, channels: 2 });
-        sink.audio(0, vec![0u8; 480]);
         sink.packet(true, 100_000, idr.clone());
 
         // Current frames survive recording: the VideoToolbox path still publishes.
         let still = await_bitmap(window, 128, 128, Duration::from_secs(10))
             .expect("live frame survives recording packets");
         assert_solid_red(&still.bgra);
-        let audio_cfg = super::LAST_AUDIO_CONFIG
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .as_ref()
-            .and_then(|m| m.get(&device).copied());
-        assert_eq!(audio_cfg, Some((48_000, 2)), "audio path ran without breaking video");
+        assert!(!super::has_sound(&device), "video-only fixture opens no audio output");
 
         // Stop/close like `stop_recording` but synchronously for a deterministic
         // assertion (production wraps the same remove + `finish` in spawn_blocking).

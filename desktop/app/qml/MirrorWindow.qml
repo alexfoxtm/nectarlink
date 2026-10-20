@@ -19,6 +19,7 @@ Window {
     readonly property string deviceName: info.name || ""
     readonly property string phase: info.phase || ""
     readonly property bool canControl: info.canControl === true
+    readonly property bool viewOnly: info.viewOnly === true
 
     visible: true
     title: info.app ? qsTr("%1 · %2").arg(info.title).arg(deviceName)
@@ -436,7 +437,7 @@ Window {
         }
     }
 
-    // How to control it, until the phone allows it.
+    // Why control is unavailable, or how to enable it on supported hosts.
     Rectangle {
         id: hintBanner
         anchors.left: parent.left
@@ -477,7 +478,9 @@ Window {
             wrapMode: Text.WordWrap
             role: "bodySmall"
             color: "white"
-            text: qsTr("To control the phone, turn on Control from your PC in Waypair Link's settings on the phone.")
+            text: win.viewOnly
+                ? qsTr("Viewing only on Mac. Phone control is not yet available.")
+                : qsTr("To control the phone, turn on Control from your PC in Waypair Link's settings on the phone.")
         }
         Button {
             id: notifyPhoneBtn
@@ -487,6 +490,7 @@ Window {
             variant: "tonal"
             size: "sm"
             text: qsTr("Notify phone")
+            enabled: !win.viewOnly
             onClicked: Mirror.requestControl(win.mirrorKey)
         }
         IconButton {

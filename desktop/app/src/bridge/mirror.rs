@@ -202,9 +202,11 @@ impl qobject::Mirror {
                         "mirroring.app_windows"
                     };
                     let matrix = s.matrices.get(&window.device);
-                    let control = matrix.and_then(|m| m.state(feature)) == Some(FeatureState::Available);
-                    let can_screen_off = matrix.and_then(|m| m.state("mirroring.app_windows"))
-                        == Some(FeatureState::Available);
+                    let control = !mirror::VIEW_ONLY
+                        && matrix.and_then(|m| m.state(feature)) == Some(FeatureState::Available);
+                    let can_screen_off = !mirror::VIEW_ONLY
+                        && matrix.and_then(|m| m.state("mirroring.app_windows"))
+                            == Some(FeatureState::Available);
                     (control, can_screen_off, s.name_of(&window.device).unwrap_or_default())
                 });
                 let (phase, reason) = match shown.phase {
@@ -231,6 +233,7 @@ impl qobject::Mirror {
                     "app": shown.app.is_some(),
                     "phase": phase,
                     "reason": reason,
+                    "viewOnly": mirror::VIEW_ONLY,
                     "canControl": control,
                     "sound": window.session == MIRROR_SCREEN && mirror::has_sound(&window.device),
                     "recording": mirror::is_recording(&window),
