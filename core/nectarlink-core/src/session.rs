@@ -976,9 +976,6 @@ mod tests {
 
         // The production classifier intentionally receives neither the stale
         // peer record nor the unselected alternate bridge as path evidence.
-        assert_eq!(
-            classify_selected_path(Some((true, None)), &active_bridge_ports),
-            ConnectionPath::Relay
-        );
+        assert_eq!(classify_selected_path(Some((true, None)), &active_bridge_ports), ConnectionPath::Relay);
     }
 }

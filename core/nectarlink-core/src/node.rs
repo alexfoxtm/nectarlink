@@ -756,7 +756,9 @@ impl Shared {
         match selected {
             Some(p) if p.is_relay() => false,
             Some(p) => match p.remote_addr() {
-                iroh::TransportAddr::Ip(addr) => !self.is_usb_addr(addr) && self.is_allowed_peer_ip(addr.ip()),
+                iroh::TransportAddr::Ip(addr) => {
+                    !self.is_usb_addr(addr) && self.is_allowed_peer_ip(addr.ip())
+                }
                 _ => false,
             },
             None => false,
@@ -4330,11 +4332,7 @@ async fn bind_endpoint(
     if !config.away_mode {
         let v4_port = ports.map_or(0, |p| p.v4);
         #[cfg(feature = "test-support")]
-        let bind_ip = if config.test_support_loopback_mirror_fixture {
-            [127, 0, 0, 1]
-        } else {
-            [0, 0, 0, 0]
-        };
+        let bind_ip = if config.test_support_loopback_mirror_fixture { [127, 0, 0, 1] } else { [0, 0, 0, 0] };
         #[cfg(not(feature = "test-support"))]
         let bind_ip = [0, 0, 0, 0];
         builder = builder
