@@ -1284,7 +1284,7 @@ private fun PeerCard(
                 Text(
                     text = stringResource(
                         if (device.kind == app.nectarlink.core.DeviceKind.TABLET) R.string.peer_kind_tablet else R.string.peer_kind_phone,
-                    ) + " · " + linkText(device.link),
+                    ) + " · " + linkText(device.link, device.displayPath, device.usbMedium, device.routeTransport, device.battery?.cellType),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1408,7 +1408,7 @@ private fun PcCard(
                     if (!device.online && device.wakeState == WakeState.Waking) {
                         stringResource(R.string.wake_waking, device.name)
                     } else {
-                        linkText(device.link)
+                        linkText(device.link, device.displayPath, device.usbMedium, device.routeTransport, device.battery?.cellType)
                     },
                     style = MaterialTheme.typography.labelLarge,
                     modifier = Modifier.weight(1f),
@@ -2831,12 +2831,26 @@ private fun TransferRow(
 }
 
 @Composable
-private fun linkText(link: Link): String = when (link) {
-    is Link.Online -> when {
-        link.relayed -> stringResource(R.string.link_away)
-        link.usb -> if (link.rttMs >= 1u) stringResource(R.string.link_usb_rtt, link.rttMs.toInt()) else stringResource(R.string.link_usb)
-        link.rttMs >= 1u -> stringResource(R.string.link_online_rtt, link.rttMs.toInt())
-        else -> stringResource(R.string.link_online)
+private fun linkText(
+    link: Link,
+    displayPath: String,
+    usbMedium: String,
+    routeTransport: String?,
+    cellType: String?,
+): String = when (link) {
+    // USB only on a proven cable (selected CURRENT bridge + physical medium);
+    // a tunnel record alone (including wireless ADB) never renders USB.
+    // Unproven links fall back to Connected; relay renders Away.
+    is Link.Online -> when (resolvePeerOnlineLabel(displayPath, usbMedium, routeTransport)) {
+        PeerOnlineLabel.AWAY -> stringResource(R.string.link_away)
+        PeerOnlineLabel.USB -> if (link.rttMs >= 1u) stringResource(R.string.link_usb_rtt, link.rttMs.toInt()) else stringResource(R.string.link_usb)
+        PeerOnlineLabel.WIFI -> if (link.rttMs >= 1u) stringResource(R.string.link_wifi_rtt, link.rttMs.toInt()) else stringResource(R.string.link_wifi)
+        PeerOnlineLabel.CELLULAR -> {
+            val name = cellularLabelName(cellType, stringResource(R.string.link_cellular_name))
+            if (link.rttMs >= 1u) stringResource(R.string.link_cellular_type_rtt, name, link.rttMs.toInt()) else stringResource(R.string.link_cellular_type, name)
+        }
+        PeerOnlineLabel.ETHERNET -> if (link.rttMs >= 1u) stringResource(R.string.link_ethernet_rtt, link.rttMs.toInt()) else stringResource(R.string.link_ethernet)
+        PeerOnlineLabel.CONNECTED -> if (link.rttMs >= 1u) stringResource(R.string.link_online_rtt, link.rttMs.toInt()) else stringResource(R.string.link_online)
     }
     Link.Connecting -> stringResource(R.string.link_connecting)
     is Link.Offline -> when (val seen = link.lastSeen) {

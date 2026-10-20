@@ -35,6 +35,13 @@
     <string name="link_online_rtt">Connected · %1$d ms</string>
     <string name="link_usb">On USB</string>
     <string name="link_usb_rtt">On USB · %1$d ms</string>
+    <string name="link_wifi">Wi-Fi</string>
+    <string name="link_wifi_rtt">Wi-Fi · %1$d ms</string>
+    <string name="link_cellular_name">Cellular</string>
+    <string name="link_cellular_type">%1$s</string>
+    <string name="link_cellular_type_rtt">%1$s · %2$d ms</string>
+    <string name="link_ethernet">Ethernet</string>
+    <string name="link_ethernet_rtt">Ethernet · %1$d ms</string>
     <string name="link_away">Connected while away</string>
     <string name="link_connecting">Connecting…</string>
     <string name="link_offline_seen">Offline · seen %1$s</string>

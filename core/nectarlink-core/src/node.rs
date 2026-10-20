@@ -837,6 +837,16 @@ impl Shared {
         self.session(peer).map(|s| s.display_path()).unwrap_or(ConnectionPath::Lan)
     }
 
+    /// DISPLAY-ONLY proven route transport for `peer`'s live session, if any
+    /// (see [`Session::link_transport`]): the selected tunnel's outer endpoint
+    /// or the selected native local address matched against this device's own
+    /// route table. Unknown when there is no live session or no proof; never
+    /// guessed from signal bars. The badge reads this with
+    /// [`Shared::display_path`] and [`Shared::tunnel_medium`].
+    pub(crate) fn session_link_transport(&self, peer: &DeviceId) -> Option<LinkTransport> {
+        self.session(peer).and_then(|s| s.link_transport())
+    }
+
     /// Whether `peer` is a PC this phone is plugged into: the PC dials through the cable.
     /// If this device dialed too (over Wi-Fi, say), the two connections would replace each
     /// other, and a Wi-Fi path that only works one way would keep breaking the USB one.
@@ -1993,6 +2003,13 @@ impl Node {
     /// [`ConnectionPath`] security semantics.
     pub fn display_path(&self, peer: &DeviceId) -> ConnectionPath {
         self.shared.display_path(peer)
+    }
+
+    /// DISPLAY-ONLY proven route transport for `peer`'s live session, if any.
+    /// Enum only; no addresses leave the core. See
+    /// [`Shared::session_link_transport`].
+    pub fn session_link_transport(&self, peer: &DeviceId) -> Option<LinkTransport> {
+        self.shared.session_link_transport(peer)
     }
 
     // ---- Pairing ----
