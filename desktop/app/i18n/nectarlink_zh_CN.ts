@@ -3588,7 +3588,7 @@ What it needs
     <message>
         <location filename="../qml/pages/HomePage.qml" line="1115"/>
         <source>Connected</source>
-        <translation type="unfinished">已连接</translation>
+        <translation>已连接</translation>
     </message>
     <message>
         <location filename="../qml/pages/HomePage.qml" line="1116"/>
