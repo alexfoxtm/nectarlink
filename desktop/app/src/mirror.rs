@@ -44,15 +44,22 @@ const OPTIONS: MirrorStart = MirrorStart {
     max_size: 1920,
     fps: 60,
     bitrate: 8_000_000,
-    audio: true,
+    // A Mac doesn't offer mirror.listen: its core refuses the phone's sound.
+    audio: !cfg!(target_os = "macos"),
     session: MIRROR_SCREEN,
     app: None,
     stay_awake: false,
     screen_off: false,
     watch: None,
 };
+/// A Mac shows a phone's screen only, until that is validated: no app
+/// windows, no input to the phone, no clipboard sent from a mirror window.
+const VIEW_ONLY: bool = cfg!(target_os = "macos");
 /// Packets waiting for the decoder, at most (about two seconds).
 const BACKLOG: usize = 120;
+/// Packets in a row that may fail to decode, each retried from a fresh
+/// keyframe, before the mirroring ends.
+const DECODE_FAILURES: u32 = 3;
 /// How often decode times are logged.
 const STATS_EVERY: Duration = Duration::from_secs(10);
 /// How long an in-window status notice stays visible.
@@ -178,6 +185,14 @@ struct State {
     keyboard_device: Option<DeviceId>,
     /// Short transient feedback notices per mirror window: `(text, shown_at, token)`.
     notices: HashMap<Window, (String, Instant, u64)>,
+    /// The video stream each window shows, by number: a window key is
+    /// reused, so a decoder still finishing an older stream mustn't end or
+    /// clear the one after it. Cleared when the window closes or asks again.
+    streams: HashMap<Window, u64>,
+    /// Exact request owner, retained until close or the next request.
+    requests: HashMap<Window, u64>,
+    /// Closed sessions whose STOP must precede any replacement START.
+    pending_stops: HashSet<Window>,
     apps: HashMap<DeviceId, Apps>,
     saved: SavedWindows,
 }
@@ -188,6 +203,31 @@ impl State {
         self.windows
             .iter()
             .any(|(w, shown)| w.device == *device && matches!(shown.phase, Phase::Asking | Phase::Showing))
+    }
+
+    fn set_phase(&mut self, window: Window, phase: Phase) {
+        let showing = matches!(phase, Phase::Showing);
+        if showing && self.active_window.is_none() {
+            self.active_window = Some(window);
+        } else if !showing && self.active_window == Some(window) {
+            self.active_window = self
+                .windows
+                .iter()
+                .find(|(w, shown)| **w != window && matches!(shown.phase, Phase::Showing))
+                .map(|(w, _)| *w);
+        }
+        if let Some(shown) = self.windows.get_mut(&window) {
+            shown.phase = phase;
+        }
+    }
+
+    fn owns_request(&self, window: &Window, request: u64) -> bool {
+        self.requests.get(window) == Some(&request)
+    }
+
+    /// Whether `stream` is still the one `window` shows.
+    fn shows(&self, window: &Window, stream: u64) -> bool {
+        self.streams.get(window) == Some(&stream)
     }
 }
 
@@ -202,6 +242,9 @@ impl Default for State {
             screen_off: HashSet::new(),
             keyboard_device: None,
             notices: HashMap::new(),
+            streams: HashMap::new(),
+            requests: HashMap::new(),
+            pending_stops: HashSet::new(),
             apps: HashMap::new(),
             saved: SavedWindows::load(),
         }
@@ -214,6 +257,12 @@ static MUTED: AtomicBool = AtomicBool::new(false);
 static NEXT_SESSION: AtomicU32 = AtomicU32::new(1);
 /// Monotonic token for auto-clearing window notices.
 static NOTICE_SEQ: AtomicU64 = AtomicU64::new(1);
+/// The next video stream's number (see `State::streams`).
+static NEXT_STREAM: AtomicU64 = AtomicU64::new(1);
+/// The next request owner, distinct even when a window closes and reopens.
+static NEXT_REQUEST: AtomicU64 = AtomicU64::new(1);
+// Keep stops ordered with requests reaching the phone.
+static TURN: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 type FrameMap = HashMap<Window, (u32, u32, Arc<Vec<u8>>)>;
 
@@ -659,20 +708,7 @@ fn state<T>(f: impl FnOnce(&mut State) -> T) -> T {
 
 fn set_phase(window: Window, phase: Phase) {
     let showing = matches!(phase, Phase::Showing);
-    state(|s| {
-        if showing && s.active_window.is_none() {
-            s.active_window = Some(window);
-        } else if !showing && s.active_window == Some(window) {
-            s.active_window = s
-                .windows
-                .iter()
-                .find(|(w, shown)| **w != window && matches!(shown.phase, Phase::Showing))
-                .map(|(w, _)| *w);
-        }
-        if let Some(shown) = s.windows.get_mut(&window) {
-            shown.phase = phase;
-        }
-    });
+    state(|s| s.set_phase(window, phase));
     if showing {
         ensure_gamepad_loop();
     }
@@ -765,11 +801,15 @@ fn power(s: &State, device: &DeviceId) -> (bool, bool) {
 
 /// Asks the phone for its screen.
 pub fn start(device: DeviceId) {
+    // A showing screen stays: re-asking would orphan the live stream and
+    // waste a consent round trip. Mac-only; Windows keeps re-ask behavior.
+    if VIEW_ONLY && phase(&Window::screen(device)) == Some(Phase::Showing) {
+        return;
+    }
     if keyboard_device() == Some(device) {
         set_remote_keyboard(None);
     }
     let window = Window::screen(device);
-    ffi::video_clear(&window.key());
     let (stay_awake, screen_off) = state(|s| {
         // The phone's screen starts on, unless app windows already turned it off.
         if !s.mirroring(&device) {
@@ -853,6 +893,9 @@ pub fn keyboard_paste(device: DeviceId) {
 /// Opens one of the phone's apps in a window of its own (or does nothing
 /// when it's already open; reuses an ended window for that app).
 pub fn start_app(device: DeviceId, pkg: String, label: String) {
+    if VIEW_ONLY {
+        return;
+    }
     let window = state(|s| {
         if s.windows.iter().any(|(w, shown)| {
             w.device == device
@@ -876,7 +919,6 @@ pub fn start_app(device: DeviceId, pkg: String, label: String) {
         Some((window, power(s, &device)))
     });
     let Some((window, (stay_awake, screen_off))) = window else { return };
-    ffi::video_clear(&window.key());
     request(
         window,
         MirrorStart {
@@ -896,6 +938,9 @@ pub fn reopen(window: Window) {
         start(window.device);
         return;
     }
+    if VIEW_ONLY {
+        return;
+    }
     let pkg = state(|s| {
         if !s.mirroring(&window.device) {
             s.screen_off.remove(&window.device);
@@ -907,7 +952,6 @@ pub fn reopen(window: Window) {
         Some((pkg, power(s, &window.device)))
     });
     let Some((pkg, (stay_awake, screen_off))) = pkg else { return };
-    ffi::video_clear(&window.key());
     request(
         window,
         MirrorStart {
@@ -944,11 +988,31 @@ pub fn resize(window: Window, width: u32, height: u32) {
 }
 
 fn request(window: Window, options: MirrorStart) {
+    let request = NEXT_REQUEST.fetch_add(1, Ordering::Relaxed);
+    state(|s| {
+        s.requests.insert(window, request);
+        s.streams.remove(&window);
+        clear_window_buffers(&window);
+        ffi::video_clear(&window.key());
+    });
     core_host::host().hub.changed(Changes::MIRROR);
     let Some(node) = core_host::node() else { return };
     let app = options.app.is_some();
     core_host::spawn(async move {
-        if let Err(e) = node.mirror_start(window.device, options).await {
+        let started = {
+            let _turn = TURN.lock().await;
+            if !state(|s| s.owns_request(&window, request)) {
+                return;
+            }
+            if state(|s| s.pending_stops.remove(&window)) {
+                node.mirror_stop(window.device, window.session).await;
+            }
+            if !state(|s| s.owns_request(&window, request)) {
+                return;
+            }
+            node.mirror_start(window.device, options).await
+        };
+        if let Err(e) = started {
             let reason = match e {
                 Error::Denied => tr!("Mirror", "Mirroring is turned off for this phone."),
                 Error::Unsupported if app => tr!(
@@ -964,24 +1028,42 @@ fn request(window: Window, options: MirrorStart) {
                 Error::Offline | Error::NotPaired => tr!("Mirror", "The phone isn't connected."),
                 e => describe(&e),
             };
-            set_phase(window, Phase::Ended(Some(reason)));
+            let current = state(|s| {
+                if !s.owns_request(&window, request) {
+                    return false;
+                }
+                s.set_phase(window, Phase::Ended(Some(reason)));
+                true
+            });
+            if current {
+                core_host::host().hub.changed(Changes::MIRROR);
+            }
             return;
         }
         // An app window has no prompt to wait for on the phone: its first frame comes within
         // seconds, or the phone couldn't start it (its stream then ends with no picture).
         if app {
             tokio::time::sleep(APP_START_TIMEOUT).await;
-            let stuck = state(|s| s.windows.get(&window).is_some_and(|w| w.phase == Phase::Asking));
-            if stuck {
-                tracing::warn!(session = window.session, "an app window never started on the phone");
-                node.mirror_stop(window.device, window.session).await;
-                set_phase(
+            let _turn = TURN.lock().await;
+            let stuck = state(|s| {
+                if !s.owns_request(&window, request)
+                    || !s.windows.get(&window).is_some_and(|w| w.phase == Phase::Asking)
+                {
+                    return false;
+                }
+                s.set_phase(
                     window,
                     Phase::Ended(Some(tr!(
                         "Mirror",
                         "The app didn't open on the phone. Try again, or open Waypair Link on the phone to check Wireless debugging."
                     ))),
                 );
+                true
+            });
+            if stuck {
+                tracing::warn!(session = window.session, "an app window never started on the phone");
+                core_host::host().hub.changed(Changes::MIRROR);
+                node.mirror_stop(window.device, window.session).await;
             }
         }
     });
@@ -993,18 +1075,31 @@ const APP_START_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15
 /// Stops a mirroring (its window closed).
 pub fn stop(window: Window) {
     stop_recording(window);
-    clear_window_buffers(&window);
+    let node = core_host::node();
     state(|s| {
         s.windows.remove(&window);
         s.notices.remove(&window);
+        s.requests.remove(&window);
+        if node.is_some() {
+            s.pending_stops.insert(window);
+        }
+        s.streams.remove(&window);
+        clear_window_buffers(&window);
+        ffi::video_clear(&window.key());
         if !s.mirroring(&window.device) {
             s.screen_off.remove(&window.device);
         }
     });
-    ffi::video_clear(&window.key());
     core_host::host().hub.changed(Changes::MIRROR);
-    let Some(node) = core_host::node() else { return };
-    core_host::spawn(async move { node.mirror_stop(window.device, window.session).await });
+    let Some(node) = node else { return };
+    core_host::spawn(async move {
+        let _turn = TURN.lock().await;
+        // A replacement request may already have sent this STOP before
+        // its START. Never send the same close after the replacement.
+        if state(|s| s.pending_stops.remove(&window)) {
+            node.mirror_stop(window.device, window.session).await;
+        }
+    });
 }
 
 pub fn on_event(event: &NodeEvent) {
@@ -1040,7 +1135,8 @@ pub fn on_event(event: &NodeEvent) {
                     core_host::host().hub.changed(Changes::MIRROR);
                 }
             }
-            if phase(&window).is_some() {
+            // An ending this PC caused keeps its reason.
+            if matches!(phase(&window), Some(Phase::Asking | Phase::Showing)) {
                 set_phase(window, Phase::Ended(None));
             }
             state(|s| {
@@ -1069,6 +1165,9 @@ pub fn on_event(event: &NodeEvent) {
             let cleared_kb = state(|s| {
                 s.apps.remove(id);
                 s.screen_off.remove(id);
+                s.requests.retain(|w, _| w.device != *id);
+                s.pending_stops.retain(|w| w.device != *id);
+                s.streams.retain(|w, _| w.device != *id);
                 if s.keyboard_device == Some(*id) {
                     s.keyboard_device = None;
                     true
@@ -1252,6 +1351,9 @@ pub fn palette_apps(device: DeviceId) -> Vec<(String, String)> {
 /// The PC's mouse, keyboard, and gamepad on a mirrored screen or app window,
 /// sent in order.
 pub fn input(window: Window, input: nectarlink_core::MirrorInput) {
+    if VIEW_ONLY {
+        return;
+    }
     static QUEUE: std::sync::OnceLock<
         tokio::sync::mpsc::UnboundedSender<(Window, nectarlink_core::MirrorInput)>,
     > = std::sync::OnceLock::new();
@@ -1345,6 +1447,9 @@ pub fn drop_files(raw_urls: &[String]) {
 
 /// Requests remote input control from the phone for `key` and shows a guidance banner.
 pub fn request_control(key: &str) {
+    if VIEW_ONLY {
+        return;
+    }
     let Some(window) = Window::parse(key) else { return };
     set_notice(window, "On your phone, tap Allow / turn on Control from your PC in Waypair Link");
     input(
@@ -1359,7 +1464,9 @@ pub fn enter_window(key: &str) {
         state(|s| {
             s.active_window = Some(win);
         });
-        crate::input_share::enter_remote(win.device);
+        if !VIEW_ONLY {
+            crate::input_share::enter_remote(win.device);
+        }
     }
 }
 
@@ -1414,7 +1521,7 @@ pub fn sync_clipboard_on_focus(window: Window) {
     state(|s| {
         s.active_window = Some(window);
     });
-    if crate::settings::flow_follow_clipboard() {
+    if !VIEW_ONLY && crate::settings::flow_follow_clipboard() {
         sync_clipboard_for_device(window.device);
     }
 }
@@ -1612,8 +1719,12 @@ fn ensure_gamepad_loop() {
 /// stream of its own): only for mirrorings this PC asked for.
 pub fn sink(device: &DeviceId, session: u32) -> Option<Arc<dyn MirrorSink>> {
     let window = Window { device: *device, session };
-    matches!(phase(&window), Some(Phase::Asking | Phase::Showing))
-        .then(|| Arc::new(Sink::new(window)) as Arc<dyn MirrorSink>)
+    let wanted = !VIEW_ONLY || session == MIRROR_SCREEN;
+    state(|s| {
+        let request = *s.requests.get(&window)?;
+        (wanted && s.windows.get(&window).is_some_and(|w| matches!(w.phase, Phase::Asking | Phase::Showing)))
+            .then(|| Arc::new(Sink::new(window, request)) as Arc<dyn MirrorSink>)
+    })
 }
 
 enum Item {
@@ -1626,6 +1737,7 @@ enum Item {
 /// player; each starts with its stream's first packet (the format).
 struct Sink {
     window: Window,
+    request: u64,
     video: OnceLock<Video>,
     sound: Mutex<Option<Player>>,
 }
@@ -1635,26 +1747,35 @@ struct Video {
     queue: SyncSender<Item>,
     /// Packets waiting for the decoder.
     waiting: Arc<AtomicUsize>,
+    /// A packet was dropped: the frames after it are left out until a
+    /// keyframe gets in, so none decodes against the missing one.
+    skipping: AtomicBool,
 }
 
 impl Sink {
-    fn new(window: Window) -> Sink {
-        Sink { window, video: OnceLock::new(), sound: Mutex::new(None) }
+    fn new(window: Window, request: u64) -> Sink {
+        Sink { window, request, video: OnceLock::new(), sound: Mutex::new(None) }
     }
 }
 
 impl Video {
-    fn start(window: Window) -> Video {
+    fn start(window: Window, request: u64) -> Video {
         let (queue, items) = sync_channel(BACKLOG);
         let waiting = Arc::new(AtomicUsize::new(0));
         let counter = waiting.clone();
+        let stream = NEXT_STREAM.fetch_add(1, Ordering::Relaxed);
+        state(|s| {
+            if s.owns_request(&window, request) {
+                s.streams.insert(window, stream);
+            }
+        });
         let started = std::thread::Builder::new()
             .name("mirror-decoder".into())
-            .spawn(move || decode(window, &items, &counter));
+            .spawn(move || decode(window, stream, &items, &counter));
         if let Err(e) = started {
             tracing::error!(error = %e, "can't start the video decoder");
         }
-        Video { queue, waiting }
+        Video { queue, waiting, skipping: AtomicBool::new(false) }
     }
 }
 
@@ -1679,7 +1800,7 @@ impl MirrorSink for Sink {
         {
             rec.on_config(config.width, config.height);
         }
-        let video = self.video.get_or_init(|| Video::start(self.window));
+        let video = self.video.get_or_init(|| Video::start(self.window, self.request));
         // The format matters: wait for room rather than drop it.
         let _ = video.queue.send(Item::Config(config));
     }
@@ -1701,13 +1822,20 @@ impl MirrorSink for Sink {
             tracing::warn!(error = %e, "mirror recording packet failed");
         }
         let Some(video) = self.video.get() else { return };
+        if !keyframe && video.skipping.load(Ordering::Acquire) {
+            return;
+        }
         match video.queue.try_send(Item::Packet { keyframe, time_us, data }) {
             Ok(()) => {
+                video.skipping.store(false, Ordering::Release);
                 video.waiting.fetch_add(1, Ordering::AcqRel);
             }
             Err(TrySendError::Disconnected(_)) => {}
             // The decoder is behind; it starts over at the next keyframe.
-            Err(TrySendError::Full(_)) => self.keyframe_please(),
+            Err(TrySendError::Full(_)) => {
+                video.skipping.store(true, Ordering::Release);
+                self.keyframe_please();
+            }
         }
     }
 
@@ -1772,9 +1900,33 @@ impl MirrorSink for Sink {
     }
 }
 
+/// Ends a mirroring this PC can't show, and stops the phone sending it;
+/// nothing once `window` has closed or asked again (`id` is then old).
+fn give_up(window: Window, id: u64, reason: String) {
+    let current = state(|s| {
+        let current = s.shows(&window, id);
+        if current {
+            s.set_phase(window, Phase::Ended(Some(reason)));
+        }
+        current
+    });
+    if !current {
+        tracing::debug!(session = window.session, "a replaced video stream failed; ignored");
+        return;
+    }
+    core_host::host().hub.changed(Changes::MIRROR);
+    let Some(node) = core_host::node() else { return };
+    core_host::spawn(async move {
+        let _turn = TURN.lock().await;
+        if state(|s| s.shows(&window, id)) {
+            node.mirror_stop(window.device, window.session).await;
+        }
+    });
+}
+
 /// The decoder thread: decodes everything (later pictures depend on
 /// earlier ones), shows the newest picture of each batch.
-fn decode(window: Window, items: &Receiver<Item>, waiting: &AtomicUsize) {
+fn decode(window: Window, id: u64, items: &Receiver<Item>, waiting: &AtomicUsize) {
     let stream = window.key();
     // On the GPU when the PC has one (falling back to software on its own),
     // so big phone screens and several app windows stay smooth.
@@ -1782,7 +1934,7 @@ fn decode(window: Window, items: &Receiver<Item>, waiting: &AtomicUsize) {
         Ok(decoder) => decoder,
         Err(e) => {
             tracing::error!(error = %e, "no H.264 decoder");
-            set_phase(window, Phase::Ended(Some(tr!("Mirror", "This PC can't decode the phone's video."))));
+            give_up(window, id, tr!("Mirror", "This PC can't decode the phone's video."));
             return;
         }
     };
@@ -1795,8 +1947,12 @@ fn decode(window: Window, items: &Receiver<Item>, waiting: &AtomicUsize) {
     let mut size = (0, 0);
     // After a gap, pictures are garbage until the next keyframe.
     let mut need_keyframe = true;
+    let mut failures = 0;
     let mut stats = Stats::new();
     while let Ok(item) = items.recv() {
+        if !state(|s| s.shows(&window, id)) {
+            break;
+        }
         match item {
             Item::Config(config) => {
                 if decoder.codec() != config.codec {
@@ -1811,12 +1967,10 @@ fn decode(window: Window, items: &Receiver<Item>, waiting: &AtomicUsize) {
                         }
                         Err(e) => {
                             tracing::error!(error = %e, codec = %config.codec, "no decoder for codec");
-                            set_phase(
+                            give_up(
                                 window,
-                                Phase::Ended(Some(format!(
-                                    "This PC can't decode {} video.",
-                                    config.codec.to_uppercase()
-                                ))),
+                                id,
+                                format!("This PC can't decode {} video.", config.codec.to_uppercase()),
                             );
                             return;
                         }
@@ -1835,8 +1989,17 @@ fn decode(window: Window, items: &Receiver<Item>, waiting: &AtomicUsize) {
                 need_keyframe = false;
                 let started = Instant::now();
                 let pictures = match decoder.decode(&data, time_us) {
-                    Ok(pictures) => pictures,
+                    Ok(pictures) => {
+                        failures = 0;
+                        pictures
+                    }
                     Err(e) => {
+                        failures += 1;
+                        if failures >= DECODE_FAILURES {
+                            tracing::warn!(error = %e, failures, "the phone's video keeps failing to decode");
+                            give_up(window, id, tr!("Mirror", "This PC can't decode the phone's video."));
+                            break;
+                        }
                         tracing::debug!(error = %e, "a video packet didn't decode");
                         decoder.flush();
                         need_keyframe = true;
@@ -1851,14 +2014,19 @@ fn decode(window: Window, items: &Receiver<Item>, waiting: &AtomicUsize) {
                     let (w, h) = if size.0 > 0 { size } else { (picture.width, picture.height) };
                     let (src_w, src_h) = (w.min(picture.width), h.min(picture.height));
                     let bgrx = to_bgrx(picture, w, h);
-                    if (src_w, src_h) == (w, h) || src_w == 0 || src_h == 0 {
-                        ffi::video_frame(&stream, src_w, src_h, &bgrx);
-                        save_latest_frame(window, src_w, src_h, bgrx);
+                    let (width, height, pixels) = if (src_w, src_h) == (w, h) || src_w == 0 || src_h == 0 {
+                        (src_w, src_h, bgrx)
                     } else {
-                        let scaled = scale_bgrx(&bgrx, src_w, src_h, w, h);
-                        ffi::video_frame(&stream, w, h, &scaled);
-                        save_latest_frame(window, w, h, scaled);
-                    }
+                        (w, h, scale_bgrx(&bgrx, src_w, src_h, w, h))
+                    };
+                    // Keep ownership through publication: close/reopen cannot
+                    // clear the window and then receive this older frame.
+                    state(|s| {
+                        if s.shows(&window, id) {
+                            ffi::video_frame(&stream, width, height, &pixels);
+                            save_latest_frame(window, width, height, pixels);
+                        }
+                    });
                     stats.shown(decoded, converted.elapsed());
                 } else {
                     stats.skipped();
@@ -1867,8 +2035,12 @@ fn decode(window: Window, items: &Receiver<Item>, waiting: &AtomicUsize) {
             Item::Ended => break,
         }
     }
-    clear_window_buffers(&window);
-    ffi::video_clear(&stream);
+    state(|s| {
+        if s.shows(&window, id) {
+            clear_window_buffers(&window);
+            ffi::video_clear(&stream);
+        }
+    });
 }
 
 fn scale_bgrx(src: &[u8], src_w: u32, src_h: u32, dst_w: u32, dst_h: u32) -> Vec<u8> {

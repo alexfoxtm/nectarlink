@@ -561,7 +561,8 @@ impl AppState {
             | NodeEvent::PcAudioFrame { .. }
             | NodeEvent::CameraCaptureRequested { .. }
             | NodeEvent::CameraCaptureAccepted { .. }
-            | NodeEvent::CameraCaptureCancelled { .. } => Changes::NONE,
+            | NodeEvent::CameraCaptureCancelled { .. }
+            | NodeEvent::CopiedLinkChanged => Changes::NONE,
             NodeEvent::CameraCaptureReceived { .. } => Changes::TIMELINE,
             NodeEvent::ClipboardHistoryChanged => Changes::CLIPBOARD | Changes::TIMELINE,
             NodeEvent::TimelineChanged => Changes::TIMELINE,

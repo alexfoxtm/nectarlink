@@ -121,7 +121,7 @@ windows = { workspace = true, features = [
 dispatch2 = "0.3"
 block2 = "0.6"
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSPasteboard", "objc2-core-foundation", "NSStatusBar", "NSStatusItem", "NSStatusBarButton", "NSButton", "NSControl", "NSMenu", "NSMenuItem", "NSResponder", "NSView", "NSApplication", "NSBitmapImageRep", "NSImageRep", "NSEvent", "NSRunningApplication", "NSWorkspace"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSPasteboard", "objc2-core-foundation", "NSStatusBar", "NSStatusItem", "NSStatusBarButton", "NSButton", "NSControl", "NSMenu", "NSMenuItem", "NSResponder", "NSView", "NSApplication", "NSBitmapImageRep", "NSImageRep", "NSEvent", "NSRunningApplication", "NSWorkspace", "libc"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSBundle", "NSData", "NSDate", "NSDictionary", "NSEnumerator", "NSError", "NSObject", "NSRunLoop", "NSString"] }
 # Banners posted by this process. `UNNotificationTrigger` is enabled only so
 # `requestWithIdentifier:content:trigger:` exists; the trigger passed is nil.

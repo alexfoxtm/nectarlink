@@ -2449,6 +2449,8 @@ impl Event {
             | NodeEvent::CameraCaptureReceived { .. }
             | NodeEvent::CameraCaptureCancelled { .. }
             | NodeEvent::PcMirrorRequested { .. }
+            // Copied links are offered on Macs only.
+            | NodeEvent::CopiedLinkChanged
             // A phone's microphone arrives on PCs only.
             | NodeEvent::Mic { .. } => return None,
             NodeEvent::RemoteInputRequested { device } => {
@@ -3844,6 +3846,16 @@ impl NectarlinkNode {
         let id = parse_id(&id)?;
         let node = self.node.clone();
         self.run(async move { Ok(node.open_link(id, url).await?) }).await
+    }
+
+    /// Offers a web link the user copied on this phone `copied_age_ms` ago
+    /// to connected PCs that show copied links (`link.offer`). Text that
+    /// isn't an offerable link, or an older copy, sends nothing. Returns
+    /// how many PCs took it. Advertise `link.offer.send` in
+    /// [`Self::update_power`]'s capabilities while the user wants this.
+    pub async fn offer_copied_link(&self, url: String, copied_age_ms: u64) -> u32 {
+        let node = self.node.clone();
+        self.run(async move { node.offer_copied_link(url, copied_age_ms).await }).await
     }
 
     // ---- Remote input (touchpad, keyboard, presentation) ----

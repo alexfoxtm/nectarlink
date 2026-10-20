@@ -1324,6 +1324,44 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
         }
     }
 
+    /** Copies made before this (elapsed realtime) are never offered: before start, or before the user turned it on. */
+    @Volatile private var copiedLinksSince: Long = android.os.SystemClock.elapsedRealtime()
+    private val copiedLinkOfferEpoch = java.util.concurrent.atomic.AtomicLong()
+
+    /** The user turned offering copied links to Macs on or off. */
+    fun setCopiedLinkOffers(enabled: Boolean) {
+        copiedLinkOfferEpoch.incrementAndGet()
+        if (enabled) copiedLinksSince = android.os.SystemClock.elapsedRealtime()
+        refreshNotificationAccess()
+    }
+
+    /**
+     * Offers a web link the Elevated helper saw copied at `copiedAtMs` (elapsed realtime) to
+     * connected Macs, which show it in their Dock until it's clicked or its time is up. Only
+     * while the user wants it, for a copy made since then, with the phone unlocked; never
+     * a link NectarLink itself just wrote. Ordinary clipboard sending is separate.
+     */
+    fun onElevatedLinkCopied(url: String, copiedAtMs: Long) {
+        val offerEpoch = copiedLinkOfferEpoch.get()
+        if (!app.nectarlink.android.ui.Preferences.isCopiedLinkOffersEnabled(context)) return
+        if (copiedAtMs < copiedLinksSince || PhoneClipboard.isRecentEcho(url)) return
+        val keyguard = context.getSystemService(android.app.KeyguardManager::class.java)
+        if (keyguard?.isDeviceLocked != false) return
+        scope.launch(Dispatchers.IO) {
+            startJob?.join()
+            // Startup may have waited through a lock or an off/on cycle.
+            if (offerEpoch != copiedLinkOfferEpoch.get() ||
+                !app.nectarlink.android.ui.Preferences.isCopiedLinkOffersEnabled(context) ||
+                copiedAtMs < copiedLinksSince || keyguard?.isDeviceLocked != false
+            ) return@launch
+            val currentNode = node ?: return@launch
+            val age = android.os.SystemClock.elapsedRealtime() - copiedAtMs
+            if (age < 0) return@launch
+            runCatching { currentNode.offerCopiedLink(url, age.toULong()) }
+                .onFailure { Log.d(TAG, "copied link not offered: ${it.javaClass.simpleName}") }
+        }
+    }
+
     private fun targetPcsForSend(pcId: String?): List<Device> {
         val all = _state.value.devices
         if (pcId != null) {
@@ -1709,6 +1747,12 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
             (if (context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)) listOf("camera.capture") else emptyList()) +
             (if (InputService.running || Elevated.running) listOf("mirror.input") else emptyList()) +
             (if (Elevated.running) listOf("clip.read.auto") else emptyList()) +
+            // Copied links for a Mac's Dock come from the Elevated helper's clipboard watcher.
+            (if (Elevated.running && app.nectarlink.android.ui.Preferences.isCopiedLinkOffersEnabled(context)) {
+                listOf(COPIED_LINK_CAPABILITY)
+            } else {
+                emptyList()
+            }) +
             // Apps in windows of their own run on displays the Elevated helper makes.
             (if (Elevated.running && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) listOf("mirror.virtual_display") else emptyList()) +
             // Asked for when a PC wants the sound, or streamed via Elevated helper.
@@ -2312,6 +2356,8 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
         val CLIPBOARD_CAPABILITIES = listOf("clip.write", "clip.share", "mirror.capture", "mirror.view")
         /** With access to the phone's photos. */
         val PHOTO_CAPABILITIES = listOf("photos.read")
+        /** Offering copied web links to Macs (`link.offer`). */
+        const val COPIED_LINK_CAPABILITY = "link.offer.send"
     }
 }
 

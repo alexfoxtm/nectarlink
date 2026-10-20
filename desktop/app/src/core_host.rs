@@ -458,6 +458,9 @@ mod tests {
         // Ensure unsupported features on macOS are never advertised
         assert!(!caps.contains(&"mirror.view".into()), "macOS must not advertise mirror.view");
         assert!(!caps.contains(&"mirror.listen".into()), "macOS must not advertise mirror.listen");
+        assert!(!caps.contains(&nectarlink_core::MIRROR_CAPTURE.into()));
+        assert!(!caps.contains(&nectarlink_core::MIRROR_INPUT.into()));
+        assert!(!caps.contains(&nectarlink_core::INPUT_INJECT.into()));
         assert!(!caps.contains(&"media.control".into()), "macOS must not advertise media.control");
         assert!(
             !caps.contains(&nectarlink_core::STORAGE_MOUNT.into()),

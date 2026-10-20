@@ -32,6 +32,10 @@ import java.security.MessageDigest
  *   P 0 / P 1               physical screen power off (0) or normal (1)
  * Any of these after `@display ` goes to that display (an app window's).
  *
+ * Lines to the app: `CLIP text html` for what the user copied, and
+ * `LINK text copiedAt` for a web link copied just now, with when
+ * (elapsed realtime, ms), for the Mac's Dock. Both base64.
+ *
  * A connection whose first line (after the token) is
  *   V width height dpi bitrate fps package
  * is an app window instead: the helper makes it a display of its own, runs
@@ -250,6 +254,7 @@ object InputServer {
                     lastSentClipKey = null
                     return@runCatching
                 }
+                if (desc != null) runCatching { sendCopiedLink(out, clip, desc) }
                 for (i in 0 until clip.itemCount) {
                     val item = clip.getItemAt(i)
                     val cs = item.text ?: continue
@@ -282,6 +287,51 @@ object InputServer {
                 }
             }
         }
+    }
+
+    @Volatile private var lastLinkStamp: Long = 0L
+
+    /**
+     * Tells the app about a web link copied just now, with when, so it can be
+     * offered to a Mac's Dock. Only one plain-text item, timed by the
+     * clipboard itself: one copy is told once, and copying the same link
+     * again is a new copy.
+     */
+    private fun sendCopiedLink(
+        out: java.io.Writer,
+        clip: android.content.ClipData,
+        desc: android.content.ClipDescription,
+    ) {
+        if (clip.itemCount != 1 || desc.mimeTypeCount != 1) return
+        val mime = desc.getMimeType(0)
+        if (mime != android.content.ClipDescription.MIMETYPE_TEXT_PLAIN &&
+            mime != android.content.ClipDescription.MIMETYPE_TEXT_URILIST
+        ) {
+            return
+        }
+        val stamp = desc.timestamp
+        val age = linkCopyAgeMs(stamp, System.currentTimeMillis(), lastLinkStamp) ?: return
+        val text = clip.getItemAt(0).text?.toString() ?: return
+        if (text.length > 8_192 || (!text.startsWith("https://") && !text.startsWith("http://"))) return
+        lastLinkStamp = stamp
+        val copiedAt = SystemClock.elapsedRealtime() - age
+        val b64 = android.util.Base64.encodeToString(text.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP)
+        synchronized(out) {
+            out.write("LINK\t$b64\t$copiedAt\n")
+            out.flush()
+        }
+    }
+
+    /** A copied link is offered only this soon after it was copied. */
+    private const val LINK_MAX_AGE_MS = 60_000L
+
+    /**
+     * How long ago a clip stamped `stampMs` (the clipboard's copy time, wall
+     * clock) was copied, if it is a new copy made under [LINK_MAX_AGE_MS] ago.
+     */
+    internal fun linkCopyAgeMs(stampMs: Long, nowMs: Long, lastStampMs: Long): Long? {
+        if (stampMs <= 0L || stampMs == lastStampMs) return null
+        return (nowMs - stampMs).takeIf { it in 0 until LINK_MAX_AGE_MS }
     }
 
     private fun fail(why: String) {

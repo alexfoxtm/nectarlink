@@ -671,6 +671,9 @@ fn main() -> ExitCode {
         bridge::native::ffi::add_app_icon_image(size, &mark::render(size as usize));
     }
     bridge::native::ffi::apply_app_icon();
+    // After the Qt application (and its Cocoa delegate) exists.
+    #[cfg(target_os = "macos")]
+    clipboard::start_copied_links(settings.copied_links);
 
     if let Some(instance) = instance {
         let data_dir = data_dir.clone();
@@ -713,6 +716,9 @@ fn main() -> ExitCode {
     // start (and any in-flight one is cancelled) while the app tears down.
     #[cfg(target_os = "macos")]
     win::services::unregister();
+    // Restores the app icon and Qt's own reopen handling.
+    #[cfg(target_os = "macos")]
+    win::browser_handoff::stop();
     // QML first (it holds references into Qt), then the core.
     drop(engine);
     pc_audio_stream::set_enabled(false);

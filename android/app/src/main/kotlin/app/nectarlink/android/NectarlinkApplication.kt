@@ -31,6 +31,7 @@ class NectarlinkApplication : Application() {
         // What the phone offers PCs follows Elevated starting and stopping.
         Elevated.onChange = { core.refreshNotificationAccess() }
         Elevated.onClipboardChanged = { text, html -> core.onElevatedClipboardChanged(text, html) }
+        Elevated.onLinkCopied = { url, copiedAt -> core.onElevatedLinkCopied(url, copiedAt) }
         android.view.Choreographer.getInstance().postFrameCallback {
             scope.launch { core.start() }
         }

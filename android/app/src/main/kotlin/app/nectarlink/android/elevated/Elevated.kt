@@ -490,6 +490,16 @@ object Elevated {
                         if (text.isNotBlank()) {
                             onClipboardChanged(text, html)
                         }
+                    } else if (line.startsWith("LINK\t")) {
+                        val parts = line.split('\t')
+                        val b64Url = parts.getOrNull(1).orEmpty()
+                        val url = runCatching {
+                            String(android.util.Base64.decode(b64Url, android.util.Base64.DEFAULT), Charsets.UTF_8)
+                        }.getOrNull()
+                        val copiedAt = parts.getOrNull(2)?.toLongOrNull()
+                        if (!url.isNullOrEmpty() && copiedAt != null) {
+                            onLinkCopied(url, copiedAt)
+                        }
                     }
                 }
             }
@@ -592,6 +602,9 @@ object Elevated {
 
     /** Told when the shell helper observes a primary clipboard change in the background: `(text, html)`. */
     @Volatile var onClipboardChanged: (String, String?) -> Unit = { _, _ -> }
+
+    /** Told when the shell helper sees a web link copied just now: `(link, copiedAt)`, elapsed realtime ms. */
+    @Volatile var onLinkCopied: (String, Long) -> Unit = { _, _ -> }
 
     // ---- Input ----
 

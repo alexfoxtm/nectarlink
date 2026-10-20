@@ -6566,3 +6566,32 @@ async fn direct_tunnel_without_adb_origin_stays_unknown_but_stays_usb_path() {
     pc.node.shutdown().await;
     phone.node.shutdown().await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_copied_link_waits_on_the_mac_until_taken_once() {
+    let mut pc = device("Desktop", DeviceKind::Desktop).await;
+    let mut phone = device_with("Pixel", DeviceKind::Phone, &["link.offer.send"]).await;
+    pair_qr(&mut pc, &mut phone).await;
+    let url = "https://example.com/a?b=1#c";
+
+    // A Mac that doesn't take copied links is never sent one.
+    assert_eq!(phone.node.offer_copied_link(url.into(), 0).await, 0);
+    assert_eq!(pc.node.copied_link(), None);
+
+    pc.node.set_copied_link_receiver(true);
+    let deadline = tokio::time::Instant::now() + WAIT;
+    while phone.node.offer_copied_link(url.into(), 1_000).await == 0 {
+        assert!(tokio::time::Instant::now() < deadline, "the phone never heard the Mac takes copied links");
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    let shown = pc.node.copied_link().expect("the Mac holds the link");
+    assert_eq!(shown.device, phone.node.device_id());
+    assert_eq!(shown.host.as_deref(), Some("example.com"));
+    assert!(pc.platform.clipboard.lock().unwrap().is_empty());
+    assert!(pc.platform.links.lock().unwrap().is_empty());
+    assert_eq!(pc.node.take_copied_link(shown.id).as_deref(), Some(url));
+    assert_eq!(pc.node.take_copied_link(shown.id), None);
+
+    pc.node.shutdown().await;
+    phone.node.shutdown().await;
+}

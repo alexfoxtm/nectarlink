@@ -24,6 +24,9 @@ class Preferences(context: Context) {
     private val _suggestClipboardActions = MutableStateFlow(prefs.getBoolean(SUGGEST_CLIPBOARD_ACTIONS, true))
     val suggestClipboardActions: StateFlow<Boolean> = _suggestClipboardActions.asStateFlow()
 
+    private val _copiedLinkOffers = MutableStateFlow(prefs.getBoolean(COPIED_LINK_OFFERS, false))
+    val copiedLinkOffers: StateFlow<Boolean> = _copiedLinkOffers.asStateFlow()
+
     /**
      * The invitation to try Hive shows until it's answered, and again after
      * an update (a reinstall clears this anyway): it remembers the version
@@ -93,6 +96,11 @@ class Preferences(context: Context) {
         }
     }
 
+    fun updateCopiedLinkOffers(enabled: Boolean) {
+        prefs.edit { putBoolean(COPIED_LINK_OFFERS, enabled) }
+        _copiedLinkOffers.value = enabled
+    }
+
     fun updateWalkthrough(change: (WalkthroughPersistence) -> WalkthroughPersistence) {
         val current = _walkthrough.value
         val next = change(current).let {
@@ -119,6 +127,7 @@ class Preferences(context: Context) {
         private const val HIVE_INVITE_ANSWERED = "hive_invite_answered_version"
         private const val TOUCHPAD_SENSITIVITY = "touchpad_sensitivity"
         private const val SUGGEST_CLIPBOARD_ACTIONS = "suggest_clipboard_actions"
+        private const val COPIED_LINK_OFFERS = "copied_link_offers"
         private const val AWAY_MODE = "away_mode"
         private const val WALKTHROUGH_COMPLETED = "walkthrough_completed"
         private const val WALKTHROUGH_STEP = "walkthrough_step"
@@ -163,6 +172,11 @@ class Preferences(context: Context) {
             context.applicationContext
                 .getSharedPreferences("appearance", Context.MODE_PRIVATE)
                 .getBoolean(SUGGEST_CLIPBOARD_ACTIONS, true)
+
+        fun isCopiedLinkOffersEnabled(context: Context): Boolean =
+            context.applicationContext
+                .getSharedPreferences("appearance", Context.MODE_PRIVATE)
+                .getBoolean(COPIED_LINK_OFFERS, false)
 
         fun isAwayModeEnabled(context: Context): Boolean =
             context.applicationContext

@@ -25,6 +25,19 @@ class InputServerTest {
     }
 
     @Test
+    fun aFreshCopyIsTimedByTheClipboardStamp() {
+        assertEquals(1_500L, InputServer.linkCopyAgeMs(stampMs = 10_000L, nowMs = 11_500L, lastStampMs = 9_000L))
+    }
+
+    @Test
+    fun repeatedFutureUnstampedOrOldCopiesAreNotOffered() {
+        assertEquals(null, InputServer.linkCopyAgeMs(stampMs = 10_000L, nowMs = 11_500L, lastStampMs = 10_000L))
+        assertEquals(null, InputServer.linkCopyAgeMs(stampMs = 12_000L, nowMs = 11_500L, lastStampMs = 0L))
+        assertEquals(null, InputServer.linkCopyAgeMs(stampMs = 0L, nowMs = 11_500L, lastStampMs = 0L))
+        assertEquals(null, InputServer.linkCopyAgeMs(stampMs = 10_000L, nowMs = 70_000L, lastStampMs = 0L))
+    }
+
+    @Test
     fun usageAccessIsAllowedForThisAppOnly() {
         assertTrue(InputServer.allowedCommand("appops set ${BuildConfig.APPLICATION_ID} GET_USAGE_STATS allow"))
     }

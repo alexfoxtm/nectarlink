@@ -14,6 +14,7 @@ pub mod clipboard_history;
 mod config;
 mod contacts;
 pub mod continuity_camera;
+mod copied_link;
 pub mod deck;
 mod error;
 mod events;
@@ -51,6 +52,7 @@ pub use clipboard_history::{
     ClipboardHistoryEntry, ClipboardItemKind, MAX_CLIPBOARD_AGE_SECS, MAX_CLIPBOARD_HISTORY,
 };
 pub use config::{NodeConfig, NoopPlatform, Platform};
+pub use copied_link::CopiedLink;
 pub use deck::{
     COMMANDS_TOGGLE as DECK_COMMANDS_TOGGLE, DECK_ACTIONS, DeckAction, DeckConfig, DeckLayout, DeckPage,
     DeckPageConfig, DeckPress, DeckState, DeckTile, DeckTileConfig, INPUT_TOGGLE as DECK_INPUT_TOGGLE,

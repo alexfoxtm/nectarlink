@@ -156,6 +156,8 @@ pub(crate) struct LocalState {
     pub power: PowerLevel,
     pub extra_capabilities: Vec<String>,
     pub battery: Option<Battery>,
+    /// Whether this Mac takes copied links now (`link.offer`).
+    pub copied_link_receiver: bool,
 }
 
 impl LocalState {
@@ -168,6 +170,10 @@ impl LocalState {
             if !caps.contains(cap) {
                 caps.push(cap.clone());
             }
+        }
+        let receive = nectarlink_protocol::messages::link_offer::RECEIVE;
+        if self.copied_link_receiver && !caps.iter().any(|c| c == receive) {
+            caps.push(receive.to_owned());
         }
         caps
     }
@@ -244,6 +250,8 @@ pub(crate) struct Shared {
     pub(crate) clipboard_history: crate::clipboard_history::ClipboardHistoryStore,
     /// Smart suggestion for the most recently received text clip, if any.
     pub(crate) last_clip_suggestion: Mutex<Option<(DeviceId, crate::ClipSuggestion)>>,
+    /// The copied link this Mac offers (`link.offer`), in memory only.
+    pub(crate) copied_link: crate::copied_link::Slot,
     /// LocalSend v2.1 discovery, server, and outgoing transfers.
     pub(crate) localsend: crate::localsend::LocalSendState,
     /// Bound loopback TCP port for the phone-side USB tunnel listener (0 if disabled).
@@ -1315,6 +1323,7 @@ impl Shared {
         self.toggles.remove_peer(peer);
         self.deck.remove_peer(peer);
         self.stop_webcam(peer);
+        crate::copied_link::clear(self, Some(peer));
         if !dropped_queue.is_empty() {
             self.emit(NodeEvent::QueueChanged);
             if dropped_count > 0 {
@@ -1788,6 +1797,7 @@ impl Node {
                 power: config.power,
                 extra_capabilities: config.capabilities.clone(),
                 battery: None,
+                copied_link_receiver: false,
             }),
             pairing: PairingState::default(),
             cancel: CancellationToken::new(),
@@ -1818,6 +1828,7 @@ impl Node {
             storage: Mutex::new(Default::default()),
             clipboard_history,
             last_clip_suggestion: Mutex::new(None),
+            copied_link: Default::default(),
             localsend,
             usb_listener_port: std::sync::atomic::AtomicU16::new(0),
             usb_bridge_ports: Arc::new(Mutex::new(std::collections::HashSet::new())),
@@ -2214,6 +2225,9 @@ impl Node {
         }
         if toggle == crate::toggles::TOGGLE {
             self.shared.toggles_toggled(peer, enabled);
+        }
+        if toggle == crate::clipboard::TOGGLE && !enabled {
+            crate::copied_link::clear(&self.shared, Some(&peer));
         }
         if toggle == crate::actions::POWER_TOGGLE
             && let Some(session) = self.shared.session(&peer)
@@ -3812,6 +3826,51 @@ impl Node {
         for session in self.shared.live_sessions() {
             self.shared.send_deck(&session).await;
         }
+    }
+
+    // ---- Copied links (`link.offer`) ----
+
+    /// Whether this Mac takes copied links from phones: on only while its
+    /// user wants them and it is unlocked. Off clears the one it holds.
+    /// Connected phones hear the change (`hello.update`).
+    pub fn set_copied_link_receiver(&self, enabled: bool) {
+        {
+            let mut local = self.shared.local.write().unwrap_or_else(|e| e.into_inner());
+            if local.copied_link_receiver == enabled {
+                return;
+            }
+            local.copied_link_receiver = enabled;
+        }
+        if !enabled {
+            crate::copied_link::clear(&self.shared, None);
+        }
+        for session in self.shared.live_sessions() {
+            self.shared.queue_caps(&session, false);
+        }
+        self.shared.refresh_all_capabilities();
+    }
+
+    /// The copied link this Mac offers now, without its link.
+    pub fn copied_link(&self) -> Option<crate::CopiedLink> {
+        crate::copied_link::current(&self.shared)
+    }
+
+    /// Consumes offer `id` and returns its link to open, only if it is still
+    /// the one held, live, and its phone still allowed. A newer offer stays.
+    pub fn take_copied_link(&self, id: u64) -> Option<String> {
+        crate::copied_link::take(&self.shared, id)
+    }
+
+    /// Drops the copied link this Mac offers, if any.
+    pub fn clear_copied_link(&self) {
+        crate::copied_link::clear(&self.shared, None);
+    }
+
+    /// Offers a web link the user copied on this phone `copied_age_ms` ago to
+    /// connected Macs that take copied links. Text that isn't an offerable
+    /// link, or an older copy, sends nothing. Returns how many Macs took it.
+    pub async fn offer_copied_link(&self, url: String, copied_age_ms: u64) -> u32 {
+        crate::copied_link::offer(&self.shared, url, copied_age_ms).await
     }
 
     // ---- Timeline ----

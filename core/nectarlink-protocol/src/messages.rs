@@ -44,6 +44,7 @@ pub mod types {
     pub const PC_POWER: &str = "pc.power";
     pub const PC_WAKE_INFO: &str = "pc.wake_info";
     pub const LINK_OPEN: &str = "link.open";
+    pub const LINK_OFFER: &str = "link.offer";
     pub const TASK_NOTIFY: &str = "task.notify";
     pub const PHOTOS_NEW: &str = "photos.new";
     pub const PHOTOS_ALBUMS: &str = "photos.albums";
@@ -2711,6 +2712,130 @@ impl std::fmt::Debug for LinkOpen {
     }
 }
 
+/// A web link the user copied on a phone, offered to a paired Mac, which
+/// shows it in its Dock and opens it only when clicked (`link.offer`).
+pub mod link_offer {
+    /// Offered by a Mac only while its user wants copied links and it is
+    /// unlocked. Phones send `link.offer` to nobody else.
+    pub const RECEIVE: &str = "link.offer";
+    /// Offered by a phone while its user wants copied links offered. Macs
+    /// take `link.offer` from nobody else.
+    pub const SEND: &str = "link.offer.send";
+    /// The longest link offered, in UTF-8 bytes.
+    pub const MAX_URL_BYTES: usize = 8_192;
+    /// The whole lifetime of an offer from the copy. Never extended.
+    pub const MAX_TTL_MS: u64 = 300_000;
+    /// A copy older than this is not offered at all.
+    pub const MAX_SEND_AGE_MS: u64 = 60_000;
+}
+
+/// Body of `link.offer` (phone to Mac).
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LinkOffer {
+    /// The copied link, exactly as copied.
+    pub url: String,
+    /// What is left of the original lifetime from the copy, in ms.
+    pub ttl_ms: u64,
+}
+
+impl LinkOffer {
+    pub fn is_valid(&self) -> bool {
+        (1..=link_offer::MAX_TTL_MS).contains(&self.ttl_ms) && is_offer_url(&self.url)
+    }
+}
+
+/// Never prints the link.
+impl std::fmt::Debug for LinkOffer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LinkOffer").field("bytes", &self.url.len()).field("ttl_ms", &self.ttl_ms).finish()
+    }
+}
+
+/// Whether `url` may be offered: lowercase `http://` or `https://` with a
+/// host, no user info, no whitespace, control or format characters, an
+/// explicit port only in 1..=65535, and at most
+/// [`link_offer::MAX_URL_BYTES`]. Nothing is trimmed or rewritten.
+pub fn is_offer_url(url: &str) -> bool {
+    offer_host(url).is_some()
+}
+
+/// The host of an offerable link, for display, when it is plain ASCII
+/// (letters, digits, `-` and `.`, which punycode hosts are). Never the link.
+pub fn offer_display_host(url: &str) -> Option<&str> {
+    offer_host(url).filter(|h| h.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.'))
+}
+
+fn offer_host(url: &str) -> Option<&str> {
+    if url.is_empty() || url.len() > link_offer::MAX_URL_BYTES {
+        return None;
+    }
+    if url.chars().any(|c| c.is_control() || c.is_whitespace() || is_format_char(c)) {
+        return None;
+    }
+    let rest = url.strip_prefix("https://").or_else(|| url.strip_prefix("http://"))?;
+    let authority = &rest[..rest.find(['/', '?', '#']).unwrap_or(rest.len())];
+    if authority.contains(['@', '\\']) {
+        return None;
+    }
+    let (host, port) = if let Some(bracketed) = authority.strip_prefix('[') {
+        let (host, after) = bracketed.split_once(']')?;
+        host.parse::<std::net::Ipv6Addr>().ok()?;
+        match after {
+            "" => (host, None),
+            _ => (host, Some(after.strip_prefix(':')?)),
+        }
+    } else {
+        let (host, port) = match authority.split_once(':') {
+            Some((host, port)) => (host, Some(port)),
+            None => (authority, None),
+        };
+        if host.contains(['%', '<', '>', '[', ']', '^', '|']) {
+            return None;
+        }
+        (host, port)
+    };
+    if host.is_empty() {
+        return None;
+    }
+    if let Some(port) = port {
+        let valid = (1..=5).contains(&port.len())
+            && port.bytes().all(|b| b.is_ascii_digit())
+            && port.parse::<u32>().is_ok_and(|p| (1..=65_535).contains(&p));
+        if !valid {
+            return None;
+        }
+    }
+    Some(host)
+}
+
+/// Unicode general category Cf (format), which can hide text in a link.
+fn is_format_char(c: char) -> bool {
+    matches!(
+        c as u32,
+        0x00AD
+            | 0x0600..=0x0605
+            | 0x061C
+            | 0x06DD
+            | 0x070F
+            | 0x0890..=0x0891
+            | 0x08E2
+            | 0x180E
+            | 0x200B..=0x200F
+            | 0x202A..=0x202E
+            | 0x2060..=0x2064
+            | 0x2066..=0x206F
+            | 0xFEFF
+            | 0xFFF9..=0xFFFB
+            | 0x110BD
+            | 0x110CD
+            | 0x13430..=0x1343F
+            | 0x1BCA0..=0x1BCA3
+            | 0x1D173..=0x1D17A
+            | 0xE0001
+            | 0xE0020..=0xE007F
+    )
+}
+
 /// Limits for `task.notify` (`docs/protocol/actions.md`).
 pub mod task_notify {
     /// Maximum UTF-8 bytes in a task identifier.
@@ -4257,6 +4382,55 @@ mod tests {
             screen: None,
             install_id: None,
         }
+    }
+
+    #[test]
+    fn link_offer_keeps_the_link_exactly() {
+        let url = "https://xn--bcher-kva.example:8443/a%20b?q=1&r=%E2%9C%93#frag";
+        let offer = LinkOffer { url: url.into(), ttl_ms: link_offer::MAX_TTL_MS };
+        let env = Envelope::new(types::LINK_OFFER, &offer).unwrap();
+        let back: LinkOffer = Envelope::from_cbor(&env.to_cbor()).unwrap().body().unwrap();
+        assert!(back.is_valid());
+        assert_eq!(back.url, url);
+        assert_eq!(offer_display_host(url), Some("xn--bcher-kva.example"));
+        let v6 = "https://[2001:db8::ffff:192.0.2.1]:443/p?q#f";
+        assert!(is_offer_url(v6));
+        assert_eq!(offer_display_host(v6), None);
+        assert_eq!(offer_display_host("https://bücher.example/"), None);
+        assert!(!format!("{offer:?}").contains("example"));
+    }
+
+    #[test]
+    fn link_offer_rejects_unsafe_links_and_lifetimes() {
+        for url in [
+            "",
+            "HTTPS://example.com/",
+            "ftp://example.com/",
+            "https://",
+            "https://user@example.com/",
+            "https://example.com:0/",
+            "https://example.com:65536/",
+            "https://example.com:/",
+            "https://exa mple.com/",
+            "https://example.com/\u{202E}gpj.exe",
+            "https://example.com/\u{85}",
+            "https://example.com\\@evil.com/",
+            "javascript:alert(1)",
+            "http://[fe80::1%25en0]/",
+            "http://[::g]/",
+            "http://[1.2.3.4]/",
+            "http://[::1/",
+            "http://[::1]x/",
+            "http://[::1]:/",
+            "http://[user@::1]/",
+        ] {
+            assert!(!is_offer_url(url), "{url:?}");
+        }
+        assert!(!is_offer_url(&format!("https://example.com/{}", "a".repeat(link_offer::MAX_URL_BYTES))));
+        let valid = "http://[::1]:8080/";
+        assert!(is_offer_url(valid));
+        assert!(!LinkOffer { url: valid.into(), ttl_ms: 0 }.is_valid());
+        assert!(!LinkOffer { url: valid.into(), ttl_ms: link_offer::MAX_TTL_MS + 1 }.is_valid());
     }
 
     #[test]
