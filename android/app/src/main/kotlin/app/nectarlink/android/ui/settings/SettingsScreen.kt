@@ -115,6 +115,8 @@ fun SettingsScreen(
     onClearClipboardHistory: () -> Unit = {},
     suggestClipboardActions: Boolean = true,
     onSetSuggestClipboardActions: (Boolean) -> Unit = {},
+    copiedLinkOffers: Boolean = false,
+    onSetCopiedLinkOffers: (Boolean) -> Unit = {},
     onSetTimelineRetentionDays: (UInt) -> Unit = {},
     onClearTimeline: () -> Unit = {},
     onClearMessageCache: () -> Unit = {},
@@ -721,6 +723,24 @@ fun SettingsScreen(
                             onCheckedChange = onSetSuggestClipboardActions,
                             colors = app.nectarlink.android.ui.theme.nectarSwitchColors(),
                             modifier = Modifier.semantics { contentDescription = suggestionsTitle },
+                        )
+                    }
+                    SettingRowDivider()
+                    val copiedLinksTitle = stringResource(R.string.settings_copied_link_offers)
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                            Text(copiedLinksTitle, style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                stringResource(R.string.settings_copied_link_offers_hint),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(
+                            checked = copiedLinkOffers,
+                            onCheckedChange = onSetCopiedLinkOffers,
+                            colors = app.nectarlink.android.ui.theme.nectarSwitchColors(),
+                            modifier = Modifier.semantics { contentDescription = copiedLinksTitle },
                         )
                     }
                 }

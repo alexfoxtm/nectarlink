@@ -187,6 +187,8 @@
     <string name="settings_clipboard_title">剪贴板</string>
     <string name="settings_clipboard_suggestions">为复制的文本推荐操作</string>
     <string name="settings_clipboard_suggestions_hint">为来自电脑的文本推荐操作：打开链接、地图、拨号、快递和邮件。</string>
+    <string name="settings_copied_link_offers">将复制的链接提供给 Mac</string>
+    <string name="settings_copied_link_offers_hint">你复制的网页链接会以浏览器图标显示在 Mac 的程序坞中，点击即可打开，最多保留 5 分钟。需要高级权限（无线调试）。</string>
     <string name="settings_clipboard_history">保留剪贴板历史记录</string>
     <string name="settings_clipboard_history_hint">保留最近50条剪贴内容，加密保存在本手机上。密码和一次性验证码不会被保存。</string>
     <string name="clip_received_from">复制自 %1$s</string>

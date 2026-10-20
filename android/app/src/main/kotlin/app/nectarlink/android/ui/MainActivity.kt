@@ -783,6 +783,7 @@ private fun App(
                     val recorderSession by recorderFlow.collectAsStateWithLifecycle(recorderInitial)
                     val touchpadSensitivity by preferences.touchpadSensitivity.collectAsStateWithLifecycle()
                     val suggestClipboardActions by preferences.suggestClipboardActions.collectAsStateWithLifecycle()
+                    val copiedLinkOffers by preferences.copiedLinkOffers.collectAsStateWithLifecycle()
                     val hiveInviteShown by preferences.hiveInviteShown.collectAsStateWithLifecycle()
                     val saveableStateHolder = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
 
@@ -943,6 +944,11 @@ private fun App(
                                     onClearClipboardHistory = core::clearClipboardHistory,
                                     suggestClipboardActions = suggestClipboardActions,
                                     onSetSuggestClipboardActions = preferences::updateSuggestClipboardActions,
+                                    copiedLinkOffers = copiedLinkOffers,
+                                    onSetCopiedLinkOffers = { enabled ->
+                                        preferences.updateCopiedLinkOffers(enabled)
+                                        core.setCopiedLinkOffers(enabled)
+                                    },
                                     onSetTimelineRetentionDays = core::setTimelineRetentionDays,
                                     onClearTimeline = core::clearTimeline,
                                     onClearMessageCache = core::clearMessageCache,

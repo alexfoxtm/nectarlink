@@ -193,6 +193,8 @@
     <string name="settings_clipboard_title">Clipboard</string>
     <string name="settings_clipboard_suggestions">Suggest actions for copied text</string>
     <string name="settings_clipboard_suggestions_hint">Suggest actions for text from your PC: open links, maps, calls, parcels and email.</string>
+    <string name="settings_copied_link_offers">Offer copied links to your Mac</string>
+    <string name="settings_copied_link_offers_hint">A web link you copy shows in your Mac\'s Dock as its browser\'s icon until you click it, for up to 5 minutes. Uses Wireless debugging.</string>
     <string name="settings_clipboard_history">Keep clipboard history</string>
     <string name="settings_clipboard_history_hint">Keeps the last 50 clips, encrypted on this phone. Passwords and one-time codes are never saved.</string>
     <string name="clip_received_from">Copied from %1$s</string>

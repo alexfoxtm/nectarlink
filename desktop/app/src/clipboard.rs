@@ -86,6 +86,14 @@ pub fn set_suggest_actions(on: bool) {
     }
 }
 
+/// The macOS "Copied links in the Dock" receiver.
+pub fn set_copied_links(on: bool) {
+    #[cfg(target_os = "macos")]
+    crate::win::browser_handoff::set_receiving(on);
+    #[cfg(not(target_os = "macos"))]
+    let _ = on;
+}
+
 pub fn set_history_enabled(on: bool) {
     HISTORY_ENABLED.store(on, Ordering::Relaxed);
     if let Some(node) = core_host::node() {
@@ -95,6 +103,8 @@ pub fn set_history_enabled(on: bool) {
 }
 
 pub fn apply_history_setting(node: &Node) {
+    #[cfg(target_os = "macos")]
+    node.set_copied_link_receiver(crate::win::browser_handoff::receiver_wanted());
     let _ = node.set_clipboard_history_enabled(HISTORY_ENABLED.load(Ordering::Relaxed));
     core_host::host().hub.changed(Changes::CLIPBOARD);
 }
@@ -352,8 +362,60 @@ pub fn copy_received_files_to_clipboard(paths: &[std::path::PathBuf]) -> bool {
     clipboard::write_files(paths)
 }
 
+/// Starts the copied-link Dock offer (macOS). Call on the main thread once
+/// the Qt application exists.
+#[cfg(target_os = "macos")]
+pub fn start_copied_links(on: bool) {
+    crate::win::browser_handoff::start(
+        on,
+        crate::win::browser_handoff::AppHooks {
+            take: Box::new(|id| with_node(|node| node.take_copied_link(id)).flatten()),
+            clear: Box::new(|| {
+                with_node(Node::clear_copied_link);
+            }),
+            set_receiver: Box::new(|on| {
+                with_node(|node| node.set_copied_link_receiver(on));
+            }),
+            show_window: Box::new(crate::bridge::app::request_activation),
+        },
+    );
+    refresh_copied_link(None);
+}
+
+/// Runs a core call from a thread outside the runtime (the main thread).
+#[cfg(target_os = "macos")]
+fn with_node<T>(f: impl FnOnce(&Node) -> T) -> Option<T> {
+    let node = core_host::node()?;
+    // The core may spawn tasks from these calls.
+    let _runtime = core_host::host().runtime.enter();
+    Some(f(&node))
+}
+
+/// Passes the core's copied link (device and id only) to the Dock, while
+/// its device is still paired here.
+#[cfg(target_os = "macos")]
+fn refresh_copied_link(removed: Option<DeviceId>) {
+    let current = core_host::node()
+        .and_then(|node| node.copied_link())
+        .filter(|link| Some(link.device) != removed)
+        .filter(|link| core_host::host().hub.read(|s| s.device(&link.device).is_some()))
+        .map(|link| (link.device, link.id));
+    crate::win::browser_handoff::offer_changed(current);
+}
+
+#[cfg(target_os = "macos")]
+fn copied_link_event(event: &NodeEvent) {
+    match event {
+        NodeEvent::CopiedLinkChanged => refresh_copied_link(None),
+        NodeEvent::DeviceRemoved(device) => refresh_copied_link(Some(*device)),
+        _ => {}
+    }
+}
+
 /// Feedback for clipboard events.
 pub fn on_event(event: &NodeEvent) {
+    #[cfg(target_os = "macos")]
+    copied_link_event(event);
     if let NodeEvent::ClipboardReceived { device } = event {
         let name = core_host::host().hub.read(|s| s.name_of(device)).unwrap_or_else(|| "your phone".into());
         let suggestion = if SUGGEST_ACTIONS.load(Ordering::Relaxed) {
