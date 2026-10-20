@@ -130,4 +130,17 @@ mod tests {
         assert!(listed.iter().all(|l| l["code"] != ""), "the system's isn't a choice in the list");
         assert!(!is_known("xx"));
     }
+
+    /// A language Settings offers is fully translated: languages still being
+    /// translated (docs/translating.md) stay out of [`LANGUAGES`] until they're done.
+    #[test]
+    fn every_offered_language_is_fully_translated() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("i18n");
+        for (code, name) in LANGUAGES.iter().filter(|(code, _)| !code.is_empty() && *code != "en") {
+            let ts = std::fs::read_to_string(dir.join(format!("nectarlink_{code}.ts")))
+                .unwrap_or_else(|e| panic!("{name} is offered but has no catalogue: {e}"));
+            let unfinished = ts.matches("type=\"unfinished\"").count();
+            assert_eq!(unfinished, 0, "{name} is offered but has {unfinished} untranslated strings");
+        }
+    }
 }

@@ -21,11 +21,11 @@
       "id": "main",
       "kind": "branch",
       "ref": "refs/heads/main",
-      "sha": "e4b279a14eb4ef3976ba6c3aa825f766d527f29e",
-      "author": "Bee <302257494+thtbee@users.noreply.github.com>",
-      "subject": "PC: open the main window again, and keep its place on Windows",
+      "sha": "5bdcadbf9e2c4d3ca55111829d840574028afbcb",
+      "author": "Thtbee_ <302257494+thtbee@users.noreply.github.com>",
+      "subject": "CI: open the PC app main window and fail on QML warnings (#35)",
       "in_port": true,
-      "role": "Canonical main checked 2026-10-19. Reviewed MainWindow geometry fix adopted by history-preserving merge126cc12c1fc75e0e6f0fa312c82b839fcdaab184; Waypair title and monochrome mark retained. PR24 remains independently pinned below."
+      "role": "Seven canonical commits after e4b279a1 adopted by history-preserving merge, with reviewed macOS compatibility and backup transfer/sharing safeguards; no wire/version changes. PR24 remains independently pinned."
     },
     {
       "id": "macos-pr24",
@@ -49,7 +49,7 @@
       "head_repo": "jochenkirstaetter/nectarlink",
       "head_ref": "linux",
       "sha": "1de43ef1dd50c603601e4149dfbdd8520ebd5084",
-      "author": "Jochen Kirst\u00e4tter <7329802+jochenkirstaetter@users.noreply.github.com>",
+      "author": "Jochen Kirstätter <7329802+jochenkirstaetter@users.noreply.github.com>",
       "subject": "fix(linux): clean up stale pipe sources, add Mono/Stereo virtual mic alignment and +9 dB makeup gain",
       "state_at_record": "open, unmerged, stacked on #23, diverged from main (5 ahead, 5 behind, merge base c92a86dd)",
       "in_port": false,

@@ -175,3 +175,10 @@ it does not require a helper app or Apple's cross-device Handoff transport.
 Porting it still needs a negotiated privacy/session/lifetime offer and an
 explicit-click route that preserves Qt's application delegate. Ordinary
 `clip.set` text alone is insufficient. Tray expansion stays deferred.
+
+
+### Canonical main integration, Wave26
+
+The fork now incorporates main `5bdcadbf` with original history, including photo backup, hotspot joining infrastructure, locale completeness and the UI-check entry point. Mac photo backup uses the existing native folder opener and a Waypair Link default folder; it stays opt-in and needs Photos and Files sharing. Claims use only known backup transfer IDs so unrelated incoming files, recordings and handoffs remain visible. Unknown backup transfers can briefly appear before their reply identifies them; no name/size heuristic claims user files. Mac hotspot joining stays visibly unavailable, with explicit unsupported adapters. The phone hotspot toggle is separate.
+
+Twenty-five focused desktop checks passed; the twelve backup checks passed again after removing the now-write-only asking state. Chinese catalogue gaps were repaired rather than weakening the new completeness check. Peer compatibility is a source verdict: no wire, capability or version changes were introduced, so neither app needs to update first. Paired backup, permissions and final release qualification remain separate. Private R2 code remains fork-only.

@@ -32,6 +32,8 @@ pub mod phone_browser;
 #[allow(unsafe_code)]
 pub mod phone_mic;
 #[allow(unsafe_code)]
+pub mod photo_backup;
+#[allow(unsafe_code)]
 pub mod photos;
 #[allow(unsafe_code)]
 pub mod prefs;

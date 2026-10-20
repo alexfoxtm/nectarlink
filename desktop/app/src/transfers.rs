@@ -223,6 +223,11 @@ pub fn open(path: &Path) {
     }
 }
 
+/// Opens a folder in Finder / File Explorer.
+pub fn open_folder(path: &Path) -> std::io::Result<()> {
+    launch(open_command(path))
+}
+
 /// Shows a received file or folder in Finder / File Explorer, selected.
 pub fn show_in_folder(path: &Path) {
     if path.to_str().is_some_and(|s| s.starts_with("req:")) {
@@ -289,7 +294,7 @@ fn launch(mut cmd: Command) -> std::io::Result<()> {
 pub fn on_event(event: &NodeEvent) {
     let NodeEvent::Transfer(t) = event else { return };
     // Photos the user asked to open or copy say nothing about being saved.
-    if t.direction != Direction::Incoming || crate::photos::handles(&t.id) {
+    if t.direction != Direction::Incoming || crate::photos::handles(&t.id) || crate::photo_backup::claims(t) {
         return;
     }
     if t.state == TransferState::Requested {

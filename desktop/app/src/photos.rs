@@ -122,7 +122,10 @@ pub fn on_event(event: &NodeEvent) {
                 _ => {}
             }
         }
-        NodeEvent::Transfer(t) if t.direction == Direction::Incoming => finished(t),
+        // A photo backup's downloads are its own (crate::photo_backup).
+        NodeEvent::Transfer(t) if t.direction == Direction::Incoming && !crate::photo_backup::claims(t) => {
+            finished(t)
+        }
         _ => {}
     }
 }
@@ -413,7 +416,7 @@ fn deliver(transfer_id: &str, intent: Intent, saved: &[PathBuf]) {
     }
 }
 
-fn move_or_copy(src: &Path, dst: &Path) -> std::io::Result<()> {
+pub(crate) fn move_or_copy(src: &Path, dst: &Path) -> std::io::Result<()> {
     if src == dst {
         return Ok(());
     }
@@ -425,7 +428,7 @@ fn move_or_copy(src: &Path, dst: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-fn free_path(dir: &Path, name: &str) -> PathBuf {
+pub(crate) fn free_path(dir: &Path, name: &str) -> PathBuf {
     let first = dir.join(name);
     if !first.exists() {
         return first;

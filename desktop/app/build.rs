@@ -281,6 +281,7 @@ fn main() {
             "src/bridge/pairing.rs",
             "src/bridge/phone_mic.rs",
             "src/bridge/phone_browser.rs",
+            "src/bridge/photo_backup.rs",
             "src/bridge/photos.rs",
             "src/bridge/prefs.rs",
             "src/bridge/setup.rs",

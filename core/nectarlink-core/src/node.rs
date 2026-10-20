@@ -2941,6 +2941,19 @@ impl Node {
         crate::photos::fetch_many(&self.shared, &session, ids).await
     }
 
+    /// Like [`fetch_photos`](Self::fetch_photos), for a backup: the files are
+    /// saved as usual, but the transfer leaves nothing in the Timeline.
+    pub async fn fetch_photos_quietly(&self, peer: DeviceId, ids: Vec<String>) -> Result<String> {
+        let session = self.connected(&peer)?;
+        crate::photos::fetch_quietly(&self.shared, &session, ids).await
+    }
+
+    /// Keeps a transfer started by [`fetch_photos_quietly`](Self::fetch_photos_quietly)
+    /// quiet after a restart, when it resumes.
+    pub fn keep_transfer_quiet(&self, transfer_id: &str) {
+        crate::transfer::mark_quiet_transfer(&self.shared, transfer_id);
+    }
+
     // ---- Remote input (docs/protocol/remote.md) ----
 
     /// Checks whether a paired PC currently accepts remote input from this

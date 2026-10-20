@@ -34,6 +34,7 @@ pub mod tray;
 pub mod vcam;
 pub mod wallpaper;
 pub mod widget;
+pub mod wifi;
 pub mod window_capture;
 pub mod wol;
 
@@ -175,6 +176,49 @@ pub fn work_area() -> Option<(i32, i32, i32, i32)> {
         rect.right - rect.left,
         rect.bottom - rect.top,
     ))
+}
+
+/// How far this PC's time zone is from UTC at `at_ms` (Unix milliseconds),
+/// daylight saving included; 0 when Windows can't say.
+pub fn local_offset_ms(at_ms: i64) -> i64 {
+    use windows::Win32::{
+        Foundation::{FILETIME, SYSTEMTIME},
+        System::Time::{FileTimeToSystemTime, SystemTimeToTzSpecificLocalTime},
+    };
+    // FILETIME counts 100 ns from 1601-01-01.
+    let ticks = (at_ms.max(0) as u64).saturating_mul(10_000).saturating_add(116_444_736_000_000_000);
+    let ft = FILETIME { dwLowDateTime: ticks as u32, dwHighDateTime: (ticks >> 32) as u32 };
+    let mut utc = SYSTEMTIME::default();
+    let mut local = SYSTEMTIME::default();
+    // SAFETY: valid, initialized structs on the stack; no time zone means this PC's.
+    let ok = unsafe {
+        FileTimeToSystemTime(&ft, &mut utc).is_ok()
+            && SystemTimeToTzSpecificLocalTime(None, &utc, &mut local).is_ok()
+    };
+    if !ok {
+        return 0;
+    }
+    let minutes = |t: &SYSTEMTIME| i64::from(t.wHour) * 60 + i64::from(t.wMinute);
+    let mut diff = minutes(&local) - minutes(&utc);
+    // Across midnight the calendar day differs too.
+    if local.wDay != utc.wDay {
+        diff += if (local.wYear, local.wMonth, local.wDay) > (utc.wYear, utc.wMonth, utc.wDay) {
+            1_440
+        } else {
+            -1_440
+        };
+    }
+    diff * 60_000
+}
+
+/// Free bytes on the drive holding `path`, if Windows can say.
+pub fn free_space(path: &std::path::Path) -> Option<u64> {
+    use windows::{Win32::Storage::FileSystem::GetDiskFreeSpaceExW, core::HSTRING};
+    let mut free = 0u64;
+    // SAFETY: a valid path string and an out pointer to a local.
+    unsafe { GetDiskFreeSpaceExW(&HSTRING::from(path.as_os_str()), Some(&mut free), None, None) }
+        .ok()
+        .map(|()| free)
 }
 
 /// Fills `buf` from the system-preferred cryptographic RNG (CNG). False on failure.

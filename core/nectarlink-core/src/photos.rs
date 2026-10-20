@@ -124,7 +124,21 @@ pub(crate) async fn fetch(shared: &Shared, session: &Session, id: String) -> Res
 }
 
 /// Asks a phone for one or more photos or videos in a single transfer.
-pub(crate) async fn fetch_many(shared: &Shared, session: &Session, mut ids: Vec<String>) -> Result<String> {
+pub(crate) async fn fetch_many(shared: &Shared, session: &Session, ids: Vec<String>) -> Result<String> {
+    fetch_inner(shared, session, ids, false).await
+}
+
+/// Like [`fetch_many`], but the transfer leaves nothing in the Timeline.
+pub(crate) async fn fetch_quietly(shared: &Shared, session: &Session, ids: Vec<String>) -> Result<String> {
+    fetch_inner(shared, session, ids, true).await
+}
+
+async fn fetch_inner(
+    shared: &Shared,
+    session: &Session,
+    mut ids: Vec<String>,
+    quiet: bool,
+) -> Result<String> {
     allowed(shared, &session.peer)?;
     ids.retain(|id| is_valid_photo_id(id));
     ids.truncate(photos::MAX_GET_ITEMS);
@@ -135,7 +149,11 @@ pub(crate) async fn fetch_many(shared: &Shared, session: &Session, mut ids: Vec<
     let env = Envelope::new(types::PHOTOS_GET, &PhotoGet { id, ids })?;
     let reply = session.request(env, crate::session::REQUEST_TIMEOUT).await?;
     let PhotoSending { transfer } = reply.expect_body(types::PHOTOS_SENDING)?;
-    crate::transfer::mark_photo_transfer(shared, &transfer);
+    if quiet {
+        crate::transfer::mark_quiet_transfer(shared, &transfer);
+    } else {
+        crate::transfer::mark_photo_transfer(shared, &transfer);
+    }
     Ok(transfer)
 }
 

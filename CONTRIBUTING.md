@@ -63,9 +63,10 @@ These come from the plan and will grow into a full style guide:
   or keys. No telemetry.
 - **All user-facing strings are translatable**: `qsTr` in QML,
   `tr!("Context", "Sent to %1", name)` for text the desktop app builds in
-  Rust, string resources on Android. After changing Rust text, run
-  `cargo xtask strings`, then
-  `lupdate desktop/app/qml desktop/app/i18n/rust_strings.h -ts desktop/app/i18n/nectarlink_zh_CN.ts`.
+  Rust, string resources on Android. After changing text on Windows, run
+  `cargo xtask strings`, then `lupdate` over every catalogue and the
+  template, as [docs/translating.md](docs/translating.md) shows. That page
+  also covers translating NectarLink into a new language.
 - **Accessibility is not optional.** Labels for screen readers and full
   keyboard navigation from day one.
 - Format with `cargo fmt` and keep `cargo clippy` clean. Android code follows

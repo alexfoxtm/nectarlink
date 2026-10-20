@@ -11,7 +11,7 @@ Pins and provenance live in `docs/waypair/UPSTREAM_BASE.json`:
 
 | Pin | Source | SHA | In port |
 | --- | --- | --- | --- |
-| `main` | `thtbee/nectarlink` `main` | `f8f72547` | yes, under PR24 |
+| `main` | `thtbee/nectarlink` `main` | `5bdcadbf` | yes, seven reviewed commits after e4b279a1 |
 | `macos-pr24` | PR #24, `saivinay1805/nectarlink` `feature/macos-port` | `9c0f13d7` | yes, merged (`e71dee41` via `ca80744c`, `9c0f13d7` via `435ffa2a`) |
 | `linux-pr12` | PR #12, `jochenkirstaetter/nectarlink` `linux` | `1de43ef1` | no, reference |
 

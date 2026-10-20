@@ -2488,6 +2488,19 @@ async fn gallery_albums_paging_thumbs_download_and_toggles() {
     assert_eq!(std::fs::read(&files[0]).unwrap(), bytes4);
     assert_eq!(std::fs::read(&files[1]).unwrap(), bytes2);
 
+    // A backup's download is saved the same way but leaves nothing in the Timeline.
+    let quiet =
+        with_timeout("fetch_photos_quietly", pc.node.fetch_photos_quietly(phone_id, vec!["media:4".into()]))
+            .await
+            .unwrap();
+    let quiet_files = wait_transfer(&mut pc, &quiet, "backup file", saved).await;
+    assert_eq!(std::fs::read(&quiet_files[0]).unwrap(), bytes4);
+    let timeline =
+        pc.node.timeline_page(&nectarlink_core::TimelineQuery { limit: 50, ..Default::default() }).unwrap();
+    let refs: Vec<_> = timeline.entries.iter().filter_map(|e| e.ref_id.as_deref()).collect();
+    assert!(refs.contains(&tid.as_str()), "the gallery download is in the Timeline");
+    assert!(!refs.contains(&quiet.as_str()), "the backup download isn't");
+
     // `photos.changed` notification.
     phone.node.photos_changed().await;
     wait_for(&mut pc, "photos changed", |e| match e {

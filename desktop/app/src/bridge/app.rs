@@ -230,6 +230,17 @@ pub mod qobject {
         /// `[{ name, on }]`: what the user allows this device to do.
         #[qinvokable]
         fn device_toggles(self: &AppController, device: &QString) -> QList_QVariant;
+        /// The Wi-Fi networks Windows has saved, as a JSON array of names.
+        #[qinvokable]
+        #[cxx_name = "wifiNetworks"]
+        fn wifi_networks(self: &AppController) -> QString;
+        /// The saved network the PC joins when this phone turns its hotspot on ("" for none).
+        #[qinvokable]
+        #[cxx_name = "hotspotNetwork"]
+        fn hotspot_network(self: &AppController, device: &QString) -> QString;
+        #[qinvokable]
+        #[cxx_name = "setHotspotNetwork"]
+        fn set_hotspot_network(self: &AppController, device: &QString, network: &QString);
         #[qinvokable]
         fn set_device_toggle(self: Pin<&mut AppController>, device: &QString, name: &QString, on: bool);
         /// Latest quick settings toggles for a phone as JSON (`""` when unknown).
@@ -1607,6 +1618,24 @@ impl qobject::AppController {
         feature_state_map(state)
     }
 
+    pub fn wifi_networks(&self) -> QString {
+        QString::from(
+            &serde_json::to_string(&crate::win::wifi::saved_networks()).unwrap_or_else(|_| "[]".into()),
+        )
+    }
+
+    pub fn hotspot_network(&self, device: &QString) -> QString {
+        let network = super::parse_device(device).and_then(crate::hotspot::network_for);
+        QString::from(network.as_deref().unwrap_or(""))
+    }
+
+    pub fn set_hotspot_network(&self, device: &QString, network: &QString) {
+        if let Some(id) = super::parse_device(device) {
+            let name = String::from(network);
+            crate::hotspot::set_network(id, (!name.trim().is_empty()).then_some(name));
+        }
+    }
+
     pub fn device_toggles(&self, device: &QString) -> QList<QVariant> {
         let mut list = QList::default();
         let (Some(id), Some(node)) = (super::parse_device(device), core_host::node()) else { return list };
@@ -1698,11 +1727,17 @@ impl qobject::AppController {
             }
             s.set_toggles(device, Some(next))
         });
+        let hotspot_on = id == "hotspot" && val == PhoneToggleValue::Bool(true);
         core_host::spawn(async move {
-            if let Err(e) = node.set_phone_toggle(device, id, val).await {
-                let latest = node.phone_toggles(device);
-                core_host::host().hub.update(|s| s.set_toggles(device, latest));
-                show_message(describe(&e));
+            match node.set_phone_toggle(device, id, val).await {
+                // The phone's hotspot is on: join it, when a network is set for it.
+                Ok(()) if hotspot_on => crate::hotspot::hotspot_turned_on(device),
+                Ok(()) => {}
+                Err(e) => {
+                    let latest = node.phone_toggles(device);
+                    core_host::host().hub.update(|s| s.set_toggles(device, latest));
+                    show_message(describe(&e));
+                }
             }
         });
     }

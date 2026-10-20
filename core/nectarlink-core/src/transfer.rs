@@ -365,6 +365,35 @@ pub(crate) fn mark_photo_transfer(shared: &Shared, transfer_id: &str) {
     }
 }
 
+static QUIET_TRANSFERS: std::sync::Mutex<Option<std::collections::HashSet<String>>> =
+    std::sync::Mutex::new(None);
+
+/// Marks an incoming transfer as quiet: it's saved like any other, but leaves
+/// nothing in the Timeline (a photo backup's downloads). An entry already
+/// recorded for it (the transfer finished before this) is removed.
+pub(crate) fn mark_quiet_transfer(shared: &Shared, transfer_id: &str) {
+    QUIET_TRANSFERS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_or_insert_with(std::collections::HashSet::new)
+        .insert(transfer_id.to_owned());
+    if shared.store.delete_timeline_by_ref(transfer_id).unwrap_or(false) {
+        // It had finished already, so nothing will take the mark.
+        take_quiet_transfer(transfer_id);
+        shared.emit(NodeEvent::TimelineChanged);
+    }
+}
+
+/// Whether a transfer that just finished was quiet, forgetting it. A failed
+/// one stays marked: it resumes under the same ID.
+fn take_quiet_transfer(transfer_id: &str) -> bool {
+    QUIET_TRANSFERS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_mut()
+        .is_some_and(|set| set.remove(transfer_id))
+}
+
 fn take_photo_transfer(transfer_id: &str) -> bool {
     PHOTO_TRANSFERS
         .lock()
@@ -1666,19 +1695,21 @@ async fn receive(shared: Arc<Shared>, peer: DeviceId, mut send: SendStream, mut 
                 };
                 let target =
                     saved.iter().map(|p| p.to_string_lossy().into_owned()).collect::<Vec<_>>().join("\n");
-                let _ = shared.record_timeline(crate::timeline::NewTimelineEntry {
-                    kind,
-                    device_id: peer,
-                    device_name: shared.peer_name(&peer),
-                    incoming: true,
-                    timestamp: crate::now_unix(),
-                    title: transfer_timeline_title(&reporter.transfer.names),
-                    detail,
-                    target,
-                    size_bytes: reporter.transfer.total,
-                    duration_secs: 0,
-                    ref_id: Some(offer.id.clone()),
-                });
+                if !take_quiet_transfer(&offer.id) {
+                    let _ = shared.record_timeline(crate::timeline::NewTimelineEntry {
+                        kind,
+                        device_id: peer,
+                        device_name: shared.peer_name(&peer),
+                        incoming: true,
+                        timestamp: crate::now_unix(),
+                        title: transfer_timeline_title(&reporter.transfer.names),
+                        detail,
+                        target,
+                        size_bytes: reporter.transfer.total,
+                        duration_secs: 0,
+                        ref_id: Some(offer.id.clone()),
+                    });
+                }
                 TransferState::Done { saved }
             }
             Err(e) => {

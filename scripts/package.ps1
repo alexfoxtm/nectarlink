@@ -156,9 +156,15 @@ Invoke-Native "windeployqt" {
 # file dialogs and standard buttons follow the system language). NectarLink's
 # are compiled from the .ts files the repository keeps; they land beside the
 # executable, which is where the app looks for them.
+# Only the languages Settings offers (i18n::LANGUAGES) ship: a catalogue still being
+# translated stays out, so "System" never switches to a half-translated language.
+$i18nSource = Get-Content (Join-Path $root 'desktop\app\src\i18n.rs') -Raw
+$offeredLanguages = @([regex]::Matches(($i18nSource -split 'pub const LANGUAGES')[1].Split(';')[0], '\("([A-Za-z_]+)"') |
+    ForEach-Object { $_.Groups[1].Value })
 $translationSources = @()
 if (Test-Path (Join-Path $root 'desktop\app\i18n')) {
-    $translationSources = @(Get-ChildItem (Join-Path $root 'desktop\app\i18n') -Filter '*.ts')
+    $translationSources = @(Get-ChildItem (Join-Path $root 'desktop\app\i18n') -Filter '*.ts' |
+        Where-Object { $offeredLanguages -contains ($_.BaseName -replace '^nectarlink_', '') })
 }
 if ($translationSources.Count -gt 0) {
     # A host tool: the x64 kit's, as an ARM64 kit's own can't run here.

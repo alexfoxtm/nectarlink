@@ -306,6 +306,9 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Guide", "What it does\nStreams your phone screen into a low-latency desktop window with hardware-accelerated decoding, or opens individual Android apps in their own windows on your PC.\n\nWhere to find it\n- Left navigation rail › Apps.\n- Home › Mirror screen quick action.\n\nWhat it needs\n- Standard mode mirrors the full phone screen after you tap Start now on Android's screen capture prompt.\n- Elevated mode (Wireless debugging or root) skips the prompt and unlocks individual app windows.\n- Assist mode or Elevated mode lets you click, scroll, and type inside the mirrored window."), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "What it does\nSyncs media playback between your phone and PC, switches Windows audio output and microphone devices, and turns your phone into a customizable grid of shortcut tiles, macros, and volume sliders.\n\nWhere to find it\n- Left navigation rail › Deck.\n\nWhat it needs\n- Paired phone over any active connection."), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "What it does\nTriggers your phone camera from any Windows app to snap a photo or scan a document, then copies the result to the Windows clipboard and pastes it into the active window.\n\nWhere to find it\n- Global hotkeys Ctrl+Alt+C (Take photo with phone) and Ctrl+Alt+D (Scan document with phone).\n- Home › Continuity Camera.\n\nWhat it needs\n- Camera permission on your phone."), // desktop/app/src/bridge/app.rs
+    QT_TRANSLATE_NOOP("Hotspot", "%1's hotspot didn't show up. Check that it's on, then pick %2 in Windows' Wi-Fi list."), // desktop/app/src/hotspot.rs
+    QT_TRANSLATE_NOOP("Hotspot", "Connected to %1's hotspot."), // desktop/app/src/hotspot.rs
+    QT_TRANSLATE_NOOP("Hotspot", "Couldn't join %1's hotspot. Pick %2 in Windows' Wi-Fi list."), // desktop/app/src/hotspot.rs
     QT_TRANSLATE_NOOP("Links", "%1: tap the notification on your phone to continue watching."), // desktop/app/src/links.rs
     QT_TRANSLATE_NOOP("Links", "%1: tap the notification on your phone to open in Maps."), // desktop/app/src/links.rs
     QT_TRANSLATE_NOOP("Links", "Copy a link or address first"), // desktop/app/src/links.rs
@@ -377,6 +380,18 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("PhoneMic", "Tap Start on %1 to use its microphone."), // desktop/app/src/phone_mic.rs
     QT_TRANSLATE_NOOP("PhoneMic", "The microphone is turned off for this PC on %1."), // desktop/app/src/phone_mic.rs
     QT_TRANSLATE_NOOP("PhoneMic", "Update Waypair Link on %1 to use its microphone."), // desktop/app/src/phone_mic.rs
+    QT_TRANSLATE_NOOP("PhotoBackup", "Can't write to the backup folder."), // desktop/app/src/photo_backup.rs
+    QT_TRANSLATE_NOOP("PhotoBackup", "Copying, %1 left"), // desktop/app/src/bridge/photo_backup.rs
+    QT_TRANSLATE_NOOP("PhotoBackup", "Looking for new photos…"), // desktop/app/src/bridge/photo_backup.rs
+    QT_TRANSLATE_NOOP("PhotoBackup", "Off"), // desktop/app/src/bridge/photo_backup.rs
+    QT_TRANSLATE_NOOP("PhotoBackup", "Photo backup is not available on %1."), // desktop/app/src/photo_backup.rs
+    QT_TRANSLATE_NOOP("PhotoBackup", "Photos or Files sharing is turned off for this computer on %1."), // desktop/app/src/photo_backup.rs
+    QT_TRANSLATE_NOOP("PhotoBackup", "The backup folder's drive is full."), // desktop/app/src/photo_backup.rs
+    QT_TRANSLATE_NOOP("PhotoBackup", "The backup stopped. It tries again in a few minutes."), // desktop/app/src/photo_backup.rs
+    QT_TRANSLATE_NOOP("PhotoBackup", "Turn on Photos and Files sharing for this device to back up its photos."), // desktop/app/src/photo_backup.rs
+    QT_TRANSLATE_NOOP("PhotoBackup", "Up to date"), // desktop/app/src/bridge/photo_backup.rs
+    QT_TRANSLATE_NOOP("PhotoBackup", "Up to date, %1 backed up"), // desktop/app/src/bridge/photo_backup.rs
+    QT_TRANSLATE_NOOP("PhotoBackup", "Waiting for %1"), // desktop/app/src/bridge/photo_backup.rs
     QT_TRANSLATE_NOOP("Photos", "Copied to clipboard."), // desktop/app/src/photos.rs
     QT_TRANSLATE_NOOP("Photos", "From %1"), // desktop/app/src/photos.rs
     QT_TRANSLATE_NOOP("Photos", "New photo"), // desktop/app/src/photos.rs

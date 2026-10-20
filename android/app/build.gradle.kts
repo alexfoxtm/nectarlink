@@ -101,6 +101,20 @@ android {
         ndk { abiFilters += rustAbis }
     }
 
+    // Only the languages the app offers (res/xml/locales_config.xml) go into the APK: a
+    // translation still in progress stays out, so a phone in that language never shows
+    // it half done (docs/translating.md).
+    val offeredLocales = Regex("android:name=\"([^\"]+)\"")
+        .findAll(file("src/main/res/xml/locales_config.xml").readText())
+        .map { match ->
+            val parts = match.groupValues[1].split('-')
+            if (parts.size == 1) parts[0] else "${parts[0]}-r${parts[1]}"
+        }
+        .toList()
+    androidResources {
+        localeFilters += offeredLocales
+    }
+
     signingConfigs {
         if (releaseSigningProblem == null) {
             create("release") {
@@ -124,12 +138,6 @@ android {
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
-    }
-
-    // Lists the languages in res/ for Android 13's per-app language (App languages in
-    // the system's settings, and Settings › Appearance › Language in the app).
-    androidResources {
-        generateLocaleConfig = true
     }
 
     compileOptions {

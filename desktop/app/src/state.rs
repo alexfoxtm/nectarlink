@@ -73,6 +73,8 @@ impl Changes {
     pub const QUEUE: Changes = Changes(1 << 28);
     /// Phone as microphone state or output (kept by crate::phone_mic).
     pub const MIC: Changes = Changes(1 << 29);
+    /// Photo backup settings or progress (kept by crate::photo_backup).
+    pub const PHOTO_BACKUP: Changes = Changes(1 << 30);
 
     pub fn is_empty(self) -> bool {
         self.0 == 0
@@ -557,7 +559,9 @@ impl AppState {
             }
             // The gallery's own downloads (for its viewer, or the clipboard)
             // aren't files the user keeps.
-            NodeEvent::Transfer(transfer) if crate::photos::is_private(&transfer.id) => {
+            NodeEvent::Transfer(transfer)
+                if crate::photos::is_private(&transfer.id) || crate::photo_backup::claims(transfer) =>
+            {
                 self.forget_transfer(&transfer.id)
             }
             NodeEvent::Transfer(transfer) => self.update_transfer(transfer.clone(), Instant::now()),

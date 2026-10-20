@@ -34,6 +34,7 @@ pub mod tray;
 pub mod vcam;
 pub mod wallpaper;
 pub mod widget;
+pub mod wifi;
 pub mod window_capture;
 pub mod wol;
 pub mod work_area;
@@ -120,6 +121,44 @@ pub fn secure_random(buf: &mut [u8]) -> bool {
     if let Ok(mut f) = std::fs::File::open("/dev/urandom") { f.read_exact(buf).is_ok() } else { false }
 }
 
+/// This Mac's offset from UTC, in ms, at `at_ms` (ms since the Unix epoch).
+#[allow(unsafe_code)]
+pub fn local_offset_ms(at_ms: i64) -> i64 {
+    #[repr(C)]
+    struct Tm {
+        tm_sec: i32,
+        tm_min: i32,
+        tm_hour: i32,
+        tm_mday: i32,
+        tm_mon: i32,
+        tm_year: i32,
+        tm_wday: i32,
+        tm_yday: i32,
+        tm_isdst: i32,
+        tm_gmtoff: i64,
+        tm_zone: *const std::ffi::c_char,
+    }
+    unsafe extern "C" {
+        fn localtime_r(timep: *const i64, result: *mut Tm) -> *mut Tm;
+    }
+    let t = at_ms.div_euclid(1000);
+    // SAFETY: an all-zero Tm is valid (a null tm_zone included); localtime_r only
+    // reads `t` and writes `tm`, both locals.
+    unsafe {
+        let mut tm = std::mem::zeroed::<Tm>();
+        if localtime_r(&t, &mut tm).is_null() {
+            return 0;
+        }
+        tm.tm_gmtoff.saturating_mul(1000)
+    }
+}
+
+/// Free space on the volume holding `path`: not measured on macOS, so callers
+/// can't tell and go ahead.
+pub fn free_space(_path: &std::path::Path) -> Option<u64> {
+    None
+}
+
 /// On macOS, COM is not used. Runs `f` directly.
 #[allow(dead_code)]
 pub fn with_com<T>(f: impl FnOnce() -> T) -> T {
@@ -129,4 +168,18 @@ pub fn with_com<T>(f: impl FnOnce() -> T) -> T {
 #[allow(dead_code)]
 pub(crate) fn reg_string(_root: u32, _key: &str, _value: &str) -> Option<String> {
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn local_offset_is_a_whole_quarter_hour_within_a_day() {
+        for at_ms in [1_767_225_599_999, 1_782_864_000_000] {
+            let offset = local_offset_ms(at_ms);
+            assert!(offset.abs() <= 14 * 3_600_000, "{offset} at {at_ms}");
+            assert_eq!(offset % (15 * 60_000), 0, "{offset} at {at_ms}");
+        }
+    }
 }
