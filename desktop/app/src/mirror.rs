@@ -639,15 +639,21 @@ pub fn stop_recording(window: Window) {
 }
 
 /// Feeds `window`'s recorder under the `RECORDERS` lock. Once the stream left
-/// the recorded format, removes that same recorder under the same lock, so a
-/// newer recording started in between is never the one stopped.
+/// the recorded format or the recording reached its limit, removes that same
+/// recorder under the same lock, so a newer recording started in between is
+/// never the one stopped.
 fn feed_recorder(window: Window, feed: impl FnOnce(&mut MirrorRecorder)) -> Option<MirrorRecorder> {
     let mut guard = RECORDERS.lock().unwrap_or_else(|e| e.into_inner());
     let map = guard.as_mut()?;
     let recorder = map.get_mut(&window)?;
     feed(recorder);
-    let reason = recorder.format_changed()?;
-    tracing::info!(reason, "mirror recording stopped: the phone's video format changed");
+    if let Some(reason) = recorder.format_changed() {
+        tracing::info!(reason, "mirror recording stopped: the phone's video format changed");
+    } else if let Some(reason) = recorder.limit_reached() {
+        tracing::info!(reason, "mirror recording stopped: it reached its length or size limit");
+    } else {
+        return None;
+    }
     let recorder = map.remove(&window);
     ACTIVE_RECORDERS.store(map.len(), Ordering::Release);
     recorder
@@ -657,6 +663,7 @@ fn feed_recorder(window: Window, feed: impl FnOnce(&mut MirrorRecorder)) -> Opti
 fn finish_recording(window: Window, recorder: MirrorRecorder) {
     core_host::host().hub.changed(Changes::MIRROR);
     let duration_secs = recorder.started_at().elapsed().as_secs().max(1);
+    let limit_reached = recorder.limit_reached().is_some();
 
     core_host::spawn(async move {
         let res = tokio::task::spawn_blocking(move || recorder.finish()).await;
@@ -703,7 +710,11 @@ fn finish_recording(window: Window, recorder: MirrorRecorder) {
                     progress: None,
                     call: false,
                 });
-                set_notice(window, tr!("Mirror", "Saved %1", file_name));
+                if limit_reached {
+                    set_notice(window, tr!("Mirror", "Recording limit reached. Saved %1", file_name));
+                } else {
+                    set_notice(window, tr!("Mirror", "Saved %1", file_name));
+                }
                 show_message(tr!(
                     "Mirror",
                     "Saved %1 to %2.",
@@ -4028,6 +4039,74 @@ mod mac_receive_fixture {
         sink.ended();
         drop_fixture_window(window);
         assert!(path.is_file(), "the saved recording survives the stream closing");
+    }
+
+    /// A recording that reaches its length limit: the production sink removes
+    /// that recorder, so QML's recording flag and timer clear, and saves the
+    /// frames recorded before the limit with a notice that says why it stopped.
+    #[cfg(feature = "test-support")]
+    #[test]
+    fn production_sink_limit_saves_recording_and_stops() {
+        use std::collections::HashMap;
+        use std::sync::atomic::Ordering;
+
+        let _fixture = FIXTURE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        fixture_host();
+        fixture_received_dir();
+
+        let device = DeviceId([0x54; 32]);
+        let generation = 0x3C6E_F372_FE94_F82Bu64;
+        let window = live_screen_request(device, generation);
+        let sink = super::sink(&device, MIRROR_SCREEN).expect("live screen request owns a sink");
+        let idr = fixture_idr();
+        sink.config(fixture_config(128, 128, generation));
+        sink.packet(true, 0, idr.clone());
+
+        let dir = tempfile::tempdir().expect("disposable recording dir");
+        let path = dir.path().join("Mirror limit.mp4");
+        let mut recorder =
+            crate::win::mp4::MirrorRecorder::new(path.clone(), 128, 128, super::OPTIONS.fps, None);
+        if let Some(sps_pps) = super::LAST_SPS_PPS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .and_then(|m| m.get(&window).cloned())
+        {
+            recorder.set_sps_pps(&sps_pps);
+        }
+        {
+            let mut guard = super::RECORDERS.lock().unwrap_or_else(|e| e.into_inner());
+            let map = guard.get_or_insert_with(HashMap::new);
+            map.insert(window, recorder);
+            super::ACTIVE_RECORDERS.store(map.len(), Ordering::Release);
+        }
+        sink.packet(true, 33_333, idr.clone());
+        assert!(super::is_recording(&window), "a frame within the limit keeps recording");
+
+        // Four hours after the first recorded frame: past the three-hour limit.
+        sink.packet(true, 33_333 + 4 * 3_600 * 1_000_000, idr.clone());
+        assert!(!super::is_recording(&window), "the limit stops the recording");
+        assert_eq!(super::recording_started_ms(&window), 0, "QML's elapsed timer has no start");
+
+        let notice = "Recording limit reached. Saved Mirror limit.mp4";
+        let started = Instant::now();
+        while super::last_notice(&window) != notice && started.elapsed() < Duration::from_secs(10) {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(super::last_notice(&window), notice, "the stop says why and reports the saved file");
+
+        let bytes = std::fs::read(&path).expect("the recording before the limit is saved");
+        fn contains(hay: &[u8], needle: &[u8]) -> bool {
+            hay.windows(needle.len()).any(|w| w == needle)
+        }
+        assert_eq!(&bytes[4..8], b"ftyp");
+        assert!(contains(&bytes, b"moov"), "the saved file is finalized");
+        assert!(!contains(&bytes, b"soun"), "video-only file must not carry an audio track");
+        let stsz = bytes.windows(4).rposition(|w| w == b"stsz").expect("stsz") + 4;
+        assert_eq!(bytes[stsz + 8..stsz + 12], 1u32.to_be_bytes(), "the one frame before the limit");
+
+        sink.ended();
+        drop_fixture_window(window);
     }
 
     #[cfg(feature = "test-support")]

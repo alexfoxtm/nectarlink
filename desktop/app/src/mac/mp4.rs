@@ -50,7 +50,9 @@
 //!   the caller stops, and `finish` saves the samples already on disk under
 //!   the configuration they were recorded with.
 //! - `stco` uses 32-bit offsets, so total file size is capped well below 4 GiB
-//!   (`MAX_MDAT_BYTES`). Longer recordings are refused with an error.
+//!   (`MAX_MDAT_BYTES`). Reaching it, `MAX_FRAMES` or `MAX_DURATION_US` ends
+//!   the recording: later samples are refused, `limit_reached` reports it so
+//!   the caller stops, and `finish` saves the samples already on disk.
 //! - Callers that expected the old stub (`"not supported on macOS"` from
 //!   `on_packet`/`finish`, e.g. `mac/mirror_receive.rs::seam_check`) must be
 //!   updated by Root: valid IDR packets now succeed and `finish` writes a file.
@@ -217,6 +219,10 @@ pub struct MirrorRecorder {
     /// Sticky: later samples are refused, while the samples already on disk
     /// stay valid and `finish` saves them.
     format_change: Option<String>,
+    /// Why the recording reached its frame, duration or file-size limit.
+    /// Sticky: a later, smaller sample must not follow the refused one, while
+    /// the samples already on disk stay valid and `finish` saves them.
+    limit: Option<String>,
     /// First recorded sample's parameter sets and dimensions. Frozen after
     /// the first successful sample write; `finish` describes exactly these.
     recorded_sps: Vec<u8>,
@@ -275,6 +281,7 @@ impl MirrorRecorder {
             owned: false,
             poison: None,
             format_change: None,
+            limit: None,
             recorded_sps: Vec::new(),
             recorded_pps: Vec::new(),
             recorded_dims: None,
@@ -350,13 +357,25 @@ impl MirrorRecorder {
         self.format_change.get_or_insert(reason).clone()
     }
 
+    /// Why the recording reached its frame, duration or file-size limit, once
+    /// it has. The caller should stop and `finish`: no further sample will be recorded.
+    pub fn limit_reached(&self) -> Option<&str> {
+        self.limit.as_deref()
+    }
+
+    fn end_limit(&mut self, reason: String) -> String {
+        self.limit.get_or_insert(reason).clone()
+    }
+
     /// Accepts audio configuration for caller-API stability; ignored:
     /// this recorder is video-only (see `on_audio`).
     pub fn on_audio_config(&mut self, _rate: u32, _channels: u8) {}
 
     /// Processes an incoming Annex-B H.264 access unit, streaming it to disk.
     pub fn on_packet(&mut self, _keyframe: bool, time_us: u64, data: &[u8]) -> Result<(), String> {
-        if let Some(err) = self.poison.clone().or_else(|| self.format_change.clone()) {
+        if let Some(err) =
+            self.poison.clone().or_else(|| self.format_change.clone()).or_else(|| self.limit.clone())
+        {
             return Err(err);
         }
         if data.is_empty() {
@@ -436,7 +455,7 @@ impl MirrorRecorder {
             }
         };
         if self.frame_count >= MAX_FRAMES {
-            return Err(format!("more than {MAX_FRAMES} frames"));
+            return Err(self.end_limit(format!("more than {MAX_FRAMES} frames")));
         }
 
         let first_us = *self.first_pts_us.get_or_insert(time_us);
@@ -446,7 +465,7 @@ impl MirrorRecorder {
             rel_us = self.last_pts_us.saturating_add(frame_duration_us);
         }
         if rel_us > MAX_DURATION_US {
-            return Err("recording duration exceeds the limit".into());
+            return Err(self.end_limit("recording duration exceeds the limit".into()));
         }
 
         // Keep the cached parameter sets available to the keyframe for `avcC`
@@ -485,7 +504,7 @@ impl MirrorRecorder {
             return Err(format!("H.264 sample of {} bytes exceeds the limit", sample_bytes.len()));
         }
         if self.mdat_bytes.saturating_add(sample_bytes.len() as u64) > MAX_MDAT_BYTES {
-            return Err("recording file size exceeds the limit".into());
+            return Err(self.end_limit("recording file size exceeds the limit".into()));
         }
 
         self.ensure_file_open()?;
@@ -539,7 +558,7 @@ impl MirrorRecorder {
         // be moved out of `self`; clone the disposable caller path instead.
         let path = self.path.clone();
         // Sticky I/O failure refuses to claim a valid file and removes only
-        // owned partial output. A format change is not a failure here.
+        // owned partial output. A format change or a reached limit is not a failure here.
         if let Some(err) = self.poison.clone() {
             if self.owned && self.file.is_some() {
                 self.file.take();
@@ -1163,6 +1182,26 @@ mod tests {
         assert!(rec.on_packet(false, 100_000, fixture).is_err(), "it stays ended if the old format returns");
         assert_eq!(rec.finish().unwrap(), sps_change_path);
         assert_prefix(&sps_change_path, 2);
+    }
+
+    #[test]
+    fn reaching_a_limit_ends_the_recording_and_keeps_what_was_recorded() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("limit.mp4");
+        let fixture = include_bytes!("testdata/red-32x32.annexb");
+        let mut rec = MirrorRecorder::new(path.clone(), 32, 32, 30, None);
+        rec.on_packet(false, 0, fixture).unwrap();
+        assert!(rec.limit_reached().is_none());
+        assert!(rec.on_packet(false, MAX_DURATION_US + 1, fixture).is_err(), "past the limit is refused");
+        assert!(rec.limit_reached().is_some(), "the limit ends the recording");
+        assert!(rec.format_changed().is_none(), "a limit is not a format change");
+        // A frame that would still fit must not be written after the refused one.
+        assert!(rec.on_packet(false, 33_333, fixture).is_err(), "it stays ended");
+        assert_eq!(rec.finish().unwrap(), path, "a limit is not an I/O failure: the file is kept");
+        let bytes = std::fs::read(&path).unwrap();
+        assert!(contains_subslice(&bytes, b"moov"), "the saved prefix is finalized");
+        let stsz = bytes.windows(4).rposition(|w| w == b"stsz").unwrap() + 4;
+        assert_eq!(bytes[stsz + 8..stsz + 12], 1u32.to_be_bytes(), "only the sample before the limit");
     }
 
     #[test]
