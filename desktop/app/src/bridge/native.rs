@@ -63,5 +63,11 @@ pub mod ffi {
 
         #[allow(dead_code)]
         fn mac_clipboard_write_text(text: &str, is_private: bool) -> bool;
+
+        #[allow(dead_code)]
+        fn mac_local_offset_ms(at_ms: i64) -> i64;
+
+        #[allow(dead_code)]
+        fn mac_free_space(path: &str, ok: &mut bool) -> u64;
     }
 }

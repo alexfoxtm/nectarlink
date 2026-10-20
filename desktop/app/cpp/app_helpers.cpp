@@ -3,13 +3,16 @@
 #include "video_view.h"
 
 #include <QtCore/QCoreApplication>
+#include <QtCore/QDateTime>
 #include <QtCore/QDir>
 #include <QtCore/QFileInfo>
 #include <QtCore/QLibraryInfo>
 #include <QtCore/QLocale>
 #include <QtCore/QMimeData>
 #include <QtCore/QPointer>
+#include <QtCore/QStorageInfo>
 #include <QtCore/QStringList>
+#include <QtCore/QTimeZone>
 #include <QtCore/QTranslator>
 #include <QtCore/QUrl>
 #include <QtCore/QtEnvironmentVariables>
@@ -506,3 +509,32 @@ bool mac_clipboard_write_text(rust::Str /*text*/, bool /*is_private*/)
     return false;
 }
 #endif
+
+int64_t mac_local_offset_ms(int64_t at_ms)
+{
+    const QDateTime dt = QDateTime::fromMSecsSinceEpoch(at_ms, QTimeZone::systemTimeZone());
+    return static_cast<int64_t>(dt.offsetFromUtc()) * 1000;
+}
+
+uint64_t mac_free_space(rust::Str path, bool &ok)
+{
+    ok = false;
+    const std::string pathStr(path.data(), path.size());
+    QString qpath = QString::fromStdString(pathStr);
+    QFileInfo info(qpath);
+    while (!info.exists() && !qpath.isEmpty()) {
+        const QString parent = info.dir().absolutePath();
+        if (parent == qpath)
+            break;
+        qpath = parent;
+        info.setFile(qpath);
+    }
+    const QStorageInfo storage(qpath);
+    if (!storage.isValid() || !storage.isReady())
+        return 0;
+    const qint64 available = storage.bytesAvailable();
+    if (available < 0)
+        return 0;
+    ok = true;
+    return static_cast<uint64_t>(available);
+}

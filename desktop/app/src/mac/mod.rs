@@ -122,41 +122,16 @@ pub fn secure_random(buf: &mut [u8]) -> bool {
 }
 
 /// This Mac's offset from UTC, in ms, at `at_ms` (ms since the Unix epoch).
-#[allow(unsafe_code)]
 pub fn local_offset_ms(at_ms: i64) -> i64 {
-    #[repr(C)]
-    struct Tm {
-        tm_sec: i32,
-        tm_min: i32,
-        tm_hour: i32,
-        tm_mday: i32,
-        tm_mon: i32,
-        tm_year: i32,
-        tm_wday: i32,
-        tm_yday: i32,
-        tm_isdst: i32,
-        tm_gmtoff: i64,
-        tm_zone: *const std::ffi::c_char,
-    }
-    unsafe extern "C" {
-        fn localtime_r(timep: *const i64, result: *mut Tm) -> *mut Tm;
-    }
-    let t = at_ms.div_euclid(1000);
-    // SAFETY: an all-zero Tm is valid (a null tm_zone included); localtime_r only
-    // reads `t` and writes `tm`, both locals.
-    unsafe {
-        let mut tm = std::mem::zeroed::<Tm>();
-        if localtime_r(&t, &mut tm).is_null() {
-            return 0;
-        }
-        tm.tm_gmtoff.saturating_mul(1000)
-    }
+    crate::bridge::native::ffi::mac_local_offset_ms(at_ms)
 }
 
-/// Free space on the volume holding `path`: not measured on macOS, so callers
-/// can't tell and go ahead.
-pub fn free_space(_path: &std::path::Path) -> Option<u64> {
-    None
+/// Free bytes on the volume holding `path`.
+pub fn free_space(path: &std::path::Path) -> Option<u64> {
+    let s = path.to_str()?;
+    let mut ok = false;
+    let bytes = crate::bridge::native::ffi::mac_free_space(s, &mut ok);
+    ok.then_some(bytes)
 }
 
 /// On macOS, COM is not used. Runs `f` directly.
@@ -181,5 +156,11 @@ mod tests {
             assert!(offset.abs() <= 14 * 3_600_000, "{offset} at {at_ms}");
             assert_eq!(offset % (15 * 60_000), 0, "{offset} at {at_ms}");
         }
+    }
+
+    #[test]
+    fn free_space_returns_some_on_system_drive() {
+        let space = free_space(std::path::Path::new("/"));
+        assert!(space.is_some());
     }
 }

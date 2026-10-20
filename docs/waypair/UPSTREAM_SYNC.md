@@ -194,3 +194,10 @@ categories stay separate — `branding`, `r2_updater` and `cloud` commits are
 never mixed into upstream-bound `generic` commits or into a sync merge, so a
 feature can move between the upstream route and the fork route without
 untangling.
+
+
+### PR24 rebase checked 2026-10-20
+
+Canonical main is still `5bdcadbf`; the open PR24 head is now `749b7fd64a2dac1e8bac1b8fd6bfbb997ff9ee91`. This is a rebase, not a descendant of the adopted `9c0f13d7` pin. The fork already contains the clipboard change-count checks and byte-identical macOS audio-status/HTTP-limit implementations from that series, plus the main-line photo-backup and locale changes. Do not replay those patches or overwrite the fork-only updater.
+
+The selected new delta reuses saivinay1805's `mac_local_offset_ms` and `mac_free_space` Qt helpers from `749b7fd6`: QDateTime/QTimeZone replace the manual `localtime_r` layout, and QStorageInfo replaces the missing disk-space result. The function bodies are copied unchanged with their GPL source notices preserved. Their bridge/wrappers keep the existing public signatures. This is partial source adoption; it does not claim that all of the rebased PR is merged, or enable tray, mirroring, input or audio. The historical full-adoption pin stays `9c0f13d7` until the remaining rebase is reconciled with review.
