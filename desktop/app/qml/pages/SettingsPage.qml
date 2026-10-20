@@ -3397,7 +3397,6 @@ Item {
                             width: parent.width
                             iconPath: Icons.info
                             title: qsTr("Independently maintained fork")
-                            description: qsTr("Free software under GPL-3.0-or-later (apps) and MPL-2.0 (core).")
                         }
                         Divider { width: parent.width }
                         ListRow {
