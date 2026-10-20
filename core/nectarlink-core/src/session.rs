@@ -398,11 +398,11 @@ impl Session {
             (p.is_relay(), remote, local)
         });
         // ONE bridge-record read for this peer.
-        let (bridge, medium, outer) = match self.usb_peers.lock().unwrap_or_else(|e| e.into_inner()).get(&self.peer)
-        {
-            Some(t) => (Some(t.bridge), t.medium, t.adb_endpoint),
-            None => (None, TunnelMedium::Unknown, None),
-        };
+        let (bridge, medium, outer) =
+            match self.usb_peers.lock().unwrap_or_else(|e| e.into_inner()).get(&self.peer) {
+                Some(t) => (Some(t.bridge), t.medium, t.adb_endpoint),
+                None => (None, TunnelMedium::Unknown, None),
+            };
         // ONE route-table read.
         let routes = self.network_routes.lock().unwrap_or_else(|e| e.into_inner());
         // The snapshot is all Copy, so both classifications below read the
