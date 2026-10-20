@@ -524,7 +524,7 @@ define_class!(
             let consumed =
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(open_offer_from_dock)).unwrap_or(false);
             if consumed {
-                return false;
+                return false.into();
             }
             if let Some(prior) = self.ivars().prior.as_deref() {
                 let selector = sel!(applicationShouldHandleReopen:hasVisibleWindows:);
@@ -738,7 +738,7 @@ unsafe extern "C" {
 #[link(name = "CoreGraphics", kind = "framework")]
 unsafe extern "C" {
     fn CGSessionCopyCurrentDictionary() -> *const c_void;
-    fn CGMainDisplayID() -> u32;
+    safe fn CGMainDisplayID() -> u32;
     fn CGDisplayIsAsleep(display: u32) -> u32;
 }
 

@@ -1222,7 +1222,7 @@ Item {
                     title: qsTr("Mirror screen")
                     subtitle: ""
                     iconPath: Icons.mirror
-                    // mirror.view is advertised on Windows only (core_host.rs).
+                    // mirror.view stays off pending native peer/render acceptance.
                     macPortGap: true
                     feature: home.feature("mirroring.view")
                     // The phone's screen is showing (its session is 0).

@@ -44,15 +44,22 @@ const OPTIONS: MirrorStart = MirrorStart {
     max_size: 1920,
     fps: 60,
     bitrate: 8_000_000,
-    audio: true,
+    // A Mac doesn't offer mirror.listen: its core refuses the phone's sound.
+    audio: !cfg!(target_os = "macos"),
     session: MIRROR_SCREEN,
     app: None,
     stay_awake: false,
     screen_off: false,
     watch: None,
 };
+/// A Mac shows a phone's screen only, until that is validated: no app
+/// windows, no input to the phone, no clipboard sent from a mirror window.
+const VIEW_ONLY: bool = cfg!(target_os = "macos");
 /// Packets waiting for the decoder, at most (about two seconds).
 const BACKLOG: usize = 120;
+/// Packets in a row that may fail to decode, each retried from a fresh
+/// keyframe, before the mirroring ends.
+const DECODE_FAILURES: u32 = 3;
 /// How often decode times are logged.
 const STATS_EVERY: Duration = Duration::from_secs(10);
 /// How long an in-window status notice stays visible.
@@ -178,6 +185,10 @@ struct State {
     keyboard_device: Option<DeviceId>,
     /// Short transient feedback notices per mirror window: `(text, shown_at, token)`.
     notices: HashMap<Window, (String, Instant, u64)>,
+    /// The video stream each window shows, by number: a window key is
+    /// reused, so a decoder still finishing an older stream mustn't end or
+    /// clear the one after it. Cleared when the window closes or asks again.
+    streams: HashMap<Window, u64>,
     apps: HashMap<DeviceId, Apps>,
     saved: SavedWindows,
 }
@@ -188,6 +199,27 @@ impl State {
         self.windows
             .iter()
             .any(|(w, shown)| w.device == *device && matches!(shown.phase, Phase::Asking | Phase::Showing))
+    }
+
+    fn set_phase(&mut self, window: Window, phase: Phase) {
+        let showing = matches!(phase, Phase::Showing);
+        if showing && self.active_window.is_none() {
+            self.active_window = Some(window);
+        } else if !showing && self.active_window == Some(window) {
+            self.active_window = self
+                .windows
+                .iter()
+                .find(|(w, shown)| **w != window && matches!(shown.phase, Phase::Showing))
+                .map(|(w, _)| *w);
+        }
+        if let Some(shown) = self.windows.get_mut(&window) {
+            shown.phase = phase;
+        }
+    }
+
+    /// Whether `stream` is still the one `window` shows.
+    fn shows(&self, window: &Window, stream: u64) -> bool {
+        self.streams.get(window) == Some(&stream)
     }
 }
 
@@ -202,6 +234,7 @@ impl Default for State {
             screen_off: HashSet::new(),
             keyboard_device: None,
             notices: HashMap::new(),
+            streams: HashMap::new(),
             apps: HashMap::new(),
             saved: SavedWindows::load(),
         }
@@ -214,6 +247,10 @@ static MUTED: AtomicBool = AtomicBool::new(false);
 static NEXT_SESSION: AtomicU32 = AtomicU32::new(1);
 /// Monotonic token for auto-clearing window notices.
 static NOTICE_SEQ: AtomicU64 = AtomicU64::new(1);
+/// The next video stream's number (see `State::streams`).
+static NEXT_STREAM: AtomicU64 = AtomicU64::new(1);
+// Keep a decoder's stop ordered before any replacement request reaches the phone.
+static TURN: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 type FrameMap = HashMap<Window, (u32, u32, Arc<Vec<u8>>)>;
 
@@ -659,20 +696,7 @@ fn state<T>(f: impl FnOnce(&mut State) -> T) -> T {
 
 fn set_phase(window: Window, phase: Phase) {
     let showing = matches!(phase, Phase::Showing);
-    state(|s| {
-        if showing && s.active_window.is_none() {
-            s.active_window = Some(window);
-        } else if !showing && s.active_window == Some(window) {
-            s.active_window = s
-                .windows
-                .iter()
-                .find(|(w, shown)| **w != window && matches!(shown.phase, Phase::Showing))
-                .map(|(w, _)| *w);
-        }
-        if let Some(shown) = s.windows.get_mut(&window) {
-            shown.phase = phase;
-        }
-    });
+    state(|s| s.set_phase(window, phase));
     if showing {
         ensure_gamepad_loop();
     }
@@ -853,6 +877,9 @@ pub fn keyboard_paste(device: DeviceId) {
 /// Opens one of the phone's apps in a window of its own (or does nothing
 /// when it's already open; reuses an ended window for that app).
 pub fn start_app(device: DeviceId, pkg: String, label: String) {
+    if VIEW_ONLY {
+        return;
+    }
     let window = state(|s| {
         if s.windows.iter().any(|(w, shown)| {
             w.device == device
@@ -894,6 +921,9 @@ pub fn start_app(device: DeviceId, pkg: String, label: String) {
 pub fn reopen(window: Window) {
     if window.session == MIRROR_SCREEN {
         start(window.device);
+        return;
+    }
+    if VIEW_ONLY {
         return;
     }
     let pkg = state(|s| {
@@ -944,11 +974,17 @@ pub fn resize(window: Window, width: u32, height: u32) {
 }
 
 fn request(window: Window, options: MirrorStart) {
+    state(|s| s.streams.remove(&window));
+    clear_window_buffers(&window);
     core_host::host().hub.changed(Changes::MIRROR);
     let Some(node) = core_host::node() else { return };
     let app = options.app.is_some();
     core_host::spawn(async move {
-        if let Err(e) = node.mirror_start(window.device, options).await {
+        let started = {
+            let _turn = TURN.lock().await;
+            node.mirror_start(window.device, options).await
+        };
+        if let Err(e) = started {
             let reason = match e {
                 Error::Denied => tr!("Mirror", "Mirroring is turned off for this phone."),
                 Error::Unsupported if app => tr!(
@@ -997,6 +1033,7 @@ pub fn stop(window: Window) {
     state(|s| {
         s.windows.remove(&window);
         s.notices.remove(&window);
+        s.streams.remove(&window);
         if !s.mirroring(&window.device) {
             s.screen_off.remove(&window.device);
         }
@@ -1040,7 +1077,8 @@ pub fn on_event(event: &NodeEvent) {
                     core_host::host().hub.changed(Changes::MIRROR);
                 }
             }
-            if phase(&window).is_some() {
+            // An ending this PC caused keeps its reason.
+            if matches!(phase(&window), Some(Phase::Asking | Phase::Showing)) {
                 set_phase(window, Phase::Ended(None));
             }
             state(|s| {
@@ -1252,6 +1290,9 @@ pub fn palette_apps(device: DeviceId) -> Vec<(String, String)> {
 /// The PC's mouse, keyboard, and gamepad on a mirrored screen or app window,
 /// sent in order.
 pub fn input(window: Window, input: nectarlink_core::MirrorInput) {
+    if VIEW_ONLY {
+        return;
+    }
     static QUEUE: std::sync::OnceLock<
         tokio::sync::mpsc::UnboundedSender<(Window, nectarlink_core::MirrorInput)>,
     > = std::sync::OnceLock::new();
@@ -1345,6 +1386,9 @@ pub fn drop_files(raw_urls: &[String]) {
 
 /// Requests remote input control from the phone for `key` and shows a guidance banner.
 pub fn request_control(key: &str) {
+    if VIEW_ONLY {
+        return;
+    }
     let Some(window) = Window::parse(key) else { return };
     set_notice(window, "On your phone, tap Allow / turn on Control from your PC in Waypair Link");
     input(
@@ -1359,7 +1403,9 @@ pub fn enter_window(key: &str) {
         state(|s| {
             s.active_window = Some(win);
         });
-        crate::input_share::enter_remote(win.device);
+        if !VIEW_ONLY {
+            crate::input_share::enter_remote(win.device);
+        }
     }
 }
 
@@ -1414,7 +1460,7 @@ pub fn sync_clipboard_on_focus(window: Window) {
     state(|s| {
         s.active_window = Some(window);
     });
-    if crate::settings::flow_follow_clipboard() {
+    if !VIEW_ONLY && crate::settings::flow_follow_clipboard() {
         sync_clipboard_for_device(window.device);
     }
 }
@@ -1612,7 +1658,8 @@ fn ensure_gamepad_loop() {
 /// stream of its own): only for mirrorings this PC asked for.
 pub fn sink(device: &DeviceId, session: u32) -> Option<Arc<dyn MirrorSink>> {
     let window = Window { device: *device, session };
-    matches!(phase(&window), Some(Phase::Asking | Phase::Showing))
+    let wanted = !VIEW_ONLY || session == MIRROR_SCREEN;
+    (wanted && matches!(phase(&window), Some(Phase::Asking | Phase::Showing)))
         .then(|| Arc::new(Sink::new(window)) as Arc<dyn MirrorSink>)
 }
 
@@ -1635,6 +1682,9 @@ struct Video {
     queue: SyncSender<Item>,
     /// Packets waiting for the decoder.
     waiting: Arc<AtomicUsize>,
+    /// A packet was dropped: the frames after it are left out until a
+    /// keyframe gets in, so none decodes against the missing one.
+    skipping: AtomicBool,
 }
 
 impl Sink {
@@ -1648,13 +1698,15 @@ impl Video {
         let (queue, items) = sync_channel(BACKLOG);
         let waiting = Arc::new(AtomicUsize::new(0));
         let counter = waiting.clone();
+        let stream = NEXT_STREAM.fetch_add(1, Ordering::Relaxed);
+        state(|s| s.streams.insert(window, stream));
         let started = std::thread::Builder::new()
             .name("mirror-decoder".into())
-            .spawn(move || decode(window, &items, &counter));
+            .spawn(move || decode(window, stream, &items, &counter));
         if let Err(e) = started {
             tracing::error!(error = %e, "can't start the video decoder");
         }
-        Video { queue, waiting }
+        Video { queue, waiting, skipping: AtomicBool::new(false) }
     }
 }
 
@@ -1701,13 +1753,20 @@ impl MirrorSink for Sink {
             tracing::warn!(error = %e, "mirror recording packet failed");
         }
         let Some(video) = self.video.get() else { return };
+        if !keyframe && video.skipping.load(Ordering::Acquire) {
+            return;
+        }
         match video.queue.try_send(Item::Packet { keyframe, time_us, data }) {
             Ok(()) => {
+                video.skipping.store(false, Ordering::Release);
                 video.waiting.fetch_add(1, Ordering::AcqRel);
             }
             Err(TrySendError::Disconnected(_)) => {}
             // The decoder is behind; it starts over at the next keyframe.
-            Err(TrySendError::Full(_)) => self.keyframe_please(),
+            Err(TrySendError::Full(_)) => {
+                video.skipping.store(true, Ordering::Release);
+                self.keyframe_please();
+            }
         }
     }
 
@@ -1772,9 +1831,33 @@ impl MirrorSink for Sink {
     }
 }
 
+/// Ends a mirroring this PC can't show, and stops the phone sending it;
+/// nothing once `window` has closed or asked again (`id` is then old).
+fn give_up(window: Window, id: u64, reason: String) {
+    let current = state(|s| {
+        let current = s.shows(&window, id);
+        if current {
+            s.set_phase(window, Phase::Ended(Some(reason)));
+        }
+        current
+    });
+    if !current {
+        tracing::debug!(session = window.session, "a replaced video stream failed; ignored");
+        return;
+    }
+    core_host::host().hub.changed(Changes::MIRROR);
+    let Some(node) = core_host::node() else { return };
+    core_host::spawn(async move {
+        let _turn = TURN.lock().await;
+        if state(|s| s.shows(&window, id)) {
+            node.mirror_stop(window.device, window.session).await;
+        }
+    });
+}
+
 /// The decoder thread: decodes everything (later pictures depend on
 /// earlier ones), shows the newest picture of each batch.
-fn decode(window: Window, items: &Receiver<Item>, waiting: &AtomicUsize) {
+fn decode(window: Window, id: u64, items: &Receiver<Item>, waiting: &AtomicUsize) {
     let stream = window.key();
     // On the GPU when the PC has one (falling back to software on its own),
     // so big phone screens and several app windows stay smooth.
@@ -1782,7 +1865,7 @@ fn decode(window: Window, items: &Receiver<Item>, waiting: &AtomicUsize) {
         Ok(decoder) => decoder,
         Err(e) => {
             tracing::error!(error = %e, "no H.264 decoder");
-            set_phase(window, Phase::Ended(Some(tr!("Mirror", "This PC can't decode the phone's video."))));
+            give_up(window, id, tr!("Mirror", "This PC can't decode the phone's video."));
             return;
         }
     };
@@ -1795,6 +1878,7 @@ fn decode(window: Window, items: &Receiver<Item>, waiting: &AtomicUsize) {
     let mut size = (0, 0);
     // After a gap, pictures are garbage until the next keyframe.
     let mut need_keyframe = true;
+    let mut failures = 0;
     let mut stats = Stats::new();
     while let Ok(item) = items.recv() {
         match item {
@@ -1811,12 +1895,10 @@ fn decode(window: Window, items: &Receiver<Item>, waiting: &AtomicUsize) {
                         }
                         Err(e) => {
                             tracing::error!(error = %e, codec = %config.codec, "no decoder for codec");
-                            set_phase(
+                            give_up(
                                 window,
-                                Phase::Ended(Some(format!(
-                                    "This PC can't decode {} video.",
-                                    config.codec.to_uppercase()
-                                ))),
+                                id,
+                                format!("This PC can't decode {} video.", config.codec.to_uppercase()),
                             );
                             return;
                         }
@@ -1835,8 +1917,17 @@ fn decode(window: Window, items: &Receiver<Item>, waiting: &AtomicUsize) {
                 need_keyframe = false;
                 let started = Instant::now();
                 let pictures = match decoder.decode(&data, time_us) {
-                    Ok(pictures) => pictures,
+                    Ok(pictures) => {
+                        failures = 0;
+                        pictures
+                    }
                     Err(e) => {
+                        failures += 1;
+                        if failures >= DECODE_FAILURES {
+                            tracing::warn!(error = %e, failures, "the phone's video keeps failing to decode");
+                            give_up(window, id, tr!("Mirror", "This PC can't decode the phone's video."));
+                            break;
+                        }
                         tracing::debug!(error = %e, "a video packet didn't decode");
                         decoder.flush();
                         need_keyframe = true;
@@ -1867,8 +1958,10 @@ fn decode(window: Window, items: &Receiver<Item>, waiting: &AtomicUsize) {
             Item::Ended => break,
         }
     }
-    clear_window_buffers(&window);
-    ffi::video_clear(&stream);
+    if state(|s| s.shows(&window, id)) {
+        clear_window_buffers(&window);
+        ffi::video_clear(&stream);
+    }
 }
 
 fn scale_bgrx(src: &[u8], src_w: u32, src_h: u32, dst_w: u32, dst_h: u32) -> Vec<u8> {
