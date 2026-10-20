@@ -2118,7 +2118,9 @@ impl Stats {
 /// second, synthetic phone node paired by QR over 127.0.0.1. That phone only
 /// answers `mirror.start` and sends the committed 128x128 red keyframe, which
 /// the receiver scales to each announced format; nothing is captured, and
-/// there is no microphone, sound, input, app window or saved identity.
+/// there is no microphone, sound, input, app window or saved identity. The
+/// last window records that keyframe at its own size into the run's
+/// `received` folder, never the user's Downloads.
 #[cfg(all(target_os = "macos", feature = "test-support"))]
 pub mod window_gate {
     use std::{
@@ -2138,7 +2140,10 @@ pub mod window_gate {
     use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
     use super::{Window, ffi};
-    use crate::win::image::Bitmap;
+    use crate::win::{
+        image::Bitmap,
+        mp4::{nal_type, split_annexb},
+    };
 
     pub const ARG: &str = "--mirror-window-gate";
     /// The only entry of a fresh run directory: a file holding that
@@ -2151,6 +2156,11 @@ pub mod window_gate {
     /// Formats the phone announces; the decoded picture stays 128x128.
     const PORTRAIT: (u32, u32) = (360, 640);
     const LANDSCAPE: (u32, u32) = (640, 360);
+    /// The keyframe's own coded size: the format of the recorded stream.
+    const NATIVE: (u32, u32) = (128, 128);
+    /// Keyframes the phone sends, 250 ms apart, when the recording asks.
+    const RECORDED_KEYFRAMES: u32 = 4;
+    const KEYFRAME_GAP: Duration = Duration::from_millis(250);
     /// After this the process exits even if Qt never returns.
     const HARD_TIMEOUT: Duration = Duration::from_secs(180);
     const GRAB_WAIT: Duration = Duration::from_secs(30);
@@ -2186,6 +2196,7 @@ pub mod window_gate {
         };
         let shown = gate.show();
         let phone = if shown.code == PASS { gate.phone_report() } else { Err("not checked".into()) };
+        let recording = if shown.code == PASS { gate.recording_report() } else { Err("not checked".into()) };
         let shut_down = gate.shut_down();
 
         let code = if shown.code != PASS {
@@ -2195,6 +2206,9 @@ pub mod window_gate {
             FAILED
         } else if let Err(e) = &phone {
             println!("mirror-window-gate: FAILED phone: {e}");
+            FAILED
+        } else if let Err(e) = &recording {
+            println!("mirror-window-gate: FAILED recording: {e}");
             FAILED
         } else if shown.qml_problems > 0 {
             println!(
@@ -2209,13 +2223,19 @@ pub mod window_gate {
             println!(
                 "mirror-window-gate: PASS lifecycle: Mirror.start opened MirrorWindow; the phone turned it \
                  portrait to landscape; the phone's end blanked it; Try again reused it; closing destroyed \
-                 it and stopped the phone; Mirror.start opened a new window; closing destroyed it"
+                 it and stopped the phone; Mirror.start opened a new window; closing destroyed it; \
+                 Mirror.start opened a third window at the keyframe's 128x128; Mirror.toggleRecording \
+                 showed recording with a running timer, and again stopped it and saved the file; closing \
+                 destroyed it"
             );
             for line in shown.grabs.iter().flatten() {
                 println!("mirror-window-gate: PASS render {line}");
             }
             if let Ok(line) = &phone {
                 println!("mirror-window-gate: PASS phone {line}");
+            }
+            if let Ok(line) = &recording {
+                println!("mirror-window-gate: PASS recording {line}");
             }
             PASS
         };
@@ -2367,6 +2387,9 @@ pub mod window_gate {
         starts: u32,
         stops: u32,
         formats: Vec<(u32, u32)>,
+        /// Keyframe requests on the recorded stream, and keyframes sent for them.
+        keyframe_requests: u32,
+        keyframes: u32,
         problems: Vec<String>,
     }
 
@@ -2410,6 +2433,29 @@ pub mod window_gate {
         Ok(())
     }
 
+    /// The recording asked for a keyframe: the phone sends a few, spaced.
+    async fn send_keyframes(stream: Arc<MirrorStream>, log: Arc<Mutex<PhoneLog>>) {
+        for n in 0..RECORDED_KEYFRAMES {
+            if n > 0 {
+                tokio::time::sleep(KEYFRAME_GAP).await;
+            }
+            let time_us = 1_000_000 + u64::from(n) * KEYFRAME_GAP.as_micros() as u64;
+            let stream = stream.clone();
+            let queued = tokio::time::timeout(
+                Duration::from_secs(5),
+                tokio::task::spawn_blocking(move || stream.send(PacketKind::Keyframe, time_us, idr())),
+            )
+            .await;
+            match queued {
+                Ok(Ok(MirrorSend::Queued)) => lock(&log).keyframes += 1,
+                other => {
+                    lock(&log).problems.push(format!("recorded keyframe {n} was not queued: {other:?}"));
+                    return;
+                }
+            }
+        }
+    }
+
     async fn wait_for_grab(path: PathBuf) -> Result<(), String> {
         tokio::time::timeout(GRAB_WAIT, async {
             while !path.exists() {
@@ -2422,7 +2468,9 @@ pub mod window_gate {
 
     /// The phone's side: the first request turns from portrait to landscape
     /// once each picture is grabbed, then stops sharing on its own; the
-    /// second answers portrait, the third landscape, both until stopped.
+    /// second answers portrait, the third landscape, both until stopped;
+    /// the fourth answers at the keyframe's own size, and its first
+    /// keyframe request (the recording's) gets the recorded keyframes.
     async fn phone_script(
         phone: Node,
         receiver: DeviceId,
@@ -2470,7 +2518,11 @@ pub mod window_gate {
                             continue;
                         }
                     };
-                    let format = if starts == 3 { LANDSCAPE } else { PORTRAIT };
+                    let format = match starts {
+                        3 => LANDSCAPE,
+                        4 => NATIVE,
+                        _ => PORTRAIT,
+                    };
                     if let Err(e) = send_format(&stream, format, request, 0).await {
                         lock(&log).problems.push(e);
                         continue;
@@ -2505,8 +2557,22 @@ pub mod window_gate {
                     }
                 }
                 PhoneEvent::Keyframe => {
-                    if let Some(stream) = &current {
-                        let _ = stream.send(PacketKind::Keyframe, 0, idr());
+                    let Some(stream) = &current else { continue };
+                    let recorded_requests = {
+                        let mut log = lock(&log);
+                        (log.starts == 4).then(|| {
+                            log.keyframe_requests += 1;
+                            log.keyframe_requests
+                        })
+                    };
+                    match recorded_requests {
+                        None => {
+                            let _ = stream.send(PacketKind::Keyframe, 0, idr());
+                        }
+                        Some(1) => {
+                            tokio::spawn(send_keyframes(stream.clone(), log.clone()));
+                        }
+                        Some(_) => {}
                     }
                 }
             }
@@ -2525,6 +2591,7 @@ pub mod window_gate {
     struct Gate {
         run_dir: PathBuf,
         grabs: PathBuf,
+        received: PathBuf,
         receiver: Node,
         phone: Node,
         phone_runtime: tokio::runtime::Runtime,
@@ -2565,11 +2632,16 @@ pub mod window_gate {
 
     impl Gate {
         fn start(run_dir: &Path) -> Result<Gate, String> {
-            let (receiver_dir, phone_dir, grabs) =
-                (run_dir.join("receiver"), run_dir.join("phone"), run_dir.join("grabs"));
-            for dir in [&receiver_dir, &phone_dir, &grabs] {
+            let (receiver_dir, phone_dir, grabs, received) = (
+                run_dir.join("receiver"),
+                run_dir.join("phone"),
+                run_dir.join("grabs"),
+                run_dir.join("received"),
+            );
+            for dir in [&receiver_dir, &phone_dir, &grabs, &received] {
                 std::fs::create_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
             }
+            crate::downloads::use_window_gate_received_dir(received.clone())?;
             let receiver = crate::core_host::start_window_gate(
                 loopback_config(
                     &receiver_dir,
@@ -2629,7 +2701,16 @@ pub mod window_gate {
                 phone_events,
                 log.clone(),
             ));
-            Ok(Gate { run_dir: run_dir.to_owned(), grabs, receiver, phone, phone_runtime, script, log })
+            Ok(Gate {
+                run_dir: run_dir.to_owned(),
+                grabs,
+                received,
+                receiver,
+                phone,
+                phone_runtime,
+                script,
+                log,
+            })
         }
 
         /// Runs the window sequence in `GATE_QML` on this (the main) thread.
@@ -2660,7 +2741,7 @@ pub mod window_gate {
 
         fn phone_report(&self) -> Result<String, String> {
             for _ in 0..100 {
-                if lock(&self.log).stops >= 2 {
+                if lock(&self.log).stops >= 3 {
                     break;
                 }
                 std::thread::sleep(Duration::from_millis(50));
@@ -2669,15 +2750,91 @@ pub mod window_gate {
             if !log.problems.is_empty() {
                 return Err(log.problems.join("; "));
             }
-            if (log.starts, log.stops) != (3, 2) {
-                return Err(format!("expected 3 requests and 2 stops, saw {} and {}", log.starts, log.stops));
+            if (log.starts, log.stops) != (4, 3) {
+                return Err(format!("expected 4 requests and 3 stops, saw {} and {}", log.starts, log.stops));
             }
-            if log.formats != [PORTRAIT, LANDSCAPE, PORTRAIT, LANDSCAPE] {
+            if log.formats != [PORTRAIT, LANDSCAPE, PORTRAIT, LANDSCAPE, NATIVE] {
                 return Err(format!("unexpected format sequence {:?}", log.formats));
             }
             Ok(format!(
-                "3 screen-only, video-only requests with live tokens; 2 stops from closed windows; formats {:?}",
+                "4 screen-only, video-only requests with live tokens; 3 stops from closed windows; formats {:?}",
                 log.formats
+            ))
+        }
+
+        /// What the window's recording saved: one video-only MP4 in the
+        /// run's own received folder, described at the keyframe's coded size
+        /// with its SPS, holding every keyframe sent for the recording.
+        fn recording_report(&self) -> Result<String, String> {
+            let (requests, keyframes) = {
+                let log = lock(&self.log);
+                (log.keyframe_requests, log.keyframes)
+            };
+            if requests == 0 || keyframes != RECORDED_KEYFRAMES {
+                return Err(format!(
+                    "the recorded stream saw {requests} keyframe request(s) and sent {keyframes} of \
+                     {RECORDED_KEYFRAMES} keyframes"
+                ));
+            }
+            let files = std::fs::read_dir(&self.received)
+                .and_then(|entries| {
+                    entries.map(|entry| entry.map(|e| e.path())).collect::<Result<Vec<_>, _>>()
+                })
+                .map_err(|e| format!("{}: {e}", self.received.display()))?;
+            let [path] = files.as_slice() else {
+                return Err(format!("expected 1 file in {}, found {}", self.received.display(), files.len()));
+            };
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or_default().to_owned();
+            if !name.starts_with("Mirror ")
+                || !name.ends_with(".mp4")
+                || !std::fs::symlink_metadata(path).is_ok_and(|m| m.is_file())
+            {
+                return Err(format!("{name:?} is not a regular Mirror *.mp4 file"));
+            }
+            let file = std::fs::read(path).map_err(|e| format!("{name}: {e}"))?;
+            if !(256..8 << 20).contains(&file.len()) {
+                return Err(format!("{name}: {} bytes is outside 256 B to 8 MiB", file.len()));
+            }
+            let boxes = top_level_boxes(&file).map_err(|e| format!("{name}: {e}"))?;
+            let kinds: Vec<_> = boxes.iter().map(|(kind, _)| String::from_utf8_lossy(kind)).collect();
+            if kinds != ["ftyp", "mdat", "moov"] {
+                return Err(format!("{name}: top-level boxes {kinds:?}, not ftyp, mdat, moov"));
+            }
+            let moov = boxes[2].1;
+            let find = |needle: &[u8]| moov.windows(needle.len()).position(|w| w == needle);
+            if find(b"soun").is_some() || find(b"vide").is_none() {
+                return Err(format!("{name}: not a single video track"));
+            }
+            let at = |fourcc: &[u8; 4], offset: usize, len: usize| {
+                find(fourcc)
+                    .and_then(|start| moov.get(start + 4 + offset..start + 4 + offset + len))
+                    .map(|bytes| bytes.iter().fold(0u32, |n, b| (n << 8) | u32::from(*b)))
+                    .ok_or_else(|| format!("{name}: no complete {}", String::from_utf8_lossy(fourcc)))
+            };
+            let size = (at(b"avc1", 24, 2)?, at(b"avc1", 26, 2)?);
+            if size != NATIVE {
+                return Err(format!("{name}: avc1 describes {size:?}, not the keyframe's {NATIVE:?}"));
+            }
+            let idr = idr();
+            let sps = split_annexb(&idr)
+                .into_iter()
+                .find(|nal| nal_type(nal) == Some(7))
+                .ok_or("the committed keyframe has no SPS")?;
+            let avcc = find(b"avcC").ok_or_else(|| format!("{name}: no avcC"))?;
+            if !moov[avcc..].windows(sps.len()).any(|w| w == sps) {
+                return Err(format!("{name}: avcC does not carry the keyframe's SPS"));
+            }
+            let samples = at(b"stsz", 8, 4)?;
+            if samples != keyframes {
+                return Err(format!("{name}: {samples} samples, but the phone sent {keyframes} keyframes"));
+            }
+            Ok(format!(
+                "{name}: {} B video-only MP4 (ftyp, mdat, moov; avc1 {}x{} with the keyframe's SPS; no \
+                 sound track) in the run's received folder, holding the {samples} keyframes the phone sent \
+                 for {requests} keyframe request(s)",
+                file.len(),
+                size.0,
+                size.1
             ))
         }
 
@@ -2688,6 +2845,24 @@ pub mod window_gate {
             super::clear_window_buffers(&Window::screen(self.phone.device_id()));
             phone && receiver
         }
+    }
+
+    /// The `(type, payload)` of each top-level MP4 box, in file order.
+    fn top_level_boxes(file: &[u8]) -> Result<Vec<([u8; 4], &[u8])>, String> {
+        let mut boxes = Vec::new();
+        let mut rest = file;
+        while !rest.is_empty() {
+            let [a, b, c, d, k0, k1, k2, k3, ..] = *rest else {
+                return Err(format!("a truncated box header after {} boxes", boxes.len()));
+            };
+            let size = u32::from_be_bytes([a, b, c, d]) as usize;
+            if size < 8 || size > rest.len() {
+                return Err(format!("box {} has size {size} of {} bytes left", boxes.len(), rest.len()));
+            }
+            boxes.push(([k0, k1, k2, k3], &rest[8..size]));
+            rest = &rest[size..];
+        }
+        Ok(boxes)
     }
 
     fn is_red(px: &[u8; 4]) -> bool {
@@ -2744,14 +2919,41 @@ pub mod window_gate {
             ("3-ended.png", None),
             ("4-reopened.png", Some(PORTRAIT)),
             ("5-restarted.png", Some(LANDSCAPE)),
+            ("6-recording.png", Some(NATIVE)),
         ]
         .into_iter()
         .map(|(name, frame)| {
             let bytes = std::fs::read(grabs.join(name)).map_err(|e| format!("{name}: {e}"))?;
             let image = crate::win::image::decode(&bytes).map_err(|e| format!("{name}: {e}"))?;
-            check_grab(name, &image, frame)
+            if frame == Some(NATIVE) {
+                check_recording_grab(name, &image)
+            } else {
+                check_grab(name, &image, frame)
+            }
         })
         .collect()
+    }
+
+    /// The recording window still shows the picture, though its toolbar,
+    /// notice and hint cover too much of a small square window for
+    /// `check_grab`'s sample; the grab is kept as evidence of the toolbar.
+    fn check_recording_grab(name: &str, image: &Bitmap) -> Result<String, String> {
+        let (w, h) = (image.width, image.height);
+        if w < 16 || h < 16 || image.bgra.len() < (w as usize) * (h as usize) * 4 {
+            return Err(format!("{name}: unusable {w}x{h} grab"));
+        }
+        if (f64::from(w) / f64::from(h) - 1.0).abs() > 0.06 {
+            return Err(format!("{name}: a {w}x{h} grab does not follow the square 128x128 frame"));
+        }
+        let pixels = &image.bgra.as_chunks::<4>().0[..(w * h) as usize];
+        let red = pixels.iter().filter(|px| is_red(px)).count();
+        if red == 0 {
+            return Err(format!("{name}: no pixel shows the red keyframe while recording"));
+        }
+        Ok(format!(
+            "{name}: {w}x{h} grab while recording; {red} of {} pixels show the red keyframe",
+            pixels.len()
+        ))
     }
 
     /// Creates a `MirrorWindow` for each key in `Mirror.windows` (as App.qml
@@ -2773,9 +2975,11 @@ QtObject {
     property int destroyed: 0
     property var first: null
     property var second: null
+    property var third: null
     property int step: 0
     property double stepStarted: Date.now()
     property double closedAt: 0
+    property double reclosedAt: 0
     property bool busy: false
     property bool finished: false
 
@@ -2952,7 +3156,49 @@ QtObject {
             advance(10)
             break
         case 10:
-            if (!w && destroyed === 2 && !listed())
+            if (!w && destroyed === 2 && !listed()) {
+                if (reclosedAt === 0)
+                    reclosedAt = Date.now()
+                if (Date.now() - reclosedAt >= 1000) {
+                    Mirror.start(phone)
+                    advance(11)
+                }
+            }
+            break
+        case 11:
+            if (w && w !== first && w !== second && created === 3 && shows(w, 128, 128) && nativePath(w)) {
+                third = w
+                Mirror.toggleRecording(key)
+                advance(12)
+            }
+            break
+        case 12:
+            if (w === third && w.info.recording === true && w.info.recordingStartedMs > 0
+                    && w.info.notice === "Recording started")
+                advance(13)
+            break
+        case 13:
+            if (w === third && w.info.recording === true && w.recordingElapsedSecs >= 2 && shows(w, 128, 128))
+                grab(w, "6-recording.png", 14)
+            break
+        case 14:
+            Mirror.toggleRecording(key)
+            advance(15)
+            break
+        case 15:
+            if (w !== third)
+                break
+            if (w.info.recording !== true && w.recordingElapsedSecs === 0 && /^Saved .+\.mp4$/.test(w.info.notice)) {
+                console.info("mirror-window-gate: recording stopped: " + w.info.notice)
+                third.close()
+                advance(16)
+            } else if ((w.info.notice || "").length > 0 && w.info.notice !== "Recording started"
+                       && !w.info.notice.startsWith("Saved ")) {
+                fail(1, "the recording was not saved: " + w.info.notice)
+            }
+            break
+        case 16:
+            if (!w && destroyed === 3 && !listed())
                 finish(0)
             break
         }

@@ -25,8 +25,22 @@ const DONE_MARKER: &str = "downloads-waypair-link-v1.done";
 #[cfg(target_os = "macos")]
 const PENDING_MARKER: &str = "downloads-waypair-link-v1.pending.json";
 
+/// The mirror window gate's own folder for saved files, set once after it
+/// has validated its fresh run directory.
+#[cfg(all(target_os = "macos", feature = "test-support"))]
+static WINDOW_GATE_RECEIVED_DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+#[cfg(all(target_os = "macos", feature = "test-support"))]
+pub(crate) fn use_window_gate_received_dir(dir: PathBuf) -> Result<(), String> {
+    WINDOW_GATE_RECEIVED_DIR.set(dir).map_err(|_| "the received folder was already chosen".to_owned())
+}
+
 /// User-visible location label (not an absolute path).
 pub fn user_visible_location() -> &'static str {
+    #[cfg(all(target_os = "macos", feature = "test-support"))]
+    if WINDOW_GATE_RECEIVED_DIR.get().is_some() {
+        return "the gate's run directory";
+    }
     #[cfg(target_os = "macos")]
     {
         dirs::download_dir()
@@ -72,6 +86,10 @@ pub fn received_dir() -> PathBuf {
 }
 
 pub fn received_dir_with_fallback(fallback_parent: impl FnOnce() -> PathBuf) -> PathBuf {
+    #[cfg(all(target_os = "macos", feature = "test-support"))]
+    if let Some(dir) = WINDOW_GATE_RECEIVED_DIR.get() {
+        return dir.clone();
+    }
     let Some(root) = dirs::download_dir() else {
         return fallback_parent().join(BRANDED_SUBDIR);
     };
