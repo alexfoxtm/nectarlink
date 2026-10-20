@@ -36131,7 +36131,7 @@ SOFTWARE.
 rustls-platform-verifier-android 0.2.0  ·  MIT OR Apache-2.0
 https://github.com/rustls/rustls-platform-verifier
 
-rustls-webpki 0.103.15  ·  ISC
+rustls-webpki 0.103.16  ·  ISC
 https://github.com/rustls/webpki
 
 --- rustls-webpki (LICENSE) ---
@@ -48607,7 +48607,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
-webpki-roots 1.0.9  ·  CDLA-Permissive-2.0
+webpki-roots 1.0.10  ·  CDLA-Permissive-2.0
 https://github.com/rustls/webpki-roots
 
 --- webpki-roots (LICENSE) ---
