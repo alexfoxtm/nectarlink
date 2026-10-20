@@ -499,7 +499,7 @@ impl MirrorRecorder {
         let write_result = self
             .file
             .as_mut()
-            .ok_or("recording file is not open")
+            .ok_or_else(|| "recording file is not open".to_string())
             .and_then(|file| file.write_all(&sample_bytes).map_err(|e| e.to_string()));
         if let Err(e) = write_result {
             // Partial sample bytes must never be described by later tables:
