@@ -2375,7 +2375,9 @@ mod mac_receive_fixture {
     async fn wait_for_link(receiver: &Node, phone: DeviceId) -> Result<(), String> {
         tokio::time::timeout(Duration::from_secs(5), async {
             loop {
-                if matches!(receiver.link(&phone, None), LinkState::Online { .. }) {
+                if receiver.paired_devices().is_ok_and(|peers| {
+                    peers.iter().any(|peer| peer.id == phone && matches!(&peer.link, LinkState::Online { .. }))
+                }) {
                     return;
                 }
                 tokio::time::sleep(Duration::from_millis(10)).await;
