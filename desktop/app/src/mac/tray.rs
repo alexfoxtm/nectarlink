@@ -3,11 +3,21 @@
 //!
 //! This slice is deliberately narrow: one real `NSStatusItem` whose menu
 //! contains only the translated Open and Quit items, both wired to the
-//! existing [`TrayEvent`] handler. There is still no global hotkey, no
-//! window tracking and no hide-on-close on macOS (callers keep
-//! `close_to_tray` false until a running app proves this menu), and
-//! window focusing still reports failure so Continuity Camera never
-//! claims it pasted.
+//! existing [`TrayEvent`] handler. There is still no global hotkey and no
+//! window tracking on macOS.
+//!
+//! Close-to-menu contract: the caller installs this status item first and
+//! only hides the window when installation succeeded (see
+//! `AppController.trayAvailable`). If creation fails the option stays
+//! disabled with an honest reason and the window stays reachable, so the
+//! app can never hide into a missing menu.
+//!
+//! Icon: a neutral glyph-only "W" in the button title renders in the menu
+//! bar's own foreground colour (black in light mode, white in dark mode),
+//! so it stays visible in both. Deliberately not the full-colour app tile
+//! (AppKit would tint an opaque tile solid and hide the W) and not an
+//! `NSImage` template (those APIs are not enabled in this build); no image
+//! asset is needed for this slice, and the app icon/theme are unchanged.
 //!
 //! Threading and ownership: AppKit menu actions are delivered by the
 //! main run loop, so creating the item requires the GUI main thread and
@@ -240,7 +250,8 @@ pub fn record_foreground_window() {}
 pub fn apply_no_activate_style_by_title(_title: &str) {}
 
 /// No window is ever focused from here; `false` keeps the caller on its
-/// "image is on your clipboard" path instead of a false "pasted" message.
+/// "image is on your clipboard" path instead of a false "pasted" message,
+/// so Continuity Camera never claims it pasted.
 pub fn focus_window(_hwnd: isize) -> bool {
     false
 }

@@ -84,9 +84,9 @@ pub use nectarlink_protocol::{
     messages::{
         AudioOutputDevice, Battery, CLIP_MAX_BYTES, CallControls, CallLogEntry, CallState,
         CameraCaptureCancel, CameraCaptureMode, CameraCaptureOk, CameraCaptureRequest,
-        CameraCaptureResultMeta, Contact, ContactNumber, DeviceInfo, DeviceKind, LivePoint, LiveSegment,
-        MediaPlayer, MirrorAudioConfig, MirrorConfig, MirrorInput, MirrorPower, MirrorResize, MirrorStart,
-        Notification, NotificationAction, NotificationChatMessage, NotificationConversation,
+        CameraCaptureResultMeta, Contact, ContactNumber, DeviceInfo, DeviceKind, LinkTransport, LivePoint,
+        LiveSegment, MediaPlayer, MirrorAudioConfig, MirrorConfig, MirrorInput, MirrorPower, MirrorResize,
+        MirrorStart, Notification, NotificationAction, NotificationChatMessage, NotificationConversation,
         NotificationLive, PcAudioSet, PcWakeInfo, PhoneApp, PhoneToggleSet, PhoneToggleValue, PhoneToggles,
         PhotoAlbum, PhotoItem, PhotoNew as Photo, PhotoThumb, PowerLevel, ScreenCorners, ScreenRect,
         ScreenShape, SmsAttachment, SmsMessage, SmsPart, SmsThread, StorageChanged, StorageDelete,
@@ -138,7 +138,7 @@ pub use nectarlink_protocol::{
     },
     pairing::PairingUri,
 };
-pub use node::{DataRetentionCounts, Node, PeerDiagnostics};
+pub use node::{DataRetentionCounts, NetworkRouteInfo, Node, PeerDiagnostics};
 pub use notifications::{NotificationError, SHOW as NOTIFY_SHOW};
 pub use palette::{
     ACHROMATIC_SEED_RGB, MAX_SAMPLE_SIDE, Palette as ThemePaletteMap, RolePalette, ThemeScheme,

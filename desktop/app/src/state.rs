@@ -431,7 +431,19 @@ impl AppState {
                         c
                     }
                 } else {
-                    self.update_device_metrics(device, |d| d.link = link.clone())
+                    let mut c = self.update_device_metrics(device, |d| d.link = link.clone());
+                    if c.is_empty()
+                        && matches!(link, LinkState::Online { .. })
+                        && self.device(device).is_some()
+                    {
+                        // The core re-emits an unchanged online link when only
+                        // the ADB tunnel's display medium changed (cable vs
+                        // wireless). The link is identical, but the badge must
+                        // still refresh: the device list re-reads the medium
+                        // from the core on metrics updates.
+                        c |= Changes::DEVICE_METRICS;
+                    }
+                    c
                 };
                 // A device that comes back sends what plays and its toggles then.
                 if matches!(link, LinkState::Offline { .. }) {
@@ -1122,8 +1134,8 @@ mod tests {
         );
         assert_eq!(
             s.apply(&NodeEvent::LinkChanged { device: id, link: online }),
-            Changes::NONE,
-            "no change, no refresh"
+            Changes::DEVICE_METRICS,
+            "identical online re-emit refreshes metrics (tunnel medium may have changed)"
         );
         assert_eq!(
             s.apply(&NodeEvent::LinkChanged {
@@ -1141,6 +1153,7 @@ mod tests {
             cell_bars: None,
             cell_type: None,
             wifi_bars: None,
+            link_transport: None,
         };
         assert_eq!(
             s.apply(&NodeEvent::Battery { device: id, battery: battery.clone() }),

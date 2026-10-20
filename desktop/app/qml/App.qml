@@ -128,10 +128,15 @@ QtObject {
         }
     }
 
+    // Closing hides the window into the menu-bar/tray item only when the
+    // user opted in and the native item is actually installed; otherwise
+    // the window stays reachable by quitting instead of hiding into a
+    // missing menu. Explicit Quit (menu item, Cmd+Q, system) always quits
+    // via onQuitRequested below.
     function onMainClosed() {
         if (mainLoader.active && mainLoader.item)
             mainLoader.item.saveWindowState()
-        if (Qt.platform.os === "osx" || !Preferences.closeToTray) {
+        if (!Preferences.closeToTray || !AppController.trayAvailable) {
             Qt.quit()
             return
         }
@@ -189,6 +194,14 @@ QtObject {
         }
         function onShelfOpenChanged() {
             app.syncShelfWindow()
+        }
+    }
+
+    readonly property Connections applicationState: Connections {
+        target: Qt.application
+        function onStateChanged() {
+            if (Qt.platform.os === "osx" && Qt.application.state === Qt.ApplicationActive && !app.mainWindow)
+                app.showMain()
         }
     }
 }

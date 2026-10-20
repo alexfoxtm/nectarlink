@@ -119,7 +119,9 @@ fn default_true() -> bool {
 }
 
 /// Windows and Linux keep running in the tray when the window closes.
-/// The macOS tray is still a stub, so a missing preference must quit with the window.
+/// Off by default on macOS; the window only hides when the
+/// native menu-bar item is installed (see `AppController.trayAvailable`),
+/// otherwise closing the window quits.
 fn default_close_to_tray() -> bool {
     !cfg!(target_os = "macos")
 }

@@ -555,6 +555,7 @@ Item {
         required property string model
         required property bool online
         required property string path
+        required property string displayPath
         required property int rttMs
         required property int battery
         required property bool charging
@@ -563,6 +564,8 @@ Item {
         required property int cellBars
         required property string cellType
         required property int wifiBars
+        required property string usbMedium
+        required property string linkTransport
         required property string power
         required property real lastSeen
         required property real pairedAt
@@ -613,6 +616,16 @@ Item {
                                                && Qt.application.state === Qt.ApplicationActive
         property bool ringing: false
         Timer { id: ringTimeout; interval: 30000; onTriggered: home.ringing = false }
+
+        // The tunnel record alone proves nothing: a cable chip requires the
+        // CURRENT selected path to be the bridge plus a positive host USB
+        // descriptor; a bridge that is present but not selected, wireless
+        // tunnels and unknown origins never render USB. Proven phone hints
+        // render their own transport; anything unproven (including updated
+        // peers with an unknown SDK route) shows an honest unavailable state,
+        // never a signal-bars guess, a forced Wi-Fi claim, or a stale
+        // update-phone-app prompt.
+        readonly property bool provenCable: home.displayPath === "usb" && home.usbMedium === "physical"
 
         spacing: Theme.gutter
         readonly property real sideWidth: Math.round(Math.min(450, Math.max(320, home.width * 0.34)))
@@ -1078,20 +1091,28 @@ Item {
                                 interactive: true
                                 onClicked: AppController.runDoctor()
                                 iconPath: !home.online ? Icons.unlink
-                                          : home.path === "usb" ? Icons.usb
-                                          : home.path === "relay" ? Icons.globe
-                                          : (home.wifiBars < 0 && home.cellBars >= 0 ? Icons.signal : Icons.wifi)
+                                          : home.provenCable ? Icons.usb
+                                          : home.displayPath === "relay" ? Icons.globe
+                                          : (home.linkTransport === "wifi" ? Icons.wifi
+                                             : (home.linkTransport === "cellular" ? Icons.signal
+                                                : (home.linkTransport === "ethernet" ? Icons.wifi
+                                                   : (home.linkTransport === "usb" ? Icons.usb
+                                                      : Icons.info))))
                                 text: home.online
-                                      ? (home.path === "relay"
+                                      ? (home.displayPath === "relay"
                                          ? (home.rttMs >= 1 ? qsTr("Away · %1 ms").arg(home.rttMs) : qsTr("Away"))
-                                         : (home.path === "usb"
+                                         : (home.provenCable
                                             ? (home.rttMs >= 1 ? qsTr("USB · %1 ms").arg(home.rttMs) : qsTr("USB"))
-                                            : (home.wifiBars >= 0
+                                            : (home.linkTransport === "wifi"
                                                ? (home.rttMs >= 1 ? qsTr("Wi‑Fi · %1 ms").arg(home.rttMs) : qsTr("Wi‑Fi"))
-                                               : (home.cellBars >= 0
+                                               : (home.linkTransport === "cellular"
                                                   ? ((home.cellType.length > 0 ? home.cellType : qsTr("Cellular"))
                                                      + (home.rttMs >= 1 ? qsTr(" · %1 ms").arg(home.rttMs) : ""))
-                                                  : (home.rttMs >= 1 ? qsTr("Wi‑Fi · %1 ms").arg(home.rttMs) : qsTr("Wi‑Fi"))))))
+                                                  : (home.linkTransport === "ethernet"
+                                                     ? (home.rttMs >= 1 ? qsTr("Ethernet · %1 ms").arg(home.rttMs) : qsTr("Ethernet"))
+                                                     : (home.linkTransport === "usb"
+                                                        ? (home.rttMs >= 1 ? qsTr("USB · %1 ms").arg(home.rttMs) : qsTr("USB"))
+                                                        : (home.rttMs >= 1 ? qsTr("Unavailable · %1 ms").arg(home.rttMs) : qsTr("Unavailable"))))))))
                                       : (home.lastSeen > 0 ? qsTr("Offline · %1").arg(page.relativeTime(home.lastSeen))
                                                            : qsTr("Offline"))
                             }

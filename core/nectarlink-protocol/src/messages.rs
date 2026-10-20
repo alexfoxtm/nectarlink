@@ -390,6 +390,98 @@ pub struct Ping {
 /// Echoes the `ts` of the matching ping.
 pub type Pong = Ping;
 
+/// The network transport actually carrying a session, computed by matching
+/// the session's selected path local interface IP against the device's own
+/// route table (never from signal bars or the default network). Only these
+/// four values travel on the wire; anything else stays unknown (absent).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LinkTransport {
+    Wifi,
+    Cellular,
+    Ethernet,
+    Usb,
+}
+
+impl LinkTransport {
+    /// The wire string for this transport.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            LinkTransport::Wifi => "wifi",
+            LinkTransport::Cellular => "cellular",
+            LinkTransport::Ethernet => "ethernet",
+            LinkTransport::Usb => "usb",
+        }
+    }
+
+    /// Parses a wire string; anything outside the closed set is rejected.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "wifi" => Some(LinkTransport::Wifi),
+            "cellular" => Some(LinkTransport::Cellular),
+            "ethernet" => Some(LinkTransport::Ethernet),
+            "usb" => Some(LinkTransport::Usb),
+            _ => None,
+        }
+    }
+}
+
+/// Deserializes the optional proven-route hint, failing soft to unknown when
+/// a future peer sends a value outside the closed set (or a non-string):
+/// the rest of a valid Battery (level, bars) still decodes instead of the
+/// whole message being dropped. Missing or null stays unknown.
+fn deserialize_link_transport_opt<'de, D>(deserializer: D) -> Result<Option<LinkTransport>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct HintVisitor;
+    impl<'de> serde::de::Visitor<'de> for HintVisitor {
+        type Value = Option<LinkTransport>;
+        fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("a transport string or null")
+        }
+        fn visit_none<E>(self) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(None)
+        }
+        fn visit_unit<E>(self) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(None)
+        }
+        fn visit_some<D2>(self, deserializer: D2) -> Result<Self::Value, D2::Error>
+        where
+            D2: serde::Deserializer<'de>,
+        {
+            // Unknown strings (future transports) and non-strings soft-fail
+            // to unknown instead of failing the whole Battery.
+            Ok(String::deserialize(deserializer).ok().and_then(|s| LinkTransport::parse(&s)))
+        }
+        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(LinkTransport::parse(v))
+        }
+        fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(LinkTransport::parse(&v))
+        }
+        fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(std::str::from_utf8(v).ok().and_then(LinkTransport::parse))
+        }
+    }
+    deserializer.deserialize_option(HintVisitor)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Battery {
     pub level: u8,
@@ -409,6 +501,16 @@ pub struct Battery {
     /// Wi-Fi signal strength in bars (`0..=4`), if connected to Wi-Fi and known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wifi_bars: Option<u8>,
+    /// Proven session route transport, computed per session by the sender and
+    /// absent when unknown. Never inferred from signal bars; old peers ignore it.
+    /// Unknown future values fail soft to unknown (see
+    /// [`deserialize_link_transport_opt`]), never dropping the Battery.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_link_transport_opt",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub link_transport: Option<LinkTransport>,
 }
 
 impl Battery {
@@ -4203,6 +4305,7 @@ mod tests {
             cell_bars: None,
             cell_type: None,
             wifi_bars: None,
+            link_transport: None,
         };
         let env = Envelope::new(types::EVENT_BATTERY, &b).unwrap();
         let back: Battery = Envelope::from_cbor(&env.to_cbor()).unwrap().body().unwrap();
@@ -4216,6 +4319,7 @@ mod tests {
                 cell_bars: None,
                 cell_type: None,
                 wifi_bars: None,
+                link_transport: None,
             }
             .sanitized(),
             Battery {
@@ -4226,6 +4330,7 @@ mod tests {
                 cell_bars: None,
                 cell_type: None,
                 wifi_bars: None,
+                link_transport: None,
             }
         );
     }
@@ -4240,6 +4345,7 @@ mod tests {
             cell_bars: Some(4),
             cell_type: Some("5G".into()),
             wifi_bars: Some(3),
+            link_transport: None,
         };
         let env = Envelope::new(types::EVENT_BATTERY, &valid).unwrap();
         let back: Battery = Envelope::from_cbor(&env.to_cbor()).unwrap().body().unwrap();
@@ -4254,6 +4360,7 @@ mod tests {
             cell_bars: Some(9),
             cell_type: Some("  5G\n\tUltraWideband  ".into()),
             wifi_bars: Some(255),
+            link_transport: None,
         }
         .sanitized();
         assert_eq!(dirty.cell_bars, Some(4));
@@ -4269,6 +4376,7 @@ mod tests {
             cell_bars: Some(0),
             cell_type: Some(" \n\0\t ".into()),
             wifi_bars: Some(0),
+            link_transport: None,
         }
         .sanitized();
         assert_eq!(empty_type.cell_bars, Some(0));
@@ -4294,6 +4402,7 @@ mod tests {
                 cell_bars: None,
                 cell_type: None,
                 wifi_bars: None,
+                link_transport: None,
             }
         );
         // None signal fields are omitted on the wire.
@@ -4303,7 +4412,87 @@ mod tests {
             !debug_b.contains("cell_bars")
                 && !debug_b.contains("cell_type")
                 && !debug_b.contains("wifi_bars")
+                && !debug_b.contains("link_transport")
         );
+    }
+
+    #[test]
+    fn link_transport_round_trips_per_wire_string() {
+        for transport in
+            [LinkTransport::Wifi, LinkTransport::Cellular, LinkTransport::Ethernet, LinkTransport::Usb]
+        {
+            assert_eq!(LinkTransport::parse(transport.as_str()), Some(transport));
+            let b = Battery {
+                level: 60,
+                charging: false,
+                plugged: None,
+                full_in: None,
+                cell_bars: None,
+                cell_type: None,
+                wifi_bars: None,
+                link_transport: Some(transport),
+            };
+            let env = Envelope::new(types::EVENT_BATTERY, &b).unwrap();
+            let back: Battery = Envelope::from_cbor(&env.to_cbor()).unwrap().body().unwrap();
+            assert_eq!(back, b);
+            assert!(format!("{:?}", env.b).contains(transport.as_str()));
+        }
+    }
+
+    #[test]
+    fn link_transport_rejects_anything_outside_the_closed_set() {
+        for s in ["", "WiFi", "WIFI", "lte", "vpn", "usb-tether", "satellite", "bluetooth"] {
+            assert_eq!(LinkTransport::parse(s), None, "wire string {s:?}");
+        }
+        // Old peers omit the field: it decodes as unknown, never guessed.
+        #[derive(Serialize)]
+        struct LegacyBattery {
+            level: u8,
+            charging: bool,
+        }
+        let legacy_env =
+            Envelope::new(types::EVENT_BATTERY, &LegacyBattery { level: 61, charging: true }).unwrap();
+        let decoded: Battery = Envelope::from_cbor(&legacy_env.to_cbor()).unwrap().body().unwrap();
+        assert_eq!(decoded.link_transport, None);
+    }
+
+    #[test]
+    fn link_transport_unknown_value_preserves_battery() {
+        // A future peer sends a transport outside the closed set: the Battery
+        // still decodes (level preserved) with the hint as unknown, instead
+        // of the whole message being dropped.
+        #[derive(Serialize)]
+        struct FutureBattery {
+            level: u8,
+            charging: bool,
+            link_transport: String,
+        }
+        let future_env = Envelope::new(
+            types::EVENT_BATTERY,
+            &FutureBattery { level: 72, charging: false, link_transport: "vpn".into() },
+        )
+        .unwrap();
+        let decoded: Battery = Envelope::from_cbor(&future_env.to_cbor()).unwrap().body().unwrap();
+        assert_eq!(decoded.level, 72);
+        assert_eq!(decoded.link_transport, None);
+        // A non-string value also fails soft, never dropping the Battery.
+        let raw = ciborium::Value::Map(vec![
+            (ciborium::Value::Text("t".into()), ciborium::Value::Text(types::EVENT_BATTERY.into())),
+            (
+                ciborium::Value::Text("b".into()),
+                ciborium::Value::Map(vec![
+                    (ciborium::Value::Text("level".into()), ciborium::Value::Integer(72.into())),
+                    (ciborium::Value::Text("charging".into()), ciborium::Value::Bool(false)),
+                    (ciborium::Value::Text("link_transport".into()), ciborium::Value::Integer(7.into())),
+                ]),
+            ),
+        ]);
+        let mut bytes = Vec::new();
+        ciborium::into_writer(&raw, &mut bytes).unwrap();
+        let env = Envelope::from_cbor(&bytes).unwrap();
+        let decoded: Battery = env.body().unwrap();
+        assert_eq!(decoded.level, 72);
+        assert_eq!(decoded.link_transport, None);
     }
 
     #[test]

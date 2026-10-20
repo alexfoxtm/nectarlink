@@ -4,7 +4,7 @@
 
 use std::{
     collections::HashMap,
-    net::SocketAddr,
+    net::{IpAddr, SocketAddr},
     sync::{Arc, Mutex, RwLock, Weak},
     time::Duration,
 };
@@ -29,7 +29,7 @@ use tokio::sync::{Notify, broadcast};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    Error, NodeConfig, Platform, Result,
+    Error, LinkTransport, NodeConfig, Platform, Result,
     events::{ConnectionPath, DiscoveredDevice, LinkState, NodeEvent, PairedDevice, PairingEvent},
     features::{self, CapabilityMatrix, DeviceFacts, MatrixInputs},
     identity,
@@ -38,6 +38,7 @@ use crate::{
     session::{self, CLOSE_DUPLICATE, CLOSE_NORMAL, REQUEST_TIMEOUT, Session, TryEnqueue},
     store::Store,
     transfer,
+    usb::{HelloHint, TunnelMedium},
 };
 
 const DIAL_TIMEOUT: Duration = Duration::from_secs(15);
@@ -77,7 +78,77 @@ const BASE_CAPABILITIES: &[&str] = &[
     "task.notify",
 ];
 
-/// This device's mutable description, sent to peers.
+/// One live ADB tunnel to a peer: the local loopback UDP bridge address, the
+/// task that tears it down, the display-only origin of the tunnel, and the
+/// host-observed outer phone IP when one is proven (TCP serial or resolved
+/// mDNS). The endpoint lets the phone match its own address against its route
+/// table; auth, SAS, routing and admission never read it. No serial is stored.
+#[derive(Debug)]
+pub(crate) struct UsbTunnel {
+    pub(crate) bridge: SocketAddr,
+    pub(crate) cancel: CancellationToken,
+    pub(crate) medium: TunnelMedium,
+    pub(crate) adb_endpoint: Option<IpAddr>,
+}
+
+/// One raw route-table entry as pushed by the platform
+/// ([`Node::set_network_routes`]): a transport name with its interface
+/// addresses in platform string form. Validated by [`sanitize_routes`]
+/// before it is stored; never sent to peers or logs.
+#[derive(Debug, Clone)]
+pub struct NetworkRouteInfo {
+    pub transport: String,
+    pub addresses: Vec<String>,
+}
+
+/// A validated route-table entry: a proven transport with its interface IPs
+/// in canonical form.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RouteEntry {
+    pub(crate) transport: LinkTransport,
+    pub(crate) addrs: Vec<IpAddr>,
+}
+
+/// Bounds for the RAM-only route table (the platform already bounds what it
+/// sends; the core enforces the same caps on what it stores).
+const MAX_ROUTE_NETWORKS: usize = 16;
+const MAX_ROUTE_ADDRS: usize = 16;
+
+/// Validates raw platform route records into the RAM-only table: the exact
+/// closed transport set, parsed IPs, no loopback/unspecified/multicast
+/// (tunnel and special addresses never match), bounded and deduplicated.
+pub(crate) fn sanitize_routes(routes: Vec<NetworkRouteInfo>) -> Vec<RouteEntry> {
+    let mut out = Vec::new();
+    for route in routes.into_iter().take(MAX_ROUTE_NETWORKS) {
+        let Some(transport) = LinkTransport::parse(route.transport.trim()) else { continue };
+        let mut addrs: Vec<IpAddr> = route
+            .addresses
+            .into_iter()
+            .take(MAX_ROUTE_ADDRS)
+            .filter_map(|a| a.trim().parse().ok())
+            .map(|ip: IpAddr| ip.to_canonical())
+            .filter(|ip| !ip.is_loopback() && !ip.is_unspecified() && !ip.is_multicast())
+            .collect();
+        addrs.sort();
+        addrs.dedup();
+        if addrs.is_empty() {
+            continue;
+        }
+        out.push(RouteEntry { transport, addrs });
+    }
+    out
+}
+
+/// Matches a session's selected-path local interface IP against the validated
+/// table (canonical form, so IPv4-mapped IPv6 compares equal). No match —
+/// absent IP, relay URL, or unknown interface — stays unknown, never guessed
+/// from signal bars or the default network.
+pub(crate) fn match_route(routes: &[RouteEntry], local_ip: IpAddr) -> Option<LinkTransport> {
+    let local = local_ip.to_canonical();
+    routes.iter().find(|e| e.addrs.contains(&local)).map(|e| e.transport)
+}
+
+/// What a device's mutable description is, sent to peers.
 #[derive(Debug, Clone)]
 pub(crate) struct LocalState {
     pub app_version: String,
@@ -179,8 +250,22 @@ pub(crate) struct Shared {
     pub(crate) usb_listener_port: std::sync::atomic::AtomicU16,
     /// Active loopback UDP bridge ports carrying USB-tunneled QUIC traffic.
     pub(crate) usb_bridge_ports: Arc<Mutex<std::collections::HashSet<u16>>>,
-    /// Active USB tunnel peers mapped to their local UDP bridge address and cancellation token.
-    pub(crate) usb_peers: Arc<Mutex<HashMap<DeviceId, (SocketAddr, CancellationToken)>>>,
+    /// Active USB tunnel peers mapped to their local UDP bridge address,
+    /// teardown task, and display-only origin (never a serial).
+    pub(crate) usb_peers: Arc<Mutex<HashMap<DeviceId, UsbTunnel>>>,
+    /// Last published tunnel origin per peer, to re-emit the badge when only
+    /// the medium changed while the link itself stayed the same.
+    pub(crate) published_mediums: Mutex<HashMap<DeviceId, TunnelMedium>>,
+    /// Last published DISPLAY-only selected path per peer, to re-emit the
+    /// badge when only the selected display path changed (native wins while
+    /// a bridge record exists) while the auth link stayed the same.
+    pub(crate) published_display: Mutex<HashMap<DeviceId, ConnectionPath>>,
+    /// RAM-only route table pushed by the platform (this device's networks);
+    /// consulted per session, never sent to peers or logs.
+    pub(crate) network_routes: Arc<Mutex<Vec<RouteEntry>>>,
+    /// Last per-peer route hint sent inside `event.battery`, to resend only
+    /// on change (no traffic when unchanged).
+    pub(crate) sent_hints: Mutex<HashMap<DeviceId, Option<LinkTransport>>>,
     /// Peers whose USB tunnel this device accepted (a phone plugged into that PC).
     pub(crate) usb_inbound: Mutex<std::collections::HashSet<DeviceId>>,
     /// USB peers that are only paired by hand (Android emulators).
@@ -549,19 +634,52 @@ impl Shared {
         lock(&self.sessions).get(peer).filter(|s| s.is_alive()).cloned()
     }
 
-    fn set_link(&self, peer: DeviceId, link: LinkState) {
+    fn set_link(&self, peer: DeviceId, link: LinkState) -> bool {
         let changed = lock(&self.links).insert(peer, link.clone()).as_ref() != Some(&link);
         if changed {
             self.emit(NodeEvent::LinkChanged { device: peer, link });
         }
+        changed
     }
 
     pub fn link(&self, peer: &DeviceId, last_seen: Option<i64>) -> LinkState {
         lock(&self.links).get(peer).cloned().unwrap_or(LinkState::Offline { last_seen })
     }
 
+    /// Sends this device's battery snapshot to `session` with the route hint
+    /// proven for that session attached, and records the hint. The hint is
+    /// always recomputed (per session, so two Macs on different routes each
+    /// get their own); sessions without proof (native loopback, relay, or a
+    /// tunnel with no outer endpoint) send none.
+    pub(crate) async fn send_battery_hint(&self, session: &Session) {
+        let battery = self.local.read().unwrap_or_else(|e| e.into_inner()).battery.clone();
+        let Some(mut battery) = battery else { return };
+        let hint = session.link_transport();
+        battery.link_transport = hint;
+        if let Ok(env) = Envelope::new(types::EVENT_BATTERY, &battery)
+            && session.send(env).await.is_ok()
+        {
+            lock(&self.sent_hints).insert(session.peer, hint);
+        }
+    }
+
+    /// [`Self::send_battery_hint`], but only when the proven hint changed
+    /// since the last send to this peer: battery heartbeats and route-table
+    /// updates cost no traffic when nothing changed.
+    pub(crate) async fn refresh_battery_hint(&self, session: &Session) {
+        let hint = session.link_transport();
+        if lock(&self.sent_hints).get(&session.peer) == Some(&hint) {
+            return;
+        }
+        self.send_battery_hint(session).await;
+    }
+
     /// Publishes the session's current path and round-trip time, if it's
-    /// still the peer's session (a replaced one has nothing to say).
+    /// still the peer's session (a replaced one has nothing to say). Also
+    /// re-emits when only the tunnel's display medium or the DISPLAY-only
+    /// selected path changed: the auth link is identical, but the badge must
+    /// move between USB and Wi-Fi/cellular (native wins while a bridge record
+    /// exists) without waiting for a new path or timer.
     pub fn publish_online(&self, session: &Session) {
         let sessions = lock(&self.sessions);
         if sessions
@@ -569,8 +687,17 @@ impl Shared {
             .is_some_and(|current| std::ptr::eq(current.as_ref(), session) && current.is_alive())
         {
             let path = session.path();
+            let display = session.display_path();
+            let medium = session.tunnel_medium();
+            let link = LinkState::Online { path, rtt_ms: session.rtt_ms() };
             self.revoke_reads_onto_relay(&session.peer, path);
-            self.set_link(session.peer, LinkState::Online { path, rtt_ms: session.rtt_ms() });
+            let link_changed = self.set_link(session.peer, link.clone());
+            let medium_changed = lock(&self.published_mediums).insert(session.peer, medium) != Some(medium);
+            let display_changed =
+                lock(&self.published_display).insert(session.peer, display) != Some(display);
+            if !link_changed && (medium_changed || display_changed) {
+                self.emit(NodeEvent::LinkChanged { device: session.peer, link });
+            }
         }
     }
 
@@ -680,7 +807,26 @@ impl Shared {
     }
 
     pub(crate) fn usb_peer_addr(&self, peer: &DeviceId) -> Option<SocketAddr> {
-        lock(&self.usb_peers).get(peer).map(|(addr, _)| *addr)
+        lock(&self.usb_peers).get(peer).map(|t| t.bridge)
+    }
+
+    /// Display-only origin of the ADB tunnel to `peer`: physical cable,
+    /// network, or unknown when there is no tunnel or no origin proof (never
+    /// presumed from a bare serial or from signal bars). The record alone
+    /// never proves the badge: only a [`Session::display_path`] of USB
+    /// (selected remote is the CURRENT bridge) may render a cable.
+    pub(crate) fn tunnel_medium(&self, peer: &DeviceId) -> TunnelMedium {
+        lock(&self.usb_peers).get(peer).map(|t| t.medium).unwrap_or_default()
+    }
+
+    /// DISPLAY-ONLY selected path for `peer`: USB only when the live session's
+    /// selected remote exactly equals the CURRENT bridge address; Relay when
+    /// selected is relay; LAN otherwise (including no live session). Never
+    /// affects transport, admission, or [`Session::path`]; the badge reads
+    /// this alongside the tunnel medium and proven hint. An old bridge that
+    /// is no longer selected never reports cable.
+    pub(crate) fn display_path(&self, peer: &DeviceId) -> ConnectionPath {
+        self.session(peer).map(|s| s.display_path()).unwrap_or(ConnectionPath::Lan)
     }
 
     /// Whether `peer` is a PC this phone is plugged into: the PC dials through the cable.
@@ -712,18 +858,37 @@ impl Shared {
         }
     }
 
+    /// Records (or replaces) a peer's tunnel. A replacement bridge cancels
+    /// the previous tunnel's task; the same generation keeps running. The
+    /// origin and outer endpoint travel with the record and die with it on
+    /// disconnect, so no stale medium or endpoint survives a reconnect.
+    fn insert_tunnel(
+        &self,
+        peer: DeviceId,
+        bridge_addr: SocketAddr,
+        cancel: CancellationToken,
+        medium: TunnelMedium,
+        adb_endpoint: Option<IpAddr>,
+    ) {
+        if let Some(old) = lock(&self.usb_peers)
+            .insert(peer, UsbTunnel { bridge: bridge_addr, cancel, medium, adb_endpoint })
+            && old.bridge != bridge_addr
+        {
+            old.cancel.cancel();
+        }
+    }
+
     pub(crate) fn on_usb_tunnel_accepted(
         self: &Arc<Self>,
         peer: DeviceId,
         name: String,
         bridge_addr: SocketAddr,
         cancel: CancellationToken,
+        hint: HelloHint,
     ) {
-        if let Some((old_addr, old_cancel)) = lock(&self.usb_peers).insert(peer, (bridge_addr, cancel))
-            && old_addr != bridge_addr
-        {
-            old_cancel.cancel();
-        }
+        // The phone side learns the outer endpoint only from the PC's hello;
+        // without it both origin and endpoint stay unknown: never invent proof.
+        self.insert_tunnel(peer, bridge_addr, cancel, hint.medium, hint.endpoint);
         lock(&self.usb_inbound).insert(peer);
         self.note_discovered(peer, (!name.is_empty()).then_some(name));
         self.remember_addrs(&peer, &[bridge_addr]);
@@ -741,15 +906,11 @@ impl Shared {
         self: &Arc<Self>,
         peer: DeviceId,
         name: String,
-        bridge_addr: SocketAddr,
-        cancel: CancellationToken,
+        tunnel: UsbTunnel,
         auto_pair: bool,
     ) {
-        if let Some((old_addr, old_cancel)) = lock(&self.usb_peers).insert(peer, (bridge_addr, cancel))
-            && old_addr != bridge_addr
-        {
-            old_cancel.cancel();
-        }
+        let bridge_addr = tunnel.bridge;
+        self.insert_tunnel(peer, bridge_addr, tunnel.cancel, tunnel.medium, tunnel.adb_endpoint);
         if auto_pair {
             lock(&self.usb_manual_pair).remove(&peer);
         } else {
@@ -782,10 +943,13 @@ impl Shared {
         }
     }
 
+    /// Tears down a tunnel only for its own bridge generation: an old bridge
+    /// that already lost to a replacement never clears the replacement's
+    /// medium, endpoint or pairing bookkeeping.
     pub(crate) async fn on_usb_tunnel_disconnected(&self, peer: DeviceId, bridge_addr: SocketAddr) {
         let removed = {
             let mut peers = lock(&self.usb_peers);
-            if peers.get(&peer).is_some_and(|(addr, _)| *addr == bridge_addr) {
+            if peers.get(&peer).is_some_and(|t| t.bridge == bridge_addr) {
                 peers.remove(&peer);
                 lock(&self.usb_inbound).remove(&peer);
                 lock(&self.usb_manual_pair).remove(&peer);
@@ -1140,6 +1304,9 @@ impl Shared {
             session.close(CLOSE_NORMAL, b"unpaired");
         }
         lock(&self.links).remove(peer);
+        lock(&self.published_mediums).remove(peer);
+        lock(&self.published_display).remove(peer);
+        lock(&self.sent_hints).remove(peer);
         lock(&self.lan_seen).remove(peer);
         lock(&self.dial_failures).remove(peer);
         lock(&self.matrices).remove(peer);
@@ -1251,15 +1418,12 @@ impl Shared {
         self.queue_notify.notify_waiters();
 
         // Bring the peer up to date with state it may have missed.
-        let battery = self.local.read().unwrap_or_else(|e| e.into_inner()).battery.clone();
         let shared = self.clone();
         let s = session.clone();
         tokio::spawn(async move {
-            if let Some(battery) = battery
-                && let Ok(env) = Envelope::new(types::EVENT_BATTERY, &battery)
-            {
-                let _ = s.send(env).await;
-            }
+            // A new session always gets the snapshot (the peer may have
+            // restarted and lost it); hint-only repeats stay gated elsewhere.
+            shared.send_battery_hint(&s).await;
             shared.send_notification_snapshot(&s).await;
             shared.send_media_state(&s).await;
             shared.send_call_state(&s).await;
@@ -1658,6 +1822,10 @@ impl Node {
             usb_listener_port: std::sync::atomic::AtomicU16::new(0),
             usb_bridge_ports: Arc::new(Mutex::new(std::collections::HashSet::new())),
             usb_peers: Arc::new(Mutex::new(HashMap::new())),
+            published_mediums: Mutex::new(HashMap::new()),
+            published_display: Mutex::new(HashMap::new()),
+            network_routes: Arc::new(Mutex::new(Vec::new())),
+            sent_hints: Mutex::new(HashMap::new()),
             usb_inbound: Mutex::new(std::collections::HashSet::new()),
             usb_manual_pair: Mutex::new(std::collections::HashSet::new()),
             usb_poke: Notify::new(),
@@ -1797,6 +1965,23 @@ impl Node {
     /// (`127.0.0.1:<port>`) and returns the phone's [`DeviceId`].
     pub async fn connect_usb_tunnel(&self, forwarded_tcp: SocketAddr) -> Result<DeviceId> {
         crate::usb::connect_usb_tunnel(&self.shared, forwarded_tcp).await
+    }
+
+    /// Display-only origin of the ADB tunnel to `peer` (physical cable,
+    /// network, or unknown). Never affects transport or admission; the badge
+    /// reads this alongside the selected display path.
+    pub fn tunnel_medium(&self, peer: &DeviceId) -> TunnelMedium {
+        self.shared.tunnel_medium(peer)
+    }
+
+    /// DISPLAY-ONLY selected path for `peer`: USB only when the live session's
+    /// selected remote exactly equals the CURRENT bridge address; Relay when
+    /// selected is relay; LAN otherwise (including no live session). Never
+    /// affects routing, auth, SAS or admission; the badge reads this with
+    /// [`Node::tunnel_medium`]. Sufficient for the Mac role without changing
+    /// [`ConnectionPath`] security semantics.
+    pub fn display_path(&self, peer: &DeviceId) -> ConnectionPath {
+        self.shared.display_path(peer)
     }
 
     // ---- Pairing ----
@@ -3522,17 +3707,61 @@ impl Node {
 
     // ---- Local state reported by the app ----
 
-    /// Reports this device's battery; forwarded to connected devices.
+    /// Publishes the RAM-only route table synchronously in call order.
+    /// Sanitizes and stores the table, returning whether it changed. Refresh
+    /// callers must then read the latest table (see
+    /// [`Node::refresh_route_hints`]), never a captured snapshot, so
+    /// out-of-order async refresh tasks converge on the latest publication
+    /// instead of resurrecting a stale one. No Tokio scheduling FIFO assumed.
+    pub fn publish_network_routes(&self, routes: Vec<NetworkRouteInfo>) -> bool {
+        let routes = sanitize_routes(routes);
+        let mut current = lock(&self.shared.network_routes);
+        if *current == routes {
+            false
+        } else {
+            *current = routes;
+            true
+        }
+    }
+
+    /// Re-sends battery hints whose proven route changed under the latest
+    /// published table. Reads the current table per session (latest wins);
+    /// safe to run concurrently from out-of-order refresh tasks.
+    pub async fn refresh_route_hints(&self) {
+        for session in self.shared.live_sessions() {
+            self.shared.refresh_battery_hint(&session).await;
+        }
+    }
+
+    /// Replaces the RAM-only route table the platform pushed (this device's
+    /// networks, see `NetworkRouteInfo`), then re-sends battery hints whose
+    /// proven route changed. The table never leaves this device: no IPs go on
+    /// the wire, only the per-session transport classification.
+    pub async fn set_network_routes(&self, routes: Vec<NetworkRouteInfo>) {
+        if self.publish_network_routes(routes) {
+            self.refresh_route_hints().await;
+        }
+    }
+
+    /// Reports this device's battery; forwarded to connected devices, each
+    /// with the route hint proven for its own session attached.
     pub async fn update_battery(&self, battery: Battery) {
-        let battery = battery.sanitized();
+        let mut battery = battery.sanitized();
+        // Hints are computed per session at send time, never supplied inbound.
+        battery.link_transport = None;
         let changed = {
             let mut local = self.shared.local.write().unwrap_or_else(|e| e.into_inner());
             let changed = local.battery.as_ref() != Some(&battery);
             local.battery = Some(battery.clone());
             changed
         };
-        if changed && let Ok(env) = Envelope::new(types::EVENT_BATTERY, &battery) {
-            self.shared.broadcast(env).await;
+        if !changed {
+            return;
+        }
+        // The payload itself changed, so every live session gets it (with its
+        // own hint); hint-only changes travel via heartbeat/table updates.
+        for session in self.shared.live_sessions() {
+            self.shared.send_battery_hint(&session).await;
         }
     }
 
@@ -4342,6 +4571,128 @@ mod tests {
         // Another toggle set to its default changes nothing either.
         node.set_device_toggle(phone, "clipboard", true).unwrap();
         assert!(emitted(&mut events, phone).is_empty());
+        node.shutdown().await;
+    }
+
+    #[test]
+    fn route_matching_uses_canonical_form_and_stays_unknown() {
+        let routes = sanitize_routes(vec![NetworkRouteInfo {
+            transport: "wifi".into(),
+            addresses: vec!["192.168.1.20".into(), "fe80::1".into()],
+        }]);
+        assert_eq!(match_route(&routes, "192.168.1.20".parse().unwrap()), Some(LinkTransport::Wifi));
+        // IPv4-mapped IPv6 compares equal after canonicalization.
+        assert_eq!(match_route(&routes, "::ffff:192.168.1.20".parse().unwrap()), Some(LinkTransport::Wifi));
+        // Unknown interfaces and empty tables never guess a transport.
+        assert_eq!(match_route(&routes, "10.0.0.9".parse().unwrap()), None);
+        assert_eq!(match_route(&[], "192.168.1.20".parse().unwrap()), None);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn network_routes_validate_bound_and_store() {
+        let dir = tempfile::tempdir().unwrap();
+        let (node, _phone) = mac_with_phone(&dir).await;
+        node.set_network_routes(vec![
+            NetworkRouteInfo {
+                transport: "wifi".into(),
+                addresses: vec!["192.168.1.20".into(), "fe80::1".into()],
+            },
+            NetworkRouteInfo { transport: "cellular".into(), addresses: vec!["10.45.0.6".into()] },
+            // Outside the closed set: dropped, never stored.
+            NetworkRouteInfo { transport: "vpn".into(), addresses: vec!["10.8.0.2".into()] },
+            NetworkRouteInfo { transport: "WiFi".into(), addresses: vec!["192.168.1.21".into()] },
+            // Loopback, unparsable, unspecified and multicast add nothing.
+            NetworkRouteInfo {
+                transport: "usb".into(),
+                addresses: vec!["127.0.0.1".into(), "not-an-ip".into(), "::".into(), "ff02::1".into()],
+            },
+            // No usable addresses: dropped.
+            NetworkRouteInfo { transport: "ethernet".into(), addresses: vec![] },
+        ])
+        .await;
+        {
+            let table = lock(&node.shared.network_routes);
+            assert_eq!(table.len(), 2, "only the proven wifi and cellular entries survive");
+            assert_eq!(table[0].transport, LinkTransport::Wifi);
+            assert!(table[0].addrs.contains(&"192.168.1.20".parse().unwrap()));
+            assert_eq!(table[1].transport, LinkTransport::Cellular);
+        }
+
+        // An empty push clears the table (lifecycle stop with no peers).
+        node.set_network_routes(vec![]).await;
+        assert!(lock(&node.shared.network_routes).is_empty());
+        node.shutdown().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn display_path_requires_selected_bridge() {
+        // A bridge record exists, but there is no live session (nothing
+        // selected): the display never claims a cable it is not on, even
+        // though the record keeps its physical proof.
+        let dir = tempfile::tempdir().unwrap();
+        let (node, phone) = mac_with_phone(&dir).await;
+        let fake_bridge: SocketAddr = "127.0.0.1:53399".parse().unwrap();
+        node.shared.on_usb_tunnel_connected(
+            phone,
+            "Pixel".into(),
+            UsbTunnel {
+                bridge: fake_bridge,
+                cancel: tokio_util::sync::CancellationToken::new(),
+                medium: TunnelMedium::PhysicalUsb,
+                adb_endpoint: None,
+            },
+            true,
+        );
+        assert_eq!(
+            node.shared.tunnel_medium(&phone),
+            TunnelMedium::PhysicalUsb,
+            "record keeps physical proof"
+        );
+        assert_eq!(
+            node.display_path(&phone),
+            ConnectionPath::Lan,
+            "bridge present but NOT selected: display stays LAN, never cable"
+        );
+        node.shutdown().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn old_bridge_teardown_keeps_replacement_medium() {
+        let dir = tempfile::tempdir().unwrap();
+        let (node, phone) = mac_with_phone(&dir).await;
+        let old: SocketAddr = "127.0.0.1:53401".parse().unwrap();
+        let replacement: SocketAddr = "127.0.0.1:53402".parse().unwrap();
+        node.shared.on_usb_tunnel_connected(
+            phone,
+            "Pixel".into(),
+            UsbTunnel {
+                bridge: old,
+                cancel: tokio_util::sync::CancellationToken::new(),
+                medium: TunnelMedium::PhysicalUsb,
+                adb_endpoint: None,
+            },
+            true,
+        );
+        node.shared.on_usb_tunnel_connected(
+            phone,
+            "Pixel".into(),
+            UsbTunnel {
+                bridge: replacement,
+                cancel: tokio_util::sync::CancellationToken::new(),
+                medium: TunnelMedium::Network,
+                adb_endpoint: None,
+            },
+            true,
+        );
+        assert_eq!(node.shared.tunnel_medium(&phone), TunnelMedium::Network);
+        // The old generation tears down late: it must not clear the replacement.
+        node.shared.on_usb_tunnel_disconnected(phone, old).await;
+        assert_eq!(
+            node.shared.tunnel_medium(&phone),
+            TunnelMedium::Network,
+            "old teardown cannot clear replacement medium"
+        );
+        assert_eq!(node.shared.usb_peer_addr(&phone), Some(replacement));
         node.shutdown().await;
     }
 }

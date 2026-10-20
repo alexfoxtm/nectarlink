@@ -980,7 +980,8 @@ Item {
                                 width: parent.width
                             }
 
-                            // App.qml ignores closeToTray on macOS: closing the window quits.
+                            // Enabled only while the native menu-bar/tray item is
+                            // installed; otherwise closing the window quits.
                             ListRow {
                                 id: stayTrayRow
                                 x: startupPairRow.splitCols ? (parent.width - width) : 0
@@ -988,16 +989,17 @@ Item {
                                     ? Math.round((parent.height - height) / 2)
                                     : (startWinRow.implicitHeight + 1)
                                 width: startupPairRow.colWidth
-                                opacity: page.onMac ? 0.5 : 1.0
+                                readonly property bool trayReady: AppController.trayAvailable
+                                opacity: trayReady ? 1.0 : 0.5
                                 iconPath: Icons.window
-                                title: qsTr("Stay in system tray")
-                                description: page.onMac ? page.macGapText : qsTr("Keep running when the window is closed.")
+                                title: page.onMac ? qsTr("Keep in menu bar") : qsTr("Stay in system tray")
+                                description: trayReady ? qsTr("Keep running when the window is closed.") : qsTr("Menu-bar icon unavailable: closing the window quits.")
                                 Toggle {
-                                    label: qsTr("Stay in system tray")
-                                    enabled: !page.onMac
+                                    label: stayTrayRow.title
+                                    enabled: stayTrayRow.trayReady
                                     checked: enabled && Preferences.closeToTray
                                     onToggled: (on) => {
-                                        if (!page.onMac)
+                                        if (stayTrayRow.trayReady)
                                             Preferences.closeToTray = on
                                     }
                                 }

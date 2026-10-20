@@ -11,7 +11,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use iroh::endpoint::{Connection, RecvStream, SendStream, VarInt};
+use iroh::endpoint::{Connection, LocalTransportAddr, RecvStream, SendStream, VarInt};
 use nectarlink_protocol::{
     DeviceId, Envelope, ErrorCode, MIN_PROTOCOL_VERSION, PROTOCOL_VERSION, ProtocolError, messages::*,
     negotiate_version, read_frame, write_frame,
@@ -20,10 +20,11 @@ use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    Error, Result,
+    Error, LinkTransport, Result,
     error::Side,
     events::{ConnectionPath, NodeEvent},
-    node::Shared,
+    node::{RouteEntry, Shared, UsbTunnel},
+    usb::TunnelMedium,
 };
 
 #[path = "wake.rs"]
@@ -157,7 +158,10 @@ pub(crate) struct Session {
     pub(crate) started: Instant,
     last_rx_ms: AtomicU64,
     usb_bridge_ports: Arc<Mutex<std::collections::HashSet<u16>>>,
-    usb_peers: Arc<Mutex<HashMap<DeviceId, (std::net::SocketAddr, CancellationToken)>>>,
+    usb_peers: Arc<Mutex<HashMap<DeviceId, UsbTunnel>>>,
+    /// This device's validated route table (shared with the node); consulted
+    /// per session to prove the route, never sent anywhere.
+    network_routes: Arc<Mutex<Vec<RouteEntry>>>,
     /// Apps whose notification icon this peer already got.
     sent_icons: crate::notifications::SentIcons,
     /// Artwork keys sent to this device (docs/protocol/media.md).
@@ -207,6 +211,7 @@ impl Session {
             last_rx_ms: AtomicU64::new(0),
             usb_bridge_ports: shared.usb_bridge_ports.clone(),
             usb_peers: shared.usb_peers.clone(),
+            network_routes: shared.network_routes.clone(),
             sent_icons: Default::default(),
             sent_art: Default::default(),
             cancel: shared.cancel.child_token(),
@@ -260,7 +265,9 @@ impl Session {
         self.usb_peers.lock().unwrap_or_else(|e| e.into_inner()).contains_key(&self.peer)
     }
 
-    /// The path the connection currently uses.
+    /// The path the connection currently uses. A tunnel always reports USB
+    /// here so transport preference, admission, and accounting never depend
+    /// on display metadata (see [`Session::tunnel_medium`]).
     pub fn path(&self) -> ConnectionPath {
         if self.has_usb_tunnel() {
             return ConnectionPath::Usb;
@@ -282,6 +289,91 @@ impl Session {
                 }
             }
         }
+    }
+
+    /// Display-only origin of this session's ADB tunnel: a proven physical
+    /// cable, a network attachment, or unknown. Unknown when there is no
+    /// tunnel record (including phone-accepted tunnels, which carry no ADB
+    /// serial), and never presumed from a bare serial or signal bars.
+    /// The record alone never proves the badge: only [`Session::display_path`]
+    /// being USB (selected remote is the CURRENT bridge) may render a cable.
+    pub fn tunnel_medium(&self) -> TunnelMedium {
+        self.usb_peers
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&self.peer)
+            .map(|t| t.medium)
+            .unwrap_or_default()
+    }
+
+    /// DISPLAY-ONLY selected-path classification. Unlike [`Session::path`]
+    /// (auth, routing, admission), this proves the current Iroh selected path
+    /// is the tunnel bridge: USB only when the selected remote exactly equals
+    /// the CURRENT bridge address; Relay when the selected path is a relay;
+    /// LAN otherwise (native IP, custom, none). Relay, absent and custom paths
+    /// never report cable and never use the outer hint (see
+    /// [`Session::link_transport`]).
+    pub fn display_path(&self) -> ConnectionPath {
+        let bridge =
+            self.usb_peers.lock().unwrap_or_else(|e| e.into_inner()).get(&self.peer).map(|t| t.bridge);
+        let paths = self.conn.paths();
+        let selected = paths.iter().find(|p| p.is_selected());
+        match selected {
+            Some(p) if p.is_relay() => ConnectionPath::Relay,
+            Some(p) => match p.remote_addr() {
+                iroh::TransportAddr::Ip(addr) if Some(*addr) == bridge => ConnectionPath::Usb,
+                iroh::TransportAddr::Ip(_) => ConnectionPath::Lan,
+                _ => ConnectionPath::Lan,
+            },
+            None => ConnectionPath::Lan,
+        }
+    }
+
+    /// Proven route transport for this session, if any. DISPLAY-ONLY and
+    /// selected-path gated: only when the selected remote exactly equals the
+    /// CURRENT bridge address may the host-observed outer ADB endpoint be
+    /// used (that IP is the phone's own address on the carrying network,
+    /// while the QUIC path underneath is always loopback); a selected native
+    /// IP uses its local interface IP instead. Relay, absent, custom, missing
+    /// local IPs and unmatched interfaces stay unknown without ever using the
+    /// outer hint — never guessed from signal bars or the default network.
+    pub(crate) fn link_transport(&self) -> Option<LinkTransport> {
+        // The selected path first: relay, absent and custom never use outer.
+        let (selected_remote, selected_local) = {
+            let paths = self.conn.paths();
+            let selected = paths.iter().find(|p| p.is_selected())?;
+            if selected.is_relay() {
+                return None;
+            }
+            let remote = match selected.remote_addr() {
+                iroh::TransportAddr::Ip(addr) => *addr,
+                _ => return None,
+            };
+            let local = match selected.local_addr() {
+                LocalTransportAddr::Ip(Some(ip)) => Some(*ip),
+                _ => None,
+            };
+            (remote, local)
+        };
+        // The CURRENT bridge record (if any) for this peer.
+        let (bridge, outer) = {
+            let peers = self.usb_peers.lock().unwrap_or_else(|e| e.into_inner());
+            match peers.get(&self.peer) {
+                Some(t) => (Some(t.bridge), t.adb_endpoint),
+                None => (None, None),
+            }
+        };
+        let routes = self.network_routes.lock().unwrap_or_else(|e| e.into_inner());
+        if Some(selected_remote) == bridge {
+            // The tunnel is currently selected: only the proven outer endpoint
+            // can classify the carrying network. A physical cable has none and
+            // stays unknown.
+            return outer.and_then(|ip| crate::node::match_route(&routes, ip));
+        }
+        // Native selected (or a stale loopback that is not the CURRENT bridge):
+        // must NOT use the outer hint even when a bridge record exists.
+        let local_ip = selected_local?;
+        crate::node::match_route(&routes, local_ip)
     }
 
     /// The peer's direct IP addresses currently in use, for reconnecting later.
@@ -666,7 +758,8 @@ async fn heartbeat(session: &Arc<Session>, shared: &Weak<Shared>) {
     let started = Instant::now();
     let mut interval = tokio::time::interval(HEARTBEAT_INTERVAL);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    let mut last_path = session.path();
+    let mut last_route =
+        (session.path(), session.display_path(), session.tunnel_medium(), session.link_transport());
     loop {
         interval.tick().await;
         if let Some(shared_arc) = shared.upgrade()
@@ -684,12 +777,28 @@ async fn heartbeat(session: &Arc<Session>, shared: &Weak<Shared>) {
                 if let Some(shared_arc) = shared.upgrade() {
                     let rtt = sent_at.elapsed().as_millis().min(u32::MAX as u128) as u32;
                     let previous = session.rtt_ms.swap(rtt, Ordering::Relaxed);
-                    // A new path can change access (Relay), whatever the round-trip time.
-                    let path = session.path();
-                    let path_changed = std::mem::replace(&mut last_path, path) != path;
-                    if path_changed || previous.abs_diff(rtt) >= 5 {
+                    // A new path can change access (Relay), whatever the round-trip time;
+                    // a new tunnel medium, selected display path or proven route changes
+                    // only the badge. Any of them republishes on this existing
+                    // heartbeat — no new timer. A path change within Lan still
+                    // matters when the selected local interface moves, because
+                    // the proven route is part of the comparison. A display
+                    // change with an identical hint (cable record present but
+                    // native selected, both unknown) still republishes so the
+                    // badge stops claiming a cable it is not on.
+                    let current = (
+                        session.path(),
+                        session.display_path(),
+                        session.tunnel_medium(),
+                        session.link_transport(),
+                    );
+                    let route_changed = std::mem::replace(&mut last_route, current) != current;
+                    if route_changed || previous.abs_diff(rtt) >= 5 {
                         shared_arc.publish_online(session);
                     }
+                    // The proven route hint travels inside event.battery, not the
+                    // link: resend it when it changed (gated, no traffic when same).
+                    shared_arc.refresh_battery_hint(session).await;
                 }
             }
             Ok(_) => {}

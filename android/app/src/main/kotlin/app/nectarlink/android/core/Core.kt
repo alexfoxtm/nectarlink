@@ -45,6 +45,7 @@ import app.nectarlink.core.MirrorStream
 import app.nectarlink.core.Link
 import app.nectarlink.core.NectarlinkException
 import app.nectarlink.core.NectarlinkNode
+import app.nectarlink.core.NetworkRouteInfo
 import app.nectarlink.core.NodeOptions
 import app.nectarlink.core.Notification
 import app.nectarlink.core.PairingFailure
@@ -269,6 +270,10 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
         }
     }
 
+    /** The latest route table only, kept until the node takes it. */
+    private val networkRoutes = Channel<List<NetworkRouteInfo>>(Channel.CONFLATED)
+    private val routes = NetworkRouteMonitor(this.context) { networkRoutes.trySend(it) }
+
     // Android drops multicast (local discovery) unless a lock is held. The
     // connection service holds one while paired; this one covers pairing.
     private val pairingMulticast: WifiManager.MulticastLock? by lazy {
@@ -467,10 +472,12 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
                     .collect { (anyOnline, hasPhotoAccess) ->
                         if (anyOnline) {
                             signal.start()
+                            routes.start()
                             toggles.start()
                             if (hasPhotoAccess) photos.start() else photos.stop()
                         } else {
                             signal.stop()
+                            routes.stop()
                             toggles.stop()
                             photos.stop()
                         }
@@ -484,6 +491,13 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
             scope.launch {
                 for (op in remoteOps) {
                     runCatching { op(started) }.onFailure { Log.w(TAG, "remote input failed", it) }
+                }
+            }
+            scope.launch {
+                for (table in networkRoutes) {
+                    // Never the exception itself: it could carry an address.
+                    runCatching { started.setNetworkRoutes(table) }
+                        .onFailure { Log.w(TAG, "network routes weren't updated: ${it.javaClass.simpleName}") }
                 }
             }
         }

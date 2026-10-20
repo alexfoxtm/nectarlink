@@ -785,6 +785,7 @@ async fn ring_and_battery_flow_between_devices() {
         cell_bars: Some(4),
         cell_type: Some("5G".into()),
         wifi_bars: Some(3),
+        link_transport: None,
     };
     phone.node.update_battery(battery.clone()).await;
     let received = wait_for(&mut pc, "battery", |e| match e {
@@ -5170,6 +5171,7 @@ async fn battery_signal_strength_and_peer_diagnostics_flow() {
         cell_bars: Some(4),
         cell_type: Some("5G".into()),
         wifi_bars: Some(3),
+        link_transport: None,
     };
     phone.node.update_battery(signal_battery.clone()).await;
     let received = wait_for(&mut pc, "battery with signal", |e| match e {
@@ -6522,6 +6524,44 @@ async fn usb_upgrade_reconnect_and_realtime_pcm_do_not_starve_control_rpcs() {
     with_timeout("ring after restart", pc.node.ring(phone_id, false))
         .await
         .expect("ring works after restart");
+
+    pc.node.shutdown().await;
+    phone.node.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn direct_tunnel_without_adb_origin_stays_unknown_but_stays_usb_path() {
+    use nectarlink_core::{ConnectionPath, usb::TunnelMedium};
+
+    let mut phone = start_usb_device("Pixel", DeviceKind::Phone, Some(0), &["find.ring"]).await;
+    let mut pc = start_usb_device("Desktop", DeviceKind::Desktop, None, &["find.ring"]).await;
+    pair_qr(&mut pc, &mut phone).await;
+    let phone_id = phone.node.device_id();
+
+    // No ADB server is configured, so the direct tunnel carries no origin
+    // proof from `host:devices-l`.
+    let usb_port = phone.node.usb_port().expect("phone USB TCP listener");
+    let tunnel_addr: SocketAddr = ("127.0.0.1".parse::<std::net::IpAddr>().unwrap(), usb_port).into();
+    pc.node.connect_usb_tunnel(tunnel_addr).await.expect("connect USB tunnel");
+
+    wait_for(&mut pc, "pc upgrades to usb", |e| match e {
+        NodeEvent::LinkChanged { device, link: LinkState::Online { path: ConnectionPath::Usb, .. } }
+            if *device == phone_id =>
+        {
+            Some(())
+        }
+        _ => None,
+    })
+    .await;
+
+    // Admission and routing still treat the tunnel as USB ...
+    assert!(matches!(
+        pc.node.paired_devices().unwrap()[0].link,
+        LinkState::Online { path: ConnectionPath::Usb, .. }
+    ));
+    // ... while the display medium stays honestly unknown instead of
+    // presuming a physical cable from a connection with no ADB serial.
+    assert_eq!(pc.node.tunnel_medium(&phone_id), TunnelMedium::Unknown);
 
     pc.node.shutdown().await;
     phone.node.shutdown().await;

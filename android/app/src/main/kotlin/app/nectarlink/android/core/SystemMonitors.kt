@@ -46,9 +46,11 @@ import app.nectarlink.android.R
 import app.nectarlink.core.Battery
 import app.nectarlink.core.DeviceInfo
 import app.nectarlink.core.DeviceKind
+import app.nectarlink.core.NetworkRouteInfo
 import app.nectarlink.core.ScreenCorners
 import app.nectarlink.core.ScreenRect
 import app.nectarlink.core.ScreenShape
+import java.net.InetAddress
 import java.util.Locale
 
 internal fun normalizeArgbSeed(argb: Int): UInt = (argb.toUInt() or 0xFF00_0000u)
@@ -752,6 +754,103 @@ class NetworkMonitor(context: Context, private val onChange: () -> Unit) {
 
     fun stop() {
         runCatching { connectivity?.unregisterNetworkCallback(callback) }
+    }
+}
+
+private const val MAX_ROUTE_NETWORKS = 16
+private const val MAX_ROUTE_ADDRESSES = 16
+
+private val ROUTE_TRANSPORTS = listOf(
+    NetworkCapabilities.TRANSPORT_WIFI to "wifi",
+    NetworkCapabilities.TRANSPORT_CELLULAR to "cellular",
+    NetworkCapabilities.TRANSPORT_ETHERNET to "ethernet",
+    8 to "usb", // NetworkCapabilities.TRANSPORT_USB (API 31)
+)
+
+/** "wifi", "cellular", "ethernet" or "usb" when a network is exactly one of them; a VPN or anything else is unknown. */
+internal fun routeTransport(caps: NetworkCapabilities): String? {
+    if (caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) return null
+    return ROUTE_TRANSPORTS.filter { (transport, _) -> caps.hasTransport(transport) }.singleOrNull()?.second
+}
+
+/** A local address as the core compares it (no `%scope`), or null for one no session runs on. */
+internal fun routeAddress(address: InetAddress): String? {
+    if (address.isLoopbackAddress || address.isAnyLocalAddress || address.isMulticastAddress) return null
+    return address.hostAddress?.substringBefore('%')?.takeIf { it.isNotEmpty() }
+}
+
+/**
+ * Which local addresses belong to which of the phone's networks, so the core can tell
+ * each PC what really carries its session. Only real link addresses and transports
+ * count; signal bars and the default network don't. Kept in memory only.
+ */
+class NetworkRouteMonitor(context: Context, private val onChange: (List<NetworkRouteInfo>) -> Unit) {
+    private val connectivity = context.getSystemService(ConnectivityManager::class.java)
+    private val main = Handler(Looper.getMainLooper())
+    private val transports = HashMap<Network, String?>()
+    private val addresses = HashMap<Network, List<String>>()
+    private var callback: ConnectivityManager.NetworkCallback? = null
+    private var last: List<NetworkRouteInfo> = emptyList()
+
+    private fun emitIfChanged() {
+        val next = transports.keys.intersect(addresses.keys)
+            .mapNotNull { network ->
+                val transport = transports[network] ?: return@mapNotNull null
+                addresses[network]?.takeIf { it.isNotEmpty() }?.let { NetworkRouteInfo(transport, it) }
+            }
+            .sortedWith(compareBy({ it.transport }, { it.addresses.first() }))
+            .take(MAX_ROUTE_NETWORKS)
+        if (next != last) {
+            last = next
+            onChange(next)
+        }
+    }
+
+    /** Call on the main thread. */
+    fun start() {
+        if (callback != null) return
+        val manager = connectivity ?: return
+        val cb = object : ConnectivityManager.NetworkCallback() {
+            override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
+                if (callback !== this) return
+                transports[network] = routeTransport(networkCapabilities)
+                emitIfChanged()
+            }
+
+            override fun onLinkPropertiesChanged(network: Network, linkProperties: LinkProperties) {
+                if (callback !== this) return
+                addresses[network] = linkProperties.linkAddresses
+                    .mapNotNull { routeAddress(it.address) }
+                    .distinct()
+                    .sorted()
+                    .take(MAX_ROUTE_ADDRESSES)
+                emitIfChanged()
+            }
+
+            override fun onLost(network: Network) {
+                if (callback !== this) return
+                transports.remove(network)
+                addresses.remove(network)
+                emitIfChanged()
+            }
+        }
+        // Without INTERNET a LAN-only Wi-Fi counts too; VPNs stay out (NOT_VPN is kept).
+        val request = NetworkRequest.Builder()
+            .removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .build()
+        callback = cb
+        runCatching { manager.registerNetworkCallback(request, cb, main) }
+            .onFailure { callback = null }
+    }
+
+    /** Call on the main thread. Forgets every network. */
+    fun stop() {
+        val cb = callback ?: return
+        callback = null
+        runCatching { connectivity?.unregisterNetworkCallback(cb) }
+        transports.clear()
+        addresses.clear()
+        emitIfChanged()
     }
 }
 

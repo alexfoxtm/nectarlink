@@ -6,7 +6,7 @@ use std::pin::Pin;
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QString, QVariant};
-use nectarlink_core::{ConnectionPath, DeviceKind, LinkState, PowerLevel};
+use nectarlink_core::{ConnectionPath, DeviceKind, LinkState, PowerLevel, usb::TunnelMedium};
 
 use super::{Edit, diff};
 use crate::{
@@ -108,13 +108,20 @@ pub mod qobject {
 struct Row {
     device: DeviceView,
     screen_json: String,
+    /// Display-only ADB tunnel origin, re-read from the core on every
+    /// refresh (the hub's device carries the link, not the medium).
+    usb_medium: TunnelMedium,
+    /// DISPLAY-ONLY selected path, re-read from the core on every refresh
+    /// (the hub's link carries the auth path, not the selected display).
+    /// Only USB with a physical medium may render a cable.
+    display_path: ConnectionPath,
 }
 
 impl Row {
     fn from_device(device: DeviceView) -> Self {
         let screen_json =
             device.info.screen.as_ref().and_then(|s| serde_json::to_string(s).ok()).unwrap_or_default();
-        Self { device, screen_json }
+        Self { device, screen_json, usb_medium: TunnelMedium::default(), display_path: ConnectionPath::Lan }
     }
 }
 
@@ -142,6 +149,7 @@ const ROLES: &[&str] = &[
     "model",
     "online",
     "path",
+    "displayPath",
     "rttMs",
     "battery",
     "charging",
@@ -150,6 +158,8 @@ const ROLES: &[&str] = &[
     "cellBars",
     "cellType",
     "wifiBars",
+    "usbMedium",
+    "linkTransport",
     "power",
     "lastSeen",
     "pairedAt",
@@ -181,6 +191,19 @@ fn role_value(device: &Row, role: &str) -> QVariant {
             LinkState::Connecting => "connecting",
             LinkState::Offline { .. } => "offline",
         }),
+        // DISPLAY-ONLY selected path for the badge: "usb" only when the live
+        // session's selected remote is the CURRENT bridge; "relay" when
+        // selected is relay; "lan" otherwise. Offline/connecting mirror path.
+        // A bridge record that is not selected never reports cable here.
+        "displayPath" => text(match device.link {
+            LinkState::Online { .. } => match device.display_path {
+                ConnectionPath::Lan => "lan",
+                ConnectionPath::Usb => "usb",
+                ConnectionPath::Relay => "relay",
+            },
+            LinkState::Connecting => "connecting",
+            LinkState::Offline { .. } => "offline",
+        }),
         "rttMs" => QVariant::from(&match device.link {
             LinkState::Online { rtt_ms, .. } => i32::try_from(rtt_ms).unwrap_or(i32::MAX),
             _ => -1,
@@ -200,6 +223,19 @@ fn role_value(device: &Row, role: &str) -> QVariant {
         "wifiBars" => {
             QVariant::from(&device.battery.as_ref().and_then(|b| b.wifi_bars).map_or(-1, i32::from))
         }
+        // Proven session route transport from the phone ("wifi", "cellular",
+        // "ethernet", "usb"), or "" when unknown. Never a signal guess.
+        "linkTransport" => text(
+            device.battery.as_ref().and_then(|b| b.link_transport).map(|t| t.as_str()).unwrap_or_default(),
+        ),
+        // Display-only ADB tunnel origin for the badge: "physical" (proven
+        // cable) keeps the USB chip, "network" reuses the Wi-Fi/cellular
+        // renderer, "unknown" keeps the previous USB rendering. Never a serial.
+        "usbMedium" => text(match device.usb_medium {
+            TunnelMedium::PhysicalUsb => "physical",
+            TunnelMedium::Network => "network",
+            TunnelMedium::Unknown => "unknown",
+        }),
         "power" => text(match device.power {
             PowerLevel::Assist => "assist",
             PowerLevel::Elevated => "elevated",
@@ -227,8 +263,18 @@ impl cxx_qt::Initialize for qobject::DeviceList {
 
 impl qobject::DeviceList {
     fn refresh(mut self: Pin<&mut Self>) {
-        let new: Vec<Row> =
+        let mut new: Vec<Row> =
             core_host::host().hub.read(|s| s.devices.iter().cloned().map(Row::from_device).collect());
+        // The hub folds auth links, not selected display: re-read the
+        // display-only medium and selected path per device so the badge tracks
+        // cable vs wireless ADB and native-vs-tunnel selection. Reads the
+        // core's records only, never a serial, and never touches pairing.
+        if let Some(node) = core_host::node() {
+            for row in &mut new {
+                row.usb_medium = node.tunnel_medium(&row.id);
+                row.display_path = node.display_path(&row.id);
+            }
+        }
         let root = QModelIndex::default();
         for edit in diff(&self.rows, &new, |d| d.id) {
             match edit {
@@ -349,6 +395,7 @@ mod tests {
             cell_bars: Some(4),
             cell_type: Some("5G".into()),
             wifi_bars: Some(3),
+            link_transport: None,
         });
         d.info.accent = Some(0xFF8A5100);
         d.info.screen = Some(nectarlink_core::ScreenShape {
@@ -361,6 +408,19 @@ mod tests {
         let d = Row::from_device(d);
         assert_eq!(role_value(&d, "name").value::<QString>().map(String::from).as_deref(), Some("Pixel"));
         assert_eq!(role_value(&d, "online").value::<bool>(), Some(true));
+        assert_eq!(
+            role_value(&d, "displayPath").value::<QString>().map(String::from).as_deref(),
+            Some("lan"),
+            "no bridge selected yet: display stays LAN, never cable"
+        );
+        let mut selected_tunnel = d.clone();
+        selected_tunnel.display_path = ConnectionPath::Usb;
+        selected_tunnel.usb_medium = TunnelMedium::PhysicalUsb;
+        assert_eq!(
+            role_value(&selected_tunnel, "displayPath").value::<QString>().map(String::from).as_deref(),
+            Some("usb"),
+            "selected CURRENT bridge may render a cable with physical proof"
+        );
         assert_eq!(role_value(&d, "rttMs").value::<i32>(), Some(7));
         assert_eq!(role_value(&d, "battery").value::<i32>(), Some(64));
         assert_eq!(
@@ -371,6 +431,34 @@ mod tests {
         assert_eq!(role_value(&d, "cellBars").value::<i32>(), Some(4));
         assert_eq!(role_value(&d, "cellType").value::<QString>().map(String::from).as_deref(), Some("5G"));
         assert_eq!(role_value(&d, "wifiBars").value::<i32>(), Some(3));
+        assert_eq!(
+            role_value(&d, "linkTransport").value::<QString>().map(String::from).as_deref(),
+            Some(""),
+            "no proven route yet"
+        );
+        let mut proven = d.clone();
+        proven.device.battery.as_mut().unwrap().link_transport = Some(nectarlink_core::LinkTransport::Wifi);
+        assert_eq!(
+            role_value(&proven, "linkTransport").value::<QString>().map(String::from).as_deref(),
+            Some("wifi")
+        );
+        assert_eq!(
+            role_value(&d, "usbMedium").value::<QString>().map(String::from).as_deref(),
+            Some("unknown"),
+            "no tunnel origin known yet"
+        );
+        let mut network = d.clone();
+        network.usb_medium = TunnelMedium::Network;
+        assert_eq!(
+            role_value(&network, "usbMedium").value::<QString>().map(String::from).as_deref(),
+            Some("network")
+        );
+        let mut cable = d.clone();
+        cable.usb_medium = TunnelMedium::PhysicalUsb;
+        assert_eq!(
+            role_value(&cable, "usbMedium").value::<QString>().map(String::from).as_deref(),
+            Some("physical")
+        );
         assert_eq!(role_value(&d, "accent").value::<QString>().map(String::from).as_deref(), Some("#8A5100"));
         assert!(
             role_value(&d, "screen")

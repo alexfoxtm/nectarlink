@@ -111,6 +111,21 @@ pub struct Battery {
     /// Wi-Fi signal bars (0-4), if known.
     #[uniffi(default = None)]
     pub wifi_bars: Option<u8>,
+    /// Proven session route transport ("wifi", "cellular", "ethernet", "usb"),
+    /// when a peer reported one. Never set by the sender: the core recomputes
+    /// it per session from the route table.
+    #[uniffi(default = None)]
+    pub link_transport: Option<String>,
+}
+
+/// One platform network with its interface addresses, as reported by the
+/// platform's network callback. RAM-only and local: addresses never reach
+/// peers or logs. Allowed transports: wifi, cellular, ethernet, usb.
+/// An empty list clears the table.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct NetworkRouteInfo {
+    pub transport: String,
+    pub addresses: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
@@ -1993,6 +2008,7 @@ impl From<core::Battery> for Battery {
             cell_bars: b.cell_bars,
             cell_type: b.cell_type,
             wifi_bars: b.wifi_bars,
+            link_transport: b.link_transport.map(|t| t.as_str().to_owned()),
         }
     }
 }
@@ -2007,8 +2023,15 @@ impl From<Battery> for core::Battery {
             cell_bars: b.cell_bars,
             cell_type: b.cell_type,
             wifi_bars: b.wifi_bars,
+            link_transport: b.link_transport.as_deref().and_then(core::LinkTransport::parse),
         }
         .sanitized()
+    }
+}
+
+impl From<NetworkRouteInfo> for core::NetworkRouteInfo {
+    fn from(r: NetworkRouteInfo) -> Self {
+        core::NetworkRouteInfo { transport: r.transport, addresses: r.addresses }
     }
 }
 
@@ -3749,6 +3772,24 @@ impl NectarlinkNode {
         self.run(async move { node.update_battery(battery.into()).await }).await;
     }
 
+    /// Replaces this device's RAM-only route table (platform networks with
+    /// their interface addresses). Synchronous and non-blocking: the snapshot
+    /// publishes here in call order, then hint refresh runs on the core
+    /// runtime from the latest table, so it is safe to call from any executor,
+    /// including a serial conflated loop where A then B must stay A then B.
+    /// Out-of-order Tokio refresh tasks read the latest publication and cannot
+    /// resurrect a stale snapshot. An empty list clears the table. Addresses
+    /// never reach peers or logs; only the per-session transport
+    /// classification travels inside `event.battery`.
+    pub fn set_network_routes(&self, routes: Vec<NetworkRouteInfo>) {
+        let routes = routes.into_iter().map(core::NetworkRouteInfo::from).collect();
+        // Publish synchronously in call order; refresh async from latest.
+        if self.node.publish_network_routes(routes) {
+            let node = self.node.clone();
+            self.runtime.spawn(async move { node.refresh_route_hints().await });
+        }
+    }
+
     pub async fn update_device_info(&self, info: DeviceInfo) {
         let node = self.node.clone();
         self.run(async move { node.update_device_info(info.into()).await }).await;
@@ -4570,6 +4611,7 @@ mod tests {
             cell_bars: Some(7),
             cell_type: Some("  5G\n".into()),
             wifi_bars: Some(9),
+            link_transport: Some("wifi".into()),
         }
         .into();
         assert_eq!(b.level, 100);
@@ -4577,10 +4619,27 @@ mod tests {
         assert_eq!(b.cell_bars, Some(4));
         assert_eq!(b.cell_type.as_deref(), Some("5G"));
         assert_eq!(b.wifi_bars, Some(4));
+        // Inbound hints are kept as parsed values here; the core drops them
+        // at send time and recomputes per session.
+        assert_eq!(b.link_transport, Some(core::LinkTransport::Wifi));
         let back = Battery::from(b);
         assert_eq!(back.cell_bars, Some(4));
         assert_eq!(back.cell_type.as_deref(), Some("5G"));
         assert_eq!(back.wifi_bars, Some(4));
+        assert_eq!(back.link_transport.as_deref(), Some("wifi"));
+        // Anything outside the closed set parses to unknown, never guessed.
+        let dropped: core::Battery = Battery {
+            level: 50,
+            charging: false,
+            plugged: None,
+            full_in: None,
+            cell_bars: None,
+            cell_type: None,
+            wifi_bars: None,
+            link_transport: Some("vpn".into()),
+        }
+        .into();
+        assert_eq!(dropped.link_transport, None);
     }
 
     #[test]

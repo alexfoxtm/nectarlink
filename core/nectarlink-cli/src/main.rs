@@ -2619,6 +2619,7 @@ async fn start_node(cli: &Cli) -> Result<Node> {
             cell_bars: None,
             cell_type: None,
             wifi_bars: None,
+            link_transport: None,
         })
         .await;
     }

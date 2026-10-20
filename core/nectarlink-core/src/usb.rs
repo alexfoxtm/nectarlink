@@ -11,7 +11,10 @@
 //!    connection to each one that answers.
 //! 3. Both sides exchange a [`UsbHello`] header (`NLQU` magic + length-prefixed
 //!    JSON) to learn each other's [`DeviceId`] and display name before any QUIC
-//!    packets flow.
+//!    packets flow. The PC side may attach display-only tunnel hints (the
+//!    host-observed outer phone IP and origin for network tunnels); they are
+//!    optional and ignored for auth, SAS, routing and admission, and old
+//!    peers simply see no hint.
 //! 4. Each side binds a loopback UDP socket (`127.0.0.1:0`) and bridges UDP
 //!    datagrams over the length-prefixed TCP stream to its local iroh QUIC
 //!    endpoint, so QUIC sessions (control stream, file transfers, screen
@@ -47,6 +50,9 @@ pub const DEFAULT_USB_PORT: u16 = 53319;
 pub const USB_PORT_COUNT: u16 = 4;
 
 pub use nectarlink_adb::DEFAULT_ADB_ADDR;
+/// Display-only ADB tunnel origin (physical cable, network, or unknown),
+/// classified from the ADB server's own `devices-l` records.
+pub use nectarlink_adb::TunnelMedium;
 
 const MAGIC: &[u8; 4] = b"NLQU";
 const MAX_HELLO_BYTES: usize = 4096;
@@ -60,10 +66,69 @@ struct UsbHello {
     v: u8,
     id: String,
     name: String,
+    /// Host-observed outer ADB endpoint IP of the phone (TCP serial IP or
+    /// resolved mDNS address), display-only. Absent for physical-USB tunnels
+    /// (no IP exists) and whenever the host cannot prove one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    adb_endpoint: Option<String>,
+    /// Host-classified tunnel origin, display-only (`"usb"` or `"network"`).
+    /// Absent when the host cannot prove one; never trusted for transport.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    adb_medium: Option<String>,
 }
 
-async fn write_hello(stream: &mut TcpStream, id: &DeviceId, name: &str) -> Result<()> {
-    let hello = UsbHello { v: 1, id: id.to_string(), name: name.to_owned() };
+/// Display-only tunnel hint received in (or sent with) a USB hello.
+/// Auth, SAS, routing and admission ignore it; only route-hint matching reads it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct HelloHint {
+    pub endpoint: Option<IpAddr>,
+    pub medium: TunnelMedium,
+}
+
+impl HelloHint {
+    fn none() -> Self {
+        HelloHint { endpoint: None, medium: TunnelMedium::Unknown }
+    }
+
+    /// The hint this side sends: the outer endpoint IP when one is proven,
+    /// plus the host classification. Unknown sends nothing at all.
+    fn send(medium: TunnelMedium, endpoint: Option<IpAddr>) -> Self {
+        if medium == TunnelMedium::Unknown {
+            return HelloHint::none();
+        }
+        HelloHint { endpoint, medium }
+    }
+
+    fn from_wire(endpoint: Option<String>, medium: Option<String>) -> Self {
+        let endpoint = endpoint
+            .as_deref()
+            .and_then(|s| s.trim().parse::<IpAddr>().ok())
+            .filter(|ip| !ip.is_loopback() && !ip.is_unspecified() && !ip.is_multicast());
+        let medium = match medium.as_deref().map(str::trim) {
+            Some("usb") => TunnelMedium::PhysicalUsb,
+            Some("network") => TunnelMedium::Network,
+            _ => TunnelMedium::Unknown,
+        };
+        HelloHint { endpoint, medium }
+    }
+
+    fn wire_medium(self) -> Option<String> {
+        match self.medium {
+            TunnelMedium::PhysicalUsb => Some("usb".to_owned()),
+            TunnelMedium::Network => Some("network".to_owned()),
+            TunnelMedium::Unknown => None,
+        }
+    }
+}
+
+async fn write_hello(stream: &mut TcpStream, id: &DeviceId, name: &str, hint: &HelloHint) -> Result<()> {
+    let hello = UsbHello {
+        v: 1,
+        id: id.to_string(),
+        name: name.to_owned(),
+        adb_endpoint: hint.endpoint.map(|ip| ip.to_string()),
+        adb_medium: hint.wire_medium(),
+    };
     let payload = serde_json::to_vec(&hello).map_err(|e| Error::Internal(e.to_string()))?;
     if payload.is_empty() || payload.len() > MAX_HELLO_BYTES {
         return Err(Error::Protocol("invalid USB hello length".into()));
@@ -78,7 +143,7 @@ async fn write_hello(stream: &mut TcpStream, id: &DeviceId, name: &str) -> Resul
     Ok(())
 }
 
-async fn read_hello(stream: &mut TcpStream) -> Result<(DeviceId, String)> {
+async fn read_hello(stream: &mut TcpStream) -> Result<(DeviceId, String, HelloHint)> {
     let mut magic = [0u8; 4];
     stream.read_exact(&mut magic).await.map_err(|e| Error::Network(e.to_string()))?;
     if &magic != MAGIC {
@@ -97,16 +162,20 @@ async fn read_hello(stream: &mut TcpStream) -> Result<(DeviceId, String)> {
     let peer_id: DeviceId =
         hello.id.parse().map_err(|_| Error::Protocol("invalid DeviceId in USB hello".into()))?;
     let name: String = hello.name.trim().chars().take(64).collect();
-    Ok((peer_id, name))
+    // Old hellos omit the hint fields (serde default); unknown values validate
+    // to no hint, so an old peer is simply unproven, never misread.
+    let hint = HelloHint::from_wire(hello.adb_endpoint, hello.adb_medium);
+    Ok((peer_id, name, hint))
 }
 
 async fn exchange_hello(
     stream: &mut TcpStream,
     local_id: &DeviceId,
     local_name: &str,
-) -> Result<(DeviceId, String)> {
+    hint: &HelloHint,
+) -> Result<(DeviceId, String, HelloHint)> {
     tokio::time::timeout(HELLO_TIMEOUT, async {
-        write_hello(stream, local_id, local_name).await?;
+        write_hello(stream, local_id, local_name, hint).await?;
         read_hello(stream).await
     })
     .await
@@ -163,7 +232,7 @@ pub(crate) fn start_phone_listener(shared: &Arc<Shared>, preferred_port: u16) ->
             let Some(node) = weak.upgrade() else { return };
             tokio::spawn(async move {
                 let local_name = node.local.read().unwrap_or_else(|e| e.into_inner()).device.name.clone();
-                let Ok(Ok((pc_id, pc_name))) =
+                let Ok(Ok((pc_id, pc_name, pc_hint))) =
                     tokio::time::timeout(HELLO_TIMEOUT, read_hello(&mut stream)).await
                 else {
                     return;
@@ -178,11 +247,16 @@ pub(crate) fn start_phone_listener(shared: &Arc<Shared>, preferred_port: u16) ->
 
                 let tunnel_cancel = node.cancel.child_token();
                 node.register_usb_bridge_port(bridge_port);
-                node.on_usb_tunnel_accepted(pc_id, pc_name, bridge_addr, tunnel_cancel.clone());
+                // The PC's hello carries its host-observed outer endpoint/medium
+                // when it has one; otherwise the accepted side stays unknown.
+                node.on_usb_tunnel_accepted(pc_id, pc_name, bridge_addr, tunnel_cancel.clone(), pc_hint);
 
                 if !matches!(
-                    tokio::time::timeout(HELLO_TIMEOUT, write_hello(&mut stream, &node.id, &local_name))
-                        .await,
+                    tokio::time::timeout(
+                        HELLO_TIMEOUT,
+                        write_hello(&mut stream, &node.id, &local_name, &HelloHint::none())
+                    )
+                    .await,
                     Ok(Ok(()))
                 ) {
                     node.unregister_usb_bridge_port(bridge_port);
@@ -212,7 +286,8 @@ pub(crate) async fn connect_usb_tunnel(shared: &Arc<Shared>, forwarded_tcp: Sock
     let _ = stream.set_nodelay(true);
 
     let local_name = shared.local.read().unwrap_or_else(|e| e.into_inner()).device.name.clone();
-    let (phone_id, phone_name) = exchange_hello(&mut stream, &shared.id, &local_name).await?;
+    let (phone_id, phone_name, _phone_hint) =
+        exchange_hello(&mut stream, &shared.id, &local_name, &HelloHint::none()).await?;
     if phone_id == shared.id {
         return Err(Error::Protocol("cannot connect USB tunnel to self".into()));
     }
@@ -234,7 +309,19 @@ pub(crate) async fn connect_usb_tunnel(shared: &Arc<Shared>, forwarded_tcp: Sock
         node.on_usb_tunnel_disconnected(phone_id, bridge_addr).await;
     });
 
-    shared.on_usb_tunnel_connected(phone_id, phone_name, bridge_addr, tunnel_cancel, true);
+    // A direct TCP connect carries no ADB serial, so its origin stays
+    // unknown: only `host:devices-l` records can prove a physical cable.
+    shared.on_usb_tunnel_connected(
+        phone_id,
+        phone_name,
+        crate::node::UsbTunnel {
+            bridge: bridge_addr,
+            cancel: tunnel_cancel,
+            medium: TunnelMedium::Unknown,
+            adb_endpoint: None,
+        },
+        true,
+    );
     Ok(phone_id)
 }
 
@@ -310,16 +397,44 @@ fn reconcile_adb_devices(
             continue;
         }
         if active.contains_key(&dev.serial) {
+            // A retained serial keeps its live tunnel record (medium and outer
+            // endpoint included): short tracking rows never downgrade known
+            // metadata, and only disappearance tears the tunnel down.
             continue;
         }
         let token = shared.cancel.child_token();
         active.insert(dev.serial.clone(), token.clone());
         let node = shared.clone();
         let serial = dev.serial.clone();
+        // Classified once from this reconcile's own long records: a positive
+        // `usb:` descriptor proves a cable, network-shaped serials prove a
+        // network attachment, anything else stays unknown (never presumed).
+        let medium = dev.medium();
+        // The outer phone IP travels in the USB hello so the phone can match
+        // its own endpoint against its route table: TCP serials carry it
+        // directly, mDNS serials resolve it via one best-effort
+        // `host:mdns:services` query per worker start (old servers fail →
+        // unknown, honestly, without stalling the tunnel worker).
         tokio::spawn(async move {
-            run_serial_worker(node, adb_addr, serial, token).await;
+            let mut outer = nectarlink_adb::tcp_serial_ip(&serial);
+            if outer.is_none() && nectarlink_adb::is_mdns_serial(&serial) {
+                outer = resolve_mdns_outer(adb_addr, &serial).await;
+            }
+            run_serial_worker(node, adb_addr, serial, medium, outer, token).await;
         });
     }
+}
+
+/// Resolves an mDNS-shaped serial to its outer phone IP via one
+/// `host:mdns:services` query. TCP/bare serials never reach here (handled by
+/// [`nectarlink_adb::tcp_serial_ip`]); old servers and absent instances yield
+/// `None` (honest unknown), never an error that would stall the worker.
+async fn resolve_mdns_outer(adb_addr: SocketAddr, serial: &str) -> Option<IpAddr> {
+    if !nectarlink_adb::is_mdns_serial(serial) {
+        return nectarlink_adb::tcp_serial_ip(serial);
+    }
+    let services = nectarlink_adb::mdns_services(adb_addr).await.ok()?;
+    nectarlink_adb::mdns_serial_ip(serial, &services)
 }
 
 /// One plugged-in phone: a tunnel per profile port (see [`USB_PORT_COUNT`]).
@@ -327,6 +442,8 @@ async fn run_serial_worker(
     shared: Arc<Shared>,
     adb_addr: SocketAddr,
     serial: String,
+    medium: TunnelMedium,
+    outer: Option<IpAddr>,
     cancel: CancellationToken,
 ) {
     let profiles = Arc::new(Mutex::new(SerialProfiles::default()));
@@ -336,9 +453,14 @@ async fn run_serial_worker(
             shared.clone(),
             adb_addr,
             serial.clone(),
-            DEFAULT_USB_PORT + offset,
             cancel.clone(),
-            profiles.clone(),
+            UsbTarget {
+                phone_port: DEFAULT_USB_PORT + offset,
+                auto_pair: auto_pairs(&serial),
+                medium,
+                outer,
+                profiles: profiles.clone(),
+            },
         ));
     }
     while ports.join_next().await.is_some() {}
@@ -363,10 +485,10 @@ async fn run_port_worker(
     shared: Arc<Shared>,
     adb_addr: SocketAddr,
     serial: String,
-    phone_port: u16,
     cancel: CancellationToken,
-    profiles: Arc<Mutex<SerialProfiles>>,
+    target: UsbTarget,
 ) {
+    let phone_port = target.phone_port;
     let mut delay = ADB_RETRY_DELAY;
     while !cancel.is_cancelled() {
         if !nectarlink_adb::is_serial_allowed(&serial) {
@@ -375,8 +497,7 @@ async fn run_port_worker(
         let mut answered = false;
         if let Ok(host_port) = nectarlink_adb::forward_tcp(adb_addr, &serial, 0, phone_port).await {
             let forwarded = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), host_port);
-            let target = UsbTarget { phone_port, auto_pair: auto_pairs(&serial), profiles: profiles.clone() };
-            answered = run_forwarded_session(&shared, forwarded, &cancel, target).await;
+            answered = run_forwarded_session(&shared, forwarded, &cancel, target.clone()).await;
             let _ = nectarlink_adb::kill_forward_tcp(adb_addr, &serial, host_port).await;
         }
         // The usual port is kept up; the others usually have nobody listening (one
@@ -395,9 +516,14 @@ async fn run_port_worker(
 }
 
 /// The phone port a tunnel goes to, and what it may do once it knows who answered.
+#[derive(Clone)]
 struct UsbTarget {
     phone_port: u16,
     auto_pair: bool,
+    medium: TunnelMedium,
+    /// Host-observed outer phone IP (TCP serial or resolved mDNS), sent in
+    /// the USB hello so the phone can match its own endpoint.
+    outer: Option<IpAddr>,
     profiles: Arc<Mutex<SerialProfiles>>,
 }
 
@@ -422,7 +548,13 @@ async fn run_forwarded_session(
     };
     let _ = stream.set_nodelay(true);
     let local_name = shared.local.read().unwrap_or_else(|e| e.into_inner()).device.name.clone();
-    let Ok((phone_id, phone_name)) = exchange_hello(&mut stream, &shared.id, &local_name).await else {
+    // The hello carries the host-observed outer endpoint/medium so the phone
+    // can match its own endpoint IP against its route table. Old phones
+    // ignore the new fields (serde default) and simply report no hint.
+    let hint = HelloHint::send(target.medium, target.outer);
+    let Ok((phone_id, phone_name, _phone_hint)) =
+        exchange_hello(&mut stream, &shared.id, &local_name, &hint).await
+    else {
         return false;
     };
     if phone_id == shared.id {
@@ -444,7 +576,17 @@ async fn run_forwarded_session(
 
     let tunnel_cancel = cancel.child_token();
     shared.register_usb_bridge_port(bridge_port);
-    shared.on_usb_tunnel_connected(phone_id, phone_name, bridge_addr, tunnel_cancel.clone(), auto_pair);
+    shared.on_usb_tunnel_connected(
+        phone_id,
+        phone_name,
+        crate::node::UsbTunnel {
+            bridge: bridge_addr,
+            cancel: tunnel_cancel.clone(),
+            medium: target.medium,
+            adb_endpoint: target.outer,
+        },
+        auto_pair,
+    );
 
     let default_target = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), iroh_port);
     relay_tcp_udp(stream, udp, default_target, tunnel_cancel).await;
@@ -580,5 +722,45 @@ mod tests {
         assert!(auto_pairs("R58M123ABC"));
         assert!(auto_pairs("192.168.1.20:37099"));
         assert!(auto_pairs("adb-R58M123ABC-xyz._adb-tls-connect._tcp"));
+    }
+
+    #[test]
+    fn usb_hello_hint_round_trips_and_old_hellos_parse() {
+        let hint = HelloHint::send(TunnelMedium::Network, Some("192.168.1.40".parse().unwrap()));
+        let hello = UsbHello {
+            v: 1,
+            id: DeviceId([7; 32]).to_string(),
+            name: "Pixel".into(),
+            adb_endpoint: hint.endpoint.map(|ip| ip.to_string()),
+            adb_medium: hint.wire_medium(),
+        };
+        let payload = serde_json::to_vec(&hello).unwrap();
+        let back: UsbHello = serde_json::from_slice(&payload).unwrap();
+        let parsed = HelloHint::from_wire(back.adb_endpoint, back.adb_medium);
+        assert_eq!(parsed, hint);
+        assert_eq!(parsed.endpoint.map(|ip| ip.to_string()).as_deref(), Some("192.168.1.40"));
+        assert_eq!(parsed.medium, TunnelMedium::Network);
+
+        // Old hellos omit the hint fields: accepted, unproven, never misread.
+        let id = DeviceId([7; 32]).to_string();
+        let old: UsbHello =
+            serde_json::from_str(&format!(r#"{{"v":1,"id":"{id}","name":"Pixel"}}"#)).unwrap();
+        assert_eq!(HelloHint::from_wire(old.adb_endpoint, old.adb_medium), HelloHint::none());
+    }
+
+    #[test]
+    fn usb_hello_hint_rejects_unprovable_values() {
+        // Loopback, unspecified and multicast endpoints prove no route.
+        for endpoint in [Some("127.0.0.1".into()), Some("::".into()), Some("ff02::1".into())] {
+            let hint = HelloHint::from_wire(endpoint, Some("network".into()));
+            assert_eq!(hint.endpoint, None);
+        }
+        // Unknown medium strings validate to unknown, never to a claim.
+        let hint = HelloHint::from_wire(Some("192.168.1.40".into()), Some("vpn".into()));
+        assert_eq!(hint.medium, TunnelMedium::Unknown);
+        assert_eq!(hint.endpoint.map(|ip| ip.to_string()).as_deref(), Some("192.168.1.40"));
+        // Unknown medium sends nothing at all.
+        assert_eq!(HelloHint::send(TunnelMedium::Unknown, None), HelloHint::none());
+        assert_eq!(HelloHint::none().wire_medium(), None);
     }
 }

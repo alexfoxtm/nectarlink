@@ -118,6 +118,7 @@ mod tests {
             cell_bars: None,
             cell_type: None,
             wifi_bars: None,
+            link_transport: None,
         }
     }
 

@@ -68,6 +68,10 @@ pub mod qobject {
         /// stays true so the Windows Settings banner does not appear; Mac
         /// authorization is `notification_permission`.
         #[qproperty(bool, toasts_enabled)]
+        /// Whether the native menu-bar/status item is installed. QML only
+        /// hides the window into the tray when this is true, so the window
+        /// can never hide into a missing menu.
+        #[qproperty(bool, tray_available)]
         /// Mac notification authorization: `unknown`, `not_determined`,
         /// `denied`, `provisional`, or `authorized`. Empty on other platforms.
         #[qproperty(QString, notification_permission)]
@@ -444,6 +448,7 @@ pub struct AppControllerRust {
     wallpaper_colors: QString,
     phone_colors: QString,
     toasts_enabled: bool,
+    tray_available: bool,
     notification_permission: QString,
     version: QString,
     doctor_checks: QString,
@@ -859,8 +864,14 @@ impl cxx_qt::Initialize for qobject::AppController {
             quit: tr!("App", "Quit Waypair Link"),
         };
         match tray::Tray::create("Waypair Link", labels, move |event| on_tray_event(&qt, event)) {
-            Ok(tray) => self.rust_mut().tray = Some(tray),
-            Err(e) => tracing::warn!(error = %e, "no tray icon"),
+            Ok(tray) => {
+                self.as_mut().rust_mut().tray = Some(tray);
+                self.as_mut().set_tray_available(true);
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "no tray icon");
+                self.as_mut().set_tray_available(false);
+            }
         }
     }
 }
@@ -3442,6 +3453,7 @@ mod tests {
             cell_bars: Some(4),
             cell_type: Some("5G".into()),
             wifi_bars: Some(3),
+            link_transport: None,
         };
         assert_eq!(format_tray_device_summary("Pixel 9", &b), "Pixel 9 · 85%, charging · Wi-Fi 3/4 · 5G 4/4");
 
@@ -3453,6 +3465,7 @@ mod tests {
             cell_bars: Some(2),
             cell_type: None,
             wifi_bars: None,
+            link_transport: None,
         };
         assert_eq!(format_tray_device_summary("Galaxy", &basic), "Galaxy · 40% · Cell 2/4");
     }
