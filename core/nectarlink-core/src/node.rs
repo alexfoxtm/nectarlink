@@ -35,7 +35,7 @@ use crate::{
     identity,
     notifications::{self, Feed},
     pairing::{self, PairingState},
-    session::{self, CLOSE_DUPLICATE, CLOSE_NORMAL, REQUEST_TIMEOUT, Session},
+    session::{self, CLOSE_DUPLICATE, CLOSE_NORMAL, REQUEST_TIMEOUT, Session, TryEnqueue},
     store::Store,
     transfer,
 };
@@ -935,6 +935,116 @@ impl Shared {
         }
     }
 
+    /// Tells `peer` the storage caps it is admitted to, when this device is a
+    /// phone or tablet. A desktop toggle does not advertise in that direction.
+    fn announce_storage_admission(self: &Arc<Self>, peer: &DeviceId) {
+        if !crate::storage::serves_phone_storage(self) {
+            return;
+        }
+        let Some(session) = self.session(peer) else { return };
+        self.queue_caps(&session, false);
+    }
+
+    /// Sends each connected peer a `hello.update` whose caps are the ones
+    /// that peer is admitted to, plus this device's current power level.
+    fn announce_power(self: &Arc<Self>, _power: PowerLevel) {
+        for session in self.live_sessions() {
+            self.queue_caps(&session, true);
+        }
+    }
+
+    /// If `sent` is not what this connection admits now, queue a `hello.update`.
+    /// `sent` is the caps from this handshake, not a shared note for the peer.
+    fn correct_hello_caps(self: &Arc<Self>, peer: &DeviceId, sent: &[String]) {
+        let now = crate::storage::caps_for_peer(self, peer, &self.local_capabilities());
+        if sent == now.as_slice() {
+            return;
+        }
+        let Some(session) = self.session(peer) else { return };
+        self.queue_caps(&session, false);
+    }
+
+    /// Queues a `hello.update` for this session. One flush task per session
+    /// recomputes the admitted caps when the outbox has room, so a full queue
+    /// cannot replay an older allow and a dead session cannot clear the next one.
+    fn queue_caps(self: &Arc<Self>, session: &Arc<Session>, with_power: bool) {
+        let mut slot = lock(&session.storage_announce);
+        let caps = crate::storage::caps_for_peer(self, &session.peer, &self.local_capabilities());
+        let power = with_power.then(|| self.local.read().unwrap_or_else(|e| e.into_inner()).power);
+        let update = HelloUpdate { caps: Some(caps), power, device: None };
+        let Ok(env) = Envelope::new(types::HELLO_UPDATE, &update) else { return };
+        match session.try_enqueue(env) {
+            Ok(()) => {
+                if slot.with_power && !with_power {
+                    slot.dirty = true;
+                    self.ensure_cap_flush(session, &mut slot);
+                    return;
+                }
+                slot.dirty = false;
+                slot.with_power = false;
+            }
+            Err(TryEnqueue::Closed) => {
+                slot.dirty = false;
+                slot.with_power = false;
+                slot.flushing = false;
+            }
+            Err(TryEnqueue::Full) => {
+                slot.dirty = true;
+                slot.with_power |= with_power;
+                self.ensure_cap_flush(session, &mut slot);
+            }
+        }
+    }
+
+    fn ensure_cap_flush(self: &Arc<Self>, session: &Arc<Session>, slot: &mut session::StorageAnnounce) {
+        if slot.flushing {
+            return;
+        }
+        slot.flushing = true;
+        let shared = Arc::clone(self);
+        let session = Arc::clone(session);
+        self.runtime.spawn(async move {
+            shared.flush_session_caps(session).await;
+        });
+    }
+
+    async fn flush_session_caps(self: Arc<Self>, session: Arc<Session>) {
+        loop {
+            let Ok(permit) = session.reserve().await else {
+                let mut slot = lock(&session.storage_announce);
+                slot.flushing = false;
+                slot.dirty = false;
+                slot.with_power = false;
+                return;
+            };
+            let mut slot = lock(&session.storage_announce);
+            if !slot.dirty {
+                slot.flushing = false;
+                drop(permit);
+                return;
+            }
+            let with_power = slot.with_power;
+            let caps = crate::storage::caps_for_peer(&self, &session.peer, &self.local_capabilities());
+            let power = with_power.then(|| self.local.read().unwrap_or_else(|e| e.into_inner()).power);
+            let update = HelloUpdate { caps: Some(caps), power, device: None };
+            let Ok(env) = Envelope::new(types::HELLO_UPDATE, &update) else {
+                slot.flushing = false;
+                drop(permit);
+                return;
+            };
+            slot.dirty = false;
+            slot.with_power = false;
+            permit.send(env);
+            drop(slot);
+            let mut slot = lock(&session.storage_announce);
+            if slot.dirty {
+                continue;
+            }
+            slot.flushing = false;
+            return;
+        }
+    }
+
     /// Recomputes every paired device's matrix (after a local change).
     fn refresh_all_capabilities(&self) {
         match self.store.list_peers() {
@@ -1059,6 +1169,7 @@ impl Shared {
         dialer: DeviceId,
         streams: (iroh::endpoint::SendStream, iroh::endpoint::RecvStream),
         remote: nectarlink_protocol::messages::Hello,
+        sent_caps: Vec<String>,
     ) -> Option<Arc<Session>> {
         let peer = crate::device_id(&conn.remote_id());
         if conn.close_reason().is_some() {
@@ -1099,6 +1210,7 @@ impl Shared {
         });
         sessions.insert(peer, session.clone());
         drop(sessions);
+        self.correct_hello_caps(&peer, &sent_caps);
         lock(&self.dial_failures).remove(&peer);
 
         tracing::info!(peer = %peer.short(), path = ?session.path(), "connected");
@@ -1230,10 +1342,11 @@ impl Shared {
             }
             return Err(Error::Offline);
         }
-        let hello = session::local_hello(self);
+        let hello = session::local_hello_for(self, &peer);
+        let sent_caps = hello.caps.clone();
         let (send, recv, remote) = session::handshake_dialer(conn_ref, &hello).await?;
         let conn = guard.0.take().expect("connection present");
-        self.register_session(conn, self.id, (send, recv), remote)
+        self.register_session(conn, self.id, (send, recv), remote, sent_caps)
             .or_else(|| self.session(&peer))
             .ok_or(Error::Offline)
     }
@@ -1404,10 +1517,11 @@ impl ProtocolHandler for SessionProtocol {
             conn.close(VarInt::from_u32(CLOSE_NORMAL), b"away mode disabled");
             return Err(AcceptError::from_err(Error::Offline));
         }
-        let hello = session::local_hello(&shared);
+        let hello = session::local_hello_for(&shared, &peer);
+        let sent_caps = hello.caps.clone();
         match session::handshake_listener(&conn, &hello).await {
             Ok((send, recv, remote)) => {
-                shared.register_session(conn, peer, (send, recv), remote);
+                shared.register_session(conn, peer, (send, recv), remote, sent_caps);
                 Ok(())
             }
             Err(e) => {
@@ -1904,6 +2018,9 @@ impl Node {
             }
         }
         self.shared.publish_capabilities(&peer, storage_changed);
+        if storage_changed && toggle == crate::storage::TOGGLE {
+            self.shared.announce_storage_admission(&peer);
+        }
         if toggle == notifications::TOGGLE {
             self.notifications_toggled(peer, enabled);
         }
@@ -3257,6 +3374,14 @@ impl Node {
 
     // ---- Phone storage (PC File Explorer) ----
 
+    /// Cancels every in-flight storage read on this device.
+    ///
+    /// Host-folder revocation calls this before any network update. It does
+    /// not change per-device toggles or the caps announced to a peer.
+    pub fn revoke_storage_reads(&self) {
+        lock(&self.shared.storage).cancel_all_reads();
+    }
+
     /// Lists a directory on a connected phone (`storage.list`).
     pub async fn storage_list(
         &self,
@@ -3442,22 +3567,18 @@ impl Node {
     /// Updates this device's power level and the capabilities it offers
     /// beyond the built-in ones (they depend on permissions and add-ons).
     pub async fn update_power(&self, power: PowerLevel, extra_capabilities: Vec<String>) {
-        let (caps, read_lost) = {
+        let read_lost = {
             let mut local = self.shared.local.write().unwrap_or_else(|e| e.into_inner());
             let offered_read = local.capabilities().iter().any(|c| c == crate::storage::STORAGE_READ);
             local.power = power;
             local.extra_capabilities = extra_capabilities;
             let caps = local.capabilities();
-            let read_lost = offered_read && !caps.iter().any(|c| c == crate::storage::STORAGE_READ);
-            (caps, read_lost)
+            offered_read && !caps.iter().any(|c| c == crate::storage::STORAGE_READ)
         };
         if read_lost {
             lock(&self.shared.storage).cancel_all_reads();
         }
-        let update = HelloUpdate { power: Some(power), caps: Some(caps), device: None };
-        if let Ok(env) = Envelope::new(types::HELLO_UPDATE, &update) {
-            self.shared.broadcast(env).await;
-        }
+        self.shared.announce_power(power);
         self.shared.refresh_all_capabilities();
         for session in self.shared.live_sessions() {
             self.shared.send_deck(&session).await;

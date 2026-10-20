@@ -69,6 +69,13 @@ pub(crate) fn local_hello(shared: &Shared) -> Hello {
     }
 }
 
+/// [`local_hello`] with the storage caps this device actually admits to `peer`.
+pub(crate) fn local_hello_for(shared: &Shared, peer: &DeviceId) -> Hello {
+    let mut hello = local_hello(shared);
+    hello.caps = crate::storage::caps_for_peer(shared, peer, &hello.caps);
+    hello
+}
+
 /// Runs the dialer side of the handshake on a fresh connection.
 pub(crate) async fn handshake_dialer(
     conn: &Connection,
@@ -121,6 +128,21 @@ async fn check_versions(
     Err(Error::VersionTooOld { side })
 }
 
+/// Why [`Session::try_enqueue`] did not queue the message.
+pub(crate) enum TryEnqueue {
+    Full,
+    Closed,
+}
+
+/// One session's deferred capability announcement. The flush task belongs to
+/// this connection: closing it cannot drop a replacement session's update.
+#[derive(Default)]
+pub(crate) struct StorageAnnounce {
+    pub(crate) with_power: bool,
+    pub(crate) dirty: bool,
+    pub(crate) flushing: bool,
+}
+
 /// A live session. Cheap to share; dropping the last handle does not close
 /// the connection (call [`Session::close`]).
 pub(crate) struct Session {
@@ -141,6 +163,8 @@ pub(crate) struct Session {
     /// Artwork keys sent to this device (docs/protocol/media.md).
     sent_art: crate::notifications::SentIcons,
     pub(crate) cancel: CancellationToken,
+    /// Latest storage-admission announcement still waiting for outbox room.
+    pub(crate) storage_announce: Mutex<StorageAnnounce>,
 }
 
 impl std::fmt::Debug for Session {
@@ -186,6 +210,7 @@ impl Session {
             sent_icons: Default::default(),
             sent_art: Default::default(),
             cancel: shared.cancel.child_token(),
+            storage_announce: Mutex::new(StorageAnnounce::default()),
         });
 
         let weak = Arc::downgrade(shared);
@@ -298,6 +323,21 @@ impl Session {
     /// Queues a one-way message.
     pub async fn send(&self, env: Envelope) -> Result<()> {
         self.outbox.send(env).await.map_err(|_| Error::Offline)
+    }
+
+    /// Queues a message without waiting. [`TryEnqueue::Full`] means the
+    /// caller should send later; [`TryEnqueue::Closed`] means the session is gone.
+    pub(crate) fn try_enqueue(&self, env: Envelope) -> std::result::Result<(), TryEnqueue> {
+        match self.outbox.try_send(env) {
+            Ok(()) => Ok(()),
+            Err(mpsc::error::TrySendError::Full(_)) => Err(TryEnqueue::Full),
+            Err(mpsc::error::TrySendError::Closed(_)) => Err(TryEnqueue::Closed),
+        }
+    }
+
+    /// Waits until one control message can be queued.
+    pub(crate) async fn reserve(&self) -> Result<mpsc::Permit<'_, Envelope>> {
+        self.outbox.reserve().await.map_err(|_| Error::Offline)
     }
 
     /// Best-effort non-blocking enqueue for loss-tolerant real-time media frames

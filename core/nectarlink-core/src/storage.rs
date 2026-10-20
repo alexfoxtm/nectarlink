@@ -260,9 +260,20 @@ fn check_phone_allowed(
     // it doesn't gate the PC's own folders: the app's "share this PC's
     // folders" setting does (`Platform::storage_list` and friends refuse).
     if serves_phone_storage(shared) && !shared.toggle_on(peer, TOGGLE) {
-        let first_time = shared.storage.lock().unwrap_or_else(|e| e.into_inner()).mark_prompted(*peer);
-        if first_time {
-            shared.emit(NodeEvent::StorageRequested { device: *peer });
+        // Only an unset toggle asks once. Explicit false, and a store fault,
+        // deny without a new consent prompt.
+        let ask = match shared.store.toggles(peer) {
+            Ok(toggles) => !toggles.contains_key(TOGGLE),
+            Err(e) => {
+                tracing::warn!(error = %e, "storage toggle read failed; denying without a prompt");
+                false
+            }
+        };
+        if ask {
+            let first_time = shared.storage.lock().unwrap_or_else(|e| e.into_inner()).mark_prompted(*peer);
+            if first_time {
+                shared.emit(NodeEvent::StorageRequested { device: *peer });
+            }
         }
         return Err((ErrorCode::Denied, "storage access is turned off for this device".into()));
     }
@@ -278,11 +289,41 @@ fn check_phone_allowed(
 }
 
 /// Whether this device is a phone or tablet, sharing its own storage.
-fn serves_phone_storage(shared: &Shared) -> bool {
+pub(crate) fn serves_phone_storage(shared: &Shared) -> bool {
     matches!(
         shared.local.read().unwrap_or_else(|e| e.into_inner()).device.kind,
         nectarlink_protocol::messages::DeviceKind::Phone | nectarlink_protocol::messages::DeviceKind::Tablet
     )
+}
+
+/// Caps to admit to `peer` in `hello` and `hello.update`.
+///
+/// Global `storage.read` / `storage.write` stay in the advertisement while
+/// the phone's `storage` toggle is unset, so the PC can ask and the phone
+/// can prompt. An explicit false removes both for that peer only. A
+/// desktop's `storage` toggle points the other way and does not change the
+/// caps the desktop admits.
+pub(crate) fn caps_for_peer(shared: &Shared, peer: &DeviceId, global: &[String]) -> Vec<String> {
+    if !storage_explicitly_revoked(shared, peer) {
+        return global.to_vec();
+    }
+    global.iter().filter(|cap| *cap != STORAGE_READ && *cap != STORAGE_WRITE).cloned().collect()
+}
+
+/// `Some(false)` is a revocation. An unset toggle is the default off state
+/// and still allows the one-time consent request. A store error omits storage
+/// rather than advertising it.
+fn storage_explicitly_revoked(shared: &Shared, peer: &DeviceId) -> bool {
+    if !serves_phone_storage(shared) {
+        return false;
+    }
+    match shared.store.toggles(peer) {
+        Ok(toggles) => toggles.get(TOGGLE).copied() == Some(false),
+        Err(e) => {
+            tracing::warn!(error = %e, "storage toggle read failed; omitting storage caps");
+            true
+        }
+    }
 }
 
 fn parent_dir_of(path: &str) -> &str {

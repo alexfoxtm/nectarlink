@@ -3423,11 +3423,177 @@ async fn storage_read_stops_on_revoke_and_reenable_does_not_revive_it() {
     }
 
     *phone.platform.storage_read_barrier.lock().unwrap() = None;
-    let again =
-        with_timeout("read after re-enable", pc.node.storage_read(phone_id, "Documents/note.txt", 0, None))
-            .await
-            .unwrap();
+    let again = with_timeout("read after re-enable", async {
+        loop {
+            match pc.node.storage_read(phone_id, "Documents/note.txt", 0, None).await {
+                Err(Error::Unsupported) => {
+                    // The local toggle changes before its new offer reaches the PC.
+                    wait_for(&mut pc, "storage offer after re-enable", |event| match event {
+                        NodeEvent::Capabilities(matrix) if matrix.device == phone_id => Some(()),
+                        _ => None,
+                    })
+                    .await;
+                }
+                result => break result,
+            }
+        }
+    })
+    .await
+    .unwrap();
     assert_eq!(again.1, note);
+}
+
+fn storage_needs_phone_grant(state: &FeatureState) -> bool {
+    *state
+        == FeatureState::Locked {
+            upgrade: Upgrade {
+                action: UpgradeAction::GrantPermission(nectarlink_core::features::Permission::Storage),
+                effort: Effort::Instant,
+            },
+        }
+}
+
+/// Revoking storage on the phone tells that PC, and only that PC. Turning it
+/// back on admits the PC again. The other PC keeps the access it already had.
+#[tokio::test(flavor = "multi_thread")]
+async fn phone_storage_revocation_reaches_one_pc_and_reenables() {
+    use nectarlink_core::{FolderStorage, STORAGE_MOUNT, STORAGE_READ, STORAGE_WRITE};
+
+    let mut pc_a = device_with("Desktop", DeviceKind::Desktop, &[STORAGE_MOUNT]).await;
+    let mut pc_b = device_with("Laptop", DeviceKind::Desktop, &[STORAGE_MOUNT]).await;
+    let mut phone = device_with("Pixel", DeviceKind::Phone, &[STORAGE_READ, STORAGE_WRITE]).await;
+    let storage_root = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(storage_root.path().join("Documents")).unwrap();
+    std::fs::write(storage_root.path().join("Documents/note.txt"), b"note").unwrap();
+    *phone.platform.storage.lock().unwrap() = Some(FolderStorage::new(storage_root.path()));
+
+    pair_qr(&mut pc_a, &mut phone).await;
+    pair_qr(&mut pc_b, &mut phone).await;
+    let pc_a_id = pc_a.node.device_id();
+    let pc_b_id = pc_b.node.device_id();
+    let phone_id = phone.node.device_id();
+
+    pc_a.node.set_device_toggle(phone_id, "storage", true).unwrap();
+    pc_b.node.set_device_toggle(phone_id, "storage", true).unwrap();
+    assert_eq!(
+        pc_a.node.capabilities(phone_id).unwrap().state("files.storage"),
+        Some(FeatureState::Available)
+    );
+    assert_eq!(
+        pc_b.node.capabilities(phone_id).unwrap().state("files.storage"),
+        Some(FeatureState::Available)
+    );
+
+    // The phone has not granted anyone yet. The request still reaches it.
+    assert!(matches!(pc_a.node.storage_list(phone_id, "").await, Err(Error::Denied)));
+    wait_for(&mut phone, "storage requested", |e| match e {
+        NodeEvent::StorageRequested { device } if *device == pc_a_id => Some(()),
+        _ => None,
+    })
+    .await;
+
+    phone.node.set_device_toggle(pc_a_id, "storage", true).unwrap();
+    phone.node.set_device_toggle(pc_b_id, "storage", true).unwrap();
+    with_timeout("a lists", pc_a.node.storage_list(phone_id, "")).await.unwrap();
+    with_timeout("b lists", pc_b.node.storage_list(phone_id, "")).await.unwrap();
+
+    phone.node.set_device_toggle(pc_a_id, "storage", false).unwrap();
+    // A request that still reaches the phone is Denied and does not ask again.
+    // If the cap update already landed, the PC fails closed locally instead.
+    let listed = pc_a.node.storage_list(phone_id, "").await;
+    assert!(matches!(listed, Err(Error::Denied) | Err(Error::Unsupported)), "{listed:?}");
+    while let Ok(ev) = phone.events.try_recv() {
+        assert!(
+            !matches!(ev, NodeEvent::StorageRequested { device } if device == pc_a_id),
+            "explicit revoke must not ask for consent again"
+        );
+    }
+    let revoked = wait_for(&mut pc_a, "a lost storage", |e| match e {
+        NodeEvent::Capabilities(m) if m.device == phone_id => {
+            m.state("files.storage").filter(storage_needs_phone_grant)
+        }
+        _ => None,
+    })
+    .await;
+    assert!(storage_needs_phone_grant(&revoked));
+    assert!(matches!(pc_a.node.storage_list(phone_id, "").await, Err(Error::Unsupported)));
+    assert_eq!(
+        pc_b.node.capabilities(phone_id).unwrap().state("files.storage"),
+        Some(FeatureState::Available)
+    );
+    with_timeout("b still lists", pc_b.node.storage_list(phone_id, "")).await.unwrap();
+
+    phone.node.set_device_toggle(pc_a_id, "storage", true).unwrap();
+    wait_for(&mut pc_a, "a storage returns", |e| match e {
+        NodeEvent::Capabilities(m)
+            if m.device == phone_id && m.state("files.storage") == Some(FeatureState::Available) =>
+        {
+            Some(())
+        }
+        _ => None,
+    })
+    .await;
+    with_timeout("a lists again", pc_a.node.storage_list(phone_id, "")).await.unwrap();
+    with_timeout("b still lists after re-enable", pc_b.node.storage_list(phone_id, "")).await.unwrap();
+}
+
+/// A repeated global power update and a new session must not give a revoked
+/// PC storage.read again.
+#[tokio::test(flavor = "multi_thread")]
+async fn revoked_storage_stays_revoked_across_power_update_and_reconnect() {
+    use nectarlink_core::{FolderStorage, STORAGE_MOUNT, STORAGE_READ, STORAGE_WRITE};
+
+    let mut pc = device_with("Desktop", DeviceKind::Desktop, &[STORAGE_MOUNT]).await;
+    let mut phone = device_with("Pixel", DeviceKind::Phone, &[STORAGE_READ, STORAGE_WRITE]).await;
+    let storage_root = tempfile::tempdir().unwrap();
+    std::fs::write(storage_root.path().join("note.txt"), b"note").unwrap();
+    *phone.platform.storage.lock().unwrap() = Some(FolderStorage::new(storage_root.path()));
+
+    pair_qr(&mut pc, &mut phone).await;
+    let (pc_id, phone_id) = (pc.node.device_id(), phone.node.device_id());
+    pc.node.set_device_toggle(phone_id, "storage", true).unwrap();
+    phone.node.set_device_toggle(pc_id, "storage", true).unwrap();
+    with_timeout("list before revoke", pc.node.storage_list(phone_id, "")).await.unwrap();
+
+    phone.node.set_device_toggle(pc_id, "storage", false).unwrap();
+    wait_for(&mut pc, "revoked", |e| match e {
+        NodeEvent::Capabilities(m) if m.device == phone_id => {
+            m.state("files.storage").filter(storage_needs_phone_grant)
+        }
+        _ => None,
+    })
+    .await;
+
+    phone
+        .node
+        .update_power(
+            PowerLevel::NotApplicable,
+            vec!["media.control".into(), STORAGE_READ.into(), STORAGE_WRITE.into()],
+        )
+        .await;
+    wait_for(&mut pc, "power update applied", |e| match e {
+        NodeEvent::PeerPowerChanged { device, .. } if *device == phone_id => Some(()),
+        _ => None,
+    })
+    .await;
+    let after_power = pc.node.capabilities(phone_id).unwrap().state("files.storage");
+    assert!(after_power.as_ref().is_some_and(storage_needs_phone_grant), "{after_power:?}");
+    assert!(matches!(pc.node.storage_list(phone_id, "").await, Err(Error::Unsupported)));
+
+    pc.node.shutdown().await;
+    wait_for(&mut phone, "pc offline", |e| match e {
+        NodeEvent::LinkChanged { device, link: LinkState::Offline { .. } } if *device == pc_id => Some(()),
+        _ => None,
+    })
+    .await;
+    let TestDevice { node: stopped, dir, .. } = pc;
+    drop(stopped);
+    let mut pc = start_in(dir, "Desktop", DeviceKind::Desktop).await;
+    wait_online(&mut phone, pc_id).await;
+    wait_online(&mut pc, phone_id).await;
+    let after_reconnect = pc.node.capabilities(phone_id).unwrap().state("files.storage");
+    assert!(after_reconnect.as_ref().is_some_and(storage_needs_phone_grant), "{after_reconnect:?}");
+    assert!(matches!(pc.node.storage_list(phone_id, "").await, Err(Error::Unsupported)));
 }
 
 fn file_from_pipe_reader(reader: std::io::PipeReader) -> std::fs::File {
