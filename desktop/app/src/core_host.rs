@@ -129,7 +129,9 @@ pub(crate) fn start_window_gate(config: NodeConfig, platform: Arc<dyn Platform>)
     let host = host();
     let node = host
         .runtime
-        .block_on(tokio::time::timeout(Duration::from_secs(10), Node::start(config, platform)))
+        .block_on(async {
+            tokio::time::timeout(Duration::from_secs(10), Node::start(config, platform)).await
+        })
         .map_err(|_| "gate receiver node did not start within 10 seconds".to_owned())?
         .map_err(|e| format!("gate receiver node failed to start: {e}"))?;
     let mut events = node.events();

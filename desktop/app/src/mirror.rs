@@ -2533,7 +2533,9 @@ pub mod window_gate {
     }
 
     fn shut_down_node(runtime: &tokio::runtime::Runtime, node: &Node) -> bool {
-        runtime.block_on(tokio::time::timeout(Duration::from_secs(5), node.shutdown())).is_ok()
+        runtime
+            .block_on(async { tokio::time::timeout(Duration::from_secs(5), node.shutdown()).await })
+            .is_ok()
     }
 
     /// QR pairing over the loopback-only invitation; its secret stays in memory.
@@ -2544,7 +2546,9 @@ pub mod window_gate {
         phone: &Node,
     ) -> Result<(), String> {
         let invitation = host
-            .block_on(tokio::time::timeout(Duration::from_secs(10), receiver.pairing_start_qr()))
+            .block_on(async {
+                tokio::time::timeout(Duration::from_secs(10), receiver.pairing_start_qr()).await
+            })
             .map_err(|_| "pairing invitation took over 10 seconds".to_owned())?
             .map_err(|e| format!("pairing invitation failed: {e}"))?;
         if invitation.addrs.is_empty() || !invitation.addrs.iter().all(|a| a.ip().is_loopback()) {
@@ -2553,7 +2557,7 @@ pub mod window_gate {
         let uri = invitation.to_uri();
         drop(invitation);
         phone_runtime
-            .block_on(tokio::time::timeout(Duration::from_secs(20), phone.pairing_join(&uri)))
+            .block_on(async { tokio::time::timeout(Duration::from_secs(20), phone.pairing_join(&uri)).await })
             .map_err(|_| "loopback QR pairing took over 20 seconds".to_owned())?
             .map_err(|e| format!("loopback QR pairing failed: {e}"))?;
         host.block_on(wait_for_link(receiver, phone.device_id()))
@@ -2595,10 +2599,13 @@ pub mod window_gate {
                 DeviceKind::Phone,
                 &[MIRROR_CAPTURE, MIRROR_CORRELATION],
             );
-            let phone = match phone_runtime.block_on(tokio::time::timeout(
-                Duration::from_secs(10),
-                Node::start(phone_config, Arc::new(GatePhone { events })),
-            )) {
+            let phone = match phone_runtime.block_on(async {
+                tokio::time::timeout(
+                    Duration::from_secs(10),
+                    Node::start(phone_config, Arc::new(GatePhone { events })),
+                )
+                .await
+            }) {
                 Ok(Ok(phone)) => phone,
                 Ok(Err(e)) => {
                     shut_down_node(host, &receiver);

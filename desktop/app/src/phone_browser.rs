@@ -32,12 +32,12 @@ use std::{
 #[cfg(feature = "test-support")]
 use std::sync::atomic::AtomicBool;
 
+#[cfg(feature = "test-support")]
+use nectarlink_core::Node;
 use nectarlink_core::{
     ConnectionPath, DeviceId, Error, LinkState, NodeEvent,
     storage::{StorageEntry, is_valid_storage_dir_path, is_valid_storage_name, is_valid_storage_path},
 };
-#[cfg(feature = "test-support")]
-use nectarlink_core::Node;
 use tokio::sync::mpsc;
 
 /// Root sets this true only after native acceptance. While false, every
@@ -1187,7 +1187,7 @@ mod browser_transport_fixture {
 
     use nectarlink_core::{
         DeviceId, DeviceInfo, DeviceKind, LinkState, Node, NodeConfig, NodeEvent, PlainKeyProtector,
-        Platform, StorageEntry, StorageError, STORAGE_READ, STORAGE_WRITE,
+        Platform, STORAGE_READ, STORAGE_WRITE, StorageEntry, StorageError,
     };
 
     /// Serializes the fixture tests: they share the global browser state and
@@ -1359,7 +1359,7 @@ mod browser_transport_fixture {
                 .enable_all()
                 .build()
                 .expect("fixture Tokio runtime");
-            runtime.block_on(async {
+            let (receiver, phone, receiver_id, phone_id, pump, recorded) = runtime.block_on(async {
                 let phone_platform = Arc::new(SyntheticPhonePlatform { slow_ms: 300 });
                 let receiver_config =
                     fixture_node_config(receiver_dir.path(), "Synthetic Mac", DeviceKind::Desktop, &[]);
@@ -1413,18 +1413,19 @@ mod browser_transport_fixture {
                         super::on_event(&event);
                     }
                 });
-                Self {
-                    runtime,
-                    receiver,
-                    phone,
-                    receiver_id,
-                    phone_id,
-                    pump,
-                    recorded,
-                    _phone_dir: phone_dir,
-                    _receiver_dir: receiver_dir,
-                }
-            })
+                (receiver, phone, receiver_id, phone_id, pump, recorded)
+            });
+            Self {
+                runtime,
+                receiver,
+                phone,
+                receiver_id,
+                phone_id,
+                pump,
+                recorded,
+                _phone_dir: phone_dir,
+                _receiver_dir: receiver_dir,
+            }
         }
 
         fn recorded_link_online(&self) -> Option<NodeEvent> {
