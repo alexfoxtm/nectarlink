@@ -2167,7 +2167,7 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
             }
         }
         if (shouldQueue) {
-            enqueueRemoteOp { node =>
+            enqueueRemoteOp { node ->
                 val (targetId, totalDx, totalDy) = synchronized(pendingMoveLock) {
                     val t = pendingMovePcId
                     val x = pendingMoveDx
