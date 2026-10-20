@@ -2216,17 +2216,20 @@ mod tests {
 /// a screen, app window, microphone, or personal device.
 ///
 /// Runs on macOS with the nondefault `test-support` feature.
-#[cfg(all(test, target_os = "macos", feature = "test-support"))]
+#[cfg(all(test, target_os = "macos"))]
 mod mac_receive_fixture {
     use std::{
-        sync::{Arc, Mutex, OnceLock},
+        sync::{Mutex, OnceLock},
         time::{Duration, Instant},
     };
 
+    use nectarlink_core::{DeviceId, MIRROR_SCREEN, MirrorConfig, MirrorInput};
+    #[cfg(feature = "test-support")]
+    use std::sync::Arc;
+    #[cfg(feature = "test-support")]
     use nectarlink_core::{
-        DeviceId, DeviceInfo, DeviceKind, LinkState, MIRROR_CAPTURE, MIRROR_CORRELATION, MIRROR_SCREEN,
-        MIRROR_VIEW, MirrorConfig, MirrorInput, MirrorSend, MirrorStart, Node, NodeConfig, NodeEvent,
-        PacketKind, PlainKeyProtector, Platform,
+        DeviceInfo, DeviceKind, LinkState, MIRROR_CAPTURE, MIRROR_CORRELATION, MIRROR_VIEW, MirrorSend,
+        MirrorStart, Node, NodeConfig, NodeEvent, PacketKind, PlainKeyProtector, Platform,
     };
 
     use super::{Phase, Shown, Window};
@@ -2309,11 +2312,13 @@ mod mac_receive_fixture {
         super::ffi::video_clear(&window.key());
     }
 
+    #[cfg(feature = "test-support")]
     #[derive(Debug, Default)]
     struct NativeReceiverPlatform {
         sink_requests: Mutex<Vec<(DeviceId, u32)>>,
     }
 
+    #[cfg(feature = "test-support")]
     impl Platform for NativeReceiverPlatform {
         fn mirror_sink(&self, peer: &DeviceId, session: u32) -> Option<Arc<dyn nectarlink_core::MirrorSink>> {
             self.sink_requests.lock().unwrap_or_else(|e| e.into_inner()).push((*peer, session));
@@ -2321,11 +2326,13 @@ mod mac_receive_fixture {
         }
     }
 
+    #[cfg(feature = "test-support")]
     #[derive(Debug)]
     struct SyntheticPhonePlatform {
         requests: tokio::sync::mpsc::UnboundedSender<(DeviceId, MirrorStart)>,
     }
 
+    #[cfg(feature = "test-support")]
     impl Platform for SyntheticPhonePlatform {
         fn mirror_requested(&self, peer: &DeviceId, options: &MirrorStart) -> Result<(), String> {
             // Synthetic approval only: no capture, microphone, or OS prompt.
@@ -2333,6 +2340,7 @@ mod mac_receive_fixture {
         }
     }
 
+    #[cfg(feature = "test-support")]
     fn fixture_device(name: &str, kind: DeviceKind) -> DeviceInfo {
         DeviceInfo {
             name: name.into(),
@@ -2346,6 +2354,7 @@ mod mac_receive_fixture {
         }
     }
 
+    #[cfg(feature = "test-support")]
     fn fixture_node_config(
         directory: &std::path::Path,
         name: &str,
@@ -2365,6 +2374,7 @@ mod mac_receive_fixture {
         config
     }
 
+    #[cfg(feature = "test-support")]
     async fn wait_for_link(receiver: &Node, phone: DeviceId) -> Result<(), String> {
         tokio::time::timeout(Duration::from_secs(5), async {
             loop {
@@ -2380,6 +2390,7 @@ mod mac_receive_fixture {
         .map_err(|_| "authenticated loopback link did not come online within 5 seconds".to_owned())
     }
 
+    #[cfg(feature = "test-support")]
     async fn wait_for_mirroring_event(
         events: &mut tokio::sync::broadcast::Receiver<NodeEvent>,
         phone: DeviceId,
@@ -2399,6 +2410,7 @@ mod mac_receive_fixture {
         .map_err(|_| format!("core did not emit mirror state on={on} within 5 seconds"))?
     }
 
+    #[cfg(feature = "test-support")]
     async fn wait_for_frame_clear(window: Window) -> Result<(), String> {
         tokio::time::timeout(Duration::from_secs(5), async {
             loop {
@@ -2412,6 +2424,7 @@ mod mac_receive_fixture {
         .map_err(|_| "native video frame was not cleared when the authenticated stream ended".to_owned())
     }
 
+    #[cfg(feature = "test-support")]
     async fn wait_for_frame(window: Window) -> Option<crate::win::image::Bitmap> {
         tokio::time::timeout(Duration::from_secs(10), async {
             loop {
@@ -2429,6 +2442,7 @@ mod mac_receive_fixture {
         .flatten()
     }
 
+    #[cfg(feature = "test-support")]
     async fn exercise_authenticated_stream(
         receiver: &Node,
         phone: &Node,
@@ -2634,6 +2648,7 @@ mod mac_receive_fixture {
         drop_fixture_window(window_b);
     }
 
+    #[cfg(feature = "test-support")]
     #[test]
     fn transport_to_video_frame_uses_two_authenticated_nodes() {
         let _fixture = FIXTURE_LOCK.lock().unwrap_or_else(|e| e.into_inner());

@@ -1,5 +1,45 @@
 # Feature parity: Android phone with this Mac port
 
+## Current checkpoint — 2026-10-20, Wave33
+
+This section supersedes the historical audit below. Implementation, local checks,
+normal-app acceptance and publication are separate gates. The two live trackers
+are the local roadmap and Obsidian GLOBAL `Waypair/` notes.
+
+Canonical macOS PR24 merged as `e7232600`. The fork incorporated that exact
+history through integration `3272f62b` and primary merge `66458017`, retaining
+its newer Android and Mac work. The resulting integration changes only the
+upstream changelog and one shell comment relative to our completed feature tree;
+it does not add a second macOS port. Private release/update infrastructure stays
+fork-only. The Linux PR12-derived MP4 implementation is source work, not a
+claim that Linux PR34 or its planned media series is adopted wholesale.
+
+| Feature | Current implementation/check evidence | Release or remaining gate |
+| --- | --- | --- |
+| Copied-URL Dock offer | Negotiated privacy, session and original lifetime; explicit click only. Android Chrome supplemental-MIME fix retained. | Mac42 and Android107/108 lineage published. Owner saw browser/phone badge and exact URL opening; untouched synthetic expiry passed. Mac-lock acceptance remains open. |
+| Actual connection label | Selected-session route metadata; no generic ADB label or tunnel-record USB guess in display. | Android108 published; owner confirmed Galaxy Home Wi-Fi. Physical USB/LTE transitions and widget visual remain unperformed. |
+| Native notifications | Public UserNotifications sender uses the app identity. | Mac42 lineage published; owner confirmed W icon. Click and quiet/background acceptance remain separate. |
+| Keep in menu bar | Real status item, Open/Quit, hide only after creation, explicit Quit exits. | Published; owner confirmed Open and Quit. Stable saved preference retained. |
+| Phone screen mirroring | Correlated requests and stale-frame/service-epoch fences; actual VideoToolbox decode and production VideoView synthetic Cocoa/Metal paint checked. | Production mirror/input/audio caps stay off. New real two-peer stream fixture compiled, but failed during loopback address admission; no transport success or personal-phone capture claimed. A nondefault isolated test seam is being repaired before rerunning. |
+| Video-only MP4 | Bounded streaming recorder from attributed PR12 work; ownership/reconfiguration checks, three tests, ffprobe and two-frame FFmpeg decode passed. | Source only; no normal-app recording or phone capture acceptance. Audio recording remains refused. |
+| Phone folder browser | Explicit consent, per-peer sharing propagation, read revocation and path/session fences; Android system provider17 ordinary checks passed on102. | Browser remains disabled pending current native consent/revoke/path/provider composition acceptance. Earlier provider checks are not that whole-flow proof. |
+| Optional Android background connection | Imported upstream a415 behavior, default on; reviewed lifecycle/monitor/coalescer repairs. Thirty-seven focused core/banking/clipboard/status cases passed on the corrected tree. | Source only. Normal default-on/off lifecycle acceptance, artifact qualification and a new Android release remain open. |
+| Cellular admission and file consent | Transport uses paired-identity-authenticated encrypted QUIC/TLS1.3. Separate audit found tunnel-record/selected-Relay policy mismatch and direct-WAN policy ambiguity. | Source finding, not reproduced LTE disclosure. See the audit receipt; do not infer all file consent from transport encryption or a Cellular badge. No security-policy change is claimed here. |
+| Waypair Cloud | Independent Cloud15 fixes indexed Photos searches with punctuated English month names. Six tests, signed build/lint, independent artifact review, normal in-place upgrade and fresh current-version check passed. | Cloud15 published with two full HTTP objects exact and five other feeds unchanged. Signed-in Photos acceptance remains open; direct emulator upgrade is not OTA. |
+
+P0 full simultaneous Galaxy SIM conversation through Mac microphone/speakers,
+with safe handback, remains unproven and deferred until an attended, specifically
+authorized probe. Ring/Answer/Decline is not duplex-audio proof. No personal
+capture, microphone, call, routing or permission change is implied by these
+source or synthetic checks.
+
+## Historical source audit — superseded details
+
+The following original matrix and wave notes retain provenance. Their old
+statements about stubs, notification implementation, tray deferral, source pins
+and published versions are historical; use the current checkpoint above and
+receipt-backed trackers for present status.
+
 Source read of `waypair/macos-port` at `767e3308` (parent `9b93a5c5`, the dispatched product; the extra commit is About copy only). Compared with Windows seams in `desktop/app/src/win/`, Mac seams in `desktop/app/src/mac/` (compiled as `win` on macOS), and Android handlers. Fork delta is `e71dee41..767e3308`. Live macOS PR #24 head `9c0f13d7` is owned by the integration worker; this note only uses the published diff. Linux PR #34 (`bcc2caee`) is a source reference and is not in this matrix. No build, device, credential, or Galaxy session. Alex is disconnected.
 
 About strings and guide prose are not runtime proof. "Unit test in tree" means a test exists and this session did not run it. "Unproven" means no paired-phone run.
