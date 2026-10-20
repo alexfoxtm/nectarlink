@@ -93,6 +93,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.isSpecified
@@ -778,6 +779,14 @@ fun HomeScreen(
     }
 }
 
+/**
+ * Names the reason on a capability-greyed Home action for accessibility
+ * (existing `error_unsupported` copy, no new strings). Offline-greyed buttons
+ * keep no reason: the status dot and wake UI already explain those.
+ */
+private fun Modifier.capabilityReason(show: Boolean, reason: String): Modifier =
+    if (!show) this else semantics { stateDescription = reason }
+
 @Composable
 private fun Modifier.guideHighlightRing(highlighted: Boolean): Modifier {
     if (!highlighted) return this
@@ -1405,6 +1414,15 @@ private fun PcCard(
             val outlined = ButtonDefaults.outlinedButtonColors(contentColor = ink, disabledContentColor = ink.copy(alpha = 0.38f))
             val outline = BorderStroke(1.dp, ink.copy(alpha = if (device.online) 0.45f else 0.15f))
             val statusDotColor = if (device.online) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+            // Per-action capability gates from the negotiated matrix. Desk clock
+            // renders locally and Browse PC files has no negotiable matrix
+            // feature (`files.browse` is announced on neither platform; the wire
+            // admits via `storage.read` and the sheet shows the reason), so both
+            // stay online-gated as before.
+            val unsupportedReason = stringResource(R.string.error_unsupported)
+            val controlPcEnabled = device.canControlPc()
+            val deckEnabled = device.canOpenDeck()
+            val webcamEnabled = device.canOpenWebcam()
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1484,10 +1502,11 @@ private fun PcCard(
                 ) {
                     Button(
                         contentPadding = CardButtonPadding,
-                        enabled = device.online,
+                        enabled = controlPcEnabled,
                         colors = primaryBtn,
                         onClick = { onRemote(device.id) },
-                        modifier = Modifier.weight(1f).heightIn(min = 46.dp),
+                        modifier = Modifier.weight(1f).heightIn(min = 46.dp)
+                            .capabilityReason(device.online && !controlPcEnabled, unsupportedReason),
                     ) {
                         Icon(
                             imageVector = RemotePcIcon,
@@ -1499,10 +1518,11 @@ private fun PcCard(
                     }
                     FilledTonalButton(
                         contentPadding = CardButtonPadding,
-                        enabled = device.online,
+                        enabled = deckEnabled,
                         colors = tonal,
                         onClick = { onDeck(device.id) },
-                        modifier = Modifier.weight(1f).heightIn(min = 46.dp),
+                        modifier = Modifier.weight(1f).heightIn(min = 46.dp)
+                            .capabilityReason(device.online && !deckEnabled, unsupportedReason),
                     ) {
                         Icon(
                             imageVector = DeckGridIcon,
@@ -1534,10 +1554,11 @@ private fun PcCard(
                     }
                     FilledTonalButton(
                         contentPadding = CardButtonPadding,
-                        enabled = device.online,
+                        enabled = webcamEnabled,
                         colors = tonal,
                         onClick = { onWebcam(device.id) },
-                        modifier = Modifier.weight(1f).heightIn(min = 44.dp),
+                        modifier = Modifier.weight(1f).heightIn(min = 44.dp)
+                            .capabilityReason(device.online && !webcamEnabled, unsupportedReason),
                     ) {
                         Icon(
                             imageVector = CameraLensIcon,
