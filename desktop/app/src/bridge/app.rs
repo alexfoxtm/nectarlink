@@ -64,8 +64,13 @@ pub mod qobject {
         #[qproperty(QString, wallpaper_colors)]
         /// Material You color schemes for paired phones (`[{ id, key, name, label, hasAccent, scheme }]`).
         #[qproperty(QString, phone_colors)]
-        /// Whether Windows shows this app's notifications.
+        /// Whether Windows shows this app's notifications. On macOS this
+        /// stays true so the Windows Settings banner does not appear; Mac
+        /// authorization is `notification_permission`.
         #[qproperty(bool, toasts_enabled)]
+        /// Mac notification authorization: `unknown`, `not_determined`,
+        /// `denied`, `provisional`, or `authorized`. Empty on other platforms.
+        #[qproperty(QString, notification_permission)]
         #[qproperty(QString, version)]
         /// The Connection Doctor's findings, as JSON: [{ id, outcome:
         /// "ok" | "warn" | "fail", title, detail, fix? }].
@@ -311,10 +316,19 @@ pub mod qobject {
         fn note_command_palette_shown(self: Pin<&mut AppController>);
 
         /// Re-reads whether Windows shows this app's notifications (the user
-        /// may have changed it in Settings).
+        /// may have changed it in Settings). On macOS, also re-reads
+        /// notification authorization without requesting permission.
         #[qinvokable]
         #[cxx_name = "refreshToastsEnabled"]
         fn refresh_toasts_enabled(self: Pin<&mut AppController>);
+        /// Asks macOS for notification permission. No-op unless the last read
+        /// was `not_determined`, and no-op on other platforms.
+        #[qinvokable]
+        fn enable_notifications(self: Pin<&mut AppController>);
+        /// Opens System Settings to this Mac's notification pane. No-op on
+        /// other platforms.
+        #[qinvokable]
+        fn open_notification_settings(self: Pin<&mut AppController>);
 
         /// Opens the Connection Doctor and checks the connection.
         #[qinvokable]
@@ -430,6 +444,7 @@ pub struct AppControllerRust {
     wallpaper_colors: QString,
     phone_colors: QString,
     toasts_enabled: bool,
+    notification_permission: QString,
     version: QString,
     doctor_checks: QString,
     doctor_busy: bool,
@@ -601,6 +616,17 @@ fn controller() -> Option<CxxQtThread<qobject::AppController>> {
     CONTROLLER.get()?.lock().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
+/// Publishes Mac notification authorization onto the Qt thread. The listener
+/// does not request permission.
+#[cfg(target_os = "macos")]
+fn install_mac_notification_permission(qt: CxxQtThread<qobject::AppController>) {
+    win::toast::set_authorization_listener(move |_auth| {
+        let _ = qt.queue(move |mut object| {
+            object.as_mut().set_notification_permission(QString::from(win::toast::authorization().label()));
+        });
+    });
+}
+
 /// Asks the app to quit (from any thread), as Quit in the tray does.
 pub fn request_quit() {
     if let Some(qt) = controller() {
@@ -750,10 +776,15 @@ impl cxx_qt::Initialize for qobject::AppController {
         }
         let initial_phone_colors = core_host::host().hub.read(|s| phone_colors_json(&s.devices));
         self.as_mut().set_phone_colors(QString::from(&initial_phone_colors));
-        self.as_mut().refresh_appearance();
-        self.as_mut().refresh_localsend_state();
         let qt = self.qt_thread();
         *CONTROLLER.get_or_init(Mutex::default).lock().unwrap_or_else(|e| e.into_inner()) = Some(qt.clone());
+        #[cfg(target_os = "macos")]
+        {
+            install_mac_notification_permission(qt.clone());
+            self.as_mut().set_notification_permission(QString::from(win::toast::authorization().label()));
+        }
+        self.as_mut().refresh_appearance();
+        self.as_mut().refresh_localsend_state();
         if let Some(task) = PENDING_JUMP_TASK.lock().unwrap_or_else(|e| e.into_inner()).take() {
             dispatch_jump_task(&qt, task);
         }
@@ -1514,8 +1545,26 @@ impl qobject::AppController {
         // Also when the window comes back to the front: battery saver may
         // have changed meanwhile.
         self.as_mut().set_power_saver(win::power_saver());
-        self.set_toasts_enabled(win::toast::enabled());
+        self.as_mut().set_toasts_enabled(win::toast::enabled());
+        #[cfg(target_os = "macos")]
+        {
+            self.as_mut().set_notification_permission(QString::from(win::toast::authorization().label()));
+            // A settings read. It does not request permission.
+            win::toast::refresh_authorization();
+        }
         core_host::spawn(core_host::refresh_wake());
+    }
+
+    pub fn enable_notifications(self: Pin<&mut Self>) {
+        let _ = self;
+        #[cfg(target_os = "macos")]
+        win::toast::request_authorization();
+    }
+
+    pub fn open_notification_settings(self: Pin<&mut Self>) {
+        let _ = self;
+        #[cfg(target_os = "macos")]
+        win::toast::open_notification_settings();
     }
 
     pub fn ring(self: Pin<&mut Self>, device: &QString, on: bool) {

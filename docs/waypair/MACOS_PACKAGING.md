@@ -8,6 +8,8 @@ identity, settings and pairing. Develop and test it in place; do not create
 separate QA/test apps or alternate bundle IDs. Code tests and synthetic data
 fixtures remain appropriate. The bootstrap release snapshot below is historical.
 
+Build and test from one coordinator checkout. Do not share a Cargo target directory between worktrees: CXX-Qt build-script outputs can retain a different checkout's bridge list. Use separate target directories for independent builds, or consolidate the source and refresh only generated workspace packages before switching. Keep qualified archives, signing helpers and registry dependencies. Source workers do not compile apps.
+
 Current personal release, packaged from source `9b93a5c5` (native code
 `0194b69d`):
 
