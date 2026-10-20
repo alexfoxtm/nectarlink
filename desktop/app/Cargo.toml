@@ -10,6 +10,9 @@ repository.workspace = true
 license = "GPL-3.0-or-later"
 publish = false
 
+[features]
+test-support = ["nectarlink-core/test-support"]
+
 [[bin]]
 name = "nectarlink-desktop"
 path = "src/main.rs"

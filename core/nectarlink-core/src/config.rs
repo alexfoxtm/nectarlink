@@ -44,6 +44,9 @@ pub struct NodeConfig {
     /// ADB server address on a PC (`127.0.0.1:5037`) for automatic USB
     /// detection, port forwarding, and USB auto-pairing.
     pub adb_server: Option<std::net::SocketAddr>,
+    /// Restricts the opt-in composed mirror fixture to loopback networking.
+    #[cfg(feature = "test-support")]
+    pub(crate) test_support_loopback_mirror_fixture: bool,
 }
 
 impl NodeConfig {
@@ -66,7 +69,15 @@ impl NodeConfig {
             localsend_port,
             usb_port: None,
             adb_server: None,
+            #[cfg(feature = "test-support")]
+            test_support_loopback_mirror_fixture: false,
         }
+    }
+
+    /// Enables the isolated loopback transport used by the composed Mac mirror fixture.
+    #[cfg(feature = "test-support")]
+    pub fn enable_loopback_mirror_fixture(&mut self) {
+        self.test_support_loopback_mirror_fixture = true;
     }
 }
 

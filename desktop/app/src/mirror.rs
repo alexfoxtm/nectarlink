@@ -2209,24 +2209,16 @@ mod tests {
     }
 }
 
-/// Mac view-only receive fixture: drives the genuine production receiver
-/// (the real [`super::sink`], the real VideoToolbox decode thread, the real
-/// `ffi::video_frame` publication the QML `MirrorWindow` shows) with the
-/// committed synthetic fixture, standing in for the authenticated core
-/// stream the core hands over once Root advertises `mirror.view`.
+/// Mac view-only mirror fixtures use the real production sink, VideoToolbox
+/// decode thread, and `ffi::video_frame` publication. The composed test below
+/// sends a committed H.264 frame through two authenticated Nodes over 127.0.0.1.
+/// Its phone platform only auto-approves the screen request; it does not capture
+/// a screen, app window, microphone, or personal device.
 ///
-/// No network, no pairing, no personal device, no app window: the two fake
-/// device ids below stand in for (1) the local request owner `request()`
-/// records and (2) the core-stamped generation the phone echoes in
-/// `MirrorConfig.request`. Host-dependent calls (`request`, `stop`,
-/// `on_event`, which fan out through `core_host`) are not made here; their
-/// exact state effects are replayed through `state` and asserted, and the
-/// Root run steps for them are in `MIRROR-MAC-NEXT-IMPLEMENTATION.md`.
-/// Runs on macOS only: it decodes through VideoToolbox.
-#[cfg(all(test, target_os = "macos"))]
+/// Runs on macOS with the nondefault `test-support` feature.
+#[cfg(all(test, target_os = "macos", feature = "test-support"))]
 mod mac_receive_fixture {
     use std::{
-        net::SocketAddr,
         sync::{Arc, Mutex, OnceLock},
         time::{Duration, Instant},
     };
@@ -2365,6 +2357,7 @@ mod mac_receive_fixture {
         config.lan_discovery = false;
         config.adb_server = None;
         config.usb_port = None;
+        config.enable_loopback_mirror_fixture();
         config.key_protector = Some(Arc::new(PlainKeyProtector));
         // Only the test-only screen-mirror gates are enabled; no capture
         // implementation, input, audio, or unrelated capability is present.
@@ -2699,18 +2692,14 @@ mod mac_receive_fixture {
             };
 
             let result = async {
-                let mut invitation = tokio::time::timeout(Duration::from_secs(10), receiver.pairing_start_qr())
+                let invitation = tokio::time::timeout(Duration::from_secs(10), receiver.pairing_start_qr())
                     .await
                     .map_err(|_| "receiver pairing invitation exceeded 10 seconds".to_owned())?
                     .map_err(|error| format!("receiver pairing invitation failed: {error}"))?;
-                let port = invitation
-                    .addrs
-                    .first()
-                    .map(SocketAddr::port)
-                    .ok_or_else(|| "receiver pairing invitation has no endpoint port".to_owned())?;
-                invitation.addrs = vec![SocketAddr::from(([127, 0, 0, 1], port))];
-                if !invitation.addrs.iter().all(|address| address.ip().is_loopback()) {
-                    return Err("pairing invitation contains a non-loopback endpoint".into());
+                if invitation.addrs.is_empty()
+                    || !invitation.addrs.iter().all(|address| address.ip().is_loopback())
+                {
+                    return Err("loopback-bound fixture advertised a non-loopback or missing address".into());
                 }
                 let pairing_uri = invitation.to_uri();
                 tokio::time::timeout(Duration::from_secs(10), phone.pairing_join(&pairing_uri))

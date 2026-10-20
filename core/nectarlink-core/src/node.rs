@@ -215,6 +215,8 @@ pub(crate) struct Shared {
     /// The last capability matrix emitted per device, to emit only changes.
     matrices: Mutex<HashMap<DeviceId, (CapabilityMatrix, StorageOffer)>>,
     pub(crate) away_mode: std::sync::atomic::AtomicBool,
+    #[cfg(feature = "test-support")]
+    test_support_loopback_mirror_fixture: bool,
     memory: MemoryLookup,
     /// This device's notifications, when it mirrors them (phones).
     pub notifications: Feed,
@@ -1040,7 +1042,14 @@ impl Shared {
                 if self.is_usb_addr(a) {
                     true
                 } else if a.ip().is_loopback() {
-                    false
+                    #[cfg(feature = "test-support")]
+                    {
+                        self.test_support_loopback_mirror_fixture
+                    }
+                    #[cfg(not(feature = "test-support"))]
+                    {
+                        false
+                    }
                 } else {
                     allow_wan || crate::session::is_lan_ip(a.ip())
                 }
@@ -1845,6 +1854,8 @@ impl Node {
             dial_failures: Mutex::new(HashMap::new()),
             matrices: Mutex::new(HashMap::new()),
             away_mode: std::sync::atomic::AtomicBool::new(config.away_mode),
+            #[cfg(feature = "test-support")]
+            test_support_loopback_mirror_fixture: config.test_support_loopback_mirror_fixture,
             memory,
             notifications: Feed::default(),
             notification_history: Mutex::new(Vec::new()),
@@ -4282,6 +4293,10 @@ async fn bind_endpoint(
         .secret_key(secret)
         .alpns(vec![ALPN_SESSION.to_vec(), ALPN_PAIR.to_vec()])
         .transport_config(transport);
+    #[cfg(feature = "test-support")]
+    if config.test_support_loopback_mirror_fixture {
+        builder = builder.portmapper_config(iroh::endpoint::PortmapperConfig::Disabled);
+    }
     builder = if config.away_mode {
         builder
             .relay_mode(RelayMode::Default)
@@ -4294,9 +4309,17 @@ async fn bind_endpoint(
     };
     if !config.away_mode {
         let v4_port = ports.map_or(0, |p| p.v4);
+        #[cfg(feature = "test-support")]
+        let bind_ip = if config.test_support_loopback_mirror_fixture {
+            [127, 0, 0, 1]
+        } else {
+            [0, 0, 0, 0]
+        };
+        #[cfg(not(feature = "test-support"))]
+        let bind_ip = [0, 0, 0, 0];
         builder = builder
             .clear_ip_transports()
-            .bind_addr(SocketAddr::from(([0, 0, 0, 0], v4_port)))
+            .bind_addr(SocketAddr::from((bind_ip, v4_port)))
             .map_err(crate::error::net)?;
     } else if let Some(ports) = ports {
         builder = builder
