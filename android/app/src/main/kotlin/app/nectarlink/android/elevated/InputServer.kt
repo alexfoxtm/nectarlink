@@ -318,10 +318,10 @@ object InputServer {
         }
     }
 
-    /** Rich-text browsers may include HTML alongside the same plain-text URL. */
+    /** Browsers may include HTML or a Mozilla URL flavor alongside the plain-text URL. */
     internal fun linkMimeTypesAllowed(types: List<String>): Boolean =
         types.any { it == "text/plain" || it == "text/uri-list" } &&
-            types.all { it == "text/plain" || it == "text/uri-list" || it == "text/html" }
+            types.all { it == "text/plain" || it == "text/uri-list" || it == "text/html" || it == "text/x-moz-url" }
 
     /** A copied link is offered only this soon after it was copied. */
     private const val LINK_MAX_AGE_MS = 60_000L

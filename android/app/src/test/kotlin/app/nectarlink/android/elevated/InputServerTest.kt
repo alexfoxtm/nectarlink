@@ -57,8 +57,9 @@ class InputServerTest {
         }
     }
     @Test
-    fun aBrowserUrlMayHaveAnHtmlRepresentationToo() {
+    fun aBrowserUrlMayHaveAdditionalTextRepresentations() {
         assertTrue(InputServer.linkMimeTypesAllowed(listOf("text/plain", "text/html")))
+        assertTrue(InputServer.linkMimeTypesAllowed(listOf("text/x-moz-url", "text/plain")))
         assertTrue(InputServer.linkMimeTypesAllowed(listOf("text/uri-list")))
     }
 
@@ -66,6 +67,7 @@ class InputServerTest {
     fun htmlWithoutPlainTextAndNonTextRepresentationsStayOut() {
         assertFalse(InputServer.linkMimeTypesAllowed(emptyList()))
         assertFalse(InputServer.linkMimeTypesAllowed(listOf("text/html")))
+        assertFalse(InputServer.linkMimeTypesAllowed(listOf("text/x-moz-url")))
         assertFalse(InputServer.linkMimeTypesAllowed(listOf("text/plain", "image/png")))
         assertFalse(InputServer.linkMimeTypesAllowed(listOf("text/plain", "application/octet-stream")))
     }
