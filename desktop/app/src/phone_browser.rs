@@ -90,19 +90,21 @@ fn spawn_task(fut: impl Future<Output = ()> + Send + 'static) {
 
 /// Test-only seam: hold the production gate open for the calling fixture.
 /// The fixture must clear it (and the node/runtime below) when done.
-#[cfg(all(test, target_os = "macos", feature = "test-support"))]
+/// Widened to non-`test` code so the `--browser-native-gate` binary mode
+/// (below) can hold the same seam; production builds keep it compiled out.
+#[cfg(all(target_os = "macos", feature = "test-support"))]
 pub(crate) fn set_test_enabled(on: bool) {
     TEST_ENABLED.store(on, Ordering::Relaxed);
 }
 
 /// Test-only seam: the real paired receiver node production code lists against.
-#[cfg(all(test, target_os = "macos", feature = "test-support"))]
+#[cfg(all(target_os = "macos", feature = "test-support"))]
 pub(crate) fn set_test_node(node: Option<Node>) {
     *TEST_NODE.lock().unwrap_or_else(|e| e.into_inner()) = node;
 }
 
 /// Test-only seam: the fixture runtime production code spawns listing work on.
-#[cfg(all(test, target_os = "macos", feature = "test-support"))]
+#[cfg(all(target_os = "macos", feature = "test-support"))]
 pub(crate) fn set_test_runtime(handle: Option<tokio::runtime::Handle>) {
     *TEST_SPAWN.lock().unwrap_or_else(|e| e.into_inner()) = handle;
 }
@@ -1618,4 +1620,749 @@ mod browser_transport_fixture {
         });
         paired.shutdown();
     }
+}
+
+/// Native-Qt admission gate for the phone browser (CORRECTED draft v2, still
+/// UNVERIFIED: Root must run `git apply --check`, build, `phone_browser`
+/// tests, `rustfmt`, and the gate itself; the authoring worker ran no
+/// compiler. v2 addresses the LINK5-NATIVE-GATE-REVIEW blockers: async
+/// bodies end in `Ok`, the driver uses an explicit window page alias, a
+/// Ready-hold drill handshake precedes the revoke, timeouts are built
+/// inside the runtime, and QML lets the engine own page destruction.)
+///
+/// Binary mode `nectarlink-desktop --browser-native-gate --data-dir <run>`
+/// (dispatched from `main.rs`, see `main_rs_hook.patch`) drives the ACTUAL
+/// production `PhoneBrowserPage.qml` on the main thread, fed by two real
+/// authenticated nodes paired over 127.0.0.1 with the same loopback recipe
+/// as `browser_transport_fixture` above. The driver calls the page's own
+/// `browse()` (the sole production `open()` caller) and asserts the
+/// QML-visible `PhoneBrowser` singleton properties; `Gate::start` performs
+/// one genuine grant transition before the page opens, and a Rust driver
+/// thread performs one genuine revoke transition while Qt spins. Every browser change below the page goes through the
+/// production `super::on_event`; nothing hand-constructs a `NodeEvent`
+/// except re-delivering the actually observed loopback link event
+/// (same-path idempotence, as in the fixture). No duplicate UI, page, or
+/// controller: the embedded `GATE_QML` instantiates the production page
+/// type from the `app.nectarlink` module (same pattern as
+/// `mirror::window_gate` with `MirrorWindow`). If `PhoneBrowserPage` does
+/// not resolve as a type in driver scope, Root may switch the one
+/// instantiation to `Loader { source:
+/// "qrc:/qt/qml/app/nectarlink/qml/pages/PhoneBrowserPage.qml" }` and set
+/// `active`/`deviceId`/`deviceName` on `Loader.item`.
+///
+/// Production `ENABLED` stays `false` (asserted at startup); the gate opens
+/// only the `test-support` seam, installed after the grant/RPC setup and
+/// always cleared on every post-construction path via `Drop` (initialization
+/// failures before the install leave nothing open).
+#[cfg(all(target_os = "macos", feature = "test-support"))]
+pub mod browser_gate {
+    use std::{
+        os::unix::fs::MetadataExt,
+        path::{Path, PathBuf},
+        process::ExitCode,
+        sync::{Arc, Mutex},
+        time::Duration,
+    };
+
+    use cxx_qt_lib::{QByteArray, QGuiApplication, QQmlApplicationEngine, QUrl};
+    use nectarlink_core::{
+        DeviceId, DeviceInfo, DeviceKind, LinkState, Node, NodeConfig, NodeEvent, PlainKeyProtector,
+        Platform, STORAGE_READ, STORAGE_WRITE, StorageEntry, StorageError,
+    };
+
+    use crate::bridge::native::ffi;
+
+    pub const ARG: &str = "--browser-native-gate";
+    /// The only entry of a fresh run directory: a file holding that
+    /// directory's canonical path.
+    pub const SENTINEL: &str = ".browser-native-gate";
+
+    const PASS: i32 = 0;
+    const FAILED: i32 = 1;
+    const BLOCKED: i32 = 2;
+    const WAIT: Duration = Duration::from_secs(20);
+    const POLL: Duration = Duration::from_millis(20);
+    const HARD_TIMEOUT: Duration = Duration::from_secs(180);
+
+    const README_NAME: &str = "readme.txt";
+    const README_BYTES: &[u8] = b"synthetic fixture readme";
+    const NOTES_DIR: &str = "SharedDocs";
+    const NOTE_NAME: &str = "note.txt";
+    const NOTE_BYTES: &[u8] = b"synthetic fixture note";
+    const MODIFIED: i64 = 1_717_000_000_000;
+
+    pub fn run(data_dir: Option<&Path>) -> ExitCode {
+        let args: Vec<_> = std::env::args_os().skip(1).collect();
+        if args.len() != 3 || args[0] != ARG || args[1] != "--data-dir" {
+            return blocked(format!("usage: nectarlink-desktop {ARG} --data-dir <fresh run directory>"));
+        }
+        for var in ["QT_QPA_PLATFORM", "QT_QUICK_BACKEND", "QSG_RHI_BACKEND"] {
+            if std::env::var_os(var).is_some() {
+                return blocked(format!("{var} is set; the gate only runs the default Cocoa/Metal path"));
+            }
+        }
+        let Some(home) = dirs::home_dir() else { return blocked("no home directory") };
+        let run_dir = match validate_run_dir(data_dir, &home.join("orca/tmp")) {
+            Ok(dir) => dir,
+            Err(e) => return blocked(e),
+        };
+        if super::ENABLED {
+            return blocked("production browser gate is open; the gate requires ENABLED=false");
+        }
+        let _ = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::INFO)
+            .with_writer(std::io::stderr)
+            .try_init();
+        std::thread::spawn(|| {
+            std::thread::sleep(HARD_TIMEOUT);
+            eprintln!("browser-native-gate: BLOCKED: no result within {} s", HARD_TIMEOUT.as_secs());
+            std::process::exit(BLOCKED);
+        });
+        let gate = match Gate::start(&run_dir) {
+            Ok(gate) => gate,
+            Err(e) => return blocked(e),
+        };
+        let outcome = gate.show();
+        let code = match &outcome {
+            Ok(lines) => {
+                for line in lines {
+                    println!("browser-native-gate: PASS browser {line}");
+                }
+                PASS
+            }
+            Err((code, why)) => {
+                let kind = if *code == BLOCKED { "BLOCKED" } else { "FAILED" };
+                eprintln!("browser-native-gate: {kind}: {why}");
+                *code
+            }
+        };
+        ExitCode::from(u8::try_from(code).unwrap_or(1))
+    }
+
+    fn blocked(reason: impl std::fmt::Display) -> ExitCode {
+        eprintln!("browser-native-gate: BLOCKED: {reason}");
+        ExitCode::from(BLOCKED as u8)
+    }
+
+    /// Same fail-closed rule as `mirror::window_gate`: canonical owner-only
+    /// directory at least two levels under the scratch root in a `waypair-*`
+    /// folder, holding only [`SENTINEL`] naming itself.
+    fn validate_run_dir(dir: Option<&Path>, scratch_root: &Path) -> Result<PathBuf, String> {
+        let dir = dir.ok_or("--data-dir <fresh run directory> is required")?;
+        let meta =
+            std::fs::symlink_metadata(dir).map_err(|e| format!("run directory {}: {e}", dir.display()))?;
+        if !meta.is_dir() {
+            return Err("the run directory must be a directory, not a link or a file".into());
+        }
+        let canonical = dir.canonicalize().map_err(|e| format!("run directory: {e}"))?;
+        if canonical != dir {
+            return Err("the run directory must be given as its canonical absolute path".into());
+        }
+        let root = scratch_root
+            .canonicalize()
+            .map_err(|e| format!("scratch root {}: {e}", scratch_root.display()))?;
+        let relative = canonical
+            .strip_prefix(&root)
+            .map_err(|_| format!("the run directory must be under {}", root.display()))?;
+        let mut parts = relative.components();
+        let in_waypair =
+            parts.next().and_then(|c| c.as_os_str().to_str()).is_some_and(|c| c.starts_with("waypair-"));
+        if !in_waypair || parts.next().is_none() {
+            return Err(format!("the run directory must be inside {}/waypair-*/", root.display()));
+        }
+        let owner = std::fs::metadata(&root).map_err(|e| format!("scratch root: {e}"))?.uid();
+        // Fail closed on the documented owner-only contract: exactly 0700,
+        // not merely "not group/world writable" (which would accept 0755).
+        if meta.uid() != owner || meta.mode() & 0o777 != 0o700 {
+            return Err(
+                "the run directory must belong to the scratch owner and have mode exactly 0700".into()
+            );
+        }
+        let entries: Vec<_> = std::fs::read_dir(&canonical)
+            .map_err(|e| format!("run directory: {e}"))?
+            .map(|entry| entry.map(|e| e.file_name()))
+            .collect::<Result<_, _>>()
+            .map_err(|e| format!("run directory: {e}"))?;
+        if entries.len() != 1 || entries[0] != SENTINEL {
+            return Err(format!("the run directory must be fresh: only {SENTINEL} may be in it"));
+        }
+        let sentinel = canonical.join(SENTINEL);
+        if !std::fs::symlink_metadata(&sentinel).is_ok_and(|m| m.is_file()) {
+            return Err(format!("{SENTINEL} must be a regular file"));
+        }
+        let names = std::fs::read_to_string(&sentinel).map_err(|e| format!("{SENTINEL}: {e}"))?;
+        if Some(names.trim_end_matches('\n')) != canonical.to_str() {
+            return Err(format!("{SENTINEL} must hold this run directory's path"));
+        }
+        Ok(canonical)
+    }
+
+    fn qstr(raw: &str) -> String {
+        let mut quoted = String::with_capacity(raw.len() + 2);
+        quoted.push('"');
+        for ch in raw.chars() {
+            match ch {
+                '"' | '\\' => {
+                    quoted.push('\\');
+                    quoted.push(ch);
+                }
+                '\n' => quoted.push_str("\\n"),
+                c => quoted.push(c),
+            }
+        }
+        quoted.push('"');
+        quoted
+    }
+
+    fn device(name: &str, kind: DeviceKind) -> DeviceInfo {
+        DeviceInfo {
+            name: name.into(),
+            kind,
+            os: if kind == DeviceKind::Phone { "android" } else { "macos" }.into(),
+            os_ver: "fixture".into(),
+            model: None,
+            accent: None,
+            screen: None,
+            install_id: None,
+        }
+    }
+
+    /// Same throwaway loopback recipe as the fixture: 127.0.0.1 bind, no
+    /// portmapper/discovery/relay/ADB/USB, plain key in `directory`. The
+    /// flag name mentions the mirror fixture that introduced it; no mirror
+    /// behavior is enabled by it.
+    fn loopback_config(directory: &Path, name: &str, kind: DeviceKind, caps: &[&str]) -> NodeConfig {
+        let mut config = NodeConfig::new(directory, device(name, kind), "0.0.1-test");
+        config.away_mode = false;
+        config.lan_discovery = false;
+        config.localsend_port = 0;
+        config.adb_server = None;
+        config.usb_port = None;
+        config.key_protector = Some(Arc::new(PlainKeyProtector));
+        config.enable_loopback_mirror_fixture();
+        config.capabilities = caps.iter().map(|cap| (*cap).to_owned()).collect();
+        config
+    }
+
+    /// In-memory synthetic phone storage: two folders/files only, no
+    /// provider, bundle, or personal data.
+    #[derive(Debug)]
+    struct SyntheticPhonePlatform;
+
+    impl Platform for SyntheticPhonePlatform {
+        fn storage_list(&self, path: &str) -> Result<Vec<StorageEntry>, StorageError> {
+            match path {
+                "" => Ok(vec![
+                    StorageEntry { name: NOTES_DIR.into(), size: 0, modified: MODIFIED, is_dir: true },
+                    StorageEntry {
+                        name: README_NAME.into(),
+                        size: README_BYTES.len() as u64,
+                        modified: MODIFIED,
+                        is_dir: false,
+                    },
+                ]),
+                NOTES_DIR => Ok(vec![StorageEntry {
+                    name: NOTE_NAME.into(),
+                    size: NOTE_BYTES.len() as u64,
+                    modified: MODIFIED,
+                    is_dir: false,
+                }]),
+                _ => Err(StorageError::NotFound),
+            }
+        }
+    }
+
+    async fn wait_for_link(receiver: &Node, phone: DeviceId) -> Result<(), String> {
+        tokio::time::timeout(WAIT, async {
+            loop {
+                if receiver.paired_devices().is_ok_and(|peers| {
+                    peers
+                        .iter()
+                        .any(|peer| peer.id == phone && matches!(&peer.link, LinkState::Online { .. }))
+                }) {
+                    return;
+                }
+                tokio::time::sleep(POLL).await;
+            }
+        })
+        .await
+        .map_err(|_| "authenticated loopback link did not come online within 20 seconds".to_owned())
+    }
+
+    async fn wait_until(label: &str, mut cond: impl FnMut() -> bool) -> Result<(), String> {
+        tokio::time::timeout(WAIT, async {
+            while !cond() {
+                tokio::time::sleep(POLL).await;
+            }
+        })
+        .await
+        .map_err(|_| format!("timed out waiting for {label}"))
+    }
+
+    async fn wait_rpc_ok(receiver: &Node, phone: DeviceId) -> Result<(), String> {
+        tokio::time::timeout(WAIT, async {
+            loop {
+                if receiver.storage_list(phone, "").await.is_ok() {
+                    return;
+                }
+                tokio::time::sleep(POLL).await;
+            }
+        })
+        .await
+        .map_err(|_| "grant did not reach the RPC layer within 20 seconds".to_owned())
+    }
+
+    /// Exact root listing: the synthetic phone's two rows by name, path
+    /// and kind (order-insensitive). Count-only checks stay QML-side.
+    fn root_rows_ready() -> bool {
+        let view = super::view();
+        if view.status != super::BrowseStatus::Ready || view.rows.len() != 2 {
+            return false;
+        }
+        let has = |name: &str, path: &str, dir: bool| {
+            view.rows.iter().any(|row| row.name == name && row.path == path && row.is_dir == dir)
+        };
+        has(NOTES_DIR, NOTES_DIR, true) && has(README_NAME, README_NAME, false)
+    }
+
+    /// Handshake target: after its 1500 ms root hold, QML drills into the
+    /// production folder the way a user would (`openFolder`), which lands
+    /// here. Observing it proves the hold completed before any revoke.
+    fn folder_rows_ready() -> bool {
+        let view = super::view();
+        view.status == super::BrowseStatus::Ready
+            && view.path == NOTES_DIR
+            && view.rows.len() == 1
+            && view.rows[0].name == NOTE_NAME
+            && !view.rows[0].is_dir
+    }
+
+    fn clear_seam() {
+        super::close();
+        super::set_test_node(None);
+        super::set_test_runtime(None);
+        super::set_test_enabled(false);
+    }
+
+    #[derive(Debug, Default)]
+    struct Stage {
+        ready: bool,
+        kept: bool,
+        cleared: bool,
+    }
+
+    struct Gate {
+        runtime: tokio::runtime::Runtime,
+        receiver: Node,
+        phone: Node,
+        phone_id: DeviceId,
+        receiver_id: DeviceId,
+        pump: tokio::task::JoinHandle<()>,
+        recorded: Arc<Mutex<Vec<NodeEvent>>>,
+        stage: Arc<Mutex<Stage>>,
+    }
+
+    impl Drop for Gate {
+        fn drop(&mut self) {
+            self.pump.abort();
+            clear_seam();
+        }
+    }
+
+    impl Gate {
+        fn start(run_dir: &Path) -> Result<Self, String> {
+            let receiver_dir = run_dir.join("receiver");
+            let phone_dir = run_dir.join("phone");
+            for dir in [&receiver_dir, &phone_dir] {
+                std::fs::create_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+            }
+            // Theme's production singletons require an isolated CoreHost before Qt starts.
+            let receiver = crate::core_host::start_window_gate(
+                loopback_config(&receiver_dir, "Synthetic Mac", DeviceKind::Desktop, &[]),
+                Arc::new(nectarlink_core::NoopPlatform),
+            )?;
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
+                .thread_name("browser-native-gate")
+                .enable_all()
+                .build()
+                .map_err(|e| format!("gate runtime: {e}"))?;
+            // Hoisted out of `block_on` (Root E0505 fix, same as the
+            // fixture): the runtime is moved into `Self` only after its
+            // own `block_on` returns, never inside it.
+            let handle = runtime.handle().clone();
+            let (receiver, phone, receiver_id, phone_id, pump, recorded) = runtime.block_on(async {
+                let phone = tokio::time::timeout(
+                    WAIT,
+                    Node::start(
+                        loopback_config(
+                            &phone_dir,
+                            "Synthetic Phone",
+                            DeviceKind::Phone,
+                            &[STORAGE_READ, STORAGE_WRITE],
+                        ),
+                        Arc::new(SyntheticPhonePlatform),
+                    ),
+                )
+                .await
+                .map_err(|_| "synthetic phone did not start within 20 seconds".to_owned())?
+                .map_err(|e| format!("synthetic phone failed to start: {e}"))?;
+                let receiver_id = receiver.device_id();
+                let phone_id = phone.device_id();
+                let mut events = receiver.events();
+                let invitation = tokio::time::timeout(WAIT, receiver.pairing_start_qr())
+                    .await
+                    .map_err(|_| "pairing invitation took over 20 seconds".to_owned())?
+                    .map_err(|e| format!("pairing invitation failed: {e}"))?;
+                if invitation.addrs.is_empty() || !invitation.addrs.iter().all(|a| a.ip().is_loopback()) {
+                    return Err("the receiver offered a missing or non-loopback address".to_owned());
+                }
+                let uri = invitation.to_uri();
+                drop(invitation);
+                tokio::time::timeout(WAIT, phone.pairing_join(&uri))
+                    .await
+                    .map_err(|_| "loopback QR pairing took over 20 seconds".to_owned())?
+                    .map_err(|e| format!("loopback QR pairing failed: {e}"))?;
+                // The pairing secret stays in `uri`, which is dropped here
+                // and never printed; the runner scans all logs for it.
+                drop(uri);
+                wait_for_link(&receiver, phone_id).await?;
+                wait_for_link(&phone, receiver_id).await?;
+                // The pump is spawned before the seam opens on purpose: it
+                // records every event unconditionally, while production
+                // `on_event` early-returns until `TEST_ENABLED` below opens
+                // the gate, so no pre-grant event can change listings.
+                // The three seam setters stay AFTER the grant/RPC setup, so
+                // no initialization failure can leave the seam open behind
+                // a `Gate` that never finishes construction.
+                let recorded: Arc<Mutex<Vec<NodeEvent>>> = Arc::new(Mutex::new(Vec::new()));
+                let pump_recorded = recorded.clone();
+                let pump = runtime.spawn(async move {
+                    while let Ok(event) = events.recv().await {
+                        pump_recorded.lock().unwrap_or_else(|e| e.into_inner()).push(event.clone());
+                        super::on_event(&event);
+                    }
+                });
+                // Genuine grant before the page opens: the success check
+                // below observes it at the RPC layer first.
+                phone
+                    .set_device_toggle(receiver_id, "storage", true)
+                    .map_err(|e| format!("phone grant failed: {e}"))?;
+                wait_rpc_ok(&receiver, phone_id).await?;
+                super::set_test_runtime(Some(handle));
+                super::set_test_node(Some(receiver.clone()));
+                super::set_test_enabled(true);
+                Ok::<_, String>((receiver, phone, receiver_id, phone_id, pump, recorded))
+            })?;
+            Ok(Self {
+                runtime,
+                receiver,
+                phone,
+                phone_id,
+                receiver_id,
+                pump,
+                recorded,
+                stage: Arc::new(Mutex::new(Stage::default())),
+            })
+        }
+
+        /// Runs the production page on this (the main) thread while a driver
+        /// task performs the genuine revoke transition. Returns the two PASS
+        /// lines on success, or `(exit_code, reason)` on failure.
+        fn show(self) -> Result<Vec<String>, (i32, String)> {
+            // Node state lives in `<run>/receiver` and `<run>/phone`; no
+            // TempDir fields are needed (same as `mirror::window_gate`).
+            let stage = self.stage.clone();
+            let recorded = self.recorded.clone();
+            let (receiver, phone, phone_id, receiver_id) =
+                (self.receiver.clone(), self.phone.clone(), self.phone_id, self.receiver_id);
+            // The driver runs while `app.exec()` owns the main thread: it
+            // waits for the page's browse to list, re-delivers the OBSERVED
+            // loopback link event (same-path no-op proof), waits for QML's
+            // explicit hold handshake (drill into SharedDocs AFTER its
+            // 1500 ms hold), then performs a REAL revoke. No fixed sleeps:
+            // every step is a bounded poll, so nothing races QML's hold.
+            let driver = std::thread::spawn(move || {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("driver runtime");
+                rt.block_on(async {
+                    wait_until("page browse lists SharedDocs+readme", root_rows_ready)
+                        .await
+                        .map_err(|e| (FAILED, e))?;
+                    stage.lock().unwrap_or_else(|e| e.into_inner()).ready = true;
+                    let online = recorded
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .iter()
+                        .find(|event| {
+                            matches!(
+                                event,
+                                NodeEvent::LinkChanged { device, link: LinkState::Online { .. } }
+                                if *device == phone_id
+                            )
+                        })
+                        .cloned()
+                        .ok_or((BLOCKED, "no loopback link event was recorded".to_owned()))?;
+                    super::on_event(&online);
+                    wait_until("same-path event keeps the listing", root_rows_ready)
+                        .await
+                        .map_err(|_| (FAILED, "same-path link event dropped the listing".to_owned()))?;
+                    stage.lock().unwrap_or_else(|e| e.into_inner()).kept = true;
+                    wait_until(
+                        "page hold handshake (drill into SharedDocs after its 1500 ms hold)",
+                        folder_rows_ready,
+                    )
+                    .await
+                    .map_err(|e| (FAILED, e))?;
+                    phone
+                        .set_device_toggle(receiver_id, "storage", false)
+                        .map_err(|e| (FAILED, format!("phone revoke failed: {e}")))?;
+                    wait_until("revoke ends the consent", || {
+                        let view = super::view();
+                        view.device.is_none() && view.rows.is_empty()
+                    })
+                    .await
+                    .map_err(|e| (FAILED, e))?;
+                    stage.lock().unwrap_or_else(|e| e.into_inner()).cleared = true;
+                    Ok::<(), (i32, String)>(())
+                })
+            });
+            ffi::prepare_qt_for_ui_check();
+            let mut app = QGuiApplication::new();
+            ffi::keep_running_without_windows();
+            let _ = ffi::load_bundled_fonts();
+            let qml = GATE_QML.replace("@PHONE@", &qstr(&phone_id.to_string()));
+            let page_url = "file://browser-native-gate.qml";
+            let mut engine = QQmlApplicationEngine::new();
+            if let Some(mut engine) = engine.as_mut() {
+                ffi::register_qml_app_engine(engine.as_mut());
+                engine.load_data(&QByteArray::from(qml.as_str()), &QUrl::from(page_url));
+            }
+            let code = app.as_mut().map_or(BLOCKED, |app| app.exec());
+            drop(engine);
+            let qml_problems = ffi::qml_problem_count();
+            drop(app);
+            let driver_result = driver.join().map_err(|_| (BLOCKED, "driver thread panicked".to_owned()))?;
+            let shut = self.shut_down();
+            if code != PASS {
+                return Err((code, format!("Qt exited with {code}")));
+            }
+            driver_result?;
+            {
+                let stage = self.stage.lock().unwrap_or_else(|e| e.into_inner());
+                if !(stage.ready && stage.kept && stage.cleared) {
+                    return Err((FAILED, "driver stages did not all complete".to_owned()));
+                }
+            }
+            if qml_problems > 0 {
+                return Err((
+                    FAILED,
+                    format!("{qml_problems} QML warning(s) or error(s) from the app's QML"),
+                ));
+            }
+            if !shut {
+                return Err((FAILED, "a node did not shut down within 5 seconds".to_owned()));
+            }
+            Ok(vec![
+                format!("ready: production page browsed SharedDocs+readme.txt (exact rows) over Cocoa/Metal"),
+                format!("revoke: real phone revoke ended the consent (device empty, rows cleared)"),
+            ])
+        }
+
+        fn shut_down(&self) -> bool {
+            self.pump.abort();
+            // `tokio::time::timeout` must be constructed inside the runtime
+            // context: building it on the Qt thread panics. Each shutdown
+            // future is therefore created inside its own `block_on`.
+            let phone_down = self
+                .runtime
+                .block_on(async { tokio::time::timeout(Duration::from_secs(5), self.phone.shutdown()).await })
+                .is_ok();
+            let receiver_down = self
+                .runtime
+                .block_on(async {
+                    tokio::time::timeout(Duration::from_secs(5), self.receiver.shutdown()).await
+                })
+                .is_ok();
+            clear_seam();
+            phone_down && receiver_down
+        }
+    }
+
+    /// Drives the production page the way a user would: the page's own
+    /// `browse()` is the only `open()` caller. Exits 0 (pass), 1 (wrong
+    /// state) or 2 (not the native path, or stuck). Each step is bounded;
+    /// the watchdog ends a stuck run.
+    const GATE_QML: &str = r#"
+import QtQml
+import QtQuick
+import QtQuick.Window
+import app.nectarlink
+
+QtObject {
+    id: gate
+    readonly property string phone: @PHONE@
+    property var window: null
+    property var page: null
+    property int step: 0
+    property double stepStarted: Date.now()
+    property double heldSince: 0
+    property bool busy: false
+    property bool finished: false
+
+    readonly property Timer ticker: Timer {
+        interval: 50
+        repeat: true
+        running: true
+        onTriggered: gate.tick()
+    }
+    readonly property Timer watchdog: Timer {
+        interval: 150000
+        running: true
+        onTriggered: gate.fail(2, "the sequence did not finish within 150 s: " + gate.describe())
+    }
+
+    function pageOf() {
+        if (gate.window !== null)
+            return gate.window.page
+        return null
+    }
+
+    function describe() {
+        if (gate.page === null)
+            return "no page (step " + gate.step + ")"
+        return "status " + PhoneBrowser.status + ", count " + PhoneBrowser.count + ", device "
+            + PhoneBrowser.device + ", path '" + PhoneBrowser.path + "', consented " + gate.page.consented
+    }
+
+    function nativePath() {
+        if (Qt.platform.pluginName !== "cocoa") {
+            fail(2, "the Qt platform is " + Qt.platform.pluginName + ", not cocoa")
+            return false
+        }
+        const probe = gate.window !== null ? gate.window.probeApi : -1
+        if (probe !== GraphicsInfo.Metal) {
+            fail(2, "the window renders with graphics API " + probe + ", not Metal")
+            return false
+        }
+        return true
+    }
+
+    function ready() {
+        return gate.page !== null && gate.page.consented && PhoneBrowser.status === "ready"
+            && PhoneBrowser.count === 2 && PhoneBrowser.device === gate.phone && PhoneBrowser.path === ""
+    }
+
+    function cleared() {
+        return PhoneBrowser.device.length === 0 && PhoneBrowser.count === 0
+            && (PhoneBrowser.status === "unsupported" || PhoneBrowser.status === "denied")
+    }
+
+    function advance(next) {
+        step = next
+        stepStarted = Date.now()
+    }
+
+    function tick() {
+        if (finished)
+            return
+        if (Date.now() - stepStarted > 20000) {
+            fail(busy ? 2 : 1, "step " + step + " did not complete within 20 s: " + describe())
+            return
+        }
+        if (busy)
+            return
+        switch (step) {
+        case 0:
+            if (!PhoneBrowser.enabled)
+                break
+            gate.window = pageWindow.createObject(gate)
+            if (gate.window === null) {
+                fail(2, "browser window did not load: " + pageWindow.errorString())
+                break
+            }
+            gate.page = pageOf()
+            if (gate.page === null) {
+                fail(2, "production page did not instantiate")
+                break
+            }
+            gate.page.browse()
+            advance(1)
+            break
+        case 1:
+            if (ready() && nativePath()) {
+                console.info("browser-native-gate: ready: " + describe())
+                heldSince = Date.now()
+                advance(2)
+            }
+            break
+        case 2:
+            // Hold the listing across the Rust-side same-path redelivery:
+            // any drop here fails the success check. When the hold
+            // completes, drill into SharedDocs through the production
+            // folder path: Rust observes that navigation as the explicit
+            // handshake before its genuine revoke, so no fixed delay can
+            // race this hold.
+            if (!ready()) {
+                fail(1, "same-path event dropped the listing: " + describe())
+                break
+            }
+            if (Date.now() - heldSince >= 1500) {
+                PhoneBrowser.openFolder("SharedDocs")
+                advance(3)
+            }
+            break
+        case 3:
+            if (cleared()) {
+                console.info("browser-native-gate: revoke: " + describe())
+                finish(0)
+            }
+            break
+        }
+    }
+
+    function fail(code, why) {
+        if (finished)
+            return
+        console.error("browser-native-gate: " + (code === 2 ? "BLOCKED" : "FAILED") + ": " + why)
+        finish(code)
+    }
+
+    function finish(code) {
+        finished = true
+        ticker.stop()
+        watchdog.stop()
+        // The page is declaratively owned by the window: destroying it here
+        // is invalid. Closing the window and dropping the engine destroys
+        // it, which runs its `Component.onDestruction: PhoneBrowser.close()`.
+        if (gate.window !== null)
+            gate.window.close()
+        Qt.exit(code)
+    }
+
+    readonly property Component pageWindow: Component {
+        Window {
+            visible: true
+            width: 480
+            height: 640
+            title: "browser-native-gate"
+            readonly property int probeApi: gateProbe.GraphicsInfo.api
+            // Explicit handle to the production page: indexing the window's
+            // children would select the graphics probe above, which has
+            // neither `browse()` nor `consented`.
+            readonly property alias page: browserPage
+            Item { id: gateProbe }
+            PhoneBrowserPage {
+                id: browserPage
+                anchors.fill: parent
+                active: true
+                deviceId: gate.phone
+                deviceName: "Synthetic Phone"
+            }
+        }
+    }
+}
+"#;
 }
