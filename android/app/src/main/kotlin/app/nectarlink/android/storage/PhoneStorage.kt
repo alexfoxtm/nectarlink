@@ -80,7 +80,7 @@ class PhoneStorage(
         }
         val folders = safFolders(context)
         if (folders.isEmpty()) throw StorageFailure.Unsupported()
-        return listSaf(folders, path)
+        return providerSecurityAsDenied { listSaf(folders, path) }
     }
 
     /** Opens `path` for ranged reading (`storage.read`). */
@@ -104,7 +104,7 @@ class PhoneStorage(
         }
         val folders = safFolders(context)
         if (folders.isEmpty()) throw StorageFailure.Unsupported()
-        return openReadSaf(folders, path)
+        return providerSecurityAsDenied { openReadSaf(folders, path) }
     }
 
     /** Commits a staged upload at `stagedPath` into `path` (`storage.write`). */
@@ -316,13 +316,35 @@ class PhoneStorage(
         return folder to parts.drop(1)
     }
 
-    private fun resolveSafDocId(treeUri: Uri, segments: List<String>): String {
+    /**
+     * Walks `segments` under `treeUri`.
+     *
+     * `directoryThrough` is the last index that must be a directory.
+     * Listing passes the final segment, so a file (or a file used as a parent)
+     * is [StorageFailure.NotFound]. Reading passes the parent index only.
+     * The default leaves rename and delete on the previous existence check.
+     */
+    private fun resolveSafDocId(
+        treeUri: Uri,
+        segments: List<String>,
+        directoryThrough: Int = -1,
+    ): String {
         var currentDocId = DocumentsContract.getTreeDocumentId(treeUri)
-        for (seg in segments) {
-            currentDocId = findChildSafDoc(treeUri, currentDocId, seg)?.docId
-                ?: throw StorageFailure.NotFound()
+        for ((index, seg) in segments.withIndex()) {
+            val child = findChildSafDoc(treeUri, currentDocId, seg) ?: throw StorageFailure.NotFound()
+            if (index <= directoryThrough && !child.isDir) throw StorageFailure.NotFound()
+            currentDocId = child.docId
         }
         return currentDocId
+    }
+
+    /** A provider refusal is access denied, so a revoked grant can end an open browse. */
+    private inline fun <T> providerSecurityAsDenied(body: () -> T): T {
+        try {
+            return body()
+        } catch (_: SecurityException) {
+            throw StorageFailure.Denied()
+        }
     }
 
     private data class SafDocMeta(
@@ -390,7 +412,7 @@ class PhoneStorage(
             }
         }
         val (folder, sub) = splitSafPath(folders, path)
-        val docId = resolveSafDocId(folder.uri, sub)
+        val docId = resolveSafDocId(folder.uri, sub, directoryThrough = sub.lastIndex)
         return listSafChildren(folder.uri, docId).map {
             StorageEntry(
                 name = it.name,
@@ -404,18 +426,29 @@ class PhoneStorage(
     private fun openReadSaf(folders: List<SafFolder>, path: String): StorageReadFile {
         val (folder, sub) = splitSafPath(folders, path)
         if (sub.isEmpty()) throw StorageFailure.NotFound()
-        val docId = resolveSafDocId(folder.uri, sub)
+        val docId = resolveSafDocId(folder.uri, sub, directoryThrough = sub.lastIndex - 1)
         val meta = querySafDocMeta(folder.uri, docId)
         if (meta.isDir) throw StorageFailure.NotFound()
         val docUri = DocumentsContract.buildDocumentUriUsingTree(folder.uri, docId)
         val pfd = context.contentResolver.openFileDescriptor(docUri, "r")
             ?: throw StorageFailure.NotFound()
-        val fd = pfd.detachFd()
-        return StorageReadFile(
-            source = FileToSend.Fd(fd = fd, name = meta.name, folder = null),
-            size = meta.size.coerceAtLeast(0L).toULong(),
-            modified = meta.modified,
-        )
+        var handedOff = false
+        try {
+            // statSize is the transfer length. COLUMN_SIZE is not consulted.
+            // Unknown (-1) fails before detach so a short or empty body is not success.
+            val statSize = pfd.statSize
+            if (statSize < 0L) throw StorageFailure.Unsupported()
+            val length = statSize.toULong()
+            val fd = pfd.detachFd()
+            handedOff = true
+            return StorageReadFile(
+                source = FileToSend.Fd(fd = fd, name = meta.name, folder = null),
+                size = length,
+                modified = meta.modified,
+            )
+        } finally {
+            if (!handedOff) runCatching { pfd.close() }
+        }
     }
 
     private fun ensureSafDir(treeUri: Uri, segments: List<String>): String {
@@ -625,7 +658,7 @@ class PhoneStorage(
                     val name = entry.substring(0, idx)
                     val uri = runCatching { Uri.parse(entry.substring(idx + 1)) }.getOrNull()
                         ?: return@mapNotNull null
-                    if (persisted.isNotEmpty() && uri !in persisted) return@mapNotNull null
+                    if (uri !in persisted) return@mapNotNull null
                     SafFolder(name, uri)
                 }
                 .sortedBy { it.name.lowercase() }
