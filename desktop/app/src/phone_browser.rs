@@ -363,14 +363,35 @@ impl State {
         next
     }
 
-    /// The explicit "Browse shared folders" action for `device`: the only way
-    /// the session gets a phone.
-    fn open(&mut self, device: DeviceId) -> Option<ListCommand> {
+    /// The explicit "Browse shared folders" action for `device`, reached over
+    /// `link_path`: the only way the session gets a phone.
+    fn open(&mut self, device: DeviceId, link_path: Option<ConnectionPath>) -> Option<ListCommand> {
         if self.session.device.is_some_and(|open| open != device) {
             // Another phone: a save from the last one stops.
             self.cancel_save(true);
         }
-        self.start_list(device, "")
+        let cmd = self.start_list(device, "");
+        self.session.link_path = link_path;
+        cmd
+    }
+
+    /// The open phone is now reached over `path`. Relay access has its own
+    /// switch, so moving onto Relay ends the save and names at once, like any
+    /// other access change; other moves only list again.
+    fn path_changed(&mut self, device: DeviceId, path: ConnectionPath) -> Option<ListCommand> {
+        if self.session.device != Some(device) {
+            return None;
+        }
+        let old = self.session.link_path.replace(path);
+        if old == Some(path) {
+            None
+        } else if path == ConnectionPath::Relay {
+            self.access_changed(device)
+        } else if old.is_some() {
+            self.relist(|session| Some(session.path.clone()))
+        } else {
+            None
+        }
     }
 
     /// A toggle, a capability or the phone's offer changed for `device`: its
@@ -478,7 +499,21 @@ pub fn take_save_notice() -> Option<bool> {
 
 /// The user chose "Browse shared folders" for `device`.
 pub fn open(device: DeviceId) {
-    request_list(|st| st.open(device));
+    if !ENABLED {
+        return;
+    }
+    let link_path = current_path(device);
+    request_list(|st| st.open(device, link_path));
+}
+
+/// How `device` is reached now, if it's online.
+fn current_path(device: DeviceId) -> Option<ConnectionPath> {
+    let node = crate::core_host::node()?;
+    let peer = node.paired_devices().ok()?.into_iter().find(|peer| peer.id == device)?;
+    match peer.link {
+        LinkState::Online { path, .. } => Some(path),
+        _ => None,
+    }
 }
 
 pub fn up() {
@@ -537,13 +572,14 @@ pub fn on_event(event: &NodeEvent) {
         NodeEvent::StorageChanged { device, path } => {
             recheck_if(*device, |session| covers(path, &session.path));
         }
-        // Emitted only when the matrix changed; battery and round-trip times
-        // arrive as other events.
+        // Emitted when the matrix or the phone's storage offer changed, or a
+        // storage toggle was set; battery and round-trip times arrive as
+        // other events.
         NodeEvent::Capabilities(matrix) => request_list(|st| st.access_changed(matrix.device)),
         NodeEvent::PeerInfoChanged { device, .. } => recheck_if(*device, |_| true),
-        // Relay access has its own switch; only a new path matters, not round-trip times.
+        // Only a new path matters, not round-trip times.
         NodeEvent::LinkChanged { device, link: LinkState::Online { path, .. } } => {
-            recheck_if(*device, |session| session.link_path.replace(*path).is_some_and(|old| old != *path));
+            request_list(|st| st.path_changed(*device, *path));
         }
         NodeEvent::LinkChanged { device, link: LinkState::Offline { .. } }
         | NodeEvent::DeviceRemoved(device) => {
@@ -972,7 +1008,7 @@ mod tests {
         assert_eq!(state.session.device, None);
 
         // Closing while a listing is in flight: its reply can't bring the phone back.
-        let first = state.open(dev).expect("explicit browse");
+        let first = state.open(dev, None).expect("explicit browse");
         state.close();
         assert!(state.finish_list(&first, ListOutcome::Done(Ok(vec![entry("a.txt", false, 3)]))).is_none());
         assert_eq!(state.session.device, None);
@@ -980,7 +1016,7 @@ mod tests {
         assert!(state.relist(refresh).is_none());
 
         // The phone refusing access ends the consent; a recheck can't list again.
-        let second = state.open(dev).unwrap();
+        let second = state.open(dev, None).unwrap();
         state.session.accept_list(&second, vec![entry("a.txt", false, 3)]);
         let folder = Path::new("/tmp/phone-browser");
         let job = state.begin_save("a.txt", Some(folder)).unwrap();
@@ -999,7 +1035,7 @@ mod tests {
     fn capability_change_ends_the_save_and_queue_before_core_answers() {
         let (dev, other) = (device(5), device(6));
         let mut state = State::empty();
-        let first = state.open(dev).unwrap();
+        let first = state.open(dev, None).unwrap();
         let listed = vec![entry("Notes", true, 0), entry("a.txt", false, 3)];
         assert!(state.finish_list(&first, ListOutcome::Done(Ok(listed))).is_none());
         let job = state.begin_save("a.txt", Some(Path::new("/tmp/phone-browser"))).unwrap();
@@ -1022,6 +1058,32 @@ mod tests {
         let next = state.finish_list(&inflight, ListOutcome::Done(Ok(vec![entry("a.txt", false, 3)])));
         assert!(state.session.rows.is_empty());
         assert!(next.as_ref() == Some(&recheck));
+        assert!(state.finish_list(&recheck, ListOutcome::Done(Err(Error::Denied))).is_none());
+        assert_eq!(state.session.device, None);
+    }
+
+    #[test]
+    fn moving_onto_relay_ends_the_save_before_core_answers() {
+        let dev = device(7);
+        let mut state = State::empty();
+        let first = state.open(dev, Some(ConnectionPath::Lan)).unwrap();
+        let listed = vec![entry("a.txt", false, 3)];
+        assert!(state.finish_list(&first, ListOutcome::Done(Ok(listed))).is_none());
+        let job = state.begin_save("a.txt", Some(Path::new("/tmp/phone-browser"))).unwrap();
+
+        // The same path again is only a round-trip time; USB lists again.
+        assert!(state.path_changed(dev, ConnectionPath::Lan).is_none());
+        let usb = state.path_changed(dev, ConnectionPath::Usb).expect("listed again");
+        assert!(state.save_is_current(job.epoch, job.device));
+
+        // Relay ends the save and the names now; the recheck waits its turn.
+        assert!(state.path_changed(dev, ConnectionPath::Relay).is_none());
+        assert!(!state.save_is_current(job.epoch, job.device));
+        assert_eq!(state.save_notice, Some(false));
+        assert!(state.session.rows.is_empty());
+        let recheck = state.queued.clone().expect("recheck queued");
+        assert!(state.finish_list(&usb, ListOutcome::Done(Ok(vec![entry("a.txt", false, 3)]))).is_some());
+        assert!(state.session.rows.is_empty());
         assert!(state.finish_list(&recheck, ListOutcome::Done(Err(Error::Denied))).is_none());
         assert_eq!(state.session.device, None);
     }
