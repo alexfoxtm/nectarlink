@@ -23,6 +23,8 @@ ALLOWED_PREFIXES = ("waypair/nectar/android/", "waypair/nectar/macos/")
 ANDROID_MANIFEST_KEY = "waypair/nectar/android/stable/update.json"
 MACOS_APPCAST_KEY = "waypair/nectar/macos/stable/appcast.xml"
 SUMS_NAME = "SHA256SUMS.txt"
+NOTES_NAME = "CHANGELOG.txt"
+NOTES_MAX_BYTES = 8 * 1024
 
 VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:-local\.[1-9][0-9]*)?$")
 SHA_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -132,6 +134,28 @@ def sums_upload(prefix, files):
     return Upload(prefix + SUMS_NAME, False, hashlib.sha256(data).hexdigest(), len(data), data=data)
 
 
+def release_notes_of(section, label, base):
+    """Optional per-platform CHANGELOG.txt, or None when absent.
+
+    Verified with the same path/size/SHA-256 guards as every other file,
+    plus: exact name CHANGELOG.txt, UTF-8 non-empty text, at most 8 KiB.
+    """
+    if "release_notes" not in section:
+        return None
+    notes = verified_file(section.get("release_notes"), f"{label} release notes", base)
+    if notes[0].name != NOTES_NAME:
+        raise Failure(f"{label} release notes: file name must be exactly {NOTES_NAME}")
+    if notes[2] > NOTES_MAX_BYTES:
+        raise Failure(f"{label} release notes: size {notes[2]} exceeds {NOTES_MAX_BYTES} bytes")
+    try:
+        text = notes[0].read_bytes().decode("utf-8")
+    except (OSError, UnicodeDecodeError) as e:
+        raise Failure(f"{label} release notes: must be UTF-8 text: {e}")
+    if not text or not text.strip():
+        raise Failure(f"{label} release notes: must be non-empty text")
+    return notes
+
+
 def version_of(section, label):
     version = section.get("version")
     if not isinstance(version, str) or not VERSION_RE.match(version):
@@ -155,10 +179,17 @@ def plan_android(section, base):
     source = source_of(section, "android", base)
     if source[0].name == name or source[0].name == SUMS_NAME:
         raise Failure("android: source archive name collides with another asset")
+    notes = release_notes_of(section, "android", base)
+    if notes is not None and source[0].name == NOTES_NAME:
+        raise Failure("android: source archive name collides with another asset")
 
     prefix = f"waypair/nectar/android/releases/v{version}/"
-    sums = sums_upload(prefix, [apk, source])
-    html_url = section.get("html_url", public_url(sums.key))
+    if notes is None:
+        sums = sums_upload(prefix, [apk, source])
+        html_url = section.get("html_url", public_url(sums.key))
+    else:
+        sums = sums_upload(prefix, [apk, source, notes])
+        html_url = section.get("html_url", public_url(prefix + NOTES_NAME))
     if not isinstance(html_url, str) or not html_url.startswith("https://") or any(c.isspace() for c in html_url):
         raise Failure("android: html_url must be an https URL without whitespace")
 
@@ -176,8 +207,10 @@ def plan_android(section, base):
     immutable = [
         Upload(prefix + name, False, apk[1], apk[2], path=apk[0]),
         Upload(prefix + source[0].name, False, source[1], source[2], path=source[0]),
-        sums,
     ]
+    if notes is not None:
+        immutable.append(Upload(prefix + NOTES_NAME, False, notes[1], notes[2], path=notes[0]))
+    immutable.append(sums)
     manifest = Upload(ANDROID_MANIFEST_KEY, True, hashlib.sha256(feed_data).hexdigest(), len(feed_data), data=feed_data)
     return immutable, [manifest]
 
@@ -189,6 +222,9 @@ def plan_macos(section, base):
         raise Failure(f"macos dmg: expected a .dmg file: {dmg[0].name}")
     source = source_of(section, "macos", base)
     if source[0].name in (dmg[0].name, SUMS_NAME):
+        raise Failure("macos: source archive name collides with another asset")
+    notes = release_notes_of(section, "macos", base)
+    if notes is not None and source[0].name == NOTES_NAME:
         raise Failure("macos: source archive name collides with another asset")
     appcast = verified_file(section.get("appcast"), "macos signed appcast", base)
 
@@ -206,8 +242,12 @@ def plan_macos(section, base):
     immutable = [
         Upload(prefix + dmg[0].name, False, dmg[1], dmg[2], path=dmg[0]),
         Upload(prefix + source[0].name, False, source[1], source[2], path=source[0]),
-        sums_upload(prefix, [dmg, source]),
     ]
+    if notes is not None:
+        immutable.append(Upload(prefix + NOTES_NAME, False, notes[1], notes[2], path=notes[0]))
+        immutable.append(sums_upload(prefix, [dmg, source, notes]))
+    else:
+        immutable.append(sums_upload(prefix, [dmg, source]))
     manifest = Upload(MACOS_APPCAST_KEY, True, appcast[1], appcast[2], path=appcast[0])
     return immutable, [manifest]
 

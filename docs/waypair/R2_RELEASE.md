@@ -15,18 +15,26 @@ anything else is refused. No legacy Link or Cloud key is ever written.
 |---|---|
 | `waypair/nectar/android/releases/v<ver>/<name>-android.apk` | immutable |
 | `waypair/nectar/android/releases/v<ver>/<source archive>` | immutable |
+| `waypair/nectar/android/releases/v<ver>/CHANGELOG.txt` | immutable, optional (`text/plain; charset=utf-8`) |
 | `waypair/nectar/android/releases/v<ver>/SHA256SUMS.txt` | immutable, generated |
 | `waypair/nectar/android/stable/update.json` | mutable, generated (`AppUpdater.MANIFEST_URL`) |
 | `waypair/nectar/macos/releases/v<ver>/<name>.dmg` | immutable |
 | `waypair/nectar/macos/releases/v<ver>/<source archive>` | immutable |
+| `waypair/nectar/macos/releases/v<ver>/CHANGELOG.txt` | immutable, optional (`text/plain; charset=utf-8`) |
 | `waypair/nectar/macos/releases/v<ver>/SHA256SUMS.txt` | immutable, generated |
 | `waypair/nectar/macos/stable/appcast.xml` | mutable, Root's signed bytes as-is (`SUFeedURL`) |
 
 `update.json` uses the upstream GitHub-release shape that `AppUpdater`
 parses: `tag_name` (`v<ver>`), `html_url`, `draft: false`,
 `prerelease: false`, and `assets` holding exactly the `*-android.apk` and
-`SHA256SUMS.txt` with `name`, `size`, `browser_download_url`. `SHA256SUMS.txt`
-lists the binary and the source archive as `<hex>  <name>` lines.
+`SHA256SUMS.txt` with `name`, `size`, `browser_download_url`. `html_url` is
+the What's-new page the client opens: it defaults to the release's
+`CHANGELOG.txt` URL when `release_notes` is provided, and to the release's
+`SHA256SUMS.txt` URL otherwise (old plans without notes keep that default).
+`SHA256SUMS.txt` lists the binary and the source archive as `<hex>  <name>`
+lines, plus the `CHANGELOG.txt` line when notes are provided. The client's
+sums parser (`listedHash`) looks up only the APK name line, so the extra
+`CHANGELOG.txt` line is ignored by verification.
 
 The appcast is never generated or edited. Root signs it for the DMG URL
 above. Preflight only checks that it contains that exact DMG URL, a matching
@@ -45,16 +53,30 @@ Either platform section may be left out, but not both.
     "version": "0.47.0",
     "apk": {"path": "/abs/Waypair-Link-0.47.0-android.apk", "sha256": "<hex>", "size": 0},
     "source": {"path": "/abs/waypair-link-0.47.0-source.tar.gz", "sha256": "<hex>", "size": 0},
-    "html_url": "https://… (optional; defaults to the release's SHA256SUMS.txt URL)"
+    "release_notes": {"path": "/abs/CHANGELOG.txt", "sha256": "<hex>", "size": 0},
+    "html_url": "https://… (optional; defaults to the release's CHANGELOG.txt URL when release_notes is present, else the SHA256SUMS.txt URL)"
   },
   "macos": {
     "version": "0.47.0",
     "dmg": {"path": "/abs/Waypair-Link-0.47.0.dmg", "sha256": "<hex>", "size": 0},
     "source": {"path": "/abs/waypair-link-0.47.0-source.tar.gz", "sha256": "<hex>", "size": 0},
+    "release_notes": {"path": "/abs/CHANGELOG.txt", "sha256": "<hex>", "size": 0},
     "appcast": {"path": "/abs/appcast.xml", "sha256": "<hex>", "size": 0}
   }
 }
 ```
+
+`release_notes` is optional per platform. When present it must be exactly
+`CHANGELOG.txt`: UTF-8 non-empty plain text, at most 8192 bytes, checked with
+the same path/size/SHA-256 and safe-name guards as every other file, plus a
+source-name collision check. It uploads as immutable
+`releases/v<ver>/CHANGELOG.txt` (`text/plain; charset=utf-8`) before the
+mutable feed, and its hash line joins `SHA256SUMS.txt`. No other filenames,
+keys, URLs, or signed-asset handling change.
+
+On macOS the notes object is published for Root only: Root assembles the
+signed appcast separately and may inline the same plain text as Sparkle
+`<description>`. This script never generates or edits the appcast.
 
 The receipt is only checked to exist with the stated hash. It is never
 uploaded.
@@ -89,8 +111,8 @@ presence, never printed or logged.
    already exists is compared by size and full SHA-256. Identical keys are
    skipped. Different bytes mean `REFUSED … nothing uploaded`, exit 2. A
    remote read error also exits 2 before any write.
-4. **UPLOAD**: missing immutable artifacts, source archives, and
-   `SHA256SUMS.txt` go first, then the mutable `update.json` and
+4. **UPLOAD**: missing immutable artifacts, source archives, optional
+   `CHANGELOG.txt`, and `SHA256SUMS.txt` go first, then the mutable `update.json` and
    `appcast.xml`. Local bytes are re-hashed just before each upload, and the
    stored size is checked afterwards. On failure the script prints
    `UPLOAD FAILED after N upload(s)` with the uploaded keys, writes the
