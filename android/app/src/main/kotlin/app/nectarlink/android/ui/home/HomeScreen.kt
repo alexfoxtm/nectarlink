@@ -236,6 +236,8 @@ fun HomeScreen(
     showHiveInvite: Boolean = false,
     onTryHive: () -> Unit = {},
     onDismissHiveInvite: () -> Unit = {},
+    backgroundServiceEnabled: Boolean = true,
+    onTurnOnBackgroundService: () -> Unit = {},
     onOpenFeaturesGuide: () -> Unit = {},
     onOpenWalkthrough: () -> Unit = {},
     highlightTarget: GuideHighlightTarget? = null,
@@ -561,6 +563,16 @@ fun HomeScreen(
             }
         }
         item(key = "update_card", contentType = "update") { UpdateCard(updater) }
+        if (!backgroundServiceEnabled) {
+            item(key = "background_connection_off", contentType = "setup") {
+                SetupCard(
+                    title = stringResource(R.string.home_background_off_title),
+                    text = stringResource(R.string.home_background_off_text),
+                    buttonLabel = stringResource(R.string.action_turn_on),
+                    onAllow = onTurnOnBackgroundService,
+                )
+            }
+        }
         if (!state.localNetwork) {
             item(key = "local_network_setup", contentType = "setup") {
                 val context = LocalContext.current
@@ -1194,6 +1206,7 @@ private fun SetupCard(
     title: String,
     text: String,
     guide: String? = null,
+    buttonLabel: String = stringResource(R.string.action_allow),
     secondaryLabel: String? = null,
     onSecondary: (() -> Unit)? = null,
     onAllow: () -> Unit,
@@ -1213,7 +1226,7 @@ private fun SetupCard(
             }
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onAllow) { Text(stringResource(R.string.action_allow)) }
+                Button(onClick = onAllow) { Text(buttonLabel) }
                 if (secondaryLabel != null && onSecondary != null) {
                     OutlinedButton(onClick = onSecondary) { Text(secondaryLabel) }
                 }

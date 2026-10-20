@@ -24,6 +24,20 @@ class Preferences(context: Context) {
     private val _suggestClipboardActions = MutableStateFlow(prefs.getBoolean(SUGGEST_CLIPBOARD_ACTIONS, true))
     val suggestClipboardActions: StateFlow<Boolean> = _suggestClipboardActions.asStateFlow()
 
+    private val _backgroundServiceEnabled = MutableStateFlow(prefs.getBoolean(BACKGROUND_SERVICE_ENABLED, true))
+    val backgroundServiceEnabled: StateFlow<Boolean> = _backgroundServiceEnabled.asStateFlow()
+
+    private val preferenceChangeListener =
+        android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == BACKGROUND_SERVICE_ENABLED) {
+                _backgroundServiceEnabled.value = prefs.getBoolean(BACKGROUND_SERVICE_ENABLED, true)
+            }
+        }
+
+    init {
+        prefs.registerOnSharedPreferenceChangeListener(preferenceChangeListener)
+    }
+
     private val _copiedLinkOffers = MutableStateFlow(prefs.getBoolean(COPIED_LINK_OFFERS, false))
     val copiedLinkOffers: StateFlow<Boolean> = _copiedLinkOffers.asStateFlow()
 
@@ -101,6 +115,11 @@ class Preferences(context: Context) {
         _copiedLinkOffers.value = enabled
     }
 
+    fun updateBackgroundServiceEnabled(enabled: Boolean) {
+        prefs.edit { putBoolean(BACKGROUND_SERVICE_ENABLED, enabled) }
+        _backgroundServiceEnabled.value = enabled
+    }
+
     fun updateWalkthrough(change: (WalkthroughPersistence) -> WalkthroughPersistence) {
         val current = _walkthrough.value
         val next = change(current).let {
@@ -128,6 +147,7 @@ class Preferences(context: Context) {
         private const val TOUCHPAD_SENSITIVITY = "touchpad_sensitivity"
         private const val SUGGEST_CLIPBOARD_ACTIONS = "suggest_clipboard_actions"
         private const val COPIED_LINK_OFFERS = "copied_link_offers"
+        internal const val BACKGROUND_SERVICE_ENABLED = "background_service_enabled"
         private const val AWAY_MODE = "away_mode"
         private const val WALKTHROUGH_COMPLETED = "walkthrough_completed"
         private const val WALKTHROUGH_STEP = "walkthrough_step"
@@ -187,6 +207,17 @@ class Preferences(context: Context) {
             context.applicationContext
                 .getSharedPreferences("appearance", Context.MODE_PRIVATE)
                 .edit { putBoolean(AWAY_MODE, enabled) }
+        }
+
+        fun isBackgroundServiceEnabled(context: Context): Boolean =
+            context.applicationContext
+                .getSharedPreferences("appearance", Context.MODE_PRIVATE)
+                .getBoolean(BACKGROUND_SERVICE_ENABLED, true)
+
+        fun setBackgroundServiceEnabled(context: Context, enabled: Boolean) {
+            context.applicationContext
+                .getSharedPreferences("appearance", Context.MODE_PRIVATE)
+                .edit { putBoolean(BACKGROUND_SERVICE_ENABLED, enabled) }
         }
     }
 }

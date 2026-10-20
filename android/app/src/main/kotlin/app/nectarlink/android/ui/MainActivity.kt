@@ -783,6 +783,7 @@ private fun App(
                     val recorderSession by recorderFlow.collectAsStateWithLifecycle(recorderInitial)
                     val touchpadSensitivity by preferences.touchpadSensitivity.collectAsStateWithLifecycle()
                     val suggestClipboardActions by preferences.suggestClipboardActions.collectAsStateWithLifecycle()
+                    val backgroundServiceEnabled by preferences.backgroundServiceEnabled.collectAsStateWithLifecycle()
                     val copiedLinkOffers by preferences.copiedLinkOffers.collectAsStateWithLifecycle()
                     val hiveInviteShown by preferences.hiveInviteShown.collectAsStateWithLifecycle()
                     val saveableStateHolder = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
@@ -909,6 +910,12 @@ private fun App(
                                         preferences.update { it.copy(theme = "hive") }
                                     },
                                     onDismissHiveInvite = preferences::answerHiveInvite,
+                                    backgroundServiceEnabled = backgroundServiceEnabled,
+                                    onTurnOnBackgroundService = {
+                                        preferences.updateBackgroundServiceEnabled(true)
+                                        core.start()
+                                        ConnectionService.start(context)
+                                    },
                                     onDismissWhatsNewGuide = {
                                         preferences.updateWalkthrough { it.dismissWhatsNewGuide() }
                                     },
@@ -944,6 +951,16 @@ private fun App(
                                     onClearClipboardHistory = core::clearClipboardHistory,
                                     suggestClipboardActions = suggestClipboardActions,
                                     onSetSuggestClipboardActions = preferences::updateSuggestClipboardActions,
+                                    backgroundServiceEnabled = backgroundServiceEnabled,
+                                    onToggleBackgroundService = { enabled ->
+                                        preferences.updateBackgroundServiceEnabled(enabled)
+                                        if (enabled) {
+                                            core.start()
+                                            ConnectionService.start(context)
+                                        } else {
+                                            ConnectionService.stop(context)
+                                        }
+                                    },
                                     copiedLinkOffers = copiedLinkOffers,
                                     onSetCopiedLinkOffers = { enabled ->
                                         preferences.updateCopiedLinkOffers(enabled)

@@ -115,6 +115,8 @@ fun SettingsScreen(
     onClearClipboardHistory: () -> Unit = {},
     suggestClipboardActions: Boolean = true,
     onSetSuggestClipboardActions: (Boolean) -> Unit = {},
+    backgroundServiceEnabled: Boolean = true,
+    onToggleBackgroundService: (Boolean) -> Unit = {},
     copiedLinkOffers: Boolean = false,
     onSetCopiedLinkOffers: (Boolean) -> Unit = {},
     onSetTimelineRetentionDays: (UInt) -> Unit = {},
@@ -609,6 +611,24 @@ fun SettingsScreen(
                     title = stringResource(R.string.settings_background_title),
                     highlighted = pulsingSectionKey == "background",
                 ) {
+                    val runInBackgroundTitle = stringResource(R.string.settings_run_in_background)
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                            Text(runInBackgroundTitle, style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                stringResource(R.string.settings_run_in_background_hint),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(
+                            checked = backgroundServiceEnabled,
+                            onCheckedChange = onToggleBackgroundService,
+                            colors = app.nectarlink.android.ui.theme.nectarSwitchColors(),
+                            modifier = Modifier.semantics { contentDescription = runInBackgroundTitle },
+                        )
+                    }
+                    SettingRowDivider()
                     BackgroundBatteryAccess(state.backgroundUnrestricted)
                     SettingRowDivider()
                     CompanionWakeAccess(

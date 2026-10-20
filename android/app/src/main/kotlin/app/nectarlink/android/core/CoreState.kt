@@ -283,6 +283,14 @@ data class CoreState(
     fun withWakeState(id: String, state: WakeState): CoreState =
         update(id) { it.copy(wakeState = state) }
 
+    fun withDevicesOffline(): CoreState = copy(
+        devices = devices.map { d ->
+            if (d.online) d.copy(link = Link.Offline(System.currentTimeMillis() / 1000L), wakeState = WakeState.Idle) else d
+        }.sortedWith(deviceOrder),
+        keyboardFromPc = emptySet(),
+        micRequestFrom = null,
+    )
+
     /** Folds a display-only session snapshot into the device; no-op when unchanged. */
     fun withSessionDisplay(
         id: String,

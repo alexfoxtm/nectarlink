@@ -26,6 +26,7 @@ import app.nectarlink.android.banking.awaitScreenWake
 import app.nectarlink.android.clipboard.SendActivity
 import app.nectarlink.android.core.CoreState
 import app.nectarlink.android.ui.MainActivity
+import app.nectarlink.android.ui.Preferences
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -132,6 +133,13 @@ class ConnectionService : LifecycleService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
+        if (intent?.action == ACTION_STOP_SERVICE) {
+            Preferences.setBackgroundServiceEnabled(this, false)
+            stopSelf()
+            getSystemService(NotificationManager::class.java)?.cancel(ONGOING_ID)
+            (application as? NectarlinkApplication)?.onBackgroundServiceDisabled()
+            return START_NOT_STICKY
+        }
         if (intent?.action == ACTION_STOP_RINGING) {
             (application as NectarlinkApplication).core.stopRinging()
         }
@@ -142,6 +150,7 @@ class ConnectionService : LifecycleService() {
         unregisterScreenWake()
         bankingFollow = null
         multicastLock?.runCatching { release() }
+        getSystemService(NotificationManager::class.java)?.cancel(ONGOING_ID)
         super.onDestroy()
     }
 
@@ -229,6 +238,11 @@ class ConnectionService : LifecycleService() {
             builder.addAction(0, getString(R.string.action_send_clipboard), sendClip)
             builder.addAction(0, getString(R.string.action_send_files), sendFiles)
         }
+        val stopService = PendingIntent.getService(
+            this, 4, Intent(this, ConnectionService::class.java).setAction(ACTION_STOP_SERVICE),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        builder.addAction(0, getString(R.string.action_stop_service), stopService)
         return builder.build()
     }
 
@@ -266,9 +280,11 @@ class ConnectionService : LifecycleService() {
         private const val CHANNEL_CONNECTION = "connection"
         private const val CHANNEL_RINGING = "ringing"
         private const val ACTION_STOP_RINGING = "app.nectarlink.action.STOP_RINGING"
+        internal const val ACTION_STOP_SERVICE = "app.nectarlink.action.STOP_SERVICE"
 
         /** Starts the service when allowed by Android's foreground-service rules. */
         fun start(context: Context) {
+            if (!Preferences.isBackgroundServiceEnabled(context)) return
             runCatching {
                 ContextCompat.startForegroundService(context, Intent(context, ConnectionService::class.java))
             }.onFailure {

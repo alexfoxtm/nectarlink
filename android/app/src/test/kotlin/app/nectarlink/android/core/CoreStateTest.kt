@@ -12,6 +12,7 @@ import app.nectarlink.core.Notification
 import app.nectarlink.core.PairedDevice
 import app.nectarlink.core.PairingFailure
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -48,6 +49,20 @@ class CoreStateTest {
         // Unknown devices are ignored; removal drops the device.
         state = state.reduce(Event.LinkChanged("zz", Link.Connecting)).reduce(Event.DeviceRemoved("b"))
         assertEquals(listOf("a"), state.devices.map { it.id })
+    }
+
+    @Test
+    fun withDevicesOfflineClearsOnlineStatusAndWakeState() {
+        var state = CoreState()
+            .reduce(Event.DeviceAdded(pc("a", "Desk", 10)))
+            .reduce(Event.LinkChanged("a", Link.Online(relayed = false, usb = false, rttMs = 5u)))
+            .withWakeState("a", WakeState.Waking)
+        assertTrue(state.device("a")!!.online)
+        assertEquals(WakeState.Waking, state.device("a")!!.wakeState)
+
+        state = state.withDevicesOffline()
+        assertFalse(state.device("a")!!.online)
+        assertEquals(WakeState.Idle, state.device("a")!!.wakeState)
     }
 
     @Test

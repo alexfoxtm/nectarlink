@@ -44,6 +44,9 @@ class PcCompanionService : CompanionDeviceService() {
 
     private fun wakeAndReconnect() {
         val appContext = applicationContext ?: return
+        if (!app.nectarlink.android.ui.Preferences.isBackgroundServiceEnabled(appContext)) {
+            return
+        }
         ConnectionService.start(appContext)
         (appContext as? NectarlinkApplication)?.core?.reconnectNow()
     }

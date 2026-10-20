@@ -445,6 +445,7 @@ class BatteryMonitor(private val context: Context, private val onChange: (Batter
 
     fun stop() {
         runCatching { context.unregisterReceiver(receiver) }
+        last = null
     }
 }
 

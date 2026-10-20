@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import app.nectarlink.android.NectarlinkApplication
 import app.nectarlink.android.core.CoreStatus
+import app.nectarlink.android.ui.Preferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -26,6 +27,10 @@ class StartupReceiver : BroadcastReceiver() {
             else -> return
         }
         val app = context.applicationContext as NectarlinkApplication
+        if (!Preferences.isBackgroundServiceEnabled(context)) {
+            if (updated) app.updater.onUpdated()
+            return
+        }
         val pending = goAsync()
         CoroutineScope(Dispatchers.Default).launch {
             try {
