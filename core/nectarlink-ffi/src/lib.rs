@@ -3811,24 +3811,28 @@ impl NectarlinkNode {
     }
 
     /// DISPLAY-ONLY classification of the live session with `id` for the Home
-    /// badge (see [`SessionDisplay`]). Unknown peers report lan/unknown/None,
-    /// mirroring the core's own fallbacks; only malformed IDs error.
+    /// badge (see [`SessionDisplay`]). The triple is captured coherently from
+    /// one current session; unknown peers (or sessions replaced/closed during
+    /// the read) report lan/unknown/None, mirroring the core's own fallbacks.
+    /// Only malformed IDs error.
     pub fn session_display(&self, id: String) -> Result<SessionDisplay> {
         let peer = parse_id(&id)?;
-        let display_path = match self.node.display_path(&peer) {
-            ConnectionPath::Lan => "lan",
-            ConnectionPath::Usb => "usb",
-            ConnectionPath::Relay => "relay",
-        }
-        .to_owned();
-        let tunnel_medium = match self.node.tunnel_medium(&peer) {
-            TunnelMedium::PhysicalUsb => "physical",
-            TunnelMedium::Network => "network",
-            TunnelMedium::Unknown => "unknown",
-        }
-        .to_owned();
-        let link_transport = self.node.session_link_transport(&peer).map(|t| t.as_str().to_owned());
-        Ok(SessionDisplay { display_path, tunnel_medium, link_transport })
+        let (display_path, tunnel_medium, link_transport) = self.node.session_display_snapshot(&peer);
+        Ok(SessionDisplay {
+            display_path: match display_path {
+                ConnectionPath::Lan => "lan",
+                ConnectionPath::Usb => "usb",
+                ConnectionPath::Relay => "relay",
+            }
+            .to_owned(),
+            tunnel_medium: match tunnel_medium {
+                TunnelMedium::PhysicalUsb => "physical",
+                TunnelMedium::Network => "network",
+                TunnelMedium::Unknown => "unknown",
+            }
+            .to_owned(),
+            link_transport: link_transport.map(|t| t.as_str().to_owned()),
+        })
     }
 
     pub async fn update_device_info(&self, info: DeviceInfo) {
