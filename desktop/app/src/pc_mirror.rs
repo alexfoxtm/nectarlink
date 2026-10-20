@@ -3,6 +3,7 @@
 //! display, encodes it to low-latency H.264 via Windows Media Foundation, and
 //! streams it over `mirror` / `video` (`session = 0`) to a paired phone, while
 //! injecting touch, scroll, key, and text input back into Windows (`docs/PLAN.md` §8.6).
+//! On macOS the same API is `mac/screen_share.rs`: view-only, off until accepted.
 
 #[cfg(windows)]
 mod imp {
@@ -1068,7 +1069,10 @@ mod imp {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+use crate::win::screen_share as imp;
+
+#[cfg(not(any(windows, target_os = "macos")))]
 mod imp {
     #![allow(dead_code)]
 

@@ -628,6 +628,18 @@ NativeWindow {
                 onClicked: window.page = "photos"
             }
             NavItem {
+                visible: Qt.platform.os === "osx" && PhoneBrowser.enabled
+                iconPath: Icons.folder
+                text: qsTr("Phone files")
+                selected: window.page === "phoneFiles"
+                activeHover: rail.hoveredNav === "phoneFiles"
+                onHoveredChanged: {
+                    if (hovered) rail.hoveredNav = "phoneFiles"
+                    else if (rail.hoveredNav === "phoneFiles") rail.hoveredNav = ""
+                }
+                onClicked: window.page = "phoneFiles"
+            }
+            NavItem {
                 iconPath: Icons.apps
                 text: qsTr("Apps")
                 selected: window.page === "apps"
@@ -716,6 +728,7 @@ NativeWindow {
                     : window.page === "messages" ? qsTr("Messages")
                     : window.page === "calls" ? qsTr("Calls")
                     : window.page === "photos" ? qsTr("Photos")
+                    : window.page === "phoneFiles" ? qsTr("Phone files")
                     : window.page === "apps" ? qsTr("Apps")
                     : window.page === "deck" ? qsTr("Deck")
                     : window.page === "guide" ? qsTr("Features guide")
@@ -933,6 +946,7 @@ NativeWindow {
                     case "messages": return "qrc:/qt/qml/app/nectarlink/qml/pages/MessagesPage.qml"
                     case "calls": return "qrc:/qt/qml/app/nectarlink/qml/pages/CallsPage.qml"
                     case "photos": return "qrc:/qt/qml/app/nectarlink/qml/pages/PhotosPage.qml"
+                    case "phoneFiles": return PhoneBrowser.enabled ? "qrc:/qt/qml/app/nectarlink/qml/pages/PhoneBrowserPage.qml" : ""
                     case "apps": return "qrc:/qt/qml/app/nectarlink/qml/pages/AppsPage.qml"
                     case "deck": return "qrc:/qt/qml/app/nectarlink/qml/pages/DeckPage.qml"
                     case "guide": return "qrc:/qt/qml/app/nectarlink/qml/pages/FeaturesGuidePage.qml"

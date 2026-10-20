@@ -267,11 +267,6 @@ fn clamp(v: i32) -> u8 {
     v.clamp(0, 255) as u8
 }
 
-#[allow(dead_code)]
-pub fn ensure_mf_started() -> Result<(), String> {
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

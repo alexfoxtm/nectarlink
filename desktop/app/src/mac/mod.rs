@@ -12,6 +12,7 @@ pub mod clipboard;
 pub mod doctor;
 pub mod elevated;
 pub mod h264;
+pub mod h264_encoder;
 pub mod http;
 pub mod image;
 pub mod input;
@@ -19,6 +20,8 @@ pub mod jumplist;
 pub mod media_sessions;
 pub mod mp4;
 pub mod net;
+pub mod screen_capture;
+pub mod screen_share;
 pub mod services;
 pub mod share_target;
 pub mod shell;
@@ -33,6 +36,7 @@ pub mod wallpaper;
 pub mod widget;
 pub mod window_capture;
 pub mod wol;
+pub mod work_area;
 
 /// Machine GUID on macOS: derived from IOPlatformSerialNumber.
 pub fn machine_guid() -> Option<String> {
@@ -107,7 +111,7 @@ pub fn reduce_motion() -> bool {
 
 /// Primary display work area in physical pixels.
 pub fn work_area() -> Option<(i32, i32, i32, i32)> {
-    None
+    work_area::get()
 }
 
 /// Fills `buf` from cryptographic randomness.

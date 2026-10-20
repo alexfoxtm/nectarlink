@@ -125,3 +125,42 @@ GPL forbids our open-source, independently branded fork. Cloud remains separate.
 Liquid Glass / GPUI work is deferred: Alex asked to spend time on roadmap
 implementation instead. No framework rewrite or new visual-effect dependency
 was introduced.
+
+## Current development checkpoint — 2026-10-20
+
+Use one normal installed Waypair Link app per platform. Alex retired separate
+QA/test app bundles and alternate installed identities. Code checks and synthetic
+data fixtures continue; existing signing, data and pairing remain in place.
+
+Android `0.1.4-local.6` / code99 is published from `b521d6c5`. Its normal
+`com.waypair` APK keeps signer B and the same permissions. Third-party notices
+and the exact source archive are accessible in About. Independent artifact
+review, lint, alignment, installed-byte checks and a direct 98-to-99 emulator
+upgrade passed; the fresh public update check reports current. All four R2
+objects matched full-download hashes and five other feeds stayed unchanged.
+This is not a new OTA cycle or a Galaxy installation. Cloud10 remains separate.
+
+The following Mac source now compiles together and passes strict all-target
+Clippy. Sixteen focused checks passed, two per component. This records source
+and bounded fixture evidence, not native feature acceptance:
+
+| Component | Implemented source | Remaining admission |
+| --- | --- | --- |
+| H.264 receive | VideoToolbox decode, bounded Annex-B parameters, NV12 stride/color conversion and format recovery | Original red-frame native fixture passed; actual peer transport and Qt painting remain unverified. `mirror.view` stays off. |
+| H.264 send | VideoToolbox encoder, bounded AVCC conversion, SPS/PPS before IDR, keyframe requests and bitrate changes | Pure packet cases passed; a synthetic native encode/decode round trip and Android rendering remain. |
+| Mac screen share | Public per-session ScreenCaptureKit picker, retained frame bounds and a view-only sender with generation-safe teardown | Capture decision/cancellation cases passed. No picker, personal capture or stop-race runtime test ran. `READY` and capture capability remain off. |
+| Local input | Public CoreGraphics adapter, existing-trust check, owned modifier/button/unicode cleanup | Pure planning cases passed. No Accessibility grant or input event was performed; capabilities remain off. |
+| PCM playback | AudioQueue output, explicit device choice, bounded queue/jitter and callback lifetime | Pure format/device/buffer cases passed. No playback or microphone use; audio capabilities remain off. |
+| Clipboard files | Native local file URLs for explicit Send clipboard; private and torn lists refused; filenames do not auto-sync as text | Pure parsing and a synthetic named-pasteboard fixture passed. Normal Finder-to-peer acceptance remains; received-file auto-copy is still off on Mac. |
+| Phone folders | Bounded in-app list/save, path identity, cancellation/revocation and exclusive destination publication | Pure cases passed. Explicit Mac opt-in, paired SAF/provider and filesystem acceptance remain; browser flag stays off and Finder mount is not implemented. |
+| Usable display area | Public primary-screen metadata, menu-bar/Dock subtraction and physical-pixel conversion | Two coordinate cases passed. Native Retina/Dock placement still needs the normal app check. |
+
+Mac32 remains installed. Build and test the next Mac update through that
+same normal installation, preserving its identity. Native permissions and
+personal call/audio/capture actions still need the owner's specific approval.
+
+The old browser Dock offer uses `NSApp.dockTile.contentView` in the same app;
+it does not require a helper app or Apple's cross-device Handoff transport.
+Porting it still needs a negotiated privacy/session/lifetime offer and an
+explicit-click route that preserves Qt's application delegate. Ordinary
+`clip.set` text alone is insufficient. Tray expansion stays deferred.

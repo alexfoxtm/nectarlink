@@ -117,6 +117,7 @@ windows = { workspace = true, features = [
 # Foundation bindings, with GCD for main-thread dispatch. macOS only, so
 # Windows and Linux builds are unaffected.
 dispatch2 = "0.3"
+block2 = "0.6"
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSPasteboard", "objc2-core-foundation", "NSStatusBar", "NSStatusItem", "NSStatusBarButton", "NSButton", "NSControl", "NSMenu", "NSMenuItem", "NSResponder", "NSView", "NSApplication", "NSBitmapImageRep", "NSImageRep", "NSEvent", "NSRunningApplication", "NSWorkspace"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSData", "NSDate", "NSEnumerator", "NSRunLoop", "NSString"] }

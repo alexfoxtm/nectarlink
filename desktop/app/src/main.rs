@@ -40,6 +40,7 @@ mod pc_audio_stream;
 mod pc_mirror;
 mod pc_notifications;
 mod pc_storage;
+mod phone_browser;
 mod phone_mic;
 mod photos;
 mod play_on_phone;

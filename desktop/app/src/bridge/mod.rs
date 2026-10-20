@@ -28,6 +28,8 @@ pub mod notifications;
 #[allow(unsafe_code)]
 pub mod pairing;
 #[allow(unsafe_code)]
+pub mod phone_browser;
+#[allow(unsafe_code)]
 pub mod phone_mic;
 #[allow(unsafe_code)]
 pub mod photos;

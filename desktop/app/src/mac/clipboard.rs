@@ -30,6 +30,17 @@
 //! contents read across an external pasteboard replacement are
 //! discarded, never transferred under the old contents' privacy
 //! classification.
+//!
+//! File lists are never watched or sent automatically: transfer reads
+//! classify copied files as empty, so neither the files nor the names
+//! Finder offers as text leave with the watcher. [`read_files`] serves
+//! only an explicit "Send clipboard", and refuses private-marked lists
+//! and lists with any non-URL item; [`write_files`] writes plain file URLs
+//! (as Windows writes plain `CF_HDROP`) only when the caller's
+//! received-files preference asks for it, and its change is suppressed
+//! like any other self-write. [`write_private`] markers are unchanged.
+
+mod files;
 
 use std::{
     hash::{DefaultHasher, Hash, Hasher},
@@ -39,14 +50,15 @@ use std::{
 };
 
 use dispatch2::DispatchQueue;
-use objc2::MainThreadMarker;
-use objc2_app_kit::NSPasteboard;
-use objc2_foundation::{NSData, NSString};
+use objc2::{ClassType, MainThreadMarker, Message, msg_send, rc::Retained, runtime::ProtocolObject};
+use objc2_app_kit::{NSPasteboard, NSPasteboardWriting};
+use objc2_foundation::{NSArray, NSData, NSString, NSURL};
 
 /// Pasteboard format identifiers as plain values. These are the
 /// documented UTI strings the `NSPasteboardTypeString` /
 /// `NSPasteboardTypeHTML` / `NSPasteboardTypeRTF` /
-/// `NSPasteboardTypePNG` / `NSPasteboardTypeTIFF` constants hold;
+/// `NSPasteboardTypePNG` / `NSPasteboardTypeTIFF` /
+/// `NSPasteboardTypeFileURL` constants hold;
 /// constructing `NSString`s from them keeps every call site in safe
 /// code (reading the extern statics would need `unsafe`, which this
 /// crate forbids outside narrow bridges).
@@ -55,6 +67,7 @@ const TYPE_HTML: &str = "public.html";
 const TYPE_RTF: &str = "public.rtf";
 const TYPE_PNG: &str = "public.png";
 const TYPE_TIFF: &str = "public.tiff";
+const TYPE_FILE_URL: &str = "public.file-url";
 
 /// An `NSPasteboardType` (an `NSString`) for a format UTI.
 fn pasteboard_type(uti: &str) -> objc2::rc::Retained<NSString> {
@@ -329,13 +342,18 @@ fn is_marked_private(pb: &NSPasteboard) -> bool {
 
 /// Reads types and contents. Main thread only. With `skip_private`,
 /// marked content reads as [`Clip::Private`] and its contents are
-/// never materialised for transfer. Callers that transfer the result
-/// must use [`snapshot_on_main`] instead, so the types checked here
-/// are known to belong to the contents read here.
+/// never materialised for transfer, and copied files read as
+/// [`Clip::Empty`] (Finder also offers their names as text), so they
+/// leave only as files through an explicit [`read_files`]. Callers that
+/// transfer the result must use [`snapshot_on_main`] instead, so the
+/// types checked here are known to belong to the contents read here.
 fn read_unchecked(pb: &NSPasteboard, skip_private: bool) -> Clip {
     let types = offered_types(pb);
     if types.iter().any(|t| is_private_type(t)) && skip_private {
         return Clip::Private;
+    }
+    if skip_private && types.iter().any(|t| t == TYPE_FILE_URL) {
+        return Clip::Empty;
     }
     if let Some(text) = pb.stringForType(&pasteboard_type(TYPE_STRING)) {
         let text = text.to_string();
@@ -557,14 +575,113 @@ pub fn parse_dropfiles_payload(_bytes: &[u8]) -> Option<Vec<PathBuf>> {
     None
 }
 
-#[allow(dead_code)]
-pub fn read_files() -> Option<Vec<PathBuf>> {
-    None
+/// The pasteboard's contents as `NSURL` objects. Main thread only.
+#[allow(unsafe_code)]
+fn read_url_objects(pb: &NSPasteboard) -> Option<Retained<NSArray>> {
+    let classes = NSArray::from_slice(&[NSURL::class()]);
+    // SAFETY: the class array holds only `NSURL`, which conforms to
+    // `NSPasteboardReading`, and no options dictionary is passed.
+    unsafe { pb.readObjectsForClasses_options(&classes, None) }
 }
 
-#[allow(dead_code)]
-pub fn write_files(_paths: &[PathBuf]) -> bool {
-    false
+/// How many items the pasteboard holds. Main thread only.
+#[allow(unsafe_code)]
+fn item_count(pb: &NSPasteboard) -> usize {
+    // SAFETY: `pasteboardItems` is a public `NSPasteboard` property that
+    // returns an `NSArray` of `NSPasteboardItem` or nil; only its count is
+    // read. (The typed binding needs an `objc2-app-kit` feature this crate
+    // does not enable.)
+    let items: Option<Retained<NSArray>> = unsafe { msg_send![pb, pasteboardItems] };
+    items.map_or(0, |items| items.count())
+}
+
+/// The file URLs on the pasteboard as strings, read in one consistent
+/// snapshot. `None` for private-marked contents, contents without file
+/// URLs, any item that is not a URL (never a silent subset), any non-file
+/// object, or a replacement mid-read. Main thread only.
+fn file_urls_on_main(pb: &NSPasteboard) -> Option<Vec<String>> {
+    let before = pb.changeCount();
+    let types = offered_types(pb);
+    if types.iter().any(|t| is_private_type(t)) || !types.iter().any(|t| t == TYPE_FILE_URL) {
+        return None;
+    }
+    let objects = read_url_objects(pb)?;
+    if objects.count() > files::MAX_FILES || objects.count() != item_count(pb) {
+        return None;
+    }
+    let mut urls = Vec::with_capacity(objects.count());
+    for object in objects.iter() {
+        let url = object.downcast_ref::<NSURL>()?;
+        // A file reference whose file is gone no longer names anything.
+        let url = if url.isFileReferenceURL() {
+            match url.filePathURL() {
+                Some(path_url) => path_url,
+                None => continue,
+            }
+        } else {
+            url.retain()
+        };
+        if !url.isFileURL() {
+            return None;
+        }
+        urls.push(url.absoluteString()?.to_string());
+    }
+    (pb.changeCount() == before).then_some(urls)
+}
+
+/// Copied files, for an explicit "Send clipboard" only. Returns the
+/// listed paths that exist, or `None` when the pasteboard holds no
+/// transferable file list (see [`file_urls_on_main`]).
+pub fn read_files() -> Option<Vec<PathBuf>> {
+    let urls = match on_main(|| file_urls_on_main(&pasteboard())) {
+        MainOutcome::Completed(urls) => urls?,
+        MainOutcome::NotStarted | MainOutcome::StartedTimeout => return None,
+    };
+    let paths: Vec<PathBuf> =
+        files::paths_from_file_urls(&urls)?.into_iter().filter(|p| p.exists()).collect();
+    (!paths.is_empty()).then_some(paths)
+}
+
+/// Places existing local files on the pasteboard as plain file URLs, so
+/// they paste in Finder. All-or-nothing: an invalid or missing path, or
+/// another app taking the pasteboard mid-write, writes nothing of ours.
+pub fn write_files(paths: &[PathBuf]) -> bool {
+    let Ok(checked) = files::validate_write_paths(paths) else { return false };
+    // Stat off the main thread; `fileURLWithPath:` alone would stat on it.
+    let Some(entries) = checked
+        .into_iter()
+        .map(|path| std::fs::metadata(&path).ok().map(|meta| (path, meta.is_dir())))
+        .collect::<Option<Vec<_>>>()
+    else {
+        return false;
+    };
+    write_outcome(on_main(move || {
+        let urls: Vec<Retained<ProtocolObject<dyn NSPasteboardWriting>>> = entries
+            .iter()
+            .map(|(path, is_dir)| {
+                ProtocolObject::from_retained(NSURL::fileURLWithPath_isDirectory(
+                    &NSString::from_str(path),
+                    *is_dir,
+                ))
+            })
+            .collect();
+        let pb = pasteboard();
+        let owned = pb.clearContents();
+        let written = pb.writeObjects(&NSArray::from_retained_slice(&urls));
+        let count = pb.changeCount();
+        if count != owned {
+            // Another app replaced the pasteboard: its contents are not
+            // ours to clear or to suppress as a self-write.
+            return Err("another app replaced the clipboard during the file write".to_string());
+        }
+        if !written {
+            pb.clearContents();
+            return Err("setting pasteboard file URLs failed".to_string());
+        }
+        watch_state(|s| s.note_self_write(count as i64, &Clip::Empty));
+        Ok(())
+    }))
+    .is_ok()
 }
 
 #[cfg(test)]

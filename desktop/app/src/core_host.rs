@@ -337,6 +337,7 @@ async fn run(data_dir: PathBuf, platform: Arc<dyn Platform>) {
                 crate::send_to::on_event(&event);
                 crate::battery::on_event(&event);
                 crate::storage::on_event(&event);
+                crate::phone_browser::on_event(&event);
                 crate::webcam::on_event(&event);
                 crate::phone_mic::on_event(&event);
                 crate::automations::on_event(&event);
