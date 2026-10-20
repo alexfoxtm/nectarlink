@@ -44,7 +44,8 @@ pub fn run(program: &Path, arguments: &str) -> Result<(), String> {
 
 /// Locks the Mac screen.
 pub fn lock() -> Result<(), String> {
-    // CGSession -suspend locks the screen directly without accessibility prompts.
+    // Legacy macOS (< Big Sur): CGSession -suspend locked the screen directly.
+    // Modern macOS (11+) removed CGSession, so it falls back to osascript.
     let status = std::process::Command::new(
         "/System/Library/CoreServices/Menu Extras/User.menu/Contents/Resources/CGSession",
     )
