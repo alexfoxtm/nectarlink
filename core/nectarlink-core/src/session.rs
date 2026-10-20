@@ -37,8 +37,9 @@ const HEARTBEAT_TIMEOUT: Duration = Duration::from_millis(3000);
 const HEARTBEAT_RETRY_TIMEOUT: Duration = Duration::from_millis(1500);
 const OUTBOX_CAPACITY: usize = 256;
 
-/// Classifies the selected path using only live bridge-port registration.
-/// Peer tunnel records and unselected paths are not transport proof.
+/// Classifies the path for authorization using only the selected path and live
+/// bridge-port registration. Unknown paths use Relay's existing remote-file
+/// restriction; display classification remains separate.
 pub(crate) fn classify_selected_path(
     selected: Option<(bool, Option<std::net::SocketAddr>)>,
     usb_bridge_ports: &HashSet<u16>,
@@ -50,7 +51,10 @@ pub(crate) fn classify_selected_path(
         {
             ConnectionPath::Usb
         }
-        _ => ConnectionPath::Lan,
+        Some((false, Some(_))) => ConnectionPath::Lan,
+        // No selected path or an unsupported selected transport is unknown,
+        // not proof of a LAN path. Reuse Relay's existing conservative policy.
+        _ => ConnectionPath::Relay,
     }
 }
 
@@ -278,9 +282,10 @@ impl Session {
             && self.usb_bridge_ports.lock().unwrap_or_else(|e| e.into_inner()).contains(&addr.port())
     }
 
-    /// The path the connection currently uses. USB requires a selected remote
-    /// on a registered loopback bridge; a tunnel record or alternate path is
-    /// not enough (see [`Session::tunnel_medium`]).
+    /// Authorization path. USB requires a selected remote on a registered
+    /// loopback bridge; unknown paths use Relay's existing remote-file policy.
+    /// Display uses [`Session::display_path`] instead, so a tunnel record or
+    /// alternate path never becomes route proof (see [`Session::tunnel_medium`]).
     pub fn path(&self) -> ConnectionPath {
         let selected = self.conn.paths().iter().find(|p| p.is_selected()).map(|p| {
             let remote = match p.remote_addr() {
@@ -925,6 +930,30 @@ mod tests {
             classify_selected_path(Some((false, Some(bridge))), &bridge_ports),
             ConnectionPath::Usb,
             "the registered selected bridge is sufficient before a phone-side peer record exists"
+        );
+    }
+
+    #[test]
+    fn unknown_path_is_remote_restricted_without_broadening_direct_ip_policy() {
+        let bridge: std::net::SocketAddr = "127.0.0.1:53319".parse().unwrap();
+        let bridge_ports = HashSet::from([bridge.port()]);
+
+        assert_eq!(
+            classify_selected_path(None, &bridge_ports),
+            ConnectionPath::Relay,
+            "an open registered bridge is not USB proof until selected, and no selection is not LAN proof"
+        );
+        assert_eq!(
+            classify_selected_path(Some((false, None)), &bridge_ports),
+            ConnectionPath::Relay,
+            "an unsupported selected transport remains remote-restricted"
+        );
+
+        let direct_wan: std::net::SocketAddr = "198.51.100.10:53320".parse().unwrap();
+        assert_eq!(
+            classify_selected_path(Some((false, Some(direct_wan))), &bridge_ports),
+            ConnectionPath::Lan,
+            "a known selected direct IP retains the existing remote_files classification"
         );
     }
 

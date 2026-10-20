@@ -752,7 +752,7 @@ impl Shared {
             return true;
         }
         let paths = conn.paths();
-        let selected = paths.iter().find(|p| p.is_selected()).or_else(|| paths.iter().next());
+        let selected = paths.iter().find(|p| p.is_selected());
         match selected {
             Some(p) if p.is_relay() => false,
             Some(p) => match p.remote_addr() {
@@ -763,15 +763,29 @@ impl Shared {
         }
     }
 
-    pub(crate) async fn wait_connection_allowed(&self, conn: &Connection) -> bool {
-        if self.away_mode() || self.is_usb_connection(conn) {
-            return true;
-        }
+    /// Waits for Iroh to select a path before callers make path-dependent
+    /// admission decisions. Open paths are not proof of the route in use.
+    pub(crate) async fn wait_for_selected_path(&self, conn: &Connection) -> bool {
         for _ in 0..20 {
-            if !conn.paths().is_empty() {
-                return self.is_connection_allowed(conn);
+            if conn.close_reason().is_some() {
+                return false;
+            }
+            if conn.paths().iter().any(|p| p.is_selected()) {
+                return true;
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        conn.close_reason().is_none() && conn.paths().iter().any(|p| p.is_selected())
+    }
+
+    pub(crate) async fn wait_connection_allowed(&self, conn: &Connection) -> bool {
+        if self.away_mode() {
+            return true;
+        }
+        if !self.wait_for_selected_path(conn).await {
+            // Re-check away mode in `is_connection_allowed` in case it was
+            // enabled while waiting; otherwise unknown stays denied.
+            return self.is_connection_allowed(conn);
         }
         self.is_connection_allowed(conn)
     }
@@ -1756,6 +1770,12 @@ struct PairProtocol(Weak<Shared>);
 impl ProtocolHandler for PairProtocol {
     async fn accept(&self, conn: Connection) -> Result<(), AcceptError> {
         let Some(shared) = self.0.upgrade() else { return Err(AcceptError::from_err(Error::Offline)) };
+        if !shared.wait_for_selected_path(&conn).await {
+            let peer = crate::device_id(&conn.remote_id());
+            tracing::debug!(peer = %peer.short(), "refusing pairing connection before a path is selected");
+            conn.close(VarInt::from_u32(ErrorCode::Denied.close_code()), b"path not selected");
+            return Err(AcceptError::from_err(Error::Offline));
+        }
         pairing::accept(shared, conn).await;
         Ok(())
     }
