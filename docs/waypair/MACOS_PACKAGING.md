@@ -84,8 +84,8 @@ The script fails with a specific message on:
 
 Plist text is XML-escaped with `sed`, so macOS `/bin/bash` 3.2 and newer bash
 produce the same entities. The bundle id defaults to
-`com.waypair.link.nectar-qualification`; release builds pass
-`--bundle-id com.waypair.mac`. The script itself never signs, installs,
+`com.waypair.mac`; the staging and installed app use the same normal identity.
+The script itself never signs, installs,
 touches a keychain or credential, or uses the network. `--help` documents
 every option.
 

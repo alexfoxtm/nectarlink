@@ -25,7 +25,7 @@ set -euo pipefail
 BINARY=""
 OUTPUT_DIR=""
 APP_NAME="Waypair Link"
-BUNDLE_ID="com.waypair.link.nectar-qualification"
+BUNDLE_ID="com.waypair.mac"
 VERSION="0.1.4"
 BUILD_VERSION=""
 MACDEPLOYQT_ARG=""
@@ -67,11 +67,8 @@ Required:
 
 Options:
   --app-name <name>      App/display name. Default: "Waypair Link".
-  --bundle-id <id>       CFBundleIdentifier. Default: com.waypair.link.nectar-qualification.
-                         The default stays distinct from an installed legacy app.
-                         Explicit --bundle-id com.waypair.mac is allowed for the
-                         final replacement build. This script does not install,
-                         migrate data, or rotate keys.
+  --bundle-id <id>       CFBundleIdentifier. Default: com.waypair.mac.
+                         This script does not install, migrate data, or rotate keys.
   --version <x.y.z>      CFBundleShortVersionString. Default: 0.1.4 (workspace version).
   --build-version <n>    CFBundleVersion. Default: same as --version.
   --macdeployqt <path>   Explicit macdeployqt. Wins over all discovery.
