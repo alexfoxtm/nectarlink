@@ -3514,6 +3514,153 @@ mod mac_receive_fixture {
         drop_fixture_window(window_b);
     }
 
+    #[test]
+    fn production_sink_recording_writes_video_only_mp4() {
+        use nectarlink_core::MirrorAudioConfig;
+        use std::collections::HashMap;
+        use std::sync::atomic::Ordering;
+
+        let _fixture = FIXTURE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _ = tracing_subscriber::fmt().with_max_level(tracing::Level::DEBUG).with_test_writer().try_init();
+        fixture_host();
+        const {
+            assert!(super::VIEW_ONLY, "mac stays view-only until native acceptance");
+            assert!(!super::OPTIONS.audio, "mac never asks for the phone's sound");
+        }
+
+        // Distinct device so global mirror state from the other fixtures cannot leak in.
+        let device = DeviceId([0x52; 32]);
+        let generation = 0x9E37_79B9_7F4A_7C16u64;
+        let window = live_screen_request(device, generation);
+        assert_eq!(super::phase(&window), Some(Phase::Showing), "recording begins while live");
+        assert!(!super::is_recording(&window), "no recording before begin");
+
+        // Production sink: the same `mirror::sink()` the core's `receive` selects.
+        let sink = super::sink(&device, MIRROR_SCREEN).expect("live screen request owns a sink");
+        let idr = fixture_idr();
+        sink.config(fixture_config(128, 128, generation));
+        sink.packet(true, 0, idr.clone());
+        let live = await_bitmap(window, 128, 128, Duration::from_secs(10))
+            .expect("decoder publishes the live fixture frame before recording");
+        assert_solid_red(&live.bgra);
+
+        // Disposable caller-owned output: temp dir, no real Downloads pollution.
+        // A sibling owner file proves finish/cleanup never touches unowned paths.
+        let dir = tempfile::tempdir().expect("disposable recording dir");
+        let owner = dir.path().join("owner.txt");
+        std::fs::write(&owner, b"owner-bytes").expect("sibling owner file");
+        let path = dir.path().join("Mirror recording.mp4");
+        assert!(!path.exists(), "disposable path starts free");
+
+        // Same dims + seed the production toggle uses, without touching real Downloads/toast.
+        let (width, height) = super::LAST_CONFIG
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .and_then(|m| m.get(&window).copied())
+            .unwrap_or((128, 128));
+        assert_eq!((width, height), (128, 128), "live format is the recording format");
+        let mut seeded =
+            crate::win::mp4::MirrorRecorder::new(path.clone(), width, height, super::OPTIONS.fps, None);
+        if let Some(sps_pps) = super::LAST_SPS_PPS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .and_then(|m| m.get(&window).cloned())
+        {
+            seeded.set_sps_pps(&sps_pps);
+        }
+        {
+            let mut guard = super::RECORDERS.lock().unwrap_or_else(|e| e.into_inner());
+            let map = guard.get_or_insert_with(HashMap::new);
+            map.insert(window, seeded);
+            super::ACTIVE_RECORDERS.store(map.len(), Ordering::Release);
+        }
+        assert!(super::is_recording(&window), "begin while live is visible to QML");
+        assert!(super::recording_started_ms(&window) > 0, "QML elapsed timer has a start");
+
+        // Auth H.264 through the existing record callbacks: config/keys to both
+        // decoder and recorder. Bounded: three more IDRs (four total with live).
+        sink.packet(true, 33_333, idr.clone());
+        sink.packet(true, 66_666, idr.clone());
+        // Video-only honesty: audio config is accepted for API stability, PCM is
+        // refused by the recorder and must not poison the video file.
+        sink.audio_config(MirrorAudioConfig { codec: "pcm_s16le".into(), rate: 48_000, channels: 2 });
+        sink.audio(0, vec![0u8; 480]);
+        sink.packet(true, 100_000, idr.clone());
+
+        // Current frames survive recording: the VideoToolbox path still publishes.
+        let still = await_bitmap(window, 128, 128, Duration::from_secs(10))
+            .expect("live frame survives recording packets");
+        assert_solid_red(&still.bgra);
+        let audio_cfg = super::LAST_AUDIO_CONFIG
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .and_then(|m| m.get(&device).copied());
+        assert_eq!(audio_cfg, Some((48_000, 2)), "audio path ran without breaking video");
+
+        // Stop/close like `stop_recording` but synchronously for a deterministic
+        // assertion (production wraps the same remove + `finish` in spawn_blocking).
+        let recorder = {
+            let mut guard = super::RECORDERS.lock().unwrap_or_else(|e| e.into_inner());
+            let rec = guard.as_mut().and_then(|m| m.remove(&window));
+            super::ACTIVE_RECORDERS.store(guard.as_ref().map_or(0, HashMap::len), Ordering::Release);
+            rec
+        }
+        .expect("recorder still owned at stop");
+        assert!(!super::is_recording(&window), "stop clears the QML flag");
+        let saved = recorder.finish().expect("stop writes a valid MP4");
+        assert_eq!(saved, path);
+        assert!(saved.is_file(), "native Open/Reveal have an existing file target");
+        let bytes = std::fs::read(&saved).expect("finished MP4 is readable");
+        assert!(bytes.len() > 256, "unexpectedly small MP4: {} B", bytes.len());
+        assert!(bytes.len() < 8_000_000, "bounded fixture must stay small: {} B", bytes.len());
+        fn contains(hay: &[u8], needle: &[u8]) -> bool {
+            hay.windows(needle.len()).any(|w| w == needle)
+        }
+        assert_eq!(&bytes[4..8], b"ftyp", "MP4 starts with ftyp");
+        assert!(contains(&bytes, b"moov"), "missing moov box");
+        assert!(contains(&bytes, b"mdat"), "missing mdat box");
+        assert!(contains(&bytes, b"avc1"), "missing avc1 sample entry");
+        assert!(contains(&bytes, b"avcC"), "missing avcC config box");
+        assert!(!contains(&bytes, b"soun"), "video-only file must not carry an audio track");
+        // The finalized description must carry the real stream sets, not a fallback.
+        {
+            use crate::win::mp4::{nal_type, split_annexb};
+            let mut sps = None;
+            let mut pps = None;
+            for nal in split_annexb(&idr) {
+                match nal_type(nal) {
+                    Some(7) => sps = Some(nal.to_vec()),
+                    Some(8) => pps = Some(nal.to_vec()),
+                    _ => {}
+                }
+            }
+            let sps = sps.expect("fixture carries SPS");
+            let pps = pps.expect("fixture carries PPS");
+            assert!(contains(&bytes, &sps), "moov must carry the live SPS");
+            assert!(contains(&bytes, &pps), "moov must carry the live PPS");
+        }
+        assert_eq!(
+            std::fs::read(&owner).expect("owner still readable"),
+            b"owner-bytes".to_vec(),
+            "finish must not touch unowned sibling files"
+        );
+
+        // Close the live stream through the production `ended` path; the finished
+        // file stays (owned handle already consumed), the live frame clears.
+        sink.ended();
+        let cleared = std::time::Instant::now();
+        while super::latest_bitmap(&window).is_some() && cleared.elapsed() < Duration::from_secs(10) {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(super::latest_bitmap(&window).is_none(), "ended stream clears its frame");
+        assert!(saved.is_file(), "finished MP4 survives stream close");
+        drop_fixture_window(window);
+        assert!(super::sink(&device, MIRROR_SCREEN).is_none(), "closed request owns no sink");
+    }
+
     #[cfg(feature = "test-support")]
     #[test]
     fn transport_to_video_frame_uses_two_authenticated_nodes() {
