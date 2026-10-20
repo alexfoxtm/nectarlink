@@ -2074,8 +2074,7 @@ pub mod browser_gate {
             // TempDir fields are needed (same as `mirror::window_gate`).
             let stage = self.stage.clone();
             let recorded = self.recorded.clone();
-            let (receiver, phone, phone_id, receiver_id) =
-                (self.receiver.clone(), self.phone.clone(), self.phone_id, self.receiver_id);
+            let (phone, phone_id, receiver_id) = (self.phone.clone(), self.phone_id, self.receiver_id);
             // The driver runs while `app.exec()` owns the main thread: it
             // waits for the page's browse to list, re-delivers the OBSERVED
             // loopback link event (same-path no-op proof), waits for QML's

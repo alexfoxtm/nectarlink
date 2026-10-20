@@ -5253,6 +5253,9 @@ async fn start_usb_device_in(
     config.away_mode = false;
     config.usb_port = usb_port;
     config.adb_server = None;
+    // lan_discovery=false alone still binds 0.0.0.0 with Iroh's portmapper on.
+    #[cfg(feature = "test-support")]
+    config.enable_loopback_mirror_fixture();
     config.key_protector = Some(Arc::new(PlainKeyProtector));
     let mut caps = vec!["media.control".to_owned()];
     caps.extend(offers.iter().map(|c| (*c).to_owned()));
