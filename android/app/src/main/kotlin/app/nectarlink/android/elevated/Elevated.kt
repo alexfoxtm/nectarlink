@@ -85,6 +85,7 @@ object Elevated {
     private lateinit var context: Context
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val lock = Mutex()
+    private val retryLock = Any()
     private var adb: Connection? = null
     private var shell: AdbStream? = null
     private var rootProcess: Process? = null
@@ -93,6 +94,7 @@ object Elevated {
     /** Where the helper listens, and the token it wants, while it runs. */
     @Volatile private var helper: Pair<Int, String>? = null
     @Volatile private var screenOffRequested = false
+    @Volatile private var automaticStartAllowed = false
 
     /** True when the running helper was started through root (`su`), not Wireless debugging. */
     @Volatile var rootActive: Boolean = false
@@ -132,6 +134,7 @@ object Elevated {
      */
     suspend fun setUpWithRoot(): Boolean = withContext(Dispatchers.IO) {
         if (!isRootAvailable()) return@withContext false
+        setAutomaticStartAllowed(true)
         val started = lock.withLock {
             if (running) return@withLock true
             _state.value = State.Starting
@@ -146,13 +149,16 @@ object Elevated {
         started
     }
 
-    fun init(context: Context) {
+    fun init(context: Context, startInBackground: Boolean = false) {
         this.context = context.applicationContext
+        setAutomaticStartAllowed(startInBackground)
         watchWirelessDebugging()
-        scope.launch(Dispatchers.IO) {
-            if (paired() || usesRoot()) {
-                _state.value = State.Waiting
-                start()
+        if (startInBackground) {
+            scope.launch(Dispatchers.IO) {
+                if (paired() || usesRoot()) {
+                    _state.value = State.Waiting
+                    startInternal(automatic = true)
+                }
             }
         }
     }
@@ -166,12 +172,14 @@ object Elevated {
     // is on Wi-Fi, and starts right away when wireless debugging turns on.
 
     private var retryJob: Job? = null
+    private var retryGeneration = 0
     @Volatile private var retryAttempt = 0
 
     /** The network changed: try now, and keep trying from a short delay. */
     fun onNetworkChanged() {
+        if (!automaticStartAllowed) return
         retryAttempt = 0
-        scope.launch { start() }
+        scope.launch { startInternal(automatic = true) }
     }
 
     private fun watchWirelessDebugging() {
@@ -188,23 +196,48 @@ object Elevated {
 
     /** Tries again later, while it can still work: set up, not running, on Wi-Fi (or through root). */
     private fun scheduleRetry() {
-        if (!(paired() || usesRoot()) || running || BankingPause.isPaused(context)) return
-        if (!usesRoot() && !onWifi()) return
-        val wait = RETRY_MS[retryAttempt.coerceAtMost(RETRY_MS.lastIndex)]
-        retryAttempt++
-        retryJob?.cancel()
-        retryJob = scope.launch {
-            delay(wait)
-            // So the attempt can schedule the next one without cancelling itself.
-            retryJob = null
-            start()
+        synchronized(retryLock) {
+            if (!automaticStartAllowed || !(paired() || usesRoot()) || running || BankingPause.isPaused(context)) return
+            if (!usesRoot() && !onWifi()) return
+            val wait = RETRY_MS[retryAttempt.coerceAtMost(RETRY_MS.lastIndex)]
+            retryAttempt++
+            val generation = ++retryGeneration
+            retryJob?.cancel()
+            retryJob = scope.launch {
+                delay(wait)
+                val shouldStart = synchronized(retryLock) {
+                    if (generation != retryGeneration || !automaticStartAllowed) {
+                        false
+                    } else {
+                        // So the attempt can schedule the next one without cancelling itself.
+                        retryJob = null
+                        true
+                    }
+                }
+                if (shouldStart) startInternal(automatic = true)
+            }
         }
     }
 
     private fun cancelRetry() {
-        retryJob?.cancel()
-        retryJob = null
-        retryAttempt = 0
+        synchronized(retryLock) {
+            retryGeneration++
+            retryJob?.cancel()
+            retryJob = null
+            retryAttempt = 0
+        }
+    }
+
+    private fun setAutomaticStartAllowed(allowed: Boolean) {
+        synchronized(retryLock) {
+            automaticStartAllowed = allowed
+            if (!allowed) {
+                retryGeneration++
+                retryJob?.cancel()
+                retryJob = null
+                retryAttempt = 0
+            }
+        }
     }
 
     private fun onWifi(): Boolean = runCatching {
@@ -280,7 +313,13 @@ object Elevated {
     // ---- Starting ----
 
     /** Connects and starts the input helper (when set up; again after it stopped). */
-    suspend fun start(): Boolean = withContext(Dispatchers.IO) {
+    suspend fun start(): Boolean {
+        setAutomaticStartAllowed(true)
+        return startInternal(automatic = false)
+    }
+
+    private suspend fun startInternal(automatic: Boolean): Boolean = withContext(Dispatchers.IO) {
+        if (automatic && !automaticStartAllowed) return@withContext false
         if (!paired() && !usesRoot()) return@withContext false
         // Paused for a banking app: debugging stays off until it's over
         // (BankingPause starts Elevated again then).
@@ -289,6 +328,7 @@ object Elevated {
             return@withContext false
         }
         val started = lock.withLock {
+            if (automatic && !automaticStartAllowed) return@withLock false
             if (running) return@withLock true
             _state.value = State.Starting
             if (usesRoot() && tryStartWithRootLocked()) {
@@ -517,6 +557,7 @@ object Elevated {
     /** Attaches to an [InputServer] started directly from `adb shell`. */
     suspend fun attachFromShell(appContext: Context, port: Int, token: String): Boolean = withContext(Dispatchers.IO) {
         if (!::context.isInitialized) init(appContext)
+        setAutomaticStartAllowed(true)
         lock.withLock {
             runCatching { socket?.close() }
             runCatching { connectSocketLocked(port, token) }.onFailure {
@@ -563,7 +604,10 @@ object Elevated {
     }
 
     /** Stops the helper and disconnects. */
-    suspend fun stop() = withContext(Dispatchers.IO) { lock.withLock { stopLocked() } }
+    suspend fun stop() {
+        setAutomaticStartAllowed(false)
+        withContext(Dispatchers.IO) { lock.withLock { stopLocked() } }
+    }
 
     private fun stopLocked() {
         screenOffRequested = false
@@ -583,7 +627,6 @@ object Elevated {
 
     /** Forgets the pairing (the user turned Elevated off). */
     suspend fun forget() {
-        cancelRetry()
         screenOffRequested = false
         stop()
         prefs().edit {

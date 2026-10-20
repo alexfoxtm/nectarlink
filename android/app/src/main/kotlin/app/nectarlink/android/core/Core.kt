@@ -235,10 +235,12 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
         }
     }
 
-    private fun enqueueRemoteOp(op: suspend (NectarlinkNode) -> Unit) {
+    private fun enqueueRemoteOp(op: suspend (NectarlinkNode) -> Unit): Boolean {
         synchronized(opsLock) {
             if (isRunning && node != null) {
-                remoteOps.trySend(op)
+                remoteOps.trySend(op).isSuccess
+            } else {
+                false
             }
         }
     }
@@ -575,12 +577,15 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
     /**
      * Shuts down the active node and all per-run collectors, monitors, and loops.
      * Sets status back to [CoreStatus.Starting] and clears node references.
-     * Non-blocking and safe to call from any thread.
+     * [shouldStop] is checked while holding the lifecycle lock so a newer
+     * foreground transition can cancel a queued stop. Non-blocking and safe
+     * to call from any thread.
      */
-    fun stop() {
-        startGuard.stop()
+    fun stop(shouldStop: () -> Boolean = { true }) {
         scope.launch(Dispatchers.IO) {
             lifecycleMutex.withLock {
+                if (!shouldStop()) return@withLock
+                startGuard.stop()
                 val activeJob = startJob
                 val activeRun = runJob
                 if (activeJob == null && node == null && activeRun == null) return@withLock
@@ -595,6 +600,12 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
                     // Drain any pending operations so they don't replay on the next run.
                     while (notificationOps.tryReceive().isSuccess) {}
                     while (remoteOps.tryReceive().isSuccess) {}
+                    synchronized(pendingMoveLock) {
+                        pendingMovePcId = null
+                        pendingMoveDx = 0f
+                        pendingMoveDy = 0f
+                        pendingMoveQueued = false
+                    }
                 }
                 startJob = null
                 runJob = null
@@ -611,6 +622,7 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
                     battery.stop()
                     accent.stop()
                     network.stop()
+                    routes.stop()
                     calls.stop()
                     contacts.stop()
                     sms.stop()
@@ -2167,7 +2179,7 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
             }
         }
         if (shouldQueue) {
-            enqueueRemoteOp { node ->
+            val queued = enqueueRemoteOp { node ->
                 val (targetId, totalDx, totalDy) = synchronized(pendingMoveLock) {
                     val t = pendingMovePcId
                     val x = pendingMoveDx
@@ -2179,6 +2191,14 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
                 }
                 if (targetId != null && (totalDx != 0f || totalDy != 0f)) {
                     runCatching { node.remoteMove(targetId, totalDx, totalDy) }
+                }
+            }
+            if (!queued) {
+                synchronized(pendingMoveLock) {
+                    pendingMovePcId = null
+                    pendingMoveDx = 0f
+                    pendingMoveDy = 0f
+                    pendingMoveQueued = false
                 }
             }
         }

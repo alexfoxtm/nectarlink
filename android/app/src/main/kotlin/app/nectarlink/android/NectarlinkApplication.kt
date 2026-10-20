@@ -88,7 +88,7 @@ class NectarlinkApplication : Application() {
         // Before Elevated: it waits while paused for a banking app.
         BankingPause.init(this)
         BankingPause.restoreIfStranded(this)
-        Elevated.init(this)
+        Elevated.init(this, startInBackground = Preferences.isBackgroundServiceEnabled(this))
         // What the phone offers PCs follows Elevated starting and stopping.
         Elevated.onChange = { core.refreshNotificationAccess() }
         Elevated.onClipboardChanged = { text, html -> core.onElevatedClipboardChanged(text, html) }
@@ -133,7 +133,7 @@ class NectarlinkApplication : Application() {
             }
 
             if (isStopEligible()) {
-                core.stop()
+                core.stop { isStopEligible() }
             }
         }
     }
