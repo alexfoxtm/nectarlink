@@ -13,10 +13,14 @@ package app.nectarlink.android.mirror
  */
 internal object MirrorSessionPolicy {
     /**
-     * Whether an incoming start replaces the live capture. Only a newer
-     * generation from the same PC preempts: duplicates, reordered older
-     * generations, and other PCs keep the live capture, and an unstamped
-     * (legacy) request never displaces a correlated one.
+     * Whether an incoming start replaces the live capture. Only a distinct
+     * generation from the same PC preempts: duplicates, other PCs, and an
+     * unstamped (legacy) request against a correlated session keep the live
+     * capture, and a correlated request supersedes a legacy capture.
+     *
+     * Ordering is by distinctness, not `>`: the core already authenticated
+     * and admitted the incoming start, and its counter resets on process
+     * restart, so a smaller-but-distinct token is still a replacement.
      */
     fun shouldPreempt(
         activePc: String?,
@@ -28,6 +32,26 @@ internal object MirrorSessionPolicy {
         if (activePc != incomingPc) return false
         if (activeRequest == null) return incomingRequest != null
         if (incomingRequest == null) return false
-        return incomingRequest > activeRequest
+        return incomingRequest != activeRequest
+    }
+
+    /**
+     * Whether an async capture job still owns the live capture. Compares the
+     * service-local [activeEpoch] first: (pc, request) can match again after
+     * a stop/restart or a legacy `null` request, so the epoch alone retires
+     * those jobs. Call on main with the live fields, so the check is atomic
+     * with the guarded mutation.
+     */
+    fun isLive(
+        activeEpoch: Long,
+        activePc: String?,
+        activeRequest: ULong?,
+        myEpoch: Long,
+        myPc: String,
+        myRequest: ULong?,
+    ): Boolean {
+        if (activeEpoch != myEpoch) return false
+        if (activePc != myPc) return false
+        return activeRequest == myRequest
     }
 }
