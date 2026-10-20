@@ -19,8 +19,9 @@ FocusScope {
     Accessible.name: label
     Accessible.checkable: true
     Accessible.checked: checked
-    Accessible.onToggleAction: toggle.toggled(!toggle.checked)
+    Accessible.onToggleAction: if (toggle.enabled) toggle.toggled(!toggle.checked)
     Keys.onPressed: (event) => {
+        if (!toggle.enabled) return
         if (event.key === Qt.Key_Space || event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
             toggle.toggled(!toggle.checked)
             event.accepted = true
@@ -91,6 +92,6 @@ FocusScope {
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: toggle.toggled(!toggle.checked)
+        onClicked: if (toggle.enabled) toggle.toggled(!toggle.checked)
     }
 }

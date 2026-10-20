@@ -219,7 +219,7 @@ impl cxx_qt::Initialize for qobject::Photos {
     fn initialize(mut self: Pin<&mut Self>) {
         self.as_mut().set_status(QString::from("idle"));
         self.as_mut().set_albums(QString::from("[]"));
-        self.as_mut().set_save_folder(QString::from(r"Downloads\Nectarlink"));
+        self.as_mut().set_save_folder(QString::from(crate::downloads::user_visible_location()));
         super::subscribe(self.qt_thread(), Changes::PHOTOS, Self::update_view);
         self.update_view();
     }

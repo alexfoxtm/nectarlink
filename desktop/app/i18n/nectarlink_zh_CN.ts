@@ -162,6 +162,11 @@
 <context>
     <name>AppsPage</name>
     <message>
+        <location filename="../qml/pages/AppsPage.qml" line="94"/>
+        <source>Opening phone apps in windows is not yet available on Mac.</source>
+        <translation>Mac 上暂不支持在窗口中打开手机应用。</translation>
+    </message>
+    <message>
         <location filename="../qml/pages/AppsPage.qml" line="79"/>
         <source>Phone apps</source>
         <translation>手机应用</translation>
@@ -1298,6 +1303,10 @@
         <source>Wake-on-LAN on %1 is %2. Check Settings.</source>
         <translation>%1 上的网络唤醒状态为 %2。请检查设置。</translation>
     </message>
+    <message>
+        <source>Not yet available on Mac</source>
+        <translation>Mac 版暂不支持</translation>
+    </message>
 </context>
 <context>
     <name>ContinuityCamera</name>
@@ -1455,6 +1464,11 @@
 </context>
 <context>
     <name>DeckPage</name>
+    <message>
+        <location filename="../qml/pages/DeckPage.qml" line="733"/>
+        <source>Greyed actions press keys, which is not yet available on Mac.</source>
+        <translation>灰色的操作需要模拟按键，Mac 上暂不可用。</translation>
+    </message>
     <message>
         <location filename="../qml/pages/DeckPage.qml" line="20"/>
         <location filename="../qml/pages/DeckPage.qml" line="22"/>
@@ -1816,6 +1830,10 @@
         <source>Reset</source>
         <translation>重置</translation>
     </message>
+    <message>
+        <source>Not yet available on Mac</source>
+        <translation>Mac 版暂不支持</translation>
+    </message>
 </context>
 <context>
     <name>Doctor</name>
@@ -2119,6 +2137,11 @@
 <context>
     <name>FeaturesGuidePage</name>
     <message>
+        <location filename="../qml/pages/FeaturesGuidePage.qml" line="524"/>
+        <source>Not yet available on Mac</source>
+        <translation>Mac 上暂不可用</translation>
+    </message>
+    <message>
         <location filename="../qml/pages/FeaturesGuidePage.qml" line="91"/>
         <source>Overview</source>
         <translation>总览</translation>
@@ -2316,6 +2339,22 @@
         <source>Close</source>
         <translation>关闭</translation>
     </message>
+    <message>
+        <source>Local controls only</source>
+        <translation>仅本机控制</translation>
+    </message>
+    <message>
+        <source>Check requirements</source>
+        <translation>检查使用条件</translation>
+    </message>
+    <message>
+        <source>Update app</source>
+        <translation>更新应用</translation>
+    </message>
+    <message>
+        <source>Unavailable</source>
+        <translation>不可用</translation>
+    </message>
 </context>
 <context>
     <name>FolderSync</name>
@@ -2450,6 +2489,25 @@ Sensitive capabilities such as Share PC folders, Remote input, and Reverse PC sc
 
 端到端加密
 每个连接都使用 QUIC 与 TLS 1.3，以及在配对时验证的 Ed25519 设备证书。设备密钥由 Windows DPAPI 和 Android Keystore 保护。
+
+按设备的共享控制
+“共享电脑文件夹”“远程输入”和“反向电脑屏幕镜像”等敏感功能，对每台已配对设备默认关闭，直到你打开它们。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="250"/>
+        <source>Local by default
+Your phone and PC talk directly over your local network or USB cable. When Connect over mobile data is on, encrypted traffic can use a relay when away from home. Automatic update checks contact Waypair Link’s private R2 update feed.
+
+End-to-end encrypted
+Every connection uses QUIC with TLS 1.3 and Ed25519 device certificates verified during pairing. On this Mac the device key is encrypted with a key kept in the macOS Keychain; on the phone, the Android Keystore protects it.
+
+Per-device sharing controls
+Sensitive capabilities such as Share PC folders, Remote input, and Reverse PC screen mirroring are turned off by default for each paired device until you turn them on.</source>
+        <translation>默认在本地
+手机和电脑通过本地网络或 USB 数据线直接通信。开启“通过移动数据连接”后，离开家时加密流量可以经由中继传输。自动检查更新会访问 Waypair Link 的私有 R2 更新源。
+
+端到端加密
+每个连接都使用 QUIC 与 TLS 1.3，以及在配对时验证的 Ed25519 设备证书。在这台 Mac 上，设备密钥使用保存在 macOS 钥匙串中的密钥加密；在手机上，由 Android Keystore 保护。
 
 按设备的共享控制
 “共享电脑文件夹”“远程输入”和“反向电脑屏幕镜像”等敏感功能，对每台已配对设备默认关闭，直到你打开它们。</translation>
@@ -3215,6 +3273,12 @@ What it needs
 </context>
 <context>
     <name>HomePage</name>
+    <message>
+        <location filename="../qml/pages/HomePage.qml" line="2019"/>
+        <location filename="../qml/pages/HomePage.qml" line="2034"/>
+        <source>Not yet available on Mac</source>
+        <translation>Mac 上暂不可用</translation>
+    </message>
     <message>
         <location filename="../qml/pages/HomePage.qml" line="50"/>
         <source>%1 B</source>
@@ -4236,6 +4300,16 @@ What it needs
 <context>
     <name>LockChip</name>
     <message>
+        <location filename="../qml/components/LockChip.qml" line="27"/>
+        <source>Not yet available on Mac</source>
+        <translation>Mac 上暂不可用</translation>
+    </message>
+    <message>
+        <location filename="../qml/components/LockChip.qml" line="84"/>
+        <source>Not yet available on Mac. This feature hasn&apos;t been ported to Waypair Link for Mac.</source>
+        <translation>Mac 上暂不可用。此功能尚未移植到 Waypair Link for Mac。</translation>
+    </message>
+    <message>
         <location filename="../qml/components/LockChip.qml" line="15"/>
         <source>Elevated</source>
         <translation>高级权限</translation>
@@ -4334,6 +4408,11 @@ What it needs
         <location filename="../qml/components/LockChip.qml" line="60"/>
         <source>Open Settings › Camera &amp; Audio to set up the NectarLink virtual camera add-on.</source>
         <translation>请打开设置 › 摄像头与音频，设置 NectarLink 虚拟摄像头附加组件。</translation>
+    </message>
+    <message>
+        <location filename="../qml/components/LockChip.qml" line="74"/>
+        <source>Phone as webcam isn&apos;t available on Mac yet.</source>
+        <translation>Mac 上暂不支持将手机用作网络摄像头。</translation>
     </message>
     <message>
         <location filename="../qml/components/LockChip.qml" line="62"/>
@@ -4902,8 +4981,8 @@ What it needs
     </message>
     <message>
         <location filename="rust_strings.h" line="324"/>
-        <source>Recording from %1, saved in Downloads\Nectarlink</source>
-        <translation>来自 %1 的录制，已保存到 Downloads\Nectarlink</translation>
+        <source>Recording from %1, saved in %2</source>
+        <translation>来自 %1 的录制，已保存到 %2</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="325"/>
@@ -4912,8 +4991,8 @@ What it needs
     </message>
     <message>
         <location filename="rust_strings.h" line="326"/>
-        <source>Saved %1 to Downloads\Nectarlink.</source>
-        <translation>已将 %1 保存到 Downloads\Nectarlink。</translation>
+        <source>Saved %1 to %2.</source>
+        <translation>已将 %1 保存到 %2。</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="327"/>
@@ -4922,8 +5001,8 @@ What it needs
     </message>
     <message>
         <location filename="rust_strings.h" line="328"/>
-        <source>Screenshot from %1, saved in Downloads\Nectarlink</source>
-        <translation>来自 %1 的截图，已保存到 Downloads\Nectarlink</translation>
+        <source>Screenshot from %1, saved in %2</source>
+        <translation>来自 %1 的截图，已保存到 %2</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="329"/>
@@ -5636,8 +5715,8 @@ What it needs
     </message>
     <message>
         <location filename="rust_strings.h" line="367"/>
-        <source>The photo couldn&apos;t be copied. It&apos;s in Downloads\Nectarlink.</source>
-        <translation>无法复制照片。它在 Downloads\Nectarlink 中。</translation>
+        <source>The photo couldn&apos;t be copied. It&apos;s in %1.</source>
+        <translation>无法复制照片。它在 %1 中。</translation>
     </message>
 </context>
 <context>
@@ -6030,6 +6109,16 @@ What it needs
 <context>
     <name>SettingsPage</name>
     <message>
+        <location filename="../qml/pages/SettingsPage.qml" line="20"/>
+        <source>Not yet available on Mac.</source>
+        <translation>Mac 上暂不可用。</translation>
+    </message>
+    <message>
+        <location filename="../qml/pages/SettingsPage.qml" line="2273"/>
+        <source>Global shortcuts</source>
+        <translation>全局快捷键</translation>
+    </message>
+    <message>
         <location filename="../qml/pages/SettingsPage.qml" line="19"/>
         <source>Appearance</source>
         <translation>外观</translation>
@@ -6101,6 +6190,11 @@ What it needs
         <translation>热键与自动化</translation>
     </message>
     <message>
+        <location filename="../qml/pages/SettingsPage.qml" line="25"/>
+        <source>Automations</source>
+        <translation>自动化</translation>
+    </message>
+    <message>
         <location filename="../qml/pages/SettingsPage.qml" line="26"/>
         <source>Storage &amp; Privacy</source>
         <translation>存储与隐私</translation>
@@ -6119,6 +6213,11 @@ What it needs
         <location filename="../qml/pages/SettingsPage.qml" line="27"/>
         <source>Doctor, Wake-on-LAN, API &amp; version</source>
         <translation>诊断、网络唤醒、API 与版本</translation>
+    </message>
+    <message>
+        <location filename="../qml/pages/SettingsPage.qml" line="27"/>
+        <source>Doctor, API &amp; version</source>
+        <translation>诊断、API 与版本</translation>
     </message>
     <message>
         <location filename="../qml/pages/SettingsPage.qml" line="48"/>
@@ -6424,6 +6523,11 @@ What it needs
         <translation>Windows 关闭动画时保持静止。</translation>
     </message>
     <message>
+        <location filename="../qml/pages/SettingsPage.qml" line="796"/>
+        <source>Still while animations are off in macOS.</source>
+        <translation>macOS 关闭动画时保持静止。</translation>
+    </message>
+    <message>
         <location filename="../qml/pages/SettingsPage.qml" line="797"/>
         <source>Still while energy saver is on.</source>
         <translation>开启节能模式时保持静止。</translation>
@@ -6461,6 +6565,11 @@ What it needs
         <translation>除非你另行选择，Waypair Link 会跟随 Windows 的语言。</translation>
     </message>
     <message>
+        <location filename="../qml/pages/SettingsPage.qml" line="902"/>
+        <source>Follows macOS unless you pick one.</source>
+        <translation>除非你另行选择，否则跟随 macOS 的语言。</translation>
+    </message>
+    <message>
         <location filename="../qml/pages/SettingsPage.qml" line="901"/>
         <source>More</source>
         <translation>更多</translation>
@@ -6475,6 +6584,17 @@ What it needs
         <location filename="../qml/pages/SettingsPage.qml" line="932"/>
         <source>Launch in the tray when you sign in.</source>
         <translation>登录时在托盘中启动。</translation>
+    </message>
+    <message>
+        <location filename="../qml/pages/SettingsPage.qml" line="945"/>
+        <location filename="../qml/pages/SettingsPage.qml" line="950"/>
+        <source>Open at login</source>
+        <translation>登录时打开</translation>
+    </message>
+    <message>
+        <location filename="../qml/pages/SettingsPage.qml" line="947"/>
+        <source>Open the window when you log in.</source>
+        <translation>登录时打开窗口。</translation>
     </message>
     <message>
         <location filename="../qml/pages/SettingsPage.qml" line="963"/>
@@ -6577,6 +6697,11 @@ What it needs
         <location filename="../qml/pages/SettingsPage.qml" line="1204"/>
         <source>Ready to Ctrl+V incoming files anywhere.</source>
         <translation>随时可按 Ctrl+V 粘贴收到的文件。</translation>
+    </message>
+    <message>
+        <location filename="../qml/pages/SettingsPage.qml" line="1226"/>
+        <source>Copying files to the clipboard isn&apos;t available on Mac yet.</source>
+        <translation>Mac 上暂不支持将文件复制到剪贴板。</translation>
     </message>
     <message>
         <location filename="../qml/pages/SettingsPage.qml" line="1219"/>
@@ -8253,8 +8378,8 @@ What it needs
     <name>Transfers</name>
     <message>
         <location filename="rust_strings.h" line="420"/>
-        <source>Accept in Waypair Link to save to Downloads\Nectarlink</source>
-        <translation>在 Waypair Link 中接受即可保存到 Downloads\Nectarlink</translation>
+        <source>Accept in Waypair Link to save to %1</source>
+        <translation>在 Waypair Link 中接受即可保存到 %1</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="421"/>
@@ -8263,13 +8388,13 @@ What it needs
     </message>
     <message>
         <location filename="rust_strings.h" line="422"/>
-        <source>From %1, opened from Downloads\Nectarlink</source>
-        <translation>来自 %1，已从 Downloads\Nectarlink 打开</translation>
+        <source>From %1, opened from %2</source>
+        <translation>来自 %1，已从 %2 打开</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="423"/>
-        <source>From %1, saved in Downloads\Nectarlink</source>
-        <translation>来自 %1，已保存到 Downloads\Nectarlink</translation>
+        <source>From %1, saved in %2</source>
+        <translation>来自 %1，已保存到 %2</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="424"/>
@@ -8358,6 +8483,11 @@ What it needs
 <context>
     <name>WalkthroughPage</name>
     <message>
+        <location filename="../qml/pages/WalkthroughPage.qml" line="1109"/>
+        <source>Replace &lt;version&gt; with the version in the name of the APK you downloaded.</source>
+        <translation>请将 &lt;version&gt; 替换为你下载的 APK 文件名中的版本号。</translation>
+    </message>
+    <message>
         <location filename="../qml/pages/WalkthroughPage.qml" line="323"/>
         <source>Skip setup</source>
         <translation>跳过设置</translation>
@@ -8368,6 +8498,11 @@ What it needs
         <translation>通知与通话</translation>
     </message>
     <message>
+        <location filename="../qml/pages/WalkthroughPage.qml" line="729"/>
+        <source>Notifications and Messages</source>
+        <translation>通知与短信</translation>
+    </message>
+    <message>
         <location filename="../qml/pages/WalkthroughPage.qml" line="726"/>
         <source>Clipboard and Send files</source>
         <translation>剪贴板与发送文件</translation>
@@ -8376,6 +8511,16 @@ What it needs
         <location filename="../qml/pages/WalkthroughPage.qml" line="731"/>
         <source>Mirroring, Camera, and Audio</source>
         <translation>投屏、摄像头与音频</translation>
+    </message>
+    <message>
+        <location filename="../qml/pages/WalkthroughPage.qml" line="741"/>
+        <source>More Mac features in development</source>
+        <translation>更多 Mac 功能正在开发中</translation>
+    </message>
+    <message>
+        <location filename="../qml/pages/WalkthroughPage.qml" line="867"/>
+        <source>Your phone’s keys are protected by Android Keystore, and your Mac’s keys by macOS Keychain.</source>
+        <translation>手机上的密钥由 Android Keystore 保护，Mac 上的密钥由 macOS 钥匙串保护。</translation>
     </message>
     <message>
         <location filename="../qml/pages/WalkthroughPage.qml" line="736"/>
@@ -8452,6 +8597,7 @@ What it needs
     </message>
     <message>
         <location filename="../qml/pages/WalkthroughPage.qml" line="1336"/>
+        <location filename="../qml/pages/WalkthroughPage.qml" line="1478"/>
         <source>Notifications</source>
         <translation>通知</translation>
     </message>
@@ -8522,6 +8668,17 @@ What it needs
         <translation>登录后让 Waypair Link 常驻系统托盘待命。</translation>
     </message>
     <message>
+        <location filename="../qml/pages/WalkthroughPage.qml" line="1559"/>
+        <location filename="../qml/pages/WalkthroughPage.qml" line="1575"/>
+        <source>Open at login</source>
+        <translation>登录时打开</translation>
+    </message>
+    <message>
+        <location filename="../qml/pages/WalkthroughPage.qml" line="1566"/>
+        <source>Open the window when you log in.</source>
+        <translation>登录时打开窗口。</translation>
+    </message>
+    <message>
         <location filename="../qml/pages/WalkthroughPage.qml" line="1606"/>
         <source>Firewall and network check</source>
         <translation>防火墙与网络检查</translation>
@@ -8530,6 +8687,11 @@ What it needs
         <location filename="../qml/pages/WalkthroughPage.qml" line="1655"/>
         <source>Command Palette (Ctrl+K)</source>
         <translation>命令面板（Ctrl+K）</translation>
+    </message>
+    <message>
+        <location filename="../qml/pages/WalkthroughPage.qml" line="1674"/>
+        <source>Command Palette (Command-K)</source>
+        <translation>命令面板（Command-K）</translation>
     </message>
     <message>
         <location filename="../qml/pages/WalkthroughPage.qml" line="1660"/>

@@ -587,6 +587,7 @@ Item {
         function feature(id) {
             return AppController.capsRevision >= 0 ? AppController.featureState(deviceId, id) : ({})
         }
+        readonly property bool onMac: Qt.platform.os === "osx" || Qt.platform.os === "macos"
         readonly property var screenData: {
             if (!home.screen || home.screen.length === 0)
                 return null
@@ -1221,6 +1222,8 @@ Item {
                     title: qsTr("Mirror screen")
                     subtitle: ""
                     iconPath: Icons.mirror
+                    // mirror.view is advertised on Windows only (core_host.rs).
+                    macPortGap: true
                     feature: home.feature("mirroring.view")
                     // The phone's screen is showing (its session is 0).
                     active: {
@@ -2007,25 +2010,29 @@ Item {
                         }
                     }
 
+                    // pc_audio_stream.rs captures with WASAPI only; elsewhere it's a stub.
                     SwitchBar {
                         width: parent.width
                         iconPath: Icons.speaker
                         title: qsTr("Phone as speaker")
-                        caption: checked ? qsTr("Streaming PC audio") : ""
-                        checked: Preferences.streamPcAudioToPhone
+                        enabled: !home.onMac
+                        caption: home.onMac ? qsTr("Not yet available on Mac")
+                            : checked ? qsTr("Streaming PC audio") : ""
+                        checked: enabled && Preferences.streamPcAudioToPhone
                         onToggled: (on) => Preferences.streamPcAudioToPhone = on
                     }
 
                     // Play on phone: the video playing on this PC, on the phone.
-                    // Greyed out until a video plays.
+                    // Greyed out until a video plays; media.stream is Windows-only.
                     SwitchBar {
                         readonly property string watch: MediaList.playOnPhoneState
                         width: parent.width
                         iconPath: Icons.video
                         title: qsTr("Play on phone")
-                        enabled: watch !== "off" || MediaList.canPlayOnPhone
+                        enabled: !home.onMac && (watch !== "off" || MediaList.canPlayOnPhone)
                         checked: watch !== "off"
-                        caption: watch === "watching" ? qsTr("Watching on %1").arg(MediaList.playOnPhoneName)
+                        caption: home.onMac ? qsTr("Not yet available on Mac")
+                            : watch === "watching" ? qsTr("Watching on %1").arg(MediaList.playOnPhoneName)
                             : watch === "asking" ? qsTr("Tap the notification on %1").arg(MediaList.playOnPhoneName)
                             : MediaList.canPlayOnPhone ? ""
                             : qsTr("Play a video on this PC first")
@@ -2172,6 +2179,8 @@ Item {
                     width: sideCameraGrid.tileWidth
                     deviceOnline: home.online
                     playableWhenAddonMissing: true
+                    // camera.virtual is advertised on Windows only; mac/vcam.rs is a stub.
+                    macPortGap: true
                     title: qsTr("Phone as webcam")
                     subtitle: (Webcam.phase === "streaming" || Webcam.phase === "asking")
                               && Webcam.activeDevice === home.deviceId
@@ -2268,6 +2277,8 @@ Item {
                             anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
                             visible: typeOnPhoneCard.canStart
+                            // Needs mirror.view, which this Mac build doesn't advertise.
+                            enabled: !home.onMac || typeOnPhoneCard.activeHere
                             variant: typeOnPhoneCard.activeHere ? "fill" : "tonal"
                             size: "sm"
                             text: typeOnPhoneCard.activeHere ? qsTr("Stop") : qsTr("Start")
@@ -2286,7 +2297,9 @@ Item {
                         id: typeLock
                         visible: !typeOnPhoneCard.available && label.length > 0
                                  && (home.online || !hideWhileOffline)
-                        feature: typeOnPhoneCard.remoteInputFeature
+                        feature: home.onMac
+                            ? ({ state: "locked", action: "updateApp", target: "desktop" })
+                            : typeOnPhoneCard.remoteInputFeature
                         maxWidth: parent.width
                     }
 
@@ -2943,10 +2956,15 @@ Item {
         property bool sideAlwaysAvailable: false
         property bool playableWhenAddonMissing: false
         property bool queueableWhenOffline: false
+        // The Mac build lacks this action's desktop side, whatever the phone's
+        // state, so on a Mac it stays greyed with LockChip's Mac reason.
+        property bool macPortGap: false
+        readonly property bool macGap: macPortGap && (Qt.platform.os === "osx" || Qt.platform.os === "macos")
         signal clicked
         signal sideClicked
 
-        readonly property bool available: (feature.state === "available"
+        readonly property bool available: !macGap
+                                          && (feature.state === "available"
                                            || feature.state === "partial"
                                            || (playableWhenAddonMissing && feature.state === "locked" && feature.action === "enableAddon")
                                            || (queueableWhenOffline && (!tile.deviceOnline || feature.state === "unknown") && feature.state !== "locked" && feature.state !== "unsupported"))
@@ -3023,7 +3041,11 @@ Item {
                     role: "caption"
                     muted: true
                 }
-                LockChip { id: lock; visible: !tile.available && label.length > 0 && (tile.deviceOnline || !hideWhileOffline); feature: tile.feature }
+                LockChip {
+                    id: lock
+                    visible: !tile.available && label.length > 0 && (tile.deviceOnline || !hideWhileOffline)
+                    feature: tile.macGap ? ({ state: "locked", action: "updateApp", target: "desktop" }) : tile.feature
+                }
             }
         }
         HoverHandler { id: hover; cursorShape: tile.available ? Qt.PointingHandCursor : Qt.ArrowCursor }

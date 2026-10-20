@@ -819,9 +819,11 @@ NativeWindow {
                     iconPath: Icons.search
                     iconSize: 16
                     text: qsTr("Commands")
-                    label: Preferences.commandPaletteHotkey.length > 0
-                        ? qsTr("Command palette (%1)").arg(Preferences.commandPaletteHotkey)
-                        : qsTr("Command palette (Ctrl+K)")
+                    label: Qt.platform.os === "osx"
+                        ? qsTr("Command palette (%1)").arg("⌘K")
+                        : (Preferences.commandPaletteHotkey.length > 0
+                            ? qsTr("Command palette (%1)").arg(Preferences.commandPaletteHotkey)
+                            : qsTr("Command palette (Ctrl+K)"))
                     onClicked: AppController.openCommandPalette()
                     Component.onCompleted: window.addCaptionHole(paletteTopBtn)
                 }

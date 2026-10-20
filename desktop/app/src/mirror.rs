@@ -467,7 +467,12 @@ pub fn screenshot_file(window: Window) {
         device: TOAST_GROUP.into(),
         key: path.to_string_lossy().into_owned(),
         title: file_name.clone(),
-        body: tr!("Mirror", "Screenshot from %1, saved in Downloads\\Nectarlink", device_name),
+        body: tr!(
+            "Mirror",
+            "Screenshot from %1, saved in %2",
+            device_name,
+            crate::downloads::user_visible_location()
+        ),
         attribution: "Waypair Link".into(),
         icon: None,
         image: Some(path),
@@ -478,7 +483,7 @@ pub fn screenshot_file(window: Window) {
         call: false,
     });
     set_notice(window, tr!("Mirror", "Saved %1", file_name));
-    show_message(tr!("Mirror", "Saved %1 to Downloads\\Nectarlink.", file_name));
+    show_message(tr!("Mirror", "Saved %1 to %2.", file_name, crate::downloads::user_visible_location()));
 }
 
 /// Whether `window` is currently recording to an MP4 file.
@@ -609,7 +614,12 @@ pub fn stop_recording(window: Window) {
                     device: TOAST_GROUP.into(),
                     key: path.to_string_lossy().into_owned(),
                     title: file_name.clone(),
-                    body: tr!("Mirror", "Recording from %1, saved in Downloads\\Nectarlink", device_name),
+                    body: tr!(
+                        "Mirror",
+                        "Recording from %1, saved in %2",
+                        device_name,
+                        crate::downloads::user_visible_location()
+                    ),
                     attribution: "Waypair Link".into(),
                     icon: None,
                     image: None,
@@ -623,7 +633,12 @@ pub fn stop_recording(window: Window) {
                     call: false,
                 });
                 set_notice(window, tr!("Mirror", "Saved %1", file_name));
-                show_message(tr!("Mirror", "Saved %1 to Downloads\\Nectarlink.", file_name));
+                show_message(tr!(
+                    "Mirror",
+                    "Saved %1 to %2.",
+                    file_name,
+                    crate::downloads::user_visible_location()
+                ));
             }
             Ok(Err(msg)) => {
                 set_notice(window, msg.clone());

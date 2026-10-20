@@ -32,7 +32,7 @@ Item {
             return
         const idx = Math.max(0, Math.min(selectedIndex, items.length - 1))
         const item = items[idx]
-        if (item && item.id)
+        if (item && item.id && item.enabled !== false)
             AppController.runCommandPalette(item.id)
     }
 
@@ -253,6 +253,8 @@ Item {
                         required property int index
                         readonly property bool selected: index === palette.selectedIndex
                         readonly property bool isEnabled: modelData.enabled !== false
+                        readonly property string explanation: modelData.reason
+                            ? qsTr("Not yet available on Mac") : (modelData.subtitle || "")
 
                         width: resultsList.width
                         height: 52
@@ -264,15 +266,17 @@ Item {
                               : "transparent"
 
                         Accessible.role: Accessible.ListItem
-                        Accessible.name: (modelData.title || "") + (modelData.subtitle ? ", " + modelData.subtitle : "")
+                        Accessible.name: (modelData.title || "") + (row.explanation ? ", " + row.explanation : "")
                         Accessible.onPressAction: {
-                            palette.selectedIndex = row.index
-                            AppController.runCommandPalette(row.modelData.id)
+                            if (row.isEnabled) {
+                                palette.selectedIndex = row.index
+                                AppController.runCommandPalette(row.modelData.id)
+                            }
                         }
 
                         HoverHandler {
                             id: rowHover
-                            cursorShape: Qt.PointingHandCursor
+                            cursorShape: row.isEnabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                             onHoveredChanged: {
                                 if (hovered)
                                     palette.selectedIndex = row.index
@@ -280,6 +284,7 @@ Item {
                         }
 
                         TapHandler {
+                            enabled: row.isEnabled
                             onTapped: {
                                 palette.selectedIndex = row.index
                                 AppController.runCommandPalette(row.modelData.id)
@@ -326,8 +331,8 @@ Item {
 
                             Txt {
                                 width: parent.width
-                                visible: (row.modelData.subtitle || "").length > 0
-                                text: row.modelData.subtitle || ""
+                                visible: row.explanation.length > 0
+                                text: row.explanation
                                 role: "caption"
                                 size: 12
                                 muted: !row.selected
@@ -392,9 +397,10 @@ Item {
                     anchors.rightMargin: 16
                     anchors.verticalCenter: parent.verticalCenter
                     text: {
-                        const hk = Preferences.commandPaletteHotkey.length > 0
-                            ? Preferences.commandPaletteHotkey
-                            : "Ctrl+K"
+                        const hk = Qt.platform.os === "osx" ? "⌘K"
+                            : (Preferences.commandPaletteHotkey.length > 0
+                                ? Preferences.commandPaletteHotkey
+                                : "Ctrl+K")
                         if (AppController.commandPaletteOpenMs <= 0)
                             return hk
                         const msText = AppController.commandPaletteOpenMs < 10

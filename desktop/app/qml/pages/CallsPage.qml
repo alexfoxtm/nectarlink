@@ -841,11 +841,14 @@ Item {
                         wrapMode: Text.WordWrap
                         text: PhoneCall.hfpDetail
                     }
+                    // mac/bt_hfp.rs has no call audio route; hfpDetail says why.
                     Button {
+                        readonly property bool macGap: Qt.platform.os === "osx" || Qt.platform.os === "macos"
                         visible: !PhoneCall.hfpConnected
+                        enabled: !macGap
                         variant: "tonal"
                         size: "sm"
-                        text: PhoneCall.hfpAvailable ? qsTr("Connect PC audio") : qsTr("Open Bluetooth settings")
+                        text: PhoneCall.hfpAvailable || macGap ? qsTr("Connect PC audio") : qsTr("Open Bluetooth settings")
                         onClicked: {
                             if (PhoneCall.hfpAvailable)
                                 PhoneCall.connectPcAudio()

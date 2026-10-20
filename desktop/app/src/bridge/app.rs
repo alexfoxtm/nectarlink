@@ -2245,15 +2245,27 @@ fn load_guide_doc_content(raw_key: &str) -> (String, String) {
         ),
         "privacy" => (
             tr!("Guide", "Privacy and security"),
-            tr!(
-                "Guide",
-                "Local by default\n\
+            if cfg!(target_os = "macos") {
+                tr!(
+                    "Guide",
+                    "Local by default\n\
+             Your phone and PC talk directly over your local network or USB cable. When Connect over mobile data is on, encrypted traffic can use a relay when away from home. Automatic update checks contact Waypair Link’s private R2 update feed.\n\n\
+             End-to-end encrypted\n\
+             Every connection uses QUIC with TLS 1.3 and Ed25519 device certificates verified during pairing. On this Mac the device key is encrypted with a key kept in the macOS Keychain; on the phone, the Android Keystore protects it.\n\n\
+             Per-device sharing controls\n\
+             Sensitive capabilities such as Share PC folders, Remote input, and Reverse PC screen mirroring are turned off by default for each paired device until you turn them on."
+                )
+            } else {
+                tr!(
+                    "Guide",
+                    "Local by default\n\
              Your phone and PC talk directly over your local network or USB cable. When Connect over mobile data is on, encrypted traffic can use a relay when away from home. Automatic update checks contact GitHub Releases and can be turned off in Settings › Connection & About › Check for updates.\n\n\
              End-to-end encrypted\n\
              Every connection uses QUIC with TLS 1.3 and Ed25519 device certificates verified during pairing. Device keys are protected by Windows DPAPI and the Android Keystore.\n\n\
              Per-device sharing controls\n\
              Sensitive capabilities such as Share PC folders, Remote input, and Reverse PC screen mirroring are turned off by default for each paired device until you turn them on."
-            ),
+                )
+            },
         ),
         "notifications" => (
             tr!("Guide", "Notifications"),

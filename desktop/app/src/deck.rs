@@ -289,7 +289,36 @@ pub fn execute_tile(tile_id: &str) -> Result<(), String> {
     res
 }
 
+const MAC_UNAVAILABLE_REASON: &str = "Not yet available on Mac";
+
+/// Key and media-transport actions. On macOS `input::press_key` and
+/// `input::type_text` do nothing, so these stop before that call.
+fn deck_action_is_mac_input_gap(action: &DeckAction) -> bool {
+    matches!(
+        action,
+        DeckAction::MediaPlayPause
+            | DeckAction::MediaNext
+            | DeckAction::MediaPrevious
+            | DeckAction::ShowDesktop
+            | DeckAction::SwitchWindow
+            | DeckAction::Screenshot
+            | DeckAction::Shortcut { .. }
+            | DeckAction::TypeText { .. }
+    )
+}
+
+fn mac_input_gap(action: &DeckAction) -> Option<&'static str> {
+    if cfg!(target_os = "macos") && deck_action_is_mac_input_gap(action) {
+        Some(MAC_UNAVAILABLE_REASON)
+    } else {
+        None
+    }
+}
+
 fn execute_action(action: &DeckAction) -> Result<(), String> {
+    if let Some(reason) = mac_input_gap(action) {
+        return Err(reason.to_owned());
+    }
     match action {
         DeckAction::MediaPlayPause => {
             win::input::press_key("play_pause", &[]);
@@ -601,6 +630,42 @@ pub fn save_tile(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mac_input_gap_rejects_noop_kinds_and_keeps_working_tiles() {
+        let blocked = [
+            DeckAction::MediaPlayPause,
+            DeckAction::MediaNext,
+            DeckAction::MediaPrevious,
+            DeckAction::ShowDesktop,
+            DeckAction::SwitchWindow,
+            DeckAction::Screenshot,
+            DeckAction::Shortcut { key: "k".into(), mods: vec![KeyMod::Ctrl] },
+            DeckAction::TypeText { text: "hello".into() },
+        ];
+        let allowed = [
+            DeckAction::VolumeUp,
+            DeckAction::VolumeDown,
+            DeckAction::VolumeMute,
+            DeckAction::MicMute,
+            DeckAction::LockPc,
+            DeckAction::OpenUrl { url: "https://example.com".into() },
+            DeckAction::LaunchApp { path: "/Applications/TextEdit.app".into() },
+            DeckAction::RunCommand { command: "true".into() },
+        ];
+        for action in &blocked {
+            assert!(deck_action_is_mac_input_gap(action), "{action:?}");
+            if cfg!(target_os = "macos") {
+                assert_eq!(mac_input_gap(action), Some(MAC_UNAVAILABLE_REASON), "{action:?}");
+            } else {
+                assert_eq!(mac_input_gap(action), None, "{action:?}");
+            }
+        }
+        for action in &allowed {
+            assert!(!deck_action_is_mac_input_gap(action), "{action:?}");
+            assert_eq!(mac_input_gap(action), None, "{action:?}");
+        }
+    }
 
     #[test]
     fn builds_and_validates_editor_actions() {

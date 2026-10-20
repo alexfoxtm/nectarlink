@@ -89,6 +89,10 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "deviceNameAt"]
         fn device_name_at(self: &DeviceList, row: i32) -> QString;
+        /// Whether this row currently has an established link.
+        #[qinvokable]
+        #[cxx_name = "deviceOnlineAt"]
+        fn device_online_at(self: &DeviceList, row: i32) -> bool;
     }
 
     unsafe extern "C++" {
@@ -289,6 +293,13 @@ impl qobject::DeviceList {
             .and_then(|i| self.rows.get(i))
             .map(|d| QString::from(&d.id.to_string()))
             .unwrap_or_default()
+    }
+
+    pub fn device_online_at(&self, row: i32) -> bool {
+        usize::try_from(row)
+            .ok()
+            .and_then(|i| self.rows.get(i))
+            .is_some_and(|d| matches!(d.link, LinkState::Online { .. }))
     }
 
     pub fn device_name_at(&self, row: i32) -> QString {

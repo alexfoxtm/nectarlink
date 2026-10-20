@@ -11,10 +11,11 @@ Rectangle {
 
     // The desktop in the pair is this running app, so a capability it lacks
     // on a Mac is missing from the Mac build, not from an older version.
+    // Desktop add-ons (the virtual camera) exist only in the Windows build.
     readonly property bool macLocalGap: {
         const s = feature || {}
-        return s.action === "updateApp" && s.target === "desktop"
-            && (Qt.platform.os === "osx" || Qt.platform.os === "macos")
+        return (Qt.platform.os === "osx" || Qt.platform.os === "macos")
+            && ((s.action === "updateApp" && s.target === "desktop") || s.action === "enableAddon")
     }
     // A phone-side "Update app" is only known while the phone is connected;
     // a gap in this Mac build holds offline too.
@@ -22,6 +23,8 @@ Rectangle {
 
     readonly property string shortLabel: {
         const s = feature || {}
+        if (macLocalGap)
+            return qsTr("Not yet available on Mac")
         switch (s.action) {
         case "raisePower": return s.target === "elevated" ? qsTr("Elevated") : qsTr("Assist")
         case "grantPermission":
@@ -32,7 +35,7 @@ Rectangle {
         case "enableAddon": return qsTr("Add-on")
         case "enablePath": return qsTr("Connect over mobile data")
         case "enableToggle": return qsTr("Off")
-        case "updateApp": return chip.macLocalGap ? qsTr("Unavailable on this Mac") : qsTr("Update app")
+        case "updateApp": return qsTr("Update app")
         default: return s.state === "unsupported" ? qsTr("Unavailable") : ""
         }
     }
@@ -70,13 +73,15 @@ Rectangle {
                 return qsTr("On your phone, open Waypair Link and allow Modify system settings.")
             return qsTr("Open Waypair Link on your phone and grant this permission in Settings.")
         case "enableAddon":
-            return qsTr("Open Settings › Camera & Audio to set up the NectarLink virtual camera add-on.")
+            return Qt.platform.os === "osx"
+                ? qsTr("Phone as webcam isn't available on Mac yet.")
+                : qsTr("Open Settings › Camera & Audio to set up the NectarLink virtual camera add-on.")
         case "enablePath":
             return qsTr("Open Settings › Connection & About and turn on Connect over mobile data.")
         case "enableToggle":
             return qsTr("This feature is turned off for this phone in Settings › Devices.")
         case "macLocalGap":
-            return qsTr("Waypair Link for Mac doesn't offer this feature.")
+            return qsTr("Not yet available on Mac. This feature hasn't been ported to Waypair Link for Mac.")
         default:
             return label
         }

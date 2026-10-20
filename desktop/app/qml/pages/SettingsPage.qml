@@ -15,6 +15,15 @@ Item {
 
     readonly property bool wideLayout: page.width >= 680
 
+    // Rows whose backend this Mac build lacks stay listed, greyed, with this reason.
+    readonly property bool onMac: Qt.platform.os === "osx" || Qt.platform.os === "macos"
+    readonly property string macGapText: qsTr("Not yet available on Mac.")
+    // Device toggles that only arm a desktop capability this Mac build doesn't advertise.
+    readonly property var macGapToggleNames: ["mirroring", "pc_mirror", "webcam", "storage", "remote_input", "commands", "recordings"]
+    function macGapToggle(item) {
+        return page.onMac && item !== null && page.macGapToggleNames.indexOf(item.name) >= 0
+    }
+
     readonly property var categories: [
         { id: "appearance", title: qsTr("Appearance"), icon: Icons.palette, subtitle: qsTr("Theme, mode & colors") },
         { id: "general", title: qsTr("General"), icon: Icons.laptop, subtitle: qsTr("Startup, clipboard & desktop") },
@@ -22,9 +31,9 @@ Item {
         { id: "camera_audio", title: qsTr("Camera & Audio"), icon: Icons.video, subtitle: qsTr("Webcam, speaker & calls") },
         { id: "notifications", title: qsTr("Notifications"), icon: Icons.bell, subtitle: qsTr("Do not disturb & app rules") },
         { id: "files_sync", title: qsTr("Files & Sync"), icon: Icons.folder, subtitle: qsTr("Folder sync, storage & recordings") },
-        { id: "shortcuts", title: qsTr("Shortcuts & Rules"), icon: Icons.bolt, subtitle: qsTr("Hotkeys & automations") },
+        { id: "shortcuts", title: qsTr("Shortcuts & Rules"), icon: Icons.bolt, subtitle: Qt.platform.os === "osx" ? qsTr("Automations") : qsTr("Hotkeys & automations") },
         { id: "storage", title: qsTr("Storage & Privacy"), icon: Icons.clipboardList, subtitle: qsTr("History, caches & retention") },
-        { id: "connection", title: qsTr("Connection & About"), icon: Icons.wifi, subtitle: qsTr("Doctor, Wake-on-LAN, API & version") }
+        { id: "connection", title: qsTr("Connection & About"), icon: Icons.wifi, subtitle: Qt.platform.os === "osx" ? qsTr("Doctor, API & version") : qsTr("Doctor, Wake-on-LAN, API & version") }
     ]
 
     // The languages the app speaks besides the system's ({ code, name }).
@@ -792,7 +801,9 @@ Item {
                             iconPath: Icons.sparkle
                             title: qsTr("Animated comb")
                             description: AppController.reduceMotion
-                                ? qsTr("Still while animations are off in Windows.")
+                                ? (Qt.platform.os === "osx"
+                                    ? qsTr("Still while animations are off in macOS.")
+                                    : qsTr("Still while animations are off in Windows."))
                                 : (AppController.powerSaver
                                     ? qsTr("Still while energy saver is on.")
                                     : qsTr("The honeycomb breathes and pulses."))
@@ -896,7 +907,9 @@ Item {
                             width: parent.width
                             iconPath: Icons.globe
                             title: qsTr("Language")
-                            description: qsTr("Waypair Link follows Windows unless you pick one.")
+                            description: Qt.platform.os === "osx"
+                                ? qsTr("Follows macOS unless you pick one.")
+                                : qsTr("Waypair Link follows Windows unless you pick one.")
                             Segmented {
                                 readonly property var other: page.languages.find(
                                     (l) => l.code === Preferences.language && l.code !== "en")
@@ -934,10 +947,12 @@ Item {
                                 y: startupPairRow.splitCols ? Math.round((parent.height - height) / 2) : 0
                                 width: startupPairRow.colWidth
                                 iconPath: Icons.power
-                                title: qsTr("Start with Windows")
-                                description: qsTr("Launch in the tray when you sign in.")
+                                title: Qt.platform.os === "osx" ? qsTr("Open at login") : qsTr("Start with Windows")
+                                description: Qt.platform.os === "osx"
+                                    ? qsTr("Open the window when you log in.")
+                                    : qsTr("Launch in the tray when you sign in.")
                                 Toggle {
-                                    label: qsTr("Start with Windows")
+                                    label: Qt.platform.os === "osx" ? qsTr("Open at login") : qsTr("Start with Windows")
                                     checked: Preferences.startWithWindows
                                     onToggled: (on) => Preferences.startWithWindows = on
                                 }
@@ -958,6 +973,7 @@ Item {
                                 width: parent.width
                             }
 
+                            // App.qml ignores closeToTray on macOS: closing the window quits.
                             ListRow {
                                 id: stayTrayRow
                                 x: startupPairRow.splitCols ? (parent.width - width) : 0
@@ -965,16 +981,16 @@ Item {
                                     ? Math.round((parent.height - height) / 2)
                                     : (startWinRow.implicitHeight + 1)
                                 width: startupPairRow.colWidth
-                                opacity: Qt.platform.os === "osx" ? 0.5 : 1.0
+                                opacity: page.onMac ? 0.5 : 1.0
                                 iconPath: Icons.window
                                 title: qsTr("Stay in system tray")
-                                description: qsTr("Keep running when the window is closed.")
+                                description: page.onMac ? page.macGapText : qsTr("Keep running when the window is closed.")
                                 Toggle {
                                     label: qsTr("Stay in system tray")
-                                    checked: Preferences.closeToTray
-                                    enabled: Qt.platform.os !== "osx"
+                                    enabled: !page.onMac
+                                    checked: enabled && Preferences.closeToTray
                                     onToggled: (on) => {
-                                        if (Qt.platform.os !== "osx")
+                                        if (!page.onMac)
                                             Preferences.closeToTray = on
                                     }
                                 }
@@ -1210,12 +1226,16 @@ Item {
                                     ? Math.round((parent.height - height) / 2)
                                     : (copyOtpRow.implicitHeight + 1)
                                 width: copyPairRow.colWidth
+                                opacity: page.onMac ? 0.5 : 1.0
                                 iconPath: Icons.copy
                                 title: qsTr("Copy received files")
-                                description: qsTr("Ready to Ctrl+V incoming files anywhere.")
+                                description: Qt.platform.os === "osx"
+                                    ? qsTr("Copying files to the clipboard isn't available on Mac yet.")
+                                    : qsTr("Ready to Ctrl+V incoming files anywhere.")
                                 Toggle {
                                     label: qsTr("Copy received files")
-                                    checked: Preferences.clipboardAutoCopyReceivedFiles
+                                    enabled: Qt.platform.os !== "osx"
+                                    checked: enabled && Preferences.clipboardAutoCopyReceivedFiles
                                     onToggled: (on) => Preferences.clipboardAutoCopyReceivedFiles = on
                                 }
                             }
@@ -1447,9 +1467,12 @@ Item {
                                                             x: 0
                                                             y: Math.round((parent.height - height) / 2)
                                                             width: permPairWrap.colWidth
+                                                            enabled: !page.macGapToggle(permPairWrap.leftItem)
+                                                            opacity: enabled ? 1.0 : 0.5
                                                             iconPath: permPairWrap.leftItem ? (page.toggleIcons[permPairWrap.leftItem.name] || "") : ""
                                                             title: permPairWrap.leftItem ? (page.toggleNames[permPairWrap.leftItem.name] || permPairWrap.leftItem.name) : ""
-                                                            description: permPairWrap.leftItem ? (page.toggleDescriptions[permPairWrap.leftItem.name] || "") : ""
+                                                            description: !enabled ? page.macGapText
+                                                                : permPairWrap.leftItem ? (page.toggleDescriptions[permPairWrap.leftItem.name] || "") : ""
                                                             Row {
                                                                 spacing: 8
                                                                 Button {
@@ -1464,7 +1487,7 @@ Item {
                                                                 Toggle {
                                                                     anchors.verticalCenter: parent.verticalCenter
                                                                     label: permPairWrap.leftItem ? (page.toggleNames[permPairWrap.leftItem.name] || permPairWrap.leftItem.name) : ""
-                                                                    checked: permPairWrap.leftItem ? Boolean(permPairWrap.leftItem.on) : false
+                                                                    checked: enabled && permPairWrap.leftItem ? Boolean(permPairWrap.leftItem.on) : false
                                                                     onToggled: (on) => {
                                                                         if (permPairWrap.leftItem)
                                                                             AppController.setDeviceToggle(deviceCard.deviceId, permPairWrap.leftItem.name, on)
@@ -1488,9 +1511,12 @@ Item {
                                                             x: parent.width - width
                                                             y: Math.round((parent.height - height) / 2)
                                                             width: permPairWrap.colWidth
+                                                            enabled: !page.macGapToggle(permPairWrap.rightItem)
+                                                            opacity: enabled ? 1.0 : 0.5
                                                             iconPath: permPairWrap.rightItem ? (page.toggleIcons[permPairWrap.rightItem.name] || "") : ""
                                                             title: permPairWrap.rightItem ? (page.toggleNames[permPairWrap.rightItem.name] || permPairWrap.rightItem.name) : ""
-                                                            description: permPairWrap.rightItem ? (page.toggleDescriptions[permPairWrap.rightItem.name] || "") : ""
+                                                            description: !enabled ? page.macGapText
+                                                                : permPairWrap.rightItem ? (page.toggleDescriptions[permPairWrap.rightItem.name] || "") : ""
                                                             Row {
                                                                 spacing: 8
                                                                 Button {
@@ -1505,7 +1531,7 @@ Item {
                                                                 Toggle {
                                                                     anchors.verticalCenter: parent.verticalCenter
                                                                     label: permPairWrap.rightItem ? (page.toggleNames[permPairWrap.rightItem.name] || permPairWrap.rightItem.name) : ""
-                                                                    checked: permPairWrap.rightItem ? Boolean(permPairWrap.rightItem.on) : false
+                                                                    checked: enabled && permPairWrap.rightItem ? Boolean(permPairWrap.rightItem.on) : false
                                                                     onToggled: (on) => {
                                                                         if (permPairWrap.rightItem)
                                                                             AppController.setDeviceToggle(deviceCard.deviceId, permPairWrap.rightItem.name, on)
@@ -1553,12 +1579,15 @@ Item {
                                 x: 0
                                 y: audioCallsPairRow.splitCols ? Math.round((parent.height - height) / 2) : 0
                                 width: audioCallsPairRow.colWidth
+                                // pc_audio_stream.rs captures with WASAPI only; elsewhere it's a stub.
+                                enabled: !page.onMac
+                                opacity: enabled ? 1.0 : 0.5
                                 iconPath: Icons.speaker
                                 title: qsTr("Stream PC audio to phone")
-                                description: qsTr("Listen to PC audio through your phone.")
+                                description: page.onMac ? page.macGapText : qsTr("Listen to PC audio through your phone.")
                                 Toggle {
                                     label: qsTr("Stream PC audio to phone")
-                                    checked: Preferences.streamPcAudioToPhone
+                                    checked: enabled && Preferences.streamPcAudioToPhone
                                     onToggled: (on) => Preferences.streamPcAudioToPhone = on
                                 }
                             }
@@ -1585,12 +1614,15 @@ Item {
                                     ? Math.round((parent.height - height) / 2)
                                     : (streamAudioRow.implicitHeight + 1)
                                 width: audioCallsPairRow.colWidth
+                                // mac/media_sessions.rs pause_for_call is a no-op.
+                                enabled: !page.onMac
+                                opacity: enabled ? 1.0 : 0.5
                                 iconPath: Icons.pause
                                 title: qsTr("Pause media during calls")
-                                description: qsTr("Auto-pause PC media when phone rings.")
+                                description: page.onMac ? page.macGapText : qsTr("Auto-pause PC media when phone rings.")
                                 Toggle {
                                     label: qsTr("Pause media during calls")
-                                    checked: Preferences.pauseMediaOnCall
+                                    checked: enabled && Preferences.pauseMediaOnCall
                                     onToggled: (on) => Preferences.pauseMediaOnCall = on
                                 }
                             }
@@ -1598,14 +1630,17 @@ Item {
 
                         Divider { width: parent.width }
 
+                        // Play on phone (media.stream) is advertised on Windows only.
                         ListRow {
                             width: parent.width
+                            enabled: !page.onMac
+                            opacity: enabled ? 1.0 : 0.5
                             iconPath: Icons.soundOff
                             title: qsTr("Mute this PC while a phone watches")
-                            description: qsTr("With Play on phone, the phone still gets the sound.")
+                            description: page.onMac ? page.macGapText : qsTr("With Play on phone, the phone still gets the sound.")
                             Toggle {
                                 label: qsTr("Mute this PC while a phone watches")
-                                checked: Preferences.muteWhileWatched
+                                checked: enabled && Preferences.muteWhileWatched
                                 onToggled: (on) => Preferences.muteWhileWatched = on
                             }
                         }
@@ -1614,11 +1649,14 @@ Item {
 
                         // Phone as microphone: its sound plays into an output; a
                         // virtual audio cable's other end is a microphone apps can pick.
+                        // mic.listen is advertised on Windows only.
                         ListRow {
                             width: parent.width
+                            enabled: !page.onMac
+                            opacity: enabled ? 1.0 : 0.5
                             iconPath: Icons.mic
                             title: qsTr("Phone as microphone")
-                            description: PhoneMic.phase === "live"
+                            description: page.onMac ? page.macGapText : PhoneMic.phase === "live"
                                 ? qsTr("Live from %1, playing into %2.").arg(PhoneMic.deviceName).arg(PhoneMic.outputName)
                                 : PhoneMic.phase === "asking"
                                     ? qsTr("Tap Start on %1.").arg(PhoneMic.deviceName)
@@ -1648,6 +1686,8 @@ Item {
 
                         ListRow {
                             width: parent.width
+                            enabled: !page.onMac
+                            opacity: enabled ? 1.0 : 0.5
                             iconPath: Icons.speaker
                             title: qsTr("Microphone volume")
                             description: qsTr("%1%").arg(PhoneMic.gain)
@@ -1665,12 +1705,14 @@ Item {
 
                         Divider { width: parent.width }
 
-                        // Row 2: Virtual camera add-on
+                        // Row 2: Virtual camera add-on (mac/vcam.rs is a stub).
                         ListRow {
                             width: parent.width
+                            enabled: !page.onMac
+                            opacity: enabled ? 1.0 : 0.5
                             iconPath: Icons.video
                             title: qsTr("Virtual camera add-on")
-                            description: Webcam.addonRegistered
+                            description: page.onMac ? page.macGapText : Webcam.addonRegistered
                                 ? qsTr("Registered for Zoom, Teams & Meet.")
                                 : qsTr("One-time setup (admin required) for Zoom, Teams & Meet.")
                             Row {
@@ -1709,6 +1751,8 @@ Item {
                         ListRow {
                             width: parent.width
                             visible: DeviceList.count > 1
+                            enabled: !page.onMac
+                            opacity: enabled ? 1.0 : 0.5
                             iconPath: Icons.phone
                             title: qsTr("Phone")
                             Row {
@@ -1733,6 +1777,8 @@ Item {
                         Item {
                             id: camMirrorPairRow
                             width: parent.width
+                            enabled: !page.onMac
+                            opacity: enabled ? 1.0 : 0.5
                             readonly property bool splitCols: width >= 460
                             readonly property real colWidth: splitCols ? Math.floor((width - 37) / 2) : width
                             implicitHeight: splitCols
@@ -1791,6 +1837,8 @@ Item {
                         Divider { width: parent.width }
                         ListRow {
                             width: parent.width
+                            enabled: !page.onMac
+                            opacity: enabled ? 1.0 : 0.5
                             iconPath: Icons.camera
                             title: qsTr("Resolution")
                             Segmented {
@@ -1821,7 +1869,9 @@ Item {
                                     role: "bodySmall"
                                     muted: Webcam.phase !== "streaming"
                                     elide: Text.ElideRight
-                                    text: Webcam.statusText.length > 0
+                                    text: page.onMac && Webcam.phase !== "streaming" && Webcam.phase !== "asking"
+                                        ? page.macGapText
+                                        : Webcam.statusText.length > 0
                                         ? Webcam.statusText
                                         : (Webcam.selectedPhoneName.length > 0
                                            ? qsTr("Preview · %1").arg(Webcam.selectedPhoneName)
@@ -1831,7 +1881,9 @@ Item {
                                     id: webcamStartBtn
                                     anchors.right: parent.right
                                     anchors.verticalCenter: parent.verticalCenter
+                                    // A session already running still gets its Stop.
                                     enabled: DeviceList.count > 0
+                                             && (!page.onMac || Webcam.phase === "streaming" || Webcam.phase === "asking")
                                     variant: Webcam.phase === "streaming" || Webcam.phase === "asking" ? "outline" : "tonal"
                                     size: "sm"
                                     iconPath: Webcam.phase === "streaming" || Webcam.phase === "asking" ? Icons.close : Icons.video
@@ -1938,9 +1990,11 @@ Item {
                         Divider { width: parent.width }
                         ListRow {
                             width: parent.width
+                            enabled: !page.onMac
+                            opacity: enabled ? 1.0 : 0.5
                             iconPath: Icons.moon
                             title: qsTr("Quiet hours")
-                            description: qsTr("Configure automatic DND schedule in Windows.")
+                            description: page.onMac ? page.macGapText : qsTr("Configure automatic DND schedule in Windows.")
                             Button {
                                 variant: "tonal"
                                 size: "sm"
@@ -2025,17 +2079,20 @@ Item {
                                 ? Math.max(sendToMenuRow.implicitHeight, pcInPocketRow.implicitHeight)
                                 : (sendToMenuRow.implicitHeight + 1 + pcInPocketRow.implicitHeight)
 
+                            // Explorer's Send to folder has no macOS counterpart (mac/shortcut.rs).
                             ListRow {
                                 id: sendToMenuRow
                                 x: 0
                                 y: filesSharePairRow.splitCols ? Math.round((parent.height - height) / 2) : 0
                                 width: filesSharePairRow.colWidth
+                                enabled: !page.onMac
+                                opacity: enabled ? 1.0 : 0.5
                                 iconPath: Icons.send
                                 title: qsTr("File Explorer Send to")
-                                description: qsTr("Send files from right-click menu.")
+                                description: page.onMac ? page.macGapText : qsTr("Send files from right-click menu.")
                                 Toggle {
                                     label: qsTr("File Explorer Send to")
-                                    checked: Preferences.sendToMenu
+                                    checked: enabled && Preferences.sendToMenu
                                     onToggled: (on) => Preferences.sendToMenu = on
                                 }
                             }
@@ -2062,12 +2119,15 @@ Item {
                                     ? Math.round((parent.height - height) / 2)
                                     : (sendToMenuRow.implicitHeight + 1)
                                 width: filesSharePairRow.colWidth
+                                // Phones only browse a PC advertising storage.read, which this Mac build doesn't.
+                                enabled: !page.onMac
+                                opacity: enabled ? 1.0 : 0.5
                                 iconPath: Icons.folder
                                 title: qsTr("Your PC in your pocket")
-                                description: qsTr("Share Downloads, Documents, Desktop & Pictures.")
+                                description: page.onMac ? page.macGapText : qsTr("Share Downloads, Documents, Desktop & Pictures.")
                                 Toggle {
                                     label: qsTr("Your PC in your pocket")
-                                    checked: Preferences.sharePcStorage
+                                    checked: enabled && Preferences.sharePcStorage
                                     onToggled: (on) => Preferences.sharePcStorage = on
                                 }
                             }
@@ -2100,12 +2160,15 @@ Item {
                         }
 
                         Divider { width: parent.width }
+                        // The recorder capability is advertised on Windows only.
                         ListRow {
                             width: parent.width
                             stackBelow: true
+                            enabled: !page.onMac
+                            opacity: enabled ? 1.0 : 0.5
                             iconPath: Icons.mic
                             title: qsTr("Voice recordings")
-                            description: Preferences.recordingsFolder
+                            description: page.onMac ? page.macGapText : Preferences.recordingsFolder
                             Row {
                                 spacing: 8
                                 Segmented {
@@ -2210,15 +2273,28 @@ Item {
                 width: visible ? parent.width : 0
                 spacing: Theme.gutter
 
+                // System-wide hotkeys aren't registered on macOS (mac/tray.rs update_hotkeys).
                 Card {
                     width: parent.width
                     Column {
                         width: parent.width
 
+                        ListRow {
+                            width: parent.width
+                            visible: page.onMac
+                            opacity: 0.5
+                            iconPath: Icons.bolt
+                            title: qsTr("Global shortcuts")
+                            description: page.macGapText
+                        }
+                        Divider { width: parent.width; visible: page.onMac }
+
                         // Row 1: Command palette | File shelf
                         Item {
                             id: shortcutsPairRow1
                             width: parent.width
+                            enabled: !page.onMac
+                            opacity: enabled ? 1.0 : 0.5
                             readonly property bool splitCols: width >= 540
                             readonly property real colWidth: splitCols ? Math.floor((width - 37) / 2) : width
                             implicitHeight: splitCols
@@ -2365,6 +2441,8 @@ Item {
                         Item {
                             id: shortcutsPairRow2
                             width: parent.width
+                            enabled: !page.onMac
+                            opacity: enabled ? 1.0 : 0.5
                             readonly property bool splitCols: width >= 540
                             readonly property real colWidth: splitCols ? Math.floor((width - 37) / 2) : width
                             implicitHeight: splitCols
@@ -3007,11 +3085,15 @@ Item {
                             }
                         }
                         Divider { width: parent.width }
+                        // pc.wake is advertised on Windows only (core_host.rs).
                         ListRow {
                             width: parent.width
+                            opacity: page.onMac ? 0.5 : 1.0
                             iconPath: Icons.power
                             title: qsTr("Wake from your phone")
                             description: {
+                                if (page.onMac)
+                                    return page.macGapText
                                 const adapter = AppController.wakeAdapter
                                 const state = AppController.wakeState
                                 if (state === "none" || adapter.length === 0)
@@ -3021,6 +3103,7 @@ Item {
                                 return qsTr("%1 · Enable Wake on Magic Packet in Device Manager.").arg(adapter)
                             }
                             Row {
+                                visible: !page.onMac
                                 spacing: 6
                                 StatusDot {
                                     anchors.verticalCenter: parent.verticalCenter

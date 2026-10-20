@@ -11,7 +11,11 @@ Item {
     property string deviceId
     property string deviceName
 
-    readonly property var feature: AppController.capsRevision >= 0 && deviceId.length > 0
+    // mirror.view is advertised on Windows only (core_host.rs), whatever the phone's state.
+    readonly property bool macGap: Qt.platform.os === "osx" || Qt.platform.os === "macos"
+    readonly property var feature: macGap && deviceId.length > 0
+        ? ({ state: "locked", action: "updateApp", target: "desktop" })
+        : AppController.capsRevision >= 0 && deviceId.length > 0
         ? AppController.featureState(deviceId, "mirroring.app_windows") : ({})
     readonly property bool available: feature.state === "available" || feature.state === "partial"
 
@@ -87,6 +91,7 @@ Item {
             muted: true
             text: page.deviceId.length === 0
                 ? qsTr("Pair your phone to open its apps in windows on this PC.")
+                : page.macGap ? qsTr("Opening phone apps in windows is not yet available on Mac.")
                 : (page.feature.reason || qsTr("Set up Wireless debugging in Waypair Link on the phone to open its apps here."))
         }
         LockChip {

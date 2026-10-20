@@ -90,6 +90,11 @@ Item {
         "app", "terminal", "bolt", "star"
     ]
 
+    readonly property bool onMac: Qt.platform.os === "osx" || Qt.platform.os === "macos"
+    // mac/input.rs injects no keys, so these kinds would report success and do nothing.
+    readonly property var macNoopKinds: ["media_play_pause", "media_previous", "media_next", "show_desktop",
+                                         "switch_window", "screenshot", "shortcut", "type_text"]
+
     readonly property var actionChoices: [
         { id: "media_play_pause", group: qsTr("Media"), label: qsTr("Play / pause") },
         { id: "media_previous",   group: qsTr("Media"), label: qsTr("Previous track") },
@@ -110,14 +115,15 @@ Item {
     ]
 
     function openAddTile() {
+        const kind = page.onMac ? "open_url" : "shortcut"
         editorSheet.tileId = ""
-        editorSheet.actionKind = "shortcut"
-        editorSheet.tileLabel = DeckController.defaultLabelFor("shortcut")
+        editorSheet.actionKind = kind
+        editorSheet.tileLabel = DeckController.defaultLabelFor(kind)
         editorSheet.labelCustomized = false
-        editorSheet.tileIcon = DeckController.defaultIconFor("shortcut")
-        editorSheet.tileColor = DeckController.defaultColorFor("shortcut")
-        editorSheet.paramValue = "c"
-        editorSheet.modCtrl = true
+        editorSheet.tileIcon = DeckController.defaultIconFor(kind)
+        editorSheet.tileColor = DeckController.defaultColorFor(kind)
+        editorSheet.paramValue = page.onMac ? "https://" : "c"
+        editorSheet.modCtrl = !page.onMac
         editorSheet.modAlt = false
         editorSheet.modShift = false
         editorSheet.modWin = false
@@ -195,6 +201,12 @@ Item {
                                 role: "bodySmall"
                                 muted: true
                                 text: qsTr("Drag to reorder · click to edit.")
+                            }
+                            // deck.actions is advertised on Windows only, so phones can't run these tiles here.
+                            LockChip {
+                                visible: page.onMac
+                                feature: ({ state: "locked", action: "updateApp", target: "desktop" })
+                                maxWidth: parent.width
                             }
                         }
                         Row {
@@ -357,6 +369,8 @@ Item {
                         id: tileSlot
                         required property var modelData
                         required property int index
+                        readonly property bool macGap: page.onMac && page.macNoopKinds.indexOf(modelData.kind) >= 0
+                        opacity: macGap ? 0.55 : 1
 
                         width: tileGrid.cellWidth
                         height: 112
@@ -437,6 +451,7 @@ Item {
                                 // Quick "Test" button in top-right corner
                                 Rectangle {
                                     id: testBtn
+                                    enabled: !tileSlot.macGap
                                     anchors.right: parent.right
                                     anchors.verticalCenter: parent.verticalCenter
                                     width: 28; height: 28
@@ -448,8 +463,9 @@ Item {
                                     opacity: tileHover.hovered || testHover.hovered || testBtn.activeFocus ? 1 : 0.55
                                     Accessible.role: Accessible.Button
                                     Accessible.name: qsTr("Test %1").arg(tileSlot.modelData.label)
-                                    Accessible.onPressAction: DeckController.testTile(tileSlot.modelData.id)
+                                    Accessible.onPressAction: if (testBtn.enabled) DeckController.testTile(tileSlot.modelData.id)
                                     Keys.onPressed: (event) => {
+                                        if (!testBtn.enabled) return
                                         if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
                                             DeckController.testTile(tileSlot.modelData.id)
                                             event.accepted = true
@@ -464,6 +480,7 @@ Item {
                                     }
                                     HoverHandler { id: testHover; cursorShape: Qt.PointingHandCursor }
                                     TapHandler {
+                                        enabled: testBtn.enabled
                                         onTapped: DeckController.testTile(tileSlot.modelData.id)
                                     }
                                 }
@@ -486,9 +503,9 @@ Item {
                                     color: Theme.surfaceContent
                                 }
                                 Txt {
-                                    visible: (tileSlot.modelData.subtitle || "").length > 0
+                                    visible: tileSlot.macGap || (tileSlot.modelData.subtitle || "").length > 0
                                     width: parent.width
-                                    text: tileSlot.modelData.subtitle || ""
+                                    text: tileSlot.macGap ? qsTr("Not yet available on Mac") : (tileSlot.modelData.subtitle || "")
                                     role: "bodySmall"
                                     size: 11
                                     elide: Text.ElideRight
@@ -702,12 +719,23 @@ Item {
                         model: page.actionChoices
                         delegate: Chip {
                             required property var modelData
-                            interactive: true
+                            readonly property bool macGap: page.onMac && page.macNoopKinds.indexOf(modelData.id) >= 0
+                            interactive: !macGap
+                            enabled: !macGap
+                            opacity: macGap ? 0.45 : 1
                             selected: editorSheet.actionKind === modelData.id
                             text: modelData.label
                             onClicked: editorSheet.selectKind(modelData.id)
                         }
                     }
+                }
+                Txt {
+                    width: parent.width
+                    visible: page.onMac
+                    wrapMode: Text.WordWrap
+                    role: "caption"
+                    muted: true
+                    text: qsTr("Greyed actions press keys, which is not yet available on Mac.")
                 }
             }
 
@@ -926,6 +954,7 @@ Item {
                         size: "sm"
                         iconPath: Icons.bolt
                         text: qsTr("Test")
+                        enabled: !page.onMac || !page.currentTiles.some(tile => tile.id === editorSheet.tileId && page.macNoopKinds.indexOf(tile.kind) >= 0)
                         onClicked: DeckController.testTile(editorSheet.tileId)
                     }
                 }

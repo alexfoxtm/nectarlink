@@ -149,7 +149,14 @@ type WindowGeometryState = (Option<String>, Option<i32>, Option<i32>, u32, u32, 
 static WINDOW_GEOMETRY: std::sync::Mutex<WindowGeometryState> =
     std::sync::Mutex::new((None, None, None, DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT, false));
 
+/// Whether a newly received file should be placed on the clipboard.
+///
+/// The stored preference is unchanged. On macOS file pasteboard writes are
+/// not implemented, so the effective value is false and `write_files` is not called.
 pub fn clipboard_auto_copy_received_files() -> bool {
+    if cfg!(target_os = "macos") {
+        return false;
+    }
     CLIPBOARD_AUTO_COPY_FILES.load(std::sync::atomic::Ordering::Relaxed)
 }
 

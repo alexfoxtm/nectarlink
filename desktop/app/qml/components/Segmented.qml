@@ -82,8 +82,9 @@ Rectangle {
                 Accessible.role: Accessible.PageTab
                 Accessible.name: modelData.label
                 Accessible.selected: selected
-                Accessible.onPressAction: segmented.picked(modelData.value)
+                Accessible.onPressAction: if (segmented.enabled && option.enabled) segmented.picked(modelData.value)
                 Keys.onPressed: (event) => {
+                    if (!segmented.enabled || !option.enabled) return
                     if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
                         segmented.picked(modelData.value)
                         event.accepted = true
@@ -118,7 +119,7 @@ Rectangle {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: segmented.picked(option.modelData.value)
+                    onClicked: if (segmented.enabled && option.enabled) segmented.picked(option.modelData.value)
                 }
             }
         }

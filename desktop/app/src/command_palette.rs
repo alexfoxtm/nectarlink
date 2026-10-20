@@ -25,6 +25,34 @@ use crate::{
 /// Maximum number of search results serialized to QML per keystroke.
 const MAX_RESULTS: usize = 24;
 
+/// Shown on palette rows this Mac build cannot run. Rows stay in the results.
+const MAC_UNAVAILABLE_REASON: &str = "Not yet available on Mac";
+
+/// Action keys that reach a Mac stub. Matched on the existing id, not a new registry.
+const MAC_BLOCKED_ACTIONS: &[&str] =
+    &["mirror_screen", "type_on_phone", "webcam", "phone_storage", "record_voice", "wake_pc"];
+
+/// Whether `id` is one of the Mac-stub palette commands.
+///
+/// `action:<key>` and `action:<key>:<device>` share a key. `mirror_app:` opens
+/// a phone app in a desktop window and needs the same missing mirror path.
+fn palette_action_blocked_on_mac(id: &str) -> bool {
+    if let Some(rest) = id.strip_prefix("action:") {
+        let key = rest.split(':').next().unwrap_or(rest);
+        return MAC_BLOCKED_ACTIONS.contains(&key);
+    }
+    id.starts_with("mirror_app:")
+}
+
+/// `(enabled, reason)` for one result row. Windows leaves every row enabled.
+fn palette_row_availability(id: &str) -> (bool, Option<&'static str>) {
+    if cfg!(target_os = "macos") && palette_action_blocked_on_mac(id) {
+        (false, Some(MAC_UNAVAILABLE_REASON))
+    } else {
+        (true, None)
+    }
+}
+
 /// UI-level navigation or sheet action returned by [`execute`] when a command
 /// needs `AppController` to switch pages or open a modal sheet in the main window.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,7 +81,8 @@ pub(crate) struct PaletteCandidate {
 
 impl PaletteCandidate {
     fn to_json(&self) -> Value {
-        json!({
+        let (enabled, reason) = palette_row_availability(&self.id);
+        let mut value = json!({
             "id": self.id,
             "title": self.title,
             "subtitle": self.subtitle,
@@ -61,7 +90,12 @@ impl PaletteCandidate {
             "icon": self.icon,
             "badge": self.badge,
             "shortcut": self.shortcut,
-        })
+            "enabled": enabled,
+        });
+        if let Some(reason) = reason {
+            value["reason"] = json!(reason);
+        }
+        value
     }
 }
 
@@ -172,6 +206,10 @@ pub fn execute(id: &str) -> Option<PaletteUiAction> {
     let id = id.trim().to_owned();
     close();
     if id.is_empty() {
+        return None;
+    }
+    // Grey rows stay searchable. Activation must not reach the Mac stub.
+    if !palette_row_availability(&id).0 {
         return None;
     }
 
@@ -1352,6 +1390,72 @@ pub(crate) fn fuzzy_subsequence_score(haystack: &str, needle: &str) -> Option<i6
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mac_palette_policy_keeps_stub_rows_and_marks_them_unavailable() {
+        let blocked = [
+            "action:mirror_screen:dev",
+            "action:type_on_phone:dev",
+            "action:webcam:dev",
+            "action:phone_storage:dev",
+            "action:record_voice:dev",
+            "action:wake_pc",
+            "mirror_app:dev:com.example.app\tMaps",
+        ];
+        let allowed = [
+            "action:send_clipboard:dev",
+            "action:ring:dev",
+            "action:open_last_photo:dev",
+            "action:continuity_photo",
+            "action:continuity_scan",
+            "action:open_link",
+            "action:handoff_file:dev",
+            "action:sync_now",
+            "text_contact:dev:+1555\tAda",
+            "call_contact:dev:+1555",
+            "nav:messages",
+        ];
+        for id in blocked {
+            assert!(palette_action_blocked_on_mac(id), "{id}");
+            let value = PaletteCandidate {
+                id: id.into(),
+                title: "row".into(),
+                subtitle: String::new(),
+                category: String::new(),
+                icon: String::new(),
+                badge: String::new(),
+                shortcut: String::new(),
+                keywords: String::new(),
+                base_boost: 0,
+            }
+            .to_json();
+            assert_eq!(value["id"], id);
+            if cfg!(target_os = "macos") {
+                assert_eq!(value["enabled"], false, "{id}");
+                assert_eq!(value["reason"], MAC_UNAVAILABLE_REASON, "{id}");
+            } else {
+                assert_eq!(value["enabled"], true, "{id}");
+                assert!(value.get("reason").is_none(), "{id}");
+            }
+        }
+        for id in allowed {
+            assert!(!palette_action_blocked_on_mac(id), "{id}");
+            let value = PaletteCandidate {
+                id: id.into(),
+                title: "row".into(),
+                subtitle: String::new(),
+                category: String::new(),
+                icon: String::new(),
+                badge: String::new(),
+                shortcut: String::new(),
+                keywords: String::new(),
+                base_boost: 0,
+            }
+            .to_json();
+            assert_eq!(value["enabled"], true, "{id}");
+            assert!(value.get("reason").is_none(), "{id}");
+        }
+    }
 
     fn sample_candidates() -> Vec<PaletteCandidate> {
         let dev = "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20";

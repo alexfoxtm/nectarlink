@@ -14,6 +14,8 @@ Item {
     property string deviceName: ""
     property bool deviceOnline: false
     readonly property bool hasConnectedPhone: guide.deviceId !== "" && guide.deviceOnline
+    // Items marked `macGap` need a desktop backend this Mac build doesn't have.
+    readonly property bool onMac: Qt.platform.os === "osx" || Qt.platform.os === "macos"
 
     signal showMeRequested(string targetId)
     signal restartWalkthroughRequested()
@@ -26,7 +28,8 @@ Item {
         notifications: true,
         clipboard: true,
         files: true,
-        sms: true,
+        messages: true,
+        photos: true,
         calls: true,
         media: true,
         storage: false,
@@ -53,15 +56,14 @@ Item {
             guide.deviceName = DeviceList.deviceNameAt(0) || "Phone"
         }
         if (targetId !== "") {
-            let st = AppController.featureState(targetId, "files")
-            let reason = st ? (st.reason || "") : ""
-            deviceOnline = reason.toLowerCase().indexOf("offline") === -1
+            deviceOnline = DeviceList.deviceOnlineAt(DeviceList.rowOf(targetId))
             let list = AppController.deviceToggles(targetId)
             let next = {
                 notifications: true,
                 clipboard: true,
                 files: true,
-                sms: true,
+                messages: true,
+                photos: true,
                 calls: true,
                 media: true,
                 storage: false,
@@ -87,6 +89,13 @@ Item {
         function onTogglesRevisionChanged() { guide.syncSelectedDevice() }
     }
 
+    Connections {
+        target: DeviceList
+        function onDataChanged() { guide.syncSelectedDevice() }
+        function onModelReset() { guide.syncSelectedDevice() }
+        function onCountChanged() { guide.syncSelectedDevice() }
+    }
+
     readonly property var guideChapters: [
         { key: "overview", label: qsTr("Overview") },
         { key: "setup", label: qsTr("Setup") },
@@ -102,7 +111,7 @@ Item {
             name: "Notifications",
             icon: Icons.bell,
             area: "notifications_calls",
-            capKey: "notifications",
+            capKey: "notifications.mirror",
             toggleKey: "notifications",
             summary: "Mirror phone notifications to your PC with inline replies, action buttons, and dismissal sync.",
             whereLabel: "Home › Notifications",
@@ -115,8 +124,8 @@ Item {
             name: "Messages",
             icon: Icons.messages,
             area: "messages",
-            capKey: "sms",
-            toggleKey: "sms",
+            capKey: "messages.sms",
+            toggleKey: "messages",
             summary: "Read and send SMS and MMS threads, or reply to notification-backed chat conversations.",
             whereLabel: "Left rail › Messages",
             needsLabel: "SMS and Contacts permissions on phone",
@@ -128,7 +137,7 @@ Item {
             name: "Calls",
             icon: Icons.call,
             area: "notifications_calls",
-            capKey: "calls",
+            capKey: "calls.control",
             toggleKey: "calls",
             summary: "Answer or decline incoming calls, browse call history and contacts, and dial from your PC.",
             whereLabel: "Left rail › Calls",
@@ -141,7 +150,7 @@ Item {
             name: "Now playing",
             icon: Icons.music,
             area: "notifications_calls",
-            capKey: "media_view",
+            capKey: "media.phone_control",
             toggleKey: "media",
             summary: "See active track artwork and control playback between your phone and PC.",
             whereLabel: "Home › Media player",
@@ -154,7 +163,7 @@ Item {
             name: "Clipboard",
             icon: Icons.clipboard,
             area: "clipboard_files",
-            capKey: "clipboard_send",
+            capKey: "clipboard.pc_to_phone",
             toggleKey: "clipboard",
             summary: "Sync copied text, HTML, images, and files with a 50-item local clipboard history.",
             whereLabel: "Home › Send clipboard",
@@ -167,7 +176,7 @@ Item {
             name: "Send files",
             icon: Icons.send,
             area: "clipboard_files",
-            capKey: "files",
+            capKey: "files.send",
             toggleKey: "files",
             summary: "Send files, folders, and links to your phone over your local Wi-Fi network.",
             whereLabel: "Home › Send files",
@@ -195,8 +204,8 @@ Item {
             name: "Photos",
             icon: Icons.photo,
             area: "clipboard_files",
-            capKey: "photos",
-            toggleKey: "files",
+            capKey: "files.recent_photos",
+            toggleKey: "photos",
             summary: "Browse recent phone photos and screenshots on demand, copy to clipboard, or drag into apps.",
             whereLabel: "Left rail › Photos",
             needsLabel: "Photos and Media permission on phone",
@@ -205,11 +214,12 @@ Item {
         },
         {
             id: "mirroring",
+            macGap: true,
             name: "Screen mirroring",
             icon: Icons.mirror,
             area: "mirroring_apps",
-            capKey: "mirror_view",
-            toggleKey: "pc_mirror",
+            capKey: "mirroring.view",
+            toggleKey: "mirroring",
             summary: "Stream your phone display in a low-latency desktop window with mouse and keyboard input.",
             whereLabel: "Home › Mirror screen",
             needsLabel: "MediaProjection approval on phone; Assist or Elevated for touch input",
@@ -218,11 +228,12 @@ Item {
         },
         {
             id: "app_streams",
+            macGap: true,
             name: "App streams",
             icon: Icons.apps,
             area: "mirroring_apps",
-            capKey: "mirror_view",
-            toggleKey: "",
+            capKey: "mirroring.app_windows",
+            toggleKey: "mirroring",
             summary: "Open individual Android apps in their own virtual display windows on your PC.",
             whereLabel: "Apps",
             needsLabel: "Elevated (Wireless debugging) enabled on phone",
@@ -231,10 +242,11 @@ Item {
         },
         {
             id: "pc_mirror",
+            macGap: true,
             name: "Reverse PC screen mirroring",
             icon: Icons.desktop,
             area: "mirroring_apps",
-            capKey: "pc_mirror",
+            capKey: "",
             toggleKey: "pc_mirror",
             summary: "Stream this PC monitor to your phone and control the cursor or laser pointer from your phone.",
             whereLabel: "Phone app › Home, and Settings › Devices",
@@ -244,12 +256,15 @@ Item {
         },
         {
             id: "webcam",
+            macGap: true,
             name: "Phone as webcam",
             icon: Icons.video,
             area: "camera_audio",
-            capKey: "webcam",
-            toggleKey: "",
-            summary: "Use your phone camera as the NectarLink Virtual Camera in Zoom, Teams, Meet, and OBS.",
+            capKey: "camera.webcam",
+            toggleKey: "webcam",
+            summary: Qt.platform.os === "osx"
+                ? "Use your phone camera as a virtual webcam in Zoom, Teams, Meet, and OBS (Windows only in this build)."
+                : "Use your phone camera as the NectarLink Virtual Camera in Zoom, Teams, Meet, and OBS.",
             whereLabel: "Home › Phone as webcam",
             needsLabel: "Camera permission on phone and Virtual Camera registered on PC",
             targetId: "settings:camera_audio:webcam",
@@ -260,16 +275,19 @@ Item {
             name: "Continuity camera",
             icon: Icons.camera,
             area: "camera_audio",
-            capKey: "webcam",
-            toggleKey: "",
+            capKey: "camera.continuity",
+            toggleKey: "photos",
             summary: "Capture a photo or scan a document with your phone and paste it into the active PC window.",
-            whereLabel: "Home › Continuity Camera (Ctrl+Alt+C / Ctrl+Alt+D)",
+            whereLabel: Qt.platform.os === "osx"
+                ? "Home › Continuity Camera"
+                : "Home › Continuity Camera (Ctrl+Alt+C / Ctrl+Alt+D)",
             needsLabel: "Camera permission on phone",
             targetId: "home:continuity",
             docKey: "continuity-camera"
         },
         {
             id: "speaker",
+            macGap: true,
             name: "Phone as speaker",
             icon: Icons.speaker,
             area: "camera_audio",
@@ -284,11 +302,12 @@ Item {
         },
         {
             id: "recordings",
+            macGap: true,
             name: "Voice recorder",
             icon: Icons.mic,
             area: "camera_audio",
-            capKey: "files",
-            toggleKey: "files",
+            capKey: "files.recordings",
+            toggleKey: "recordings",
             summary: "Record voice notes on your phone and save them automatically to your PC in M4A, MP3, WAV, or FLAC.",
             whereLabel: "Settings › Files & Sync › Voice recordings",
             needsLabel: "Microphone permission on phone",
@@ -297,11 +316,12 @@ Item {
         },
         {
             id: "deck",
+            macLocalOnly: true,
             name: "Deck",
             icon: Icons.deck,
             area: "camera_audio",
-            capKey: "media_view",
-            toggleKey: "media",
+            capKey: "input.deck",
+            toggleKey: "",
             summary: "Control Now playing media, switch PC audio outputs, and customize shortcut tiles for your phone.",
             whereLabel: "Left rail › Deck",
             needsLabel: "Paired phone",
@@ -313,7 +333,7 @@ Item {
             name: "Desk mode",
             icon: Icons.history,
             area: "surfaces",
-            capKey: "media_view",
+            capKey: "media.phone_control",
             toggleKey: "media",
             summary: "Turn your phone or PC window into a glanceable desk display with clock, media, and live status.",
             whereLabel: "Left rail › Deck › Desk mode",
@@ -323,10 +343,11 @@ Item {
         },
         {
             id: "remote_input",
+            macGap: true,
             name: "Remote input",
             icon: Icons.laptop,
             area: "input_control",
-            capKey: "remote_input",
+            capKey: "input.remote",
             toggleKey: "remote_input",
             summary: "Use your phone as a wireless trackpad, keyboard, media remote, and presentation pointer.",
             whereLabel: "Phone app › Home › Control PC",
@@ -336,11 +357,12 @@ Item {
         },
         {
             id: "type_on_phone",
+            macGap: true,
             name: "Type on phone",
             icon: Icons.keyboard,
             area: "input_control",
-            capKey: "mirror_control",
-            toggleKey: "",
+            capKey: "mirroring.control",
+            toggleKey: "mirroring",
             summary: "Send live keystrokes and pasted text from your PC keyboard to your phone without screen mirroring.",
             whereLabel: "Home › Type on phone",
             needsLabel: "Assist (Accessibility) or Elevated (Wireless debugging) on phone",
@@ -352,7 +374,7 @@ Item {
             name: "Phone controls",
             icon: Icons.flashlight,
             area: "input_control",
-            capKey: "find_device",
+            capKey: "device.find_phone",
             toggleKey: "",
             summary: "Toggle Do Not Disturb, ringer mode, flashlight, volume, brightness, Wi-Fi, Bluetooth, and Find my phone.",
             whereLabel: "Home › Phone controls",
@@ -370,7 +392,7 @@ Item {
             pcLocal: true,
             localAlways: true,
             summary: "Slide-out top screen-edge shelf with your latest phone photo, clipboard items, and file drop zone.",
-            whereLabel: "Top screen edge or Ctrl+Alt+S",
+            whereLabel: Qt.platform.os === "osx" ? "Top screen edge" : "Top screen edge or Ctrl+Alt+S",
             needsLabel: "Always available on PC",
             targetId: "settings:shortcuts:shelf",
             docKey: "shelf"
@@ -415,18 +437,22 @@ Item {
             pcLocal: true,
             localAlways: true,
             summary: "Keyboard-first search over actions, contacts, message threads, mirrorable apps, and quick toggles.",
-            whereLabel: "Top bar › Commands, or Ctrl+K (Ctrl+Alt+Space anywhere)",
+            whereLabel: Qt.platform.os === "osx"
+                ? "Top bar › Commands, or Command-K"
+                : "Top bar › Commands, or Ctrl+K (Ctrl+Alt+Space anywhere)",
             needsLabel: "Always available on PC",
             targetId: "settings:shortcuts:palette",
             docKey: "command-palette"
         },
         {
             id: "folder_sync",
+            macGap: true,
             name: "Share PC folders",
             icon: Icons.folder,
             area: "clipboard_files",
-            capKey: "storage",
-            toggleKey: "storage",
+            capKey: "",
+            toggleKey: "",
+            prefKey: "sharePcStorage",
             pcLocal: true,
             summary: "Share selected PC folders with your phone or sync folders in one-way or two-way mode.",
             whereLabel: "Settings › Files & Sync › Synced folders",
@@ -436,6 +462,7 @@ Item {
         },
         {
             id: "wol",
+            macGap: true,
             name: "Wake PC",
             icon: Icons.power,
             area: "automation_network",
@@ -458,7 +485,9 @@ Item {
             toggleKey: "",
             pcLocal: true,
             localAlways: true,
-            summary: "Diagnose and fix Windows Firewall rules, network profile type, and local discovery issues.",
+            summary: Qt.platform.os === "osx"
+                ? "Diagnose local network and discovery issues."
+                : "Diagnose and fix Windows Firewall rules, network profile type, and local discovery issues.",
             whereLabel: "Settings › Connection & About › Connection Doctor",
             needsLabel: "Always available on PC",
             targetId: "doctor:open",
@@ -501,6 +530,10 @@ Item {
     function statusForFeature(item) {
         let _caps = AppController.capsRevision
         let _toggles = AppController.togglesRevision
+        if (item.macLocalOnly && guide.onMac)
+            return { label: qsTr("Local controls only"), tone: "basic", visible: true }
+        if (item.macGap && guide.onMac)
+            return { label: qsTr("Not yet available on Mac"), tone: "off", visible: true, macGap: true }
         if (item.localAlways)
             return { label: qsTr("Ready on PC"), tone: "available", visible: true }
         if (item.wolCheck) {
@@ -536,19 +569,24 @@ Item {
             let actionName = st ? (st.action || "") : ""
             if (stateName === "available")
                 return { label: qsTr("Ready"), tone: "available", visible: true }
-            if (stateName === "limited")
+            if (stateName === "partial")
                 return { label: qsTr("Basic mode"), tone: "basic", visible: true }
-            if (stateName === "unavailable") {
-                if (actionName === "enable_toggle")
+            if (stateName === "locked") {
+                if (guide.onMac && ((actionName === "updateApp" && st.target === "desktop") || actionName === "enableAddon"))
+                    return { label: qsTr("Not yet available on Mac"), tone: "off", visible: true, macGap: true }
+                if (actionName === "enableToggle")
                     return { label: qsTr("Off on Home"), tone: "off", visible: true }
-                if (actionName === "grant_permission")
+                if (actionName === "grantPermission" || actionName === "grantRole")
                     return { label: qsTr("Needs phone permission"), tone: "warn", visible: true }
-                if (actionName === "enable_elevated")
-                    return { label: qsTr("Needs Elevated"), tone: "basic", visible: true }
-                if (actionName === "enable_assist")
-                    return { label: qsTr("Needs Assist"), tone: "basic", visible: true }
-                return { label: qsTr("Needs phone permission"), tone: "warn", visible: true }
+                if (actionName === "raisePower")
+                    return { label: st.target === "elevated" ? qsTr("Needs Elevated") : qsTr("Needs Assist"), tone: "basic", visible: true }
+                if (actionName === "updateApp")
+                    return { label: qsTr("Update app"), tone: "warn", visible: true }
+                return { label: qsTr("Check requirements"), tone: "warn", visible: true }
             }
+            if (stateName === "unsupported")
+                return { label: qsTr("Unavailable"), tone: "off", visible: true }
+            return { label: qsTr("Check requirements"), tone: "warn", visible: true }
         }
         return { label: qsTr("Ready"), tone: "available", visible: true }
     }
@@ -792,6 +830,7 @@ Item {
                             implicitHeight: 38
                             radius: Theme.radiusMd
                             color: Theme.secondaryContainer
+                            opacity: statusInfo.macGap ? 0.55 : 1
 
                             Icon {
                                 anchors.centerIn: parent
@@ -813,6 +852,7 @@ Item {
                                 Txt {
                                     text: modelData.name
                                     role: "title"
+                                    opacity: statusInfo.macGap ? 0.6 : 1
                                 }
 
                                 // C.2: Live status badge only when phone is connected or feature is PC-local

@@ -19,7 +19,12 @@ FocusScope {
 
     readonly property int totalSteps: 7
     // Matches the APK name on the GitHub release (see .github/workflows/release.yml).
-    readonly property string adbCommand: "adb install -r Nectarlink-" + AppController.version + "-android.apk"
+    // The Waypair Android app is versioned on its own (e.g. 0.1.4-local.5), so the
+    // Mac build can't know the file name and shows a placeholder to fill in.
+    readonly property bool adbVersionPlaceholder: Qt.platform.os === "osx"
+    readonly property string adbCommand: adbVersionPlaceholder
+        ? "adb install -r Waypair-Link-<version>-android.apk"
+        : ("adb install -r Nectarlink-" + AppController.version + "-android.apk")
     property int step: Math.max(0, Math.min(totalSteps - 1, Preferences.walkthroughStep))
     property alias currentStep: walkthrough.step
 
@@ -112,7 +117,9 @@ FocusScope {
         "Get the Android app from GitHub Releases or install the APK over USB.",
         "Scan the QR code from the Waypair Link Android app, or pick your phone from nearby devices.",
         "Safe features are on by default. Higher-trust access stays off until you turn it on.",
-        "Three quick checks so notifications and discovery work reliably on your PC.",
+        Qt.platform.os === "osx"
+            ? "Three quick checks so notifications and discovery work reliably on your Mac."
+            : "Three quick checks so notifications and discovery work reliably on your PC.",
         "Reopen it from Settings or the Command Palette."
     ]
 
@@ -191,7 +198,9 @@ FocusScope {
         if (AppController.doctorBusy)
             return "Checking firewall and local network..."
         if (parsedDoctorChecks.length === 0)
-            return "Run a quick check to verify Windows Firewall and local discovery."
+            return Qt.platform.os === "osx"
+                ? "Run a quick check of the local network and discovery."
+                : "Run a quick check to verify Windows Firewall and local discovery."
         let problems = 0
         for (let i = 0; i < parsedDoctorChecks.length; i++) {
             if (parsedDoctorChecks[i].status !== "ok")
@@ -1066,6 +1075,7 @@ FocusScope {
                                                 anchors.leftMargin: 10
                                                 anchors.rightMargin: 10
                                                 text: walkthrough.adbCommand
+                                                textFormat: Text.PlainText
                                                 role: "code"
                                                 size: 12
                                                 elide: Text.ElideRight
@@ -1091,6 +1101,16 @@ FocusScope {
                                                 onTriggered: copyAdbBtn.copied = false
                                             }
                                         }
+                                    }
+
+                                    Txt {
+                                        Layout.fillWidth: true
+                                        visible: walkthrough.adbVersionPlaceholder
+                                        text: qsTr("Replace <version> with the version in the name of the APK you downloaded.")
+                                        textFormat: Text.PlainText
+                                        role: "caption"
+                                        muted: true
+                                        wrapMode: Text.WordWrap
                                     }
                                 }
                             }
@@ -1469,13 +1489,15 @@ FocusScope {
 
                                         Txt {
                                             Layout.fillWidth: true
-                                            text: qsTr("Windows notifications")
+                                            text: Qt.platform.os === "osx" ? qsTr("Notifications") : qsTr("Windows notifications")
                                             role: "title"
                                         }
 
                                         Txt {
                                             Layout.fillWidth: true
-                                            text: AppController.toastsEnabled
+                                            text: Qt.platform.os === "osx"
+                                                ? "Banners follow your macOS notification settings. Their on or off state isn't checked yet."
+                                                : AppController.toastsEnabled
                                                 ? "Enabled in Windows Settings."
                                                 : "Notifications are off for Waypair Link in Windows Settings."
                                             role: "caption"
@@ -1501,6 +1523,7 @@ FocusScope {
                                             iconPath: Icons.refresh
                                             variant: "text"
                                             size: "sm"
+                                            visible: Qt.platform.os !== "osx"
                                             Accessible.name: "Recheck Windows notification status"
                                             onClicked: AppController.refreshToastsEnabled()
                                         }
@@ -1547,13 +1570,15 @@ FocusScope {
 
                                         Txt {
                                             Layout.fillWidth: true
-                                            text: qsTr("Start with Windows")
+                                            text: Qt.platform.os === "osx" ? qsTr("Open at login") : qsTr("Start with Windows")
                                             role: "title"
                                         }
 
                                         Txt {
                                             Layout.fillWidth: true
-                                            text: qsTr("Keep Waypair Link ready in the system tray when you sign in.")
+                                            text: Qt.platform.os === "osx"
+                                                ? qsTr("Open the window when you log in.")
+                                                : qsTr("Keep Waypair Link ready in the system tray when you sign in.")
                                             role: "caption"
                                             color: Theme.surfaceContentVariant
                                             wrapMode: Text.WordWrap
@@ -1561,7 +1586,7 @@ FocusScope {
                                     }
 
                                     Toggle {
-                                        label: qsTr("Start with Windows")
+                                        label: Qt.platform.os === "osx" ? qsTr("Open at login") : qsTr("Start with Windows")
                                         checked: Preferences.startWithWindows
                                         onToggled: next => Preferences.startWithWindows = next
                                     }
@@ -1660,8 +1685,10 @@ FocusScope {
                                     },
                                     {
                                         icon: Icons.search,
-                                        title: qsTr("Command Palette (Ctrl+K)"),
-                                        body: "Press Ctrl+K from anywhere in the app to jump to features, send files, or run actions."
+                                        title: Qt.platform.os === "osx" ? qsTr("Command Palette (Command-K)") : qsTr("Command Palette (Ctrl+K)"),
+                                        body: Qt.platform.os === "osx"
+                                            ? "Press Command-K from anywhere in the app to jump to features, send files, or run actions."
+                                            : "Press Ctrl+K from anywhere in the app to jump to features, send files, or run actions."
                                     },
                                     {
                                         icon: Icons.book,

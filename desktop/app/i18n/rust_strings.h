@@ -254,6 +254,7 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Guide", "Install and first-time setup"), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "Local HTTP API"), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "Local by default\nYour phone and PC talk directly over your local network or USB cable. When Connect over mobile data is on, encrypted traffic can use a relay when away from home. Automatic update checks contact GitHub Releases and can be turned off in Settings › Connection & About › Check for updates.\n\nEnd-to-end encrypted\nEvery connection uses QUIC with TLS 1.3 and Ed25519 device certificates verified during pairing. Device keys are protected by Windows DPAPI and the Android Keystore.\n\nPer-device sharing controls\nSensitive capabilities such as Share PC folders, Remote input, and Reverse PC screen mirroring are turned off by default for each paired device until you turn them on."), // desktop/app/src/bridge/app.rs
+    QT_TRANSLATE_NOOP("Guide", "Local by default\nYour phone and PC talk directly over your local network or USB cable. When Connect over mobile data is on, encrypted traffic can use a relay when away from home. Automatic update checks contact Waypair Link’s private R2 update feed.\n\nEnd-to-end encrypted\nEvery connection uses QUIC with TLS 1.3 and Ed25519 device certificates verified during pairing. On this Mac the device key is encrypted with a key kept in the macOS Keychain; on the phone, the Android Keystore protects it.\n\nPer-device sharing controls\nSensitive capabilities such as Share PC folders, Remote input, and Reverse PC screen mirroring are turned off by default for each paired device until you turn them on."), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "LocalSend"), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "Messages"), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "Most Waypair Link features work in Standard mode with regular Android permissions. Two optional modes unlock deeper system integration:\n\nElevated mode (Wireless debugging or root)\n- Captures the phone screen without showing the Android cast confirmation prompt every time.\n- Streams individual phone apps in separate desktop windows (virtual displays).\n- Controls additional system quick toggles.\n\nAssist mode (Android Accessibility Service)\n- Injects mouse clicks, scrolling, and touch gestures when you control your phone from your PC.\n- Waypair Link never reads screen text or logs keystrokes through the Accessibility service."), // desktop/app/src/bridge/app.rs
@@ -345,11 +346,11 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Mirror", "Mirror recording"), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Mirror screenshot"), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Mirroring is turned off for this phone."), // desktop/app/src/mirror.rs
-    QT_TRANSLATE_NOOP("Mirror", "Recording from %1, saved in Downloads\\Nectarlink"), // desktop/app/src/mirror.rs
+    QT_TRANSLATE_NOOP("Mirror", "Recording from %1, saved in %2"), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Saved %1"), // desktop/app/src/mirror.rs
-    QT_TRANSLATE_NOOP("Mirror", "Saved %1 to Downloads\\Nectarlink."), // desktop/app/src/mirror.rs
+    QT_TRANSLATE_NOOP("Mirror", "Saved %1 to %2."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Screenshot copied to clipboard."), // desktop/app/src/mirror.rs
-    QT_TRANSLATE_NOOP("Mirror", "Screenshot from %1, saved in Downloads\\Nectarlink"), // desktop/app/src/mirror.rs
+    QT_TRANSLATE_NOOP("Mirror", "Screenshot from %1, saved in %2"), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Sending %1 files…"), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Sending %1…"), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Set up Wireless debugging in Waypair Link on the phone to open its apps here."), // desktop/app/src/mirror.rs
@@ -388,7 +389,7 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Photos", "The phone doesn't share photos or files with this PC."), // desktop/app/src/photos.rs
     QT_TRANSLATE_NOOP("Photos", "The phone isn't connected right now."), // desktop/app/src/photos.rs
     QT_TRANSLATE_NOOP("Photos", "The photo couldn't be copied to the clipboard."), // desktop/app/src/photos.rs
-    QT_TRANSLATE_NOOP("Photos", "The photo couldn't be copied. It's in Downloads\\Nectarlink."), // desktop/app/src/photos.rs
+    QT_TRANSLATE_NOOP("Photos", "The photo couldn't be copied. It's in %1."), // desktop/app/src/photos.rs
     QT_TRANSLATE_NOOP("PlayOnPhone", "Connect your phone to play on it."), // desktop/app/src/play_on_phone.rs
     QT_TRANSLATE_NOOP("PlayOnPhone", "Media is turned off for %1."), // desktop/app/src/play_on_phone.rs
     QT_TRANSLATE_NOOP("PlayOnPhone", "Opening in %1 on %2. Tap the notification there."), // desktop/app/src/play_on_phone.rs
@@ -442,10 +443,10 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Timeline", "Voice recording"), // desktop/app/src/bridge/timeline.rs
     QT_TRANSLATE_NOOP("Timeline", "With %1"), // desktop/app/src/bridge/timeline.rs
     QT_TRANSLATE_NOOP("Timeline", "device"), // desktop/app/src/bridge/timeline.rs
-    QT_TRANSLATE_NOOP("Transfers", "Accept in Waypair Link to save to Downloads\\Nectarlink"), // desktop/app/src/transfers.rs
+    QT_TRANSLATE_NOOP("Transfers", "Accept in Waypair Link to save to %1"), // desktop/app/src/transfers.rs
     QT_TRANSLATE_NOOP("Transfers", "Files are turned off for that device."), // desktop/app/src/transfers.rs
-    QT_TRANSLATE_NOOP("Transfers", "From %1, opened from Downloads\\Nectarlink"), // desktop/app/src/transfers.rs
-    QT_TRANSLATE_NOOP("Transfers", "From %1, saved in Downloads\\Nectarlink"), // desktop/app/src/transfers.rs
+    QT_TRANSLATE_NOOP("Transfers", "From %1, opened from %2"), // desktop/app/src/transfers.rs
+    QT_TRANSLATE_NOOP("Transfers", "From %1, saved in %2"), // desktop/app/src/transfers.rs
     QT_TRANSLATE_NOOP("Transfers", "Nearby device"), // desktop/app/src/transfers.rs
     QT_TRANSLATE_NOOP("Transfers", "That's too many files to send at once."), // desktop/app/src/transfers.rs
     QT_TRANSLATE_NOOP("Transfers", "There's nothing to send in there."), // desktop/app/src/transfers.rs

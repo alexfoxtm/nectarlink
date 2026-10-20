@@ -365,7 +365,7 @@ fn deliver(transfer_id: &str, intent: Intent, saved: &[PathBuf]) {
                 }
                 None => {
                     final_paths.extend(saved.iter().cloned());
-                    r"Downloads\Nectarlink".to_owned()
+                    crate::downloads::user_visible_location().to_owned()
                 }
             };
             if let Some(node) = core_host::node() {
@@ -465,7 +465,11 @@ fn copy_file_to_clipboard(path: &Path, remove_after: bool, notify_ui: bool) {
         Err(reason) => {
             tracing::warn!(reason, "can't copy a photo");
             if remove_after {
-                show_message(tr!("Photos", "The photo couldn't be copied. It's in Downloads\\Nectarlink."));
+                show_message(tr!(
+                    "Photos",
+                    "The photo couldn't be copied. It's in %1.",
+                    crate::downloads::user_visible_location()
+                ));
             } else {
                 show_message(tr!("Photos", "The photo couldn't be copied to the clipboard."));
             }
@@ -796,7 +800,7 @@ pub fn view() -> View {
             .save_folder
             .as_deref()
             .map(folder_display_name)
-            .unwrap_or_else(|| r"Downloads\Nectarlink".to_owned());
+            .unwrap_or_else(|| crate::downloads::user_visible_location().to_owned());
         View {
             device: s.device,
             status: s.status,

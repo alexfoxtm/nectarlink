@@ -71,11 +71,22 @@ pub fn set_format(format: RecordingFormat) {
     cfg.updated_at = Some(SystemTime::now());
 }
 
-/// Default folder: `Documents\Nectarlink Recordings`.
+/// Default folder: `Documents/Waypair Link Recordings` on macOS, else `Documents\Nectarlink Recordings`.
 pub fn default_folder() -> PathBuf {
     dirs::document_dir()
         .unwrap_or_else(|| core_host::host().data_dir.join("recordings"))
-        .join("Nectarlink Recordings")
+        .join(default_recordings_subdir())
+}
+
+fn default_recordings_subdir() -> &'static str {
+    #[cfg(target_os = "macos")]
+    {
+        "Waypair Link Recordings"
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        "Nectarlink Recordings"
+    }
 }
 
 /// The folder where recordings go right now (`configured` if set, otherwise

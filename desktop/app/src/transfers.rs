@@ -11,7 +11,7 @@ use nectarlink_core::{DeviceId, Direction, Error, NodeEvent, Transfer, TransferS
 
 use crate::{
     bridge::app::{describe, show_message},
-    core_host,
+    core_host, downloads,
     win::toast::{self, Toast},
 };
 
@@ -305,7 +305,11 @@ pub fn on_event(event: &NodeEvent) {
             device: TOAST_GROUP.into(),
             key: format!("req:{}", t.id),
             title: format!("{device} wants to send {}", title(t)),
-            body: tr!("Transfers", "Accept in Waypair Link to save to Downloads\\Nectarlink"),
+            body: tr!(
+                "Transfers",
+                "Accept in Waypair Link to save to %1",
+                downloads::user_visible_location()
+            ),
             attribution: "LocalSend".into(),
             icon: None,
             image: None,
@@ -347,9 +351,9 @@ pub fn on_event(event: &NodeEvent) {
         key: first.to_string_lossy().into_owned(),
         title,
         body: if auto_open {
-            tr!("Transfers", "From %1, opened from Downloads\\Nectarlink", device)
+            tr!("Transfers", "From %1, opened from %2", device, downloads::user_visible_location())
         } else {
-            tr!("Transfers", "From %1, saved in Downloads\\Nectarlink", device)
+            tr!("Transfers", "From %1, saved in %2", device, downloads::user_visible_location())
         },
         attribution: "Waypair Link".into(),
         icon: None,
