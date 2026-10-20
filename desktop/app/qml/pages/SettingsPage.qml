@@ -3344,7 +3344,8 @@ Item {
                             title: qsTr("Waypair Link %1").arg(AppController.version)
                             description: AppController.updateStatus.length > 0
                                          ? AppController.updateStatus
-                                         : qsTr("This PC: %1").arg(AppController.deviceName)
+                                         : page.onMac ? qsTr("This Mac: %1").arg(AppController.deviceName)
+                                                      : qsTr("This PC: %1").arg(AppController.deviceName)
                             Row {
                                 spacing: 8
                                 // The download's progress, or a spinner while its size isn't known.
@@ -3414,23 +3415,19 @@ Item {
                         Divider { width: parent.width }
                         ListRow {
                             width: parent.width
-                            iconPath: Icons.sparkle
-                            title: qsTr("Waypair extras")
-                            description: qsTr("Added by the Waypair fork. To choose which phone apps and notification types mirror here, open Waypair Link on your phone > Settings > Permissions > Notifications > Choose apps and types; SMS access is a separate permission. Find phone puts the phone's alarm volume back after ringing.")
-                                         + (AppController.canUpdate ? " " + qsTr("Updates come from this build's own private release feed.") : "")
+                            iconPath: Icons.openExternal
+                            title: qsTr("Source code")
+                            description: qsTr("github.com/alexfoxtm/nectarlink")
+                            Button {
+                                variant: "tonal"
+                                size: "sm"
+                                text: qsTr("Open")
+                                onClicked: Qt.openUrlExternally("https://github.com/alexfoxtm/nectarlink")
+                            }
                         }
                         Divider {
                             width: parent.width
-                            visible: AppController.canUpdate
-                                     && (Qt.platform.os === "windows" || Qt.platform.os === "osx" || Qt.platform.os === "macos")
-                        }
-                        // macOS: the Sparkle helper runs only for a manual check.
-                        ListRow {
-                            width: parent.width
-                            visible: AppController.canUpdate && (Qt.platform.os === "osx" || Qt.platform.os === "macos")
-                            iconPath: Icons.refresh
-                            title: qsTr("Updates")
-                            description: qsTr("Check for updates opens the updater, which reads Waypair Link's own signed release feed. It runs only when you ask; nothing checks or installs by itself.")
+                            visible: AppController.canUpdate && Qt.platform.os === "windows"
                         }
                         ListRow {
                             width: parent.width
