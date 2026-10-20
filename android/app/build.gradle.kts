@@ -174,9 +174,17 @@ tasks.configureEach {
 // them when needed. Rust is always built in release: debug builds of the
 // core are large and slow.
 
-/** Builds the Rust core into `<outputDir>/<abi>/libnectarlink_ffi.so`. */
+/**
+ * Builds the Rust core into `<outputDir>/<abi>/libnectarlink_ffi.so`.
+ *
+ * cargo-ndk copies only this build's cdylibs and never removes files from
+ * `-o`. Dependency cdylibs (iroh, iroh-relay) carry Cargo's metadata hash in
+ * their names, so without the delete a dependency change, or a dropped ABI,
+ * would leave the previous copy here for the APK to package.
+ */
 abstract class CargoNdkBuild : DefaultTask() {
     @get:Inject abstract val exec: ExecOperations
+    @get:Inject abstract val fs: FileSystemOperations
     @get:Input abstract val abis: ListProperty<String>
     @get:InputDirectory @get:PathSensitive(PathSensitivity.RELATIVE) abstract val crates: DirectoryProperty
     @get:InputFile @get:PathSensitive(PathSensitivity.NONE) abstract val lockFile: RegularFileProperty
@@ -186,6 +194,7 @@ abstract class CargoNdkBuild : DefaultTask() {
 
     @TaskAction
     fun build() {
+        fs.delete { delete(outputDir) }
         exec.exec {
             workingDir = workspace.get().asFile
             environment("ANDROID_NDK_HOME", ndk.get().asFile.absolutePath)
