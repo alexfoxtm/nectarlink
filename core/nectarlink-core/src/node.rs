@@ -859,7 +859,7 @@ impl Shared {
         match self.session(peer) {
             Some(s) => {
                 let meta = s.display_metadata();
-                if s.is_alive() {
+                if s.is_alive() && self.session(peer).is_some_and(|current| Arc::ptr_eq(&current, &s)) {
                     meta
                 } else {
                     FALLBACK
@@ -4792,7 +4792,7 @@ mod tests {
         );
         let (display, medium, transport) = node.shared.session_display_snapshot(&phone);
         assert_eq!(display, ConnectionPath::Lan, "nothing selected: display stays LAN");
-        assert_eq!(medium, TunnelMedium::PhysicalUsb, "record keeps physical proof");
+        assert_eq!(medium, TunnelMedium::Unknown, "no current session: a record alone is not proof");
         assert_eq!(transport, None, "no live session: route stays unknown");
         node.shutdown().await;
     }
@@ -4818,11 +4818,7 @@ mod tests {
         node.shared.on_usb_tunnel_disconnected(phone, bridge).await;
         let (display, medium, transport) = node.shared.session_display_snapshot(&phone);
         assert_eq!(display, ConnectionPath::Lan);
-        assert_eq!(
-            medium,
-            TunnelMedium::Unknown,
-            "teardown must not retain a stale physical hint"
-        );
+        assert_eq!(medium, TunnelMedium::Unknown, "teardown must not retain a stale physical hint");
         assert_eq!(transport, None);
         node.shutdown().await;
     }
