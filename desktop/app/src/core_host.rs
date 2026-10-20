@@ -103,7 +103,8 @@ pub fn start(data_dir: PathBuf, platform: Arc<dyn Platform>) -> std::io::Result<
 
 /// Computes the PC's advertised capabilities, advertising capture (`mirror.capture`)
 /// and input injection (`mirror.input`, `input.inject`) only when enabled for at
-/// least one paired device (or actively sharing).
+/// least one paired device (or actively sharing), and this PC's folders
+/// (`storage.read`, `storage.write`) only while "Share this PC's folders" is on.
 pub fn compute_capabilities(
     #[cfg_attr(not(windows), allow(unused_variables))] node: Option<&Node>,
 ) -> Vec<String> {
@@ -121,8 +122,10 @@ pub fn compute_capabilities(
         caps.push(nectarlink_core::PC_WAKE.into());
         caps.push("media.control".into());
         caps.push(nectarlink_core::STORAGE_MOUNT.into());
-        caps.push(nectarlink_core::STORAGE_READ.into());
-        caps.push(nectarlink_core::STORAGE_WRITE.into());
+        if crate::settings::share_pc_storage() {
+            caps.push(nectarlink_core::STORAGE_READ.into());
+            caps.push(nectarlink_core::STORAGE_WRITE.into());
+        }
         caps.push(nectarlink_core::MIRROR_VIEW.into());
         caps.push(nectarlink_core::MIRROR_LISTEN.into());
         caps.push(nectarlink_core::DECK_ACTIONS.into());
@@ -169,10 +172,13 @@ pub fn compute_capabilities(
 }
 
 /// Recomputes and broadcasts this PC's advertised capabilities when feature toggles
-/// (`pc_mirror`, `remote_input`) or active sessions change.
+/// (`pc_mirror`, `remote_input`, `share_pc_storage`) or active sessions change.
 pub fn refresh_capabilities() {
+    // Serialized so an older snapshot can't be broadcast after a newer one.
+    static REFRESH: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
     let Some(node) = node() else { return };
     spawn(async move {
+        let _turn = REFRESH.lock().await;
         let caps = compute_capabilities(Some(&node));
         node.update_power(nectarlink_core::PowerLevel::Basic, caps).await;
     });
@@ -241,6 +247,8 @@ async fn run(data_dir: PathBuf, platform: Arc<dyn Platform>) {
         max_entries: nectarlink_core::DEFAULT_TIMELINE_MAX_ENTRIES,
     });
     let _ = host.node.set(node);
+    // Settings changed before the node was set had no node to refresh.
+    refresh_capabilities();
     host.hub.update(|s| {
         let mut changes = s.set_devices(devices);
         for m in matrices {
@@ -429,10 +437,21 @@ pub fn shutdown() {
     }
 }
 
-#[cfg(all(test, target_os = "macos"))]
+#[cfg(all(test, any(windows, target_os = "macos")))]
 mod tests {
     use super::*;
 
+    #[cfg(windows)]
+    #[test]
+    fn pc_folders_are_not_offered_while_sharing_is_off() {
+        crate::settings::set_share_pc_storage(false);
+        let caps = compute_capabilities(None);
+        assert!(!caps.contains(&nectarlink_core::STORAGE_READ.into()));
+        assert!(!caps.contains(&nectarlink_core::STORAGE_WRITE.into()));
+        assert!(caps.contains(&nectarlink_core::STORAGE_MOUNT.into()));
+    }
+
+    #[cfg(target_os = "macos")]
     #[test]
     fn macos_advertises_only_supported_capabilities() {
         let caps = compute_capabilities(None);

@@ -197,8 +197,14 @@ pub fn share_pc_storage() -> bool {
     SHARE_PC_STORAGE.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// Withdrawing `storage.read` from the offer stops reads already being served.
 pub fn set_share_pc_storage(on: bool) {
-    SHARE_PC_STORAGE.store(on, std::sync::atomic::Ordering::Relaxed);
+    if SHARE_PC_STORAGE.swap(on, std::sync::atomic::Ordering::Relaxed) != on {
+        if !on && let Some(node) = crate::core_host::node() {
+            node.revoke_storage_reads();
+        }
+        crate::core_host::refresh_capabilities();
+    }
 }
 
 pub fn forward_pc_notifications_to_phone() -> bool {
