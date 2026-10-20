@@ -1747,6 +1747,9 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
             (if (context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)) listOf("camera.capture") else emptyList()) +
             (if (InputService.running || Elevated.running) listOf("mirror.input") else emptyList()) +
             (if (Elevated.running) listOf("clip.read.auto") else emptyList()) +
+            // Tags mirror requests and streams with a generation; stale-token
+            // streams are refused where the PC negotiates it too.
+            listOf("mirror.correlation") +
             // Copied links for a Mac's Dock come from the Elevated helper's clipboard watcher.
             (if (Elevated.running && app.nectarlink.android.ui.Preferences.isCopiedLinkOffersEnabled(context)) {
                 listOf(COPIED_LINK_CAPABILITY)

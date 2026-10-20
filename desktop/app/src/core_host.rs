@@ -128,6 +128,9 @@ pub fn compute_capabilities(
         }
         caps.push(nectarlink_core::MIRROR_VIEW.into());
         caps.push(nectarlink_core::MIRROR_LISTEN.into());
+        // Tags mirror requests and streams with a generation and refuses
+        // stale-token streams where the phone negotiates it too.
+        caps.push(nectarlink_core::MIRROR_CORRELATION.into());
         caps.push(nectarlink_core::DECK_ACTIONS.into());
         caps.push(nectarlink_core::PC_AUDIO.into());
         caps.push(nectarlink_core::RECORDER.into());

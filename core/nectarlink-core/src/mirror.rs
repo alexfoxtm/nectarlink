@@ -92,13 +92,30 @@ pub(crate) async fn start(shared: &Shared, session: &Session, options: MirrorSta
     if !options.is_valid() {
         return Err(Error::Protocol("invalid mirroring options".into()));
     }
+    // This request's generation: the phone echoes it in the stream's config
+    // packets (and honors it in `mirror.stop`), so a delayed stream from an
+    // older request can't pass for this one. Optional on the wire: peers
+    // that predate correlation ignore it.
+    let request = shared.mirror_next_request.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let options = MirrorStart { request: Some(request), ..options };
     let env = Envelope::new(types::MIRROR_START, &options)?;
-    session.request(env, crate::session::REQUEST_TIMEOUT).await?.expect(types::OK)?;
-    Ok(())
+    // A peer can open its media stream before the control reply arrives.
+    shared.note_mirror_outgoing(&session.peer, options.session, request);
+    let result = session
+        .request(env, crate::session::REQUEST_TIMEOUT)
+        .await
+        .and_then(|reply| reply.expect(types::OK).map_err(Error::from));
+    if result.is_err() {
+        let mut outgoing = shared.mirror_outgoing.lock().unwrap_or_else(|e| e.into_inner());
+        if outgoing.get(&(session.peer, options.session)) == Some(&request) {
+            outgoing.remove(&(session.peer, options.session));
+        }
+    }
+    result
 }
 
-pub(crate) async fn stop(session: &Session, mirroring: u32) -> Result<()> {
-    let env = Envelope::new(types::MIRROR_STOP, &MirrorSession { session: mirroring })?;
+pub(crate) async fn stop(session: &Session, mirroring: u32, request: Option<u64>) -> Result<()> {
+    let env = Envelope::new(types::MIRROR_STOP, &MirrorSession { session: mirroring, request })?;
     session.request(env, crate::session::REQUEST_TIMEOUT).await?.expect(types::OK)?;
     Ok(())
 }
@@ -131,7 +148,9 @@ fn input_envelope(input: &MirrorInput, mirroring: u32) -> Result<Envelope> {
 }
 
 pub(crate) async fn request_keyframe(session: &Session, mirroring: u32) {
-    if let Ok(env) = Envelope::new(types::MIRROR_KEYFRAME, &MirrorSession { session: mirroring }) {
+    if let Ok(env) =
+        Envelope::new(types::MIRROR_KEYFRAME, &MirrorSession { session: mirroring, request: None })
+    {
         let _ = session.send(env).await;
     }
 }
@@ -225,6 +244,15 @@ pub(crate) async fn receive(shared: Arc<Shared>, peer: DeviceId, mut send: SendS
         return refuse(send, recv);
     };
     let mirroring = config.session;
+    // A delayed stream from an older request must not pass for the live
+    // one. Only where both peers negotiate correlation; otherwise (old
+    // phones, unstamped streams) behavior is unchanged.
+    let expected =
+        shared.mirror_outgoing.lock().unwrap_or_else(|e| e.into_inner()).get(&(peer, mirroring)).copied();
+    if !mirror_token_accepted(expected, config.request, shared.mirror_correlated(&peer)) {
+        tracing::warn!("a phone's video stream answered an older mirroring request");
+        return refuse(send, recv);
+    };
     let Some(sink) = shared.platform.mirror_sink(&peer, mirroring) else {
         return refuse(send, recv);
     };
@@ -297,6 +325,19 @@ pub(crate) async fn receive_audio(
         let _ = recv.stop(VarInt::from_u32(mirror::STOPPED));
         return;
     };
+    // Sound has no token of its own: when correlation is negotiated, it
+    // only answers a live screen request.
+    if shared.mirror_correlated(&peer)
+        && !shared
+            .mirror_outgoing
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains_key(&(peer, mirror::SCREEN))
+    {
+        let _ = send.reset(VarInt::from_u32(mirror::STOPPED));
+        let _ = recv.stop(VarInt::from_u32(mirror::STOPPED));
+        return;
+    }
     let stopped = shared.new_mirror_stop(&peer, mirror::SCREEN, mirror::OP_AUDIO);
     loop {
         let packet = tokio::select! {
@@ -350,6 +391,8 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
             };
             let reply = if !options.is_valid() {
                 Envelope::error(ErrorCode::BadMessage, "invalid mirroring options")
+            } else if shared.mirror_correlated(&peer) && options.request.is_none() {
+                Envelope::error(ErrorCode::BadMessage, "missing mirror request generation")
             } else if !allowed {
                 if desktop && options.app.is_none() && options.watch.is_none() {
                     shared.emit(NodeEvent::PcMirrorRequested { device: peer, options: options.clone() });
@@ -358,11 +401,22 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
             } else if !shared.local_capabilities().iter().any(|c| c == needs) {
                 Envelope::error(ErrorCode::Unsupported, "this device doesn't share that")
             } else {
+                // Copied out: the consent call below moves `options`.
+                let accepted_session = options.session;
+                let accepted_request = options.request;
                 match tokio::task::spawn_blocking(move || platform.mirror_requested(&peer, &options))
                     .await
                     .unwrap_or_else(|e| Err(e.to_string()))
                 {
-                    Ok(()) => Envelope::empty(types::OK),
+                    Ok(()) => {
+                        // This request's generation is live: the stream that
+                        // answers must echo it, and a stop for any other one
+                        // is stale.
+                        if let Some(request) = accepted_request {
+                            shared.note_mirror_incoming(&peer, accepted_session, request);
+                        }
+                        Envelope::empty(types::OK)
+                    }
                     Err(reason) => {
                         tracing::warn!(reason, "can't ask to share the screen");
                         if desktop {
@@ -376,21 +430,25 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
             session.send(reply.reply_to(env.id)).await?;
         }
         types::MIRROR_STOP => {
-            let MirrorSession { session: mirroring } = env.body()?;
-            // The PC's side: stop showing; the phone's: stop sharing.
-            shared.stop_showing(&peer, mirroring);
-            if mirroring == mirror::SCREEN {
-                shared.pc_mirror_sessions.lock().unwrap_or_else(|e| e.into_inner()).remove(&peer);
-                // Watching stopped: the phone may come back to it for a while
-                // (the screen rotated, the app went to the background).
-                crate::media::renew_watch(shared, &peer);
+            let MirrorSession { session: mirroring, request } = env.body()?;
+            // A stop for a superseded request is stale (a replacement start
+            // already superseded it): ack it, change nothing.
+            if shared.mirror_stop_applies(&peer, mirroring, request) {
+                // The PC's side: stop showing; the phone's: stop sharing.
+                shared.stop_showing(&peer, mirroring);
+                if mirroring == mirror::SCREEN {
+                    shared.pc_mirror_sessions.lock().unwrap_or_else(|e| e.into_inner()).remove(&peer);
+                    // Watching stopped: the phone may come back to it for a while
+                    // (the screen rotated, the app went to the background).
+                    crate::media::renew_watch(shared, &peer);
+                }
+                shared.emit(NodeEvent::Mirroring { device: peer, session: mirroring, on: false });
+                tokio::task::spawn_blocking(move || platform.mirror_stop_requested(&peer, mirroring));
             }
-            shared.emit(NodeEvent::Mirroring { device: peer, session: mirroring, on: false });
-            tokio::task::spawn_blocking(move || platform.mirror_stop_requested(&peer, mirroring));
             session.send(Envelope::empty(types::OK).reply_to(env.id)).await?;
         }
         types::MIRROR_KEYFRAME => {
-            let MirrorSession { session: mirroring } = env.body()?;
+            let MirrorSession { session: mirroring, .. } = env.body()?;
             tokio::task::spawn_blocking(move || platform.mirror_keyframe_requested(&peer, mirroring));
         }
         types::MIRROR_RESIZE => {
@@ -415,7 +473,7 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
         }
         types::MIRROR_INPUT => {
             let input: MirrorInput = env.body()?;
-            let MirrorSession { session: mirroring } = env.body()?;
+            let MirrorSession { session: mirroring, .. } = env.body()?;
             // App windows take input as they're Elevated; the screen, with mirror.input.
             let needs = if mirroring == mirror::SCREEN { mirror::INPUT } else { mirror::VIRTUAL_DISPLAY };
             let desktop = is_local_desktop(shared);
@@ -644,7 +702,66 @@ impl MirrorStream {
     }
 }
 
+/// Whether a stream's token answers the live request. Without negotiation
+/// (either side predates `mirror.correlation`) everything passes, so old
+/// phones and PCs keep their old behavior; when negotiated, the seen token
+/// must equal a live expectation; an unstamped stream answers no request.
+fn mirror_token_accepted(expected: Option<u64>, seen: Option<u64>, negotiated: bool) -> bool {
+    if !negotiated {
+        return true;
+    }
+    expected.is_some() && expected == seen
+}
+
 impl Shared {
+    /// Whether `peer` announced capability `cap`.
+    pub(crate) fn peer_supports(&self, peer: &DeviceId, cap: &str) -> bool {
+        self.store.get_peer(peer).ok().flatten().is_some_and(|r| r.caps.contains(cap))
+    }
+
+    /// Whether both sides negotiate mirror request correlation.
+    pub(crate) fn mirror_correlated(&self, peer: &DeviceId) -> bool {
+        self.local_capabilities().iter().any(|c| c == mirror::CORRELATION)
+            && self.peer_supports(peer, mirror::CORRELATION)
+    }
+
+    /// Records a request token this device sent (`mirror.start`).
+    pub(crate) fn note_mirror_outgoing(&self, peer: &DeviceId, session: u32, request: u64) {
+        self.mirror_outgoing.lock().unwrap_or_else(|e| e.into_inner()).insert((*peer, session), request);
+    }
+
+    /// Takes the recorded outgoing token (a stop ends the request).
+    pub(crate) fn take_mirror_outgoing(&self, peer: &DeviceId, session: u32) -> Option<u64> {
+        self.mirror_outgoing.lock().unwrap_or_else(|e| e.into_inner()).remove(&(*peer, session))
+    }
+
+    /// Records a request token this device accepted (`mirror.start`).
+    pub(crate) fn note_mirror_incoming(&self, peer: &DeviceId, session: u32, request: u64) {
+        self.mirror_incoming.lock().unwrap_or_else(|e| e.into_inner()).insert((*peer, session), request);
+    }
+
+    /// Whether a `mirror.stop` ends the recorded request: a stop tagged for
+    /// a different request than the one recorded is stale (a replacement
+    /// start already superseded it) and takes no action. Clears the record
+    /// when the stop applies.
+    pub(crate) fn mirror_stop_applies(&self, peer: &DeviceId, session: u32, request: Option<u64>) -> bool {
+        let mut incoming = self.mirror_incoming.lock().unwrap_or_else(|e| e.into_inner());
+        match (request, incoming.get(&(*peer, session)).copied()) {
+            (Some(stop), Some(current)) if stop != current => false,
+            _ => {
+                incoming.remove(&(*peer, session));
+                true
+            }
+        }
+    }
+
+    /// Ends request ownership when a peer connection or permission ends.
+    pub(crate) fn clear_mirror_peer(&self, peer: &DeviceId) {
+        self.mirror_outgoing.lock().unwrap_or_else(|e| e.into_inner()).retain(|(p, _), _| p != peer);
+        self.mirror_incoming.lock().unwrap_or_else(|e| e.into_inner()).retain(|(p, _), _| p != peer);
+        self.stop_showing_all(peer);
+    }
+
     /// A new stop signal for the PC's reader of `peer`'s video or sound
     /// stream (`op`) of a mirroring.
     fn new_mirror_stop(&self, peer: &DeviceId, mirroring: u32, op: &'static str) -> Arc<tokio::sync::Notify> {
@@ -724,5 +841,20 @@ mod tests {
         packets.recv().await;
         // No keyframe to wait for: the next one goes.
         assert_eq!(send(PacketKind::Frame), MirrorSend::Queued);
+    }
+
+    #[test]
+    fn stale_tokens_are_refused_only_when_negotiated() {
+        // Legacy peers (or unstamped messages) always pass.
+        assert!(mirror_token_accepted(None, None, false));
+        assert!(mirror_token_accepted(Some(5), None, false));
+        assert!(mirror_token_accepted(None, Some(5), false));
+        assert!(mirror_token_accepted(Some(4), Some(5), false));
+        // Negotiated: the stream must answer the live request.
+        assert!(mirror_token_accepted(Some(5), Some(5), true));
+        assert!(!mirror_token_accepted(None, None, true));
+        assert!(!mirror_token_accepted(Some(5), None, true));
+        assert!(!mirror_token_accepted(None, Some(5), true));
+        assert!(!mirror_token_accepted(Some(4), Some(5), true));
     }
 }

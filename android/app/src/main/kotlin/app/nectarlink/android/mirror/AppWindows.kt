@@ -57,6 +57,8 @@ class AppWindows(
         @Volatile var height: Int,
         val dpi: Int,
         val maxSize: Int,
+        /** The answered request's generation, echoed in the stream's config (`null` predates correlation). */
+        val request: ULong?,
     ) {
         @Volatile var display: Int = -1
     }
@@ -77,7 +79,7 @@ class AppWindows(
         val maxSize = options.maxSize.toInt().coerceIn(320, 1920)
         val (width, height, dpi) = size(maxSize)
         val socket = Elevated.openApp(pkg, width, height, dpi, options.bitrate.toInt(), options.fps.toInt()) ?: return false
-        val window = Window(pc, options.session, socket, width, height, dpi, maxSize)
+        val window = Window(pc, options.session, socket, width, height, dpi, maxSize, options.request)
         power[pc] = options.stayAwake to options.screenOff
         windows.put(pc to options.session, window)?.let { runCatching { it.socket.close() } }
         changed()
@@ -109,7 +111,7 @@ class AppWindows(
                         window.width = w
                         window.height = h
                         window.display = fields.int
-                        stream.send(VideoPacketKind.CONFIG, 0u, mirrorConfig(w.toUInt(), h.toUInt(), window.session))
+                        stream.send(VideoPacketKind.CONFIG, 0u, mirrorConfig(w.toUInt(), h.toUInt(), window.session, window.request))
                     }
                     AppDisplay.KIND_KEYFRAME -> stream.send(VideoPacketKind.KEYFRAME, time, data)
                     else -> stream.send(VideoPacketKind.FRAME, time, data)

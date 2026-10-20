@@ -82,6 +82,7 @@ class MirrorService : Service() {
         val audio = intent.getBooleanExtra(EXTRA_AUDIO, false)
         stayAwake = intent.getBooleanExtra(EXTRA_STAY_AWAKE, false)
         screenOff = intent.getBooleanExtra(EXTRA_SCREEN_OFF, false)
+        val requestToken = if (intent.hasExtra(EXTRA_REQUEST)) intent.getLongExtra(EXTRA_REQUEST, 0L).toULong() else null
 
         if (isElevated) {
             val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE else 0
@@ -95,7 +96,7 @@ class MirrorService : Service() {
                 stayAwake = stayAwake,
                 screenOff = screenOff,
             )
-            val fallbackRequest = MirrorRequest(pc, maxSize, fps, bitrate, audio, stayAwake, screenOff)
+            val fallbackRequest = MirrorRequest(pc, maxSize, fps, bitrate, audio, stayAwake, screenOff, requestToken)
             elevatedStarting = true
             startElevatedStream(core, pc, name, fallbackRequest)
             return START_NOT_STICKY
@@ -139,7 +140,7 @@ class MirrorService : Service() {
                     stream.end()
                     return@post
                 }
-                encoder = ScreenEncoder(this@MirrorService, running, stream, maxSize, fps, bitrate) {
+                encoder = ScreenEncoder(this@MirrorService, running, stream, maxSize, fps, bitrate, request = requestToken) {
                     main.post { stopSharing() }
                 }.also { it.start() }
                 applyPower()
@@ -246,7 +247,7 @@ class MirrorService : Service() {
                         stream.send(
                             app.nectarlink.core.VideoPacketKind.CONFIG,
                             0u,
-                            app.nectarlink.core.mirrorConfigCodec(codec, w.toUInt(), h.toUInt(), 0u),
+                            app.nectarlink.core.mirrorConfigCodec(codec, w.toUInt(), h.toUInt(), 0u, request.request),
                         )
                     }
                     app.nectarlink.android.elevated.AppDisplay.KIND_KEYFRAME ->
@@ -369,6 +370,7 @@ class MirrorService : Service() {
         private const val EXTRA_AUDIO = "audio"
         private const val EXTRA_STAY_AWAKE = "stayAwake"
         private const val EXTRA_SCREEN_OFF = "screenOff"
+        private const val EXTRA_REQUEST = "request"
 
         /** The service sharing the screen now, if any. */
         @Volatile private var current: MirrorService? = null
@@ -394,6 +396,7 @@ class MirrorService : Service() {
                 .putExtra(EXTRA_AUDIO, request.audio)
                 .putExtra(EXTRA_STAY_AWAKE, request.stayAwake)
                 .putExtra(EXTRA_SCREEN_OFF, request.screenOff)
+            if (request.request != null) intent.putExtra(EXTRA_REQUEST, request.request.toLong())
             ContextCompat.startForegroundService(context, intent)
         }
 
@@ -412,6 +415,7 @@ class MirrorService : Service() {
                 .putExtra(EXTRA_AUDIO, request.audio)
                 .putExtra(EXTRA_STAY_AWAKE, request.stayAwake)
                 .putExtra(EXTRA_SCREEN_OFF, request.screenOff)
+            if (request.request != null) intent.putExtra(EXTRA_REQUEST, request.request.toLong())
             return runCatching {
                 ContextCompat.startForegroundService(context, intent)
                 true

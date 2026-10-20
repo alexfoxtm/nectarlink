@@ -1158,16 +1158,24 @@ impl MirrorStream {
 }
 
 /// The bytes of a config packet for an H.264 stream of this size, for the
-/// screen (session 0) or an app window.
+/// screen (session 0) or an app window. `request` echoes the answered
+/// request's generation, when the requester tagged it.
 #[uniffi::export]
-pub fn mirror_config(width: u32, height: u32, session: u32) -> Vec<u8> {
-    core::MirrorConfig { codec: "h264".into(), width, height, session }.to_cbor()
+pub fn mirror_config(width: u32, height: u32, session: u32, request: Option<u64>) -> Vec<u8> {
+    core::MirrorConfig { codec: "h264".into(), width, height, session, request }.to_cbor()
 }
 
 /// The bytes of a config packet for a stream of `codec` (`"h264"`, `"h265"`, or `"av1"`).
+/// `request` echoes the answered request's generation, when the requester tagged it.
 #[uniffi::export]
-pub fn mirror_config_codec(codec: String, width: u32, height: u32, session: u32) -> Vec<u8> {
-    core::MirrorConfig { codec, width, height, session }.to_cbor()
+pub fn mirror_config_codec(
+    codec: String,
+    width: u32,
+    height: u32,
+    session: u32,
+    request: Option<u64>,
+) -> Vec<u8> {
+    core::MirrorConfig { codec, width, height, session, request }.to_cbor()
 }
 
 /// What a PC asked to mirror, and how (docs/protocol/mirror.md).
@@ -1187,6 +1195,9 @@ pub struct MirrorOptions {
     pub stay_awake: bool,
     /// Turn the phone's physical screen off while mirroring (`session == 0`, Elevated).
     pub screen_off: bool,
+    /// The request's generation, echoed back in the stream's config packets
+    /// (absent on requests from peers that predate correlation).
+    pub request: Option<u64>,
 }
 
 /// An app a PC can open in a window (docs/protocol/mirror.md).
@@ -2883,6 +2894,7 @@ impl core::Platform for PlatformAdapter {
             app: options.app.clone(),
             stay_awake: options.stay_awake,
             screen_off: options.screen_off,
+            request: options.request,
         };
         if self.0.mirror_requested(peer.to_string(), options) {
             Ok(())
@@ -4053,6 +4065,7 @@ impl NectarlinkNode {
             stay_awake: false,
             screen_off: false,
             watch,
+            request: None,
         };
         self.run(async move { Ok(node.mirror_start(id, options).await?) }).await
     }

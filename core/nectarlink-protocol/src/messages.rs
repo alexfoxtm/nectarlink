@@ -1408,6 +1408,9 @@ pub mod mirror {
     pub const AUDIO_PLAYBACK: &str = "mirror.audio.playback";
     /// Offered by PCs that play a mirrored phone's sound.
     pub const LISTEN: &str = "mirror.listen";
+    /// Offered by phones and PCs that tag mirror requests and streams with
+    /// a request token and refuse stale-token streams ([`MirrorStart::request`]).
+    pub const CORRELATION: &str = "mirror.correlation";
     pub const OP_AUDIO: &str = "audio";
     /// 16-bit little-endian PCM, channels interleaved.
     pub const PCM: &str = "pcm_s16le";
@@ -1464,6 +1467,11 @@ pub struct MirrorStart {
     /// that offered it with `media.watch`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub watch: Option<String>,
+    /// Request generation: the requester's per-session token, echoed back in
+    /// the stream's config packets and in `mirror.stop`. Absent on requests
+    /// from peers that predate correlation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request: Option<u64>,
 }
 
 impl MirrorStart {
@@ -1497,11 +1505,16 @@ pub struct MirrorPower {
 }
 
 /// Which mirroring a `mirror.stop`, `mirror.keyframe` or `mirror.input` is
-/// about (its body, or part of it; missing means the screen).
+/// about (its body, or part of it; missing means the screen). `request`
+/// orders a stop against a replacement start: a stop for an older request
+/// than the one recorded is acknowledged but takes no action.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MirrorSession {
     #[serde(default)]
     pub session: u32,
+    /// The request this message belongs to, when the sender tags requests.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request: Option<u64>,
 }
 
 /// Body of `mirror.resize`: resize an app window's display (`session != 0`).
@@ -1665,6 +1678,9 @@ pub struct MirrorConfig {
     /// Which mirroring this stream is (see [`MirrorStart::session`]).
     #[serde(default)]
     pub session: u32,
+    /// Which request this stream serves (see [`MirrorStart::request`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request: Option<u64>,
 }
 
 impl MirrorConfig {
@@ -5512,6 +5528,7 @@ mod tests {
             stay_awake: false,
             screen_off: false,
             watch: Some("Chrome".into()),
+            request: None,
         };
         assert!(screen.is_valid());
         // Watching is of the PC's screen session only, never with an app.
@@ -5526,6 +5543,14 @@ mod tests {
         ciborium::into_writer(&plain, &mut bytes).unwrap();
         let back: MirrorStart = ciborium::from_reader(bytes.as_slice()).unwrap();
         assert_eq!(back, plain);
+        // A tagged request round-trips; peers that predate correlation read
+        // it as absent.
+        let tagged = MirrorStart { request: Some(7), ..plain.clone() };
+        let mut bytes = Vec::new();
+        ciborium::into_writer(&tagged, &mut bytes).unwrap();
+        let back: MirrorStart = ciborium::from_reader(bytes.as_slice()).unwrap();
+        assert_eq!(back, tagged);
+        assert_eq!(back.request, Some(7));
     }
 
     #[test]
