@@ -635,6 +635,26 @@ pub fn stop_recording(window: Window) {
         rec
     };
     let Some(recorder) = recorder else { return };
+    finish_recording(window, recorder);
+}
+
+/// Feeds `window`'s recorder under the `RECORDERS` lock. Once the stream left
+/// the recorded format, removes that same recorder under the same lock, so a
+/// newer recording started in between is never the one stopped.
+fn feed_recorder(window: Window, feed: impl FnOnce(&mut MirrorRecorder)) -> Option<MirrorRecorder> {
+    let mut guard = RECORDERS.lock().unwrap_or_else(|e| e.into_inner());
+    let map = guard.as_mut()?;
+    let recorder = map.get_mut(&window)?;
+    feed(recorder);
+    let reason = recorder.format_changed()?;
+    tracing::info!(reason, "mirror recording stopped: the phone's video format changed");
+    let recorder = map.remove(&window);
+    ACTIVE_RECORDERS.store(map.len(), Ordering::Release);
+    recorder
+}
+
+/// Saves a recorder already removed from `RECORDERS` and reports the result.
+fn finish_recording(window: Window, recorder: MirrorRecorder) {
     core_host::host().hub.changed(Changes::MIRROR);
     let duration_secs = recorder.started_at().elapsed().as_secs().max(1);
 
@@ -1803,10 +1823,8 @@ impl MirrorSink for Sink {
             .unwrap_or_else(|e| e.into_inner())
             .get_or_insert_with(HashMap::new)
             .insert(self.window, (config.width, config.height));
-        if let Some(rec) =
-            RECORDERS.lock().unwrap_or_else(|e| e.into_inner()).as_mut().and_then(|m| m.get_mut(&self.window))
-        {
-            rec.on_config(config.width, config.height);
+        if let Some(ended) = feed_recorder(self.window, |rec| rec.on_config(config.width, config.height)) {
+            finish_recording(self.window, ended);
         }
         let video = self.video.get_or_init(|| Video::start(self.window, self.request));
         // The format matters: wait for room rather than drop it.
@@ -1820,14 +1838,13 @@ impl MirrorSink for Sink {
             merge_sps_pps(entry, &data);
         }
         if ACTIVE_RECORDERS.load(Ordering::Relaxed) > 0
-            && let Some(rec) = RECORDERS
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .as_mut()
-                .and_then(|m| m.get_mut(&self.window))
-            && let Err(e) = rec.on_packet(keyframe, time_us, &data)
+            && let Some(ended) = feed_recorder(self.window, |rec| {
+                if let Err(e) = rec.on_packet(keyframe, time_us, &data) {
+                    tracing::warn!(error = %e, "mirror recording packet failed");
+                }
+            })
         {
-            tracing::warn!(error = %e, "mirror recording packet failed");
+            finish_recording(self.window, ended);
         }
         let Some(video) = self.video.get() else { return };
         if !keyframe && video.skipping.load(Ordering::Acquire) {
@@ -3403,6 +3420,36 @@ mod mac_receive_fixture {
         });
     }
 
+    /// The received-folder override is a once-per-process `OnceLock`, so its
+    /// fresh 0700 run directory is held here for the whole process: it outlives
+    /// every async `finish`, and no later test can see it removed.
+    #[cfg(feature = "test-support")]
+    static FIXTURE_RECEIVED: OnceLock<tempfile::TempDir> = OnceLock::new();
+
+    #[cfg(feature = "test-support")]
+    fn fixture_received_dir() {
+        use std::os::unix::fs::PermissionsExt;
+
+        use super::window_gate::{SENTINEL, validate_run_dir};
+
+        FIXTURE_RECEIVED.get_or_init(|| {
+            let scratch = tempfile::tempdir().expect("scratch root");
+            let root = scratch.path().canonicalize().expect("canonical scratch root");
+            let run = root.join("waypair-recording").join("run");
+            std::fs::create_dir_all(&run).expect("run directory");
+            std::fs::set_permissions(&run, std::fs::Permissions::from_mode(0o700)).expect("owner-only run");
+            std::fs::write(run.join(SENTINEL), format!("{}\n", run.display())).expect("sentinel");
+            let run = validate_run_dir(Some(run.as_path()), &root).expect("a fresh run directory");
+            let mode = std::fs::symlink_metadata(&run).expect("run directory").permissions().mode();
+            assert_eq!(mode & 0o777, 0o700, "the run directory is owner-only");
+            let received = run.join("received");
+            std::fs::create_dir(&received).expect("a fresh received folder");
+            crate::downloads::use_window_gate_received_dir(received)
+                .expect("no other test in this process chose the received folder");
+            scratch
+        });
+    }
+
     /// The committed synthetic keyframe: solid red 128x128 baseline IDR.
     fn fixture_idr() -> Vec<u8> {
         include_bytes!("mac/testdata/red-128x128.annexb").to_vec()
@@ -3896,6 +3943,91 @@ mod mac_receive_fixture {
         assert!(saved.is_file(), "finished MP4 survives stream close");
         drop_fixture_window(window);
         assert!(super::sink(&device, MIRROR_SCREEN).is_none(), "closed request owns no sink");
+    }
+
+    /// A phone rotation while recording: the production sink removes that
+    /// recorder and saves it through the production stop path, which keeps
+    /// the frames recorded before the change and reports the usual "Saved".
+    #[cfg(feature = "test-support")]
+    #[test]
+    fn production_sink_format_change_saves_recording_and_stops() {
+        use std::collections::HashMap;
+        use std::sync::atomic::Ordering;
+
+        let _fixture = FIXTURE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        fixture_host();
+        fixture_received_dir();
+        assert_eq!(
+            crate::downloads::user_visible_location(),
+            "the gate's run directory",
+            "the stop path's label must not probe the user's Downloads"
+        );
+
+        let device = DeviceId([0x53; 32]);
+        let generation = 0x6A09_E667_F3BC_C908u64;
+        let window = live_screen_request(device, generation);
+        let sink = super::sink(&device, MIRROR_SCREEN).expect("live screen request owns a sink");
+        let idr = fixture_idr();
+        let rotated = include_bytes!("mac/testdata/red-32x32.annexb").to_vec();
+        sink.config(fixture_config(128, 128, generation));
+        sink.packet(true, 0, idr.clone());
+
+        let dir = tempfile::tempdir().expect("disposable recording dir");
+        let path = dir.path().join("Mirror rotation.mp4");
+        let mut recorder =
+            crate::win::mp4::MirrorRecorder::new(path.clone(), 128, 128, super::OPTIONS.fps, None);
+        if let Some(sps_pps) = super::LAST_SPS_PPS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .and_then(|m| m.get(&window).cloned())
+        {
+            recorder.set_sps_pps(&sps_pps);
+        }
+        {
+            let mut guard = super::RECORDERS.lock().unwrap_or_else(|e| e.into_inner());
+            let map = guard.get_or_insert_with(HashMap::new);
+            map.insert(window, recorder);
+            super::ACTIVE_RECORDERS.store(map.len(), Ordering::Release);
+        }
+        sink.packet(true, 33_333, idr.clone());
+        sink.packet(true, 66_666, idr.clone());
+        assert!(super::is_recording(&window), "same-format packets keep recording");
+
+        // Rotation: a new size, then a keyframe encoded with a new SPS.
+        sink.config(fixture_config(32, 32, generation));
+        assert!(!super::is_recording(&window), "a format change stops the recording");
+        sink.packet(true, 100_000, rotated.clone());
+
+        let notice = "Saved Mirror rotation.mp4";
+        let started = Instant::now();
+        while super::last_notice(&window) != notice && started.elapsed() < Duration::from_secs(10) {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(super::last_notice(&window), notice, "the stop reports the saved file");
+
+        let bytes = std::fs::read(&path).expect("the recording before the change is saved");
+        fn contains(hay: &[u8], needle: &[u8]) -> bool {
+            hay.windows(needle.len()).any(|w| w == needle)
+        }
+        fn sps(annexb: &[u8]) -> Vec<u8> {
+            use crate::win::mp4::{nal_type, split_annexb};
+            split_annexb(annexb).into_iter().find(|nal| nal_type(nal) == Some(7)).expect("SPS").to_vec()
+        }
+        assert_eq!(&bytes[4..8], b"ftyp");
+        assert!(contains(&bytes, b"moov"), "the saved file is finalized");
+        assert!(!contains(&bytes, b"soun"), "video-only file must not carry an audio track");
+        assert!(contains(&bytes, &sps(&idr)), "avcC keeps the recorded SPS");
+        assert!(!contains(&bytes, &sps(&rotated)), "the rotated stream is not muxed in");
+        let avc1 = bytes.windows(4).rposition(|w| w == b"avc1").expect("avc1 sample entry") + 4;
+        assert_eq!(&bytes[avc1 + 24..avc1 + 28], &[0u8, 128, 0, 128], "avc1 keeps 128x128");
+        let stsz = bytes.windows(4).rposition(|w| w == b"stsz").expect("stsz") + 4;
+        assert_eq!(bytes[stsz + 8..stsz + 12], 2u32.to_be_bytes(), "the two pre-rotation frames");
+        assert_eq!(std::fs::read_dir(dir.path()).expect("recording dir").count(), 1, "one file, no partials");
+
+        sink.ended();
+        drop_fixture_window(window);
+        assert!(path.is_file(), "the saved recording survives the stream closing");
     }
 
     #[cfg(feature = "test-support")]

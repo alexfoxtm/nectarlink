@@ -128,6 +128,12 @@ impl MirrorRecorder {
         }
     }
 
+    /// Media Foundation keeps one writer across format changes, so the
+    /// recording never ends on its own here.
+    pub fn format_changed(&self) -> Option<&str> {
+        None
+    }
+
     /// Updates audio configuration before the first keyframe initializes the writer.
     pub fn on_audio_config(&mut self, rate: u32, channels: u8) {
         if self.writer.is_none() && rate > 0 && channels > 0 {
