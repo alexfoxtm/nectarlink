@@ -341,7 +341,7 @@ impl MirrorRecorder {
     pub fn on_audio_config(&mut self, _rate: u32, _channels: u8) {}
 
     /// Processes an incoming Annex-B H.264 access unit, streaming it to disk.
-    pub fn on_packet(&mut self, keyframe: bool, time_us: u64, data: &[u8]) -> Result<(), String> {
+    pub fn on_packet(&mut self, _keyframe: bool, time_us: u64, data: &[u8]) -> Result<(), String> {
         if let Some(err) = self.poison.clone() {
             return Err(err);
         }
@@ -385,7 +385,7 @@ impl MirrorRecorder {
             return Ok(());
         }
 
-        let is_keyframe = keyframe || has_idr_slice(data);
+        let is_keyframe = has_idr_slice(data);
         if !self.got_keyframe {
             if !is_keyframe {
                 return Ok(());
@@ -1068,14 +1068,8 @@ mod tests {
         assert!(contains_subslice(&bytes, b"avc1"), "missing avc1 sample entry");
         assert!(contains_subslice(&bytes, b"avcC"), "missing avcC config box");
         // The finalized file must describe the real stream, not a fallback.
-        assert!(
-            contains_subslice(&bytes, &fixture_sps),
-            "moov must carry the fixture SPS"
-        );
-        assert!(
-            contains_subslice(&bytes, &fixture_pps),
-            "moov must carry the fixture PPS"
-        );
+        assert!(contains_subslice(&bytes, &fixture_sps), "moov must carry the fixture SPS");
+        assert!(contains_subslice(&bytes, &fixture_pps), "moov must carry the fixture PPS");
     }
 
     #[test]
@@ -1111,14 +1105,8 @@ mod tests {
         let collision = dir.path().join("collision.mp4");
         std::fs::write(&collision, b"owner-bytes").unwrap();
         let mut rec = MirrorRecorder::new(collision.clone(), 32, 32, 30, None);
-        assert!(
-            rec.on_packet(false, 0, fixture).is_err(),
-            "collision must fail, not truncate"
-        );
-        assert_eq!(
-            std::fs::read(&collision).unwrap(),
-            b"owner-bytes".to_vec()
-        );
+        assert!(rec.on_packet(false, 0, fixture).is_err(), "collision must fail, not truncate");
+        assert_eq!(std::fs::read(&collision).unwrap(), b"owner-bytes".to_vec());
         assert!(rec.finish().is_err());
         assert_eq!(
             std::fs::read(&collision).unwrap(),
@@ -1126,20 +1114,22 @@ mod tests {
             "failure cleanup must not unlink an unowned file"
         );
 
+        // A sender flag cannot turn a non-IDR slice into a random-access start.
+        let flagged_path = dir.path().join("flagged-non-idr.mp4");
+        let mut rec = MirrorRecorder::new(flagged_path.clone(), 32, 32, 30, None);
+        rec.set_sps_pps(&params);
+        rec.on_packet(true, 0, &[0, 0, 0, 1, 0x41, 0x80]).unwrap();
+        assert!(!flagged_path.exists());
+        assert!(rec.finish().is_err());
+
         // Missing sets fail closed: an IDR slice alone without SPS/PPS cannot
         // fall back to a fabricated baseline configuration.
         let idr_only: Vec<u8> = vec![0, 0, 0, 1, 0x65, 0x88, 0x84, 0x21];
         let missing_path = dir.path().join("missing-sets.mp4");
         let mut rec = MirrorRecorder::new(missing_path.clone(), 32, 32, 30, None);
-        assert!(
-            rec.on_packet(true, 0, &idr_only).is_err(),
-            "missing SPS/PPS must fail, no fallback"
-        );
+        assert!(rec.on_packet(true, 0, &idr_only).is_err(), "missing SPS/PPS must fail, no fallback");
         assert!(rec.finish().is_err());
-        assert!(
-            !missing_path.exists(),
-            "failed first sample must leave no orphan partial"
-        );
+        assert!(!missing_path.exists(), "failed first sample must leave no orphan partial");
 
         // Resolution change after the first sample is a sticky failure:
         // the next sample and `finish` refuse, and owned cleanup removes the
@@ -1148,15 +1138,9 @@ mod tests {
         let mut rec = MirrorRecorder::new(reconfig_path.clone(), 32, 32, 30, None);
         rec.on_packet(false, 0, fixture).unwrap();
         rec.on_config(64, 64);
-        assert!(
-            rec.on_packet(false, 33_333, fixture).is_err(),
-            "resolution change must fail honestly"
-        );
+        assert!(rec.on_packet(false, 33_333, fixture).is_err(), "resolution change must fail honestly");
         assert!(rec.finish().is_err());
-        assert!(
-            !reconfig_path.exists(),
-            "poisoned recording must not finalize a partial"
-        );
+        assert!(!reconfig_path.exists(), "poisoned recording must not finalize a partial");
 
         // Parameter-set change after the first sample is likewise sticky.
         let sps_change_path = dir.path().join("sps-change.mp4");
@@ -1167,15 +1151,9 @@ mod tests {
             other[6] ^= 0x01;
         }
         rec.set_sps_pps(&other);
-        assert!(
-            rec.on_packet(false, 33_333, fixture).is_err(),
-            "SPS change must fail honestly"
-        );
+        assert!(rec.on_packet(false, 33_333, fixture).is_err(), "SPS change must fail honestly");
         assert!(rec.finish().is_err());
-        assert!(
-            !sps_change_path.exists(),
-            "SPS-poisoned recording must not finalize a partial"
-        );
+        assert!(!sps_change_path.exists(), "SPS-poisoned recording must not finalize a partial");
     }
 
     #[test]
