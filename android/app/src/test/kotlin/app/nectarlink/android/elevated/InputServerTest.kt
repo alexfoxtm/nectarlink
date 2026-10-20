@@ -56,4 +56,18 @@ class InputServerTest {
             assertFalse(cmd, InputServer.allowedCommand(cmd))
         }
     }
+    @Test
+    fun aBrowserUrlMayHaveAnHtmlRepresentationToo() {
+        assertTrue(InputServer.linkMimeTypesAllowed(listOf("text/plain", "text/html")))
+        assertTrue(InputServer.linkMimeTypesAllowed(listOf("text/uri-list")))
+    }
+
+    @Test
+    fun htmlWithoutPlainTextAndNonTextRepresentationsStayOut() {
+        assertFalse(InputServer.linkMimeTypesAllowed(emptyList()))
+        assertFalse(InputServer.linkMimeTypesAllowed(listOf("text/html")))
+        assertFalse(InputServer.linkMimeTypesAllowed(listOf("text/plain", "image/png")))
+        assertFalse(InputServer.linkMimeTypesAllowed(listOf("text/plain", "application/octet-stream")))
+    }
+
 }

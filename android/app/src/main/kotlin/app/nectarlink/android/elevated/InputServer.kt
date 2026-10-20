@@ -302,13 +302,9 @@ object InputServer {
         clip: android.content.ClipData,
         desc: android.content.ClipDescription,
     ) {
-        if (clip.itemCount != 1 || desc.mimeTypeCount != 1) return
-        val mime = desc.getMimeType(0)
-        if (mime != android.content.ClipDescription.MIMETYPE_TEXT_PLAIN &&
-            mime != android.content.ClipDescription.MIMETYPE_TEXT_URILIST
-        ) {
-            return
-        }
+        if (clip.itemCount != 1 || !linkMimeTypesAllowed(
+                (0 until desc.mimeTypeCount).map(desc::getMimeType),
+            )) return
         val stamp = desc.timestamp
         val age = linkCopyAgeMs(stamp, System.currentTimeMillis(), lastLinkStamp) ?: return
         val text = clip.getItemAt(0).text?.toString() ?: return
@@ -321,6 +317,11 @@ object InputServer {
             out.flush()
         }
     }
+
+    /** Rich-text browsers may include HTML alongside the same plain-text URL. */
+    internal fun linkMimeTypesAllowed(types: List<String>): Boolean =
+        types.any { it == "text/plain" || it == "text/uri-list" } &&
+            types.all { it == "text/plain" || it == "text/uri-list" || it == "text/html" }
 
     /** A copied link is offered only this soon after it was copied. */
     private const val LINK_MAX_AGE_MS = 60_000L
