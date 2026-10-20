@@ -65,6 +65,11 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.PlainTooltip
+import androidx.compose.material3.TooltipAnchorPosition
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -780,8 +785,30 @@ fun HomeScreen(
 }
 
 /** Names the reason on a capability-greyed Home action for accessibility. */
-private fun Modifier.capabilityReason(show: Boolean, reason: String): Modifier =
-    if (!show) this else semantics { stateDescription = reason }
+private fun Modifier.capabilityReason(reason: String?): Modifier =
+    if (reason == null) this else semantics { stateDescription = reason }
+
+/**
+ * Shows [reason] on long-press or hover over a capability-greyed Home action.
+ * The anchor watches the initial pointer pass, so it still fires over the
+ * disabled button, and stays inert while [reason] is null.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CapabilityReasonTooltip(
+    reason: String?,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
+        tooltip = { if (reason != null) PlainTooltip { Text(reason) } },
+        state = rememberTooltipState(),
+        modifier = modifier,
+        enableUserInput = reason != null,
+        content = content,
+    )
+}
 
 @Composable
 private fun Modifier.guideHighlightRing(highlighted: Boolean): Modifier {
@@ -1419,6 +1446,11 @@ private fun PcCard(
             val deckEnabled = device.canOpenDeck()
             val webcamEnabled = device.canOpenWebcam()
             val browsePcEnabled = device.canBrowsePcFiles()
+            // Offline-greyed actions carry no reason; the status dot and wake UI explain those.
+            val controlPcReason = unsupportedReason.takeIf { device.online && !controlPcEnabled }
+            val deckReason = unsupportedReason.takeIf { device.online && !deckEnabled }
+            val webcamReason = unsupportedReason.takeIf { device.online && !webcamEnabled }
+            val browsePcReason = pcFilesUnavailableReason.takeIf { device.online && !browsePcEnabled }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1496,37 +1528,41 @@ private fun PcCard(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Button(
-                        contentPadding = CardButtonPadding,
-                        enabled = controlPcEnabled,
-                        colors = primaryBtn,
-                        onClick = { onRemote(device.id) },
-                        modifier = Modifier.weight(1f).heightIn(min = 46.dp)
-                            .capabilityReason(device.online && !controlPcEnabled, unsupportedReason),
-                    ) {
-                        Icon(
-                            imageVector = RemotePcIcon,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        ButtonLabel(stringResource(R.string.action_remote_pc))
+                    CapabilityReasonTooltip(controlPcReason, Modifier.weight(1f)) {
+                        Button(
+                            contentPadding = CardButtonPadding,
+                            enabled = controlPcEnabled,
+                            colors = primaryBtn,
+                            onClick = { onRemote(device.id) },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp)
+                                .capabilityReason(controlPcReason),
+                        ) {
+                            Icon(
+                                imageVector = RemotePcIcon,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            ButtonLabel(stringResource(R.string.action_remote_pc))
+                        }
                     }
-                    FilledTonalButton(
-                        contentPadding = CardButtonPadding,
-                        enabled = deckEnabled,
-                        colors = tonal,
-                        onClick = { onDeck(device.id) },
-                        modifier = Modifier.weight(1f).heightIn(min = 46.dp)
-                            .capabilityReason(device.online && !deckEnabled, unsupportedReason),
-                    ) {
-                        Icon(
-                            imageVector = DeckGridIcon,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        ButtonLabel(stringResource(R.string.action_deck_pc))
+                    CapabilityReasonTooltip(deckReason, Modifier.weight(1f)) {
+                        FilledTonalButton(
+                            contentPadding = CardButtonPadding,
+                            enabled = deckEnabled,
+                            colors = tonal,
+                            onClick = { onDeck(device.id) },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp)
+                                .capabilityReason(deckReason),
+                        ) {
+                            Icon(
+                                imageVector = DeckGridIcon,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            ButtonLabel(stringResource(R.string.action_deck_pc))
+                        }
                     }
                 }
                 Row(
@@ -1548,21 +1584,23 @@ private fun PcCard(
                         Spacer(Modifier.width(6.dp))
                         ButtonLabel(stringResource(R.string.action_desk_pc))
                     }
-                    FilledTonalButton(
-                        contentPadding = CardButtonPadding,
-                        enabled = webcamEnabled,
-                        colors = tonal,
-                        onClick = { onWebcam(device.id) },
-                        modifier = Modifier.weight(1f).heightIn(min = 44.dp)
-                            .capabilityReason(device.online && !webcamEnabled, unsupportedReason),
-                    ) {
-                        Icon(
-                            imageVector = CameraLensIcon,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        ButtonLabel(stringResource(R.string.action_webcam_pc))
+                    CapabilityReasonTooltip(webcamReason, Modifier.weight(1f)) {
+                        FilledTonalButton(
+                            contentPadding = CardButtonPadding,
+                            enabled = webcamEnabled,
+                            colors = tonal,
+                            onClick = { onWebcam(device.id) },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)
+                                .capabilityReason(webcamReason),
+                        ) {
+                            Icon(
+                                imageVector = CameraLensIcon,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            ButtonLabel(stringResource(R.string.action_webcam_pc))
+                        }
                     }
                 }
 
@@ -1639,21 +1677,22 @@ private fun PcCard(
                             Spacer(Modifier.width(6.dp))
                             ButtonLabel(stringResource(R.string.action_send_clipboard))
                         }
-                        FilledTonalButton(
-                            contentPadding = CardButtonPadding,
-                            enabled = browsePcEnabled,
-                            colors = tonal,
-                            onClick = { onBrowsePcFiles(device.id) },
-                            modifier = Modifier.weight(1f)
-                                .capabilityReason(device.online && !browsePcEnabled, pcFilesUnavailableReason),
-                        ) {
-                            Icon(
-                                imageVector = PcFolderIcon,
-                                contentDescription = null,
-                                modifier = Modifier.size(15.dp),
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            ButtonLabel(stringResource(R.string.action_browse_pc_files))
+                        CapabilityReasonTooltip(browsePcReason, Modifier.weight(1f)) {
+                            FilledTonalButton(
+                                contentPadding = CardButtonPadding,
+                                enabled = browsePcEnabled,
+                                colors = tonal,
+                                onClick = { onBrowsePcFiles(device.id) },
+                                modifier = Modifier.fillMaxWidth().capabilityReason(browsePcReason),
+                            ) {
+                                Icon(
+                                    imageVector = PcFolderIcon,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(15.dp),
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                ButtonLabel(stringResource(R.string.action_browse_pc_files))
+                            }
                         }
                     }
                 }
