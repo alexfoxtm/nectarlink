@@ -1932,7 +1932,7 @@ fn give_up(window: Window, id: u64, reason: String) {
     });
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "macos"))]
 static FINISHED_DECODERS: Mutex<Option<HashSet<u64>>> = Mutex::new(None);
 
 /// The decoder thread: decodes everything (later pictures depend on

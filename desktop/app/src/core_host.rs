@@ -102,7 +102,7 @@ pub fn start(data_dir: PathBuf, platform: Arc<dyn Platform>) -> std::io::Result<
 }
 
 /// In-memory host for code-only receiver tests: no Node, socket, identity or peer is started.
-#[cfg(test)]
+#[cfg(all(test, target_os = "macos"))]
 pub(crate) fn start_receiver_fixture(data_dir: PathBuf) {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(1)
