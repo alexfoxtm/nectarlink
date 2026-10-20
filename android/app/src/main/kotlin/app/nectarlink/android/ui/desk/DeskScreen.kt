@@ -53,6 +53,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -66,6 +68,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.nectarlink.android.R
 import app.nectarlink.android.core.Core
 import app.nectarlink.android.core.Device
+import app.nectarlink.android.ui.home.canControlPc
+import app.nectarlink.android.ui.home.canOpenDeck
 import app.nectarlink.android.ui.remote.RemoteMode
 import app.nectarlink.core.Link
 import app.nectarlink.core.MediaAction
@@ -415,6 +419,28 @@ fun DeskScreen(
                 }
             }
 
+            // Negotiated capability gates, same policy as the Home PC card:
+            // without `input.inject` / `deck.actions` the desktop answers
+            // Unsupported (Mac withholds both), so the entries stay greyed
+            // with the existing unsupported copy. Clock, media card, wake,
+            // and Lock PC stay as before (local render / media / `pc.power`,
+            // which Mac advertises).
+            val unsupportedReason = stringResource(R.string.error_unsupported)
+            val controlPcEnabled = device.canControlPc()
+            val deckEnabled = device.canOpenDeck()
+            val controlGating =
+                if (device.online && !controlPcEnabled) {
+                    Modifier.semantics { stateDescription = unsupportedReason }
+                } else {
+                    Modifier
+                }
+            val deckGating =
+                if (device.online && !deckEnabled) {
+                    Modifier.semantics { stateDescription = unsupportedReason }
+                } else {
+                    Modifier
+                }
+
             // Bottom Dock Bar: Symmetric 2×2 Grid of Equal-Width Quick Action Pills
             Column(
                 modifier = Modifier
@@ -428,15 +454,15 @@ fun DeskScreen(
                 ) {
                     DeskActionButton(
                         label = stringResource(R.string.desk_pc_screen),
-                        enabled = device.online,
+                        enabled = controlPcEnabled,
                         onClick = { onOpenRemote(RemoteMode.Screen) },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).then(controlGating),
                     )
                     DeskActionButton(
                         label = stringResource(R.string.action_remote_pc),
-                        enabled = device.online,
+                        enabled = controlPcEnabled,
                         onClick = { onOpenRemote(RemoteMode.Touchpad) },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).then(controlGating),
                     )
                 }
                 Row(
@@ -445,9 +471,9 @@ fun DeskScreen(
                 ) {
                     DeskActionButton(
                         label = stringResource(R.string.action_deck_pc),
-                        enabled = device.online,
+                        enabled = deckEnabled,
                         onClick = onOpenDeck,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).then(deckGating),
                     )
                     DeskActionButton(
                         label = stringResource(R.string.action_lock_pc),
