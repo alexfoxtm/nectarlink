@@ -2225,11 +2225,31 @@ mod tests {
 /// Runs on macOS only: it decodes through VideoToolbox.
 #[cfg(all(test, target_os = "macos"))]
 mod mac_receive_fixture {
-    use std::time::{Duration, Instant};
+    use std::{
+        net::SocketAddr,
+        sync::{Arc, Mutex, OnceLock},
+        time::{Duration, Instant},
+    };
 
-    use nectarlink_core::{DeviceId, MIRROR_SCREEN, MirrorConfig, MirrorInput};
+    use nectarlink_core::{
+        DeviceId, DeviceInfo, DeviceKind, LinkState, MIRROR_CAPTURE, MIRROR_CORRELATION, MIRROR_SCREEN,
+        MIRROR_VIEW, MirrorConfig, MirrorInput, MirrorSend, MirrorStart, Node, NodeConfig, NodeEvent,
+        PacketKind, PlainKeyProtector, Platform,
+    };
 
     use super::{Phase, Shown, Window};
+
+    /// The two receive fixtures share the production mirror state and global
+    /// core-host seam, so serialize them and start that host at most once.
+    static FIXTURE_LOCK: Mutex<()> = Mutex::new(());
+    static FIXTURE_HOST: OnceLock<()> = OnceLock::new();
+
+    fn fixture_host() {
+        FIXTURE_HOST.get_or_init(|| {
+            let directory = tempfile::tempdir().expect("disposable core-host state");
+            crate::core_host::start_receiver_fixture(directory.path().to_path_buf());
+        });
+    }
 
     /// The committed synthetic keyframe: solid red 128x128 baseline IDR.
     fn fixture_idr() -> Vec<u8> {
@@ -2294,13 +2314,229 @@ mod mac_receive_fixture {
             s.pending_stops.remove(&window);
         });
         super::clear_window_buffers(&window);
+        super::ffi::video_clear(&window.key());
+    }
+
+    #[derive(Debug, Default)]
+    struct NativeReceiverPlatform {
+        sink_requests: Mutex<Vec<(DeviceId, u32)>>,
+    }
+
+    impl Platform for NativeReceiverPlatform {
+        fn mirror_sink(&self, peer: &DeviceId, session: u32) -> Option<Arc<dyn nectarlink_core::MirrorSink>> {
+            self.sink_requests.lock().unwrap_or_else(|e| e.into_inner()).push((*peer, session));
+            super::sink(peer, session)
+        }
+    }
+
+    #[derive(Debug)]
+    struct SyntheticPhonePlatform {
+        requests: tokio::sync::mpsc::UnboundedSender<(DeviceId, MirrorStart)>,
+    }
+
+    impl Platform for SyntheticPhonePlatform {
+        fn mirror_requested(&self, peer: &DeviceId, options: &MirrorStart) -> Result<(), String> {
+            // Synthetic approval only: no capture, microphone, or OS prompt.
+            self.requests.send((*peer, options.clone())).map_err(|_| "fixture receiver ended".into())
+        }
+    }
+
+    fn fixture_device(name: &str, kind: DeviceKind) -> DeviceInfo {
+        DeviceInfo {
+            name: name.into(),
+            kind,
+            os: if kind == DeviceKind::Phone { "android" } else { "macos" }.into(),
+            os_ver: "fixture".into(),
+            model: None,
+            accent: None,
+            screen: None,
+            install_id: None,
+        }
+    }
+
+    fn fixture_node_config(
+        directory: &std::path::Path,
+        name: &str,
+        kind: DeviceKind,
+        capabilities: &[&str],
+    ) -> NodeConfig {
+        let mut config = NodeConfig::new(directory, fixture_device(name, kind), "0.0.1-test");
+        config.away_mode = false;
+        config.lan_discovery = false;
+        config.adb_server = None;
+        config.usb_port = None;
+        config.key_protector = Some(Arc::new(PlainKeyProtector));
+        // Only the test-only screen-mirror gates are enabled; no capture
+        // implementation, input, audio, or unrelated capability is present.
+        config.capabilities = capabilities.iter().map(|cap| (*cap).to_owned()).collect();
+        config
+    }
+
+    async fn wait_for_link(receiver: &Node, phone: DeviceId) -> Result<(), String> {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if matches!(receiver.link(&phone, None), LinkState::Online { .. }) {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .map_err(|_| "authenticated loopback link did not come online within 5 seconds".to_owned())
+    }
+
+    async fn wait_for_mirroring_event(
+        events: &mut tokio::sync::broadcast::Receiver<NodeEvent>,
+        phone: DeviceId,
+        on: bool,
+    ) -> Result<(), String> {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let event = events.recv().await.map_err(|error| error.to_string())?;
+                if matches!(event, NodeEvent::Mirroring { device, session: MIRROR_SCREEN, on: event_on }
+                    if device == phone && event_on == on)
+                {
+                    return Ok::<(), String>(());
+                }
+            }
+        })
+        .await
+        .map_err(|_| format!("core did not emit mirror state on={on} within 5 seconds"))?
+    }
+
+    async fn wait_for_frame_clear(window: Window) -> Result<(), String> {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if super::latest_bitmap(&window).is_none() {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .map_err(|_| "native video frame was not cleared when the authenticated stream ended".to_owned())
+    }
+
+    async fn wait_for_frame(window: Window) -> Option<crate::win::image::Bitmap> {
+        tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                if let Some(frame) = super::latest_bitmap(&window)
+                    && frame.width == 128
+                    && frame.height == 128
+                {
+                    return Some(frame);
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .ok()
+        .flatten()
+    }
+
+    async fn exercise_authenticated_stream(
+        receiver: &Node,
+        phone: &Node,
+        receiver_platform: &NativeReceiverPlatform,
+        mut requests: tokio::sync::mpsc::UnboundedReceiver<(DeviceId, MirrorStart)>,
+    ) -> Result<(), String> {
+        let receiver_id = receiver.device_id();
+        let phone_id = phone.device_id();
+        wait_for_link(receiver, phone_id).await?;
+
+        let mut events = receiver.events();
+        tokio::time::timeout(Duration::from_secs(10), receiver.mirror_start(phone_id, super::OPTIONS))
+            .await
+            .map_err(|_| "real Node::mirror_start exceeded 10 seconds".to_owned())?
+            .map_err(|error| format!("real Node::mirror_start failed: {error}"))?;
+        let (asked_by, options) = tokio::time::timeout(Duration::from_secs(5), requests.recv())
+            .await
+            .map_err(|_| "phone platform did not receive the real mirror.start".to_owned())?
+            .ok_or_else(|| "synthetic phone platform closed before mirror.start".to_owned())?;
+        if asked_by != receiver_id {
+            return Err("phone received mirror.start from a different authenticated peer".into());
+        }
+        if options.session != MIRROR_SCREEN || options.audio || options.app.is_some() {
+            return Err("fixture request must be screen-only, video-only, and app-free".into());
+        }
+        let core_request = options.request.ok_or_else(|| "core did not stamp mirror.start".to_owned())?;
+
+        // This is the app-owned request state that the production request()
+        // path records before invoking Node::mirror_start. It lets the real
+        // Platform::mirror_sink callback select production mirror::sink().
+        let window = Window::screen(phone_id);
+        let app_request = core_request ^ 0x9E37_79B9_7F4A_7C15;
+        super::state(|state| {
+            state.windows.insert(window, Shown { phase: Phase::Asking, app: None, pkg: None });
+            state.requests.insert(window, app_request);
+        });
+
+        let stream = Arc::new(
+            tokio::time::timeout(Duration::from_secs(10), phone.mirror_open(receiver_id))
+                .await
+                .map_err(|_| "real sender Node::mirror_open exceeded 10 seconds".to_owned())?
+                .map_err(|error| format!("real sender Node::mirror_open failed: {error}"))?,
+        );
+        let send_result = async {
+            let config = MirrorConfig {
+                codec: "h264".into(),
+                width: 128,
+                height: 128,
+                session: MIRROR_SCREEN,
+                request: Some(core_request),
+            };
+            let config_stream = stream.clone();
+            let config_sent = tokio::time::timeout(
+                Duration::from_secs(5),
+                tokio::task::spawn_blocking(move || config_stream.send(PacketKind::Config, 0, config.to_cbor())),
+            )
+            .await
+            .map_err(|_| "sending mirror config exceeded 5 seconds".to_owned())?
+            .map_err(|error| format!("sending mirror config panicked: {error}"))?;
+            if config_sent != MirrorSend::Queued {
+                return Err(format!("real mirror config was not queued: {config_sent:?}"));
+            }
+            let packet_sent = stream.send(PacketKind::Keyframe, 0, fixture_idr());
+            if packet_sent != MirrorSend::Queued {
+                return Err(format!("real H.264 keyframe was not queued: {packet_sent:?}"));
+            }
+
+            wait_for_mirroring_event(&mut events, phone_id, true).await?;
+            let frame = wait_for_frame(window)
+                .await
+                .ok_or_else(|| "production VideoToolbox path did not publish 128x128 within 10 seconds".to_owned())?;
+            let red = frame.bgra.as_chunks::<4>().0.iter().all(|pixel| {
+                pixel[0] <= 10 && pixel[1] <= 10 && pixel[2] >= 244
+            });
+            if !red {
+                return Err("production VideoToolbox output did not match the committed red keyframe".into());
+            }
+
+            let routed = receiver_platform
+                .sink_requests
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .contains(&(phone_id, MIRROR_SCREEN));
+            if !routed {
+                return Err("core did not route the authenticated peer to Platform::mirror_sink".into());
+            }
+            Ok::<(), String>(())
+        }
+        .await;
+
+        // Closing the real stream makes core::mirror::receive call the
+        // production sink's ended() method; the decoder then clears VideoView.
+        stream.close();
+        send_result?;
+        wait_for_mirroring_event(&mut events, phone_id, false).await?;
+        wait_for_frame_clear(window).await
     }
 
     #[test]
     fn mac_view_only_receive_shows_decoded_frame_and_cancels() {
+        let _fixture = FIXTURE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _ = tracing_subscriber::fmt().with_max_level(tracing::Level::DEBUG).with_test_writer().try_init();
-        let directory = tempfile::tempdir().expect("disposable receiver state");
-        crate::core_host::start_receiver_fixture(directory.path().to_path_buf());
+        fixture_host();
         // The Mac receive seam is present; capture and audio stay refused.
         const {
             assert!(super::VIEW_ONLY, "mac stays view-only until native acceptance");
@@ -2401,5 +2637,95 @@ mod mac_receive_fixture {
         assert_eq!(kept.bgra, successor.bgra, "successor pixels survive the stale stream");
         next.ended();
         drop_fixture_window(window_b);
+    }
+
+    #[test]
+    fn transport_to_video_frame_uses_two_authenticated_nodes() {
+        let _fixture = FIXTURE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _ = tracing_subscriber::fmt().with_max_level(tracing::Level::DEBUG).with_test_writer().try_init();
+        fixture_host();
+        const {
+            assert!(super::VIEW_ONLY);
+            assert!(!super::OPTIONS.audio);
+        }
+
+        let receiver_dir = tempfile::tempdir().expect("disposable receiver node state");
+        let phone_dir = tempfile::tempdir().expect("disposable phone node state");
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .expect("fixture Tokio runtime");
+        runtime.block_on(async {
+            let (request_tx, request_rx) = tokio::sync::mpsc::unbounded_channel();
+            let receiver_platform = Arc::new(NativeReceiverPlatform::default());
+            let phone_platform = Arc::new(SyntheticPhonePlatform { requests: request_tx });
+            let receiver_config = fixture_node_config(
+                receiver_dir.path(),
+                "Synthetic Mac",
+                DeviceKind::Desktop,
+                &[MIRROR_VIEW, MIRROR_CORRELATION],
+            );
+            let phone_config = fixture_node_config(
+                phone_dir.path(),
+                "Synthetic Phone",
+                DeviceKind::Phone,
+                &[MIRROR_CAPTURE, MIRROR_CORRELATION],
+            );
+            let receiver = tokio::time::timeout(
+                Duration::from_secs(10),
+                Node::start(receiver_config, receiver_platform.clone()),
+            )
+            .await
+            .expect("synthetic receiver node starts within 10 seconds")
+            .expect("synthetic receiver node starts");
+            let phone = match tokio::time::timeout(
+                Duration::from_secs(10),
+                Node::start(phone_config, phone_platform),
+            )
+            .await
+            {
+                Ok(Ok(phone)) => phone,
+                Ok(Err(error)) => {
+                    let _ = tokio::time::timeout(Duration::from_secs(5), receiver.shutdown()).await;
+                    panic!("synthetic phone node starts: {error}");
+                }
+                Err(_) => {
+                    let _ = tokio::time::timeout(Duration::from_secs(5), receiver.shutdown()).await;
+                    panic!("synthetic phone node starts within 10 seconds");
+                }
+            };
+
+            let result = async {
+                let mut invitation = tokio::time::timeout(Duration::from_secs(10), receiver.pairing_start_qr())
+                    .await
+                    .map_err(|_| "receiver pairing invitation exceeded 10 seconds".to_owned())?
+                    .map_err(|error| format!("receiver pairing invitation failed: {error}"))?;
+                let port = invitation
+                    .addrs
+                    .first()
+                    .map(SocketAddr::port)
+                    .ok_or_else(|| "receiver pairing invitation has no endpoint port".to_owned())?;
+                invitation.addrs = vec![SocketAddr::from(([127, 0, 0, 1], port))];
+                if !invitation.addrs.iter().all(|address| address.ip().is_loopback()) {
+                    return Err("pairing invitation contains a non-loopback endpoint".into());
+                }
+                let pairing_uri = invitation.to_uri();
+                tokio::time::timeout(Duration::from_secs(10), phone.pairing_join(&pairing_uri))
+                    .await
+                    .map_err(|_| "synthetic loopback pairing exceeded 10 seconds".to_owned())?
+                    .map_err(|error| format!("synthetic loopback pairing failed: {error}"))?;
+                exercise_authenticated_stream(&receiver, &phone, &receiver_platform, request_rx).await
+            }
+            .await;
+
+            let phone_shutdown = tokio::time::timeout(Duration::from_secs(5), phone.shutdown()).await.is_ok();
+            let receiver_shutdown =
+                tokio::time::timeout(Duration::from_secs(5), receiver.shutdown()).await.is_ok();
+            drop_fixture_window(Window::screen(phone.device_id()));
+            assert!(phone_shutdown, "synthetic phone node shutdown exceeded 5 seconds");
+            assert!(receiver_shutdown, "synthetic receiver node shutdown exceeded 5 seconds");
+            assert!(result.is_ok(), "{}", result.unwrap_err());
+        });
     }
 }
