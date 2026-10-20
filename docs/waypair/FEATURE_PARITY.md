@@ -85,3 +85,43 @@ qualification and publication are recorded separately by Root. The resource audi
 in `LOCKED_PHONE_RESOURCE_PLAN.md` makes no measured battery claim and changes no
 transport cadence. Native capture Services remain a design only. Cloud candidate
 `0e64fa5b` is retained separately and is not the production Cloud10 source.
+
+## Windows parity execution queue — 2026-10-19 Wave25
+
+Alex explicitly wants the disabled Mac rows implemented, with the current Rust/Qt
+and Kotlin/Compose stack retained. Grey controls describe today's build, not a
+product decision to abandon those features. Do not announce a capability merely
+because its UI, an SDK symbol or a Windows implementation exists.
+
+Upstream rechecked at 2026-10-20 00:41 UTC: PR24 remains open at `9c0f13d7`,
+canonical main is `5bdcadbf` (not yet integrated; photo-backup/hotspot changes
+remain queued separately). Reuse upstream protocol/Android improvements and
+prepare focused generic contributions after the maintainer's PR24 merge gate;
+private R2 code stays exclusively in this fork.
+
+| Priority/slice | Real Mac implementation work | Admission / current status |
+|---|---|---|
+| P0 Galaxy SIM voice continuity | Supported full-duplex call route, Mac microphone/speaker transport, safe handback | Hardware route unproven; next attended probe deferred. Ringing/answer/decline is not voice acceptance. No personal-call construction/capture/routing without fresh explicit authorization. |
+| First video slice: H.264 screen receive | VideoToolbox/CoreMedia/CoreVideo decoder; Annex-B SPS/PPS/access units; bounded NV12 stride/color conversion | Cursor Auto source implementation dispatched. Keep `mirror.view` and UI disabled until Root synthetic decode and real transport/render gates pass. No codec-library binary bundling. |
+| Mac-to-phone screen share | ScreenCaptureKit capture plus compatible negotiated encoding/transport | Separate source and synthetic route after decoder; explicit owner screen-capture approval before real capture. |
+| Input / keyboard / pointer / local Deck actions | CoreGraphics event adapter, modifier/button cleanup and coordinate mapping | Needs explicit Accessibility approval for actual input; no permission bypass. Phone-side control continues through its existing approval/ADB path. |
+| PC audio / phone speaker | Public macOS capture/playback backend, formats, bounded queues and lifecycle | Independent of SIM-call audio. Explicit permission gate for real system-audio capture; synthetic buffers first. |
+| Phone as microphone / recordings | Native playback and encoding/container backend plus cancellation and device selection | Android mic consent remains authoritative; no microphone execution in this wave. |
+| Virtual webcam | Native CoreMediaIO Camera Extension and frame transport | Separate extension, signing, install approval and distribution qualification; Windows driver cannot be reused as a Mac driver. |
+| Phone file browser / Finder integration | First a bounded in-app browser; Finder/FileProvider integration separately | Preserve Android SAF/file permissions and explicit transfer destinations. Existing transfer Open/Reveal is already real; it is not a mount. |
+| Global Mac media control | Public own-app media APIs or approved app-specific integration | Do not substitute private MediaRemote APIs for Windows' global media-session API. Generic control of arbitrary apps needs a supported-route assessment. |
+| Focus / DND integration | Supported owner-controlled macOS integration | Public API/permission limitations require an honest supported alternative; no private Focus database writes. |
+| Wake / global shortcuts / clipboard files | Native adapters with actual capability/permission checks | Source stubs remain off until verified; no enabling by flag alone. |
+| Native photo/scan menu | Public AppKit Services and caller-pasteboard contract | Source exists; exact declarations verified in registry. Synthetic host menu gate currently HOLD (empty menu, no invocation). Fixture diagnosis active; never count this as native acceptance. |
+| Tray / close-to-tray | Native menu/lifecycle | Explicitly deferred by Alex. Existing Open/Quit source is not permission to enable close-to-tray. |
+
+Release work continues independently: Android98 is already published; installed
+Mac32 remains current. Mac33 UI fixes are committed (`431d4111`, `2ee6ac36`),
+independently source-reviewed and locally compiled. New publication is on hold
+for demonstrated third-party notice/source-offer packaging gaps; repair workers
+own disjoint Mac-packaging and Android-resource scopes. This is not a claim that
+GPL forbids our open-source, independently branded fork. Cloud remains separate.
+
+Liquid Glass / GPUI work is deferred: Alex asked to spend time on roadmap
+implementation instead. No framework rewrite or new visual-effect dependency
+was introduced.
