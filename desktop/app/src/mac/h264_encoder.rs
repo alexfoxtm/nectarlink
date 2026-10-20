@@ -970,5 +970,151 @@ mod tests {
         let mut idr = p_slice_filling(MAX_ACCESS_UNIT);
         idr[4] = 0x65;
         assert!(avcc_to_annexb(&idr, 4, sets).is_err());
+
+        // Refused before any session starts: an odd side, no frame rate, no buffer.
+        assert!(Encoder::new(63, 64, 30, 2_000_000).is_err());
+        assert!(Encoder::new(64, 64, 0, 2_000_000).is_err());
+        // SAFETY: null is refused before it's read.
+        assert!(unsafe { PixelBuffer::retain(ptr::null_mut()) }.is_err());
+    }
+
+    #[link(name = "CoreVideo", kind = "framework")]
+    unsafe extern "C" {
+        static kCVPixelBufferIOSurfacePropertiesKey: CFStringRef;
+
+        fn CVPixelBufferCreate(
+            allocator: CFTypeRef,
+            width: usize,
+            height: usize,
+            pixel_format_type: u32,
+            pixel_buffer_attributes: CFTypeRef,
+            pixel_buffer_out: *mut CVImageBufferRef,
+        ) -> i32;
+        fn CVPixelBufferLockBaseAddress(pixel_buffer: CVImageBufferRef, lock_flags: u64) -> i32;
+        fn CVPixelBufferUnlockBaseAddress(pixel_buffer: CVImageBufferRef, unlock_flags: u64) -> i32;
+        fn CVPixelBufferGetBaseAddressOfPlane(
+            pixel_buffer: CVImageBufferRef,
+            plane_index: usize,
+        ) -> *mut c_void;
+        fn CVPixelBufferGetBytesPerRowOfPlane(pixel_buffer: CVImageBufferRef, plane_index: usize) -> usize;
+        fn CVPixelBufferGetHeightOfPlane(pixel_buffer: CVImageBufferRef, plane_index: usize) -> usize;
+    }
+
+    const SIDE: usize = 64;
+    const DARK: u8 = 60;
+    const BRIGHT: u8 = 190;
+
+    /// An IOSurface-backed video-range NV12 picture, as screen capture gives:
+    /// luma `DARK` on the left half and `BRIGHT` on the right, neutral chroma.
+    fn split_frame() -> PixelBuffer {
+        // SAFETY: the dictionaries retain their keys and values; the buffer
+        // comes back with one reference, released when `owned` drops after
+        // `retain` took its own. Planes are written only while locked, row by
+        // row within the reported bytes per row and plane height.
+        unsafe {
+            let surface = dictionary(&[]).unwrap();
+            let attributes =
+                dictionary(&[(kCVPixelBufferIOSurfacePropertiesKey, surface.get().cast_const())]).unwrap();
+            let mut buffer = ptr::null_mut();
+            let status =
+                CVPixelBufferCreate(ptr::null(), SIDE, SIDE, NV12_VIDEO_RANGE, attributes.get(), &mut buffer);
+            let owned = Owned::new(buffer).filter(|_| status == 0).expect("CVPixelBufferCreate failed");
+            assert_eq!(CVPixelBufferLockBaseAddress(owned.get(), 0), 0);
+            for (plane, rows, fill) in [(0, SIDE, None), (1, SIDE / 2, Some(128))] {
+                let base = CVPixelBufferGetBaseAddressOfPlane(owned.get(), plane).cast::<u8>();
+                let pitch = CVPixelBufferGetBytesPerRowOfPlane(owned.get(), plane);
+                assert!(!base.is_null() && pitch >= SIDE);
+                assert!(CVPixelBufferGetHeightOfPlane(owned.get(), plane) >= rows);
+                for row in 0..rows {
+                    let line = std::slice::from_raw_parts_mut(base.add(row * pitch), SIDE);
+                    for (x, byte) in line.iter_mut().enumerate() {
+                        *byte = fill.unwrap_or(if x < SIDE / 2 { DARK } else { BRIGHT });
+                    }
+                }
+            }
+            assert_eq!(CVPixelBufferUnlockBaseAddress(owned.get(), 0), 0);
+            PixelBuffer::retain(owned.get()).unwrap()
+        }
+    }
+
+    /// The NAL unit types of this encoder's Annex B (4-byte start codes only).
+    fn nal_kinds(annexb: &[u8]) -> Vec<u8> {
+        assert!(annexb.starts_with(&START_CODE));
+        annexb.windows(5).filter(|w| w[..4] == START_CODE).map(|w| w[4] & 0x1f).collect()
+    }
+
+    /// The decoded picture keeps the split: each half's luma near what went
+    /// in, away from the edge between them.
+    fn assert_split(picture: &super::super::h264::Picture) {
+        assert_eq!((picture.width, picture.height), (SIDE as u32, SIDE as u32));
+        let (mut dark, mut bright) = (0u32, 0u32);
+        for row in 0..SIDE {
+            let line = &picture.nv12[row * picture.stride..][..SIDE];
+            for (x, &y) in line.iter().enumerate() {
+                let (want, sum) = if x < SIDE / 2 { (DARK, &mut dark) } else { (BRIGHT, &mut bright) };
+                if x.abs_diff(SIDE / 2) > 4 {
+                    assert!(y.abs_diff(want) <= 20, "luma {y} at ({x}, {row}), sent {want}");
+                }
+                *sum += u32::from(y);
+            }
+        }
+        let half = (SIDE * SIDE / 2) as u32;
+        let (dark, bright) = (dark / half, bright / half);
+        assert!(
+            dark.abs_diff(DARK.into()) <= 12 && bright.abs_diff(BRIGHT.into()) <= 12,
+            "{dark} / {bright}"
+        );
+    }
+
+    /// One IDR, one P frame, and a requested IDR from a real VideoToolbox
+    /// session, each decoded by this app's own VideoToolbox decoder.
+    fn encode_and_decode() {
+        let frame = split_frame();
+        let mut encoder = Encoder::new(SIDE as u32, SIDE as u32, 30, 2_000_000).unwrap();
+        let mut decoder = super::super::h264::Decoder::new_for_codec("h264").unwrap();
+        let mut roundtrip = |time_us: u64, request: bool| {
+            if request {
+                assert!(encoder.request_keyframe());
+            }
+            let units = encoder.encode(&frame, time_us).unwrap();
+            assert_eq!(units.len(), 1, "one access unit per frame");
+            let (keyframe, annexb) = units.into_iter().next().unwrap();
+            assert!(annexb.len() <= MAX_ACCESS_UNIT);
+            let kinds = nal_kinds(&annexb);
+            if keyframe {
+                assert_eq!(kinds[..2], [SPS, PPS], "{kinds:?}");
+                assert!(kinds.contains(&SLICE_IDR), "{kinds:?}");
+            } else {
+                assert!(!kinds.contains(&SPS) && kinds.contains(&SLICE), "{kinds:?}");
+            }
+            let pictures = decoder.decode(&annexb, time_us).unwrap();
+            assert_eq!(pictures.len(), 1, "one picture per access unit");
+            assert_split(&pictures[0]);
+            keyframe
+        };
+        assert!(roundtrip(0, false), "the first frame is an IDR");
+        assert!(!roundtrip(33_333, false), "a P frame between keyframes");
+        assert!(roundtrip(66_666, true), "an IDR on request");
+        assert!(encoder.encode(&frame, 66_666).is_err(), "a frame time that doesn't advance");
+    }
+
+    #[test]
+    fn synthetic_frames_encode_to_annexb_that_decodes_back() {
+        // On its own thread so a VideoToolbox hang fails the test instead of
+        // blocking it; the sessions belong to that thread and end with it.
+        let (done, finished) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            encode_and_decode();
+            let _ = done.send(());
+        });
+        match finished.recv_timeout(std::time::Duration::from_secs(30)) {
+            Ok(()) => worker.join().unwrap(),
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                std::panic::resume_unwind(worker.join().unwrap_err())
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                panic!("the VideoToolbox roundtrip took over 30 s")
+            }
+        }
     }
 }

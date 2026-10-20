@@ -147,7 +147,7 @@ and bounded fixture evidence, not native feature acceptance:
 | Component | Implemented source | Remaining admission |
 | --- | --- | --- |
 | H.264 receive | VideoToolbox decode, bounded Annex-B parameters, NV12 stride/color conversion and format recovery | Original red-frame native fixture passed; actual peer transport and Qt painting remain unverified. `mirror.view` stays off. |
-| H.264 send | VideoToolbox encoder, bounded AVCC conversion, SPS/PPS before IDR, keyframe requests and bitrate changes | Pure packet cases passed; a synthetic native encode/decode round trip and Android rendering remain. |
+| H.264 send | VideoToolbox encoder, bounded AVCC conversion, SPS/PPS before IDR, keyframe requests and bitrate changes | Pure packet cases and a real synthetic VideoToolbox encode/decode roundtrip passed in an isolated code-only fixture containing the exact product modules. IDR/P/requested-IDR, dimensions and luma were checked. Full integrated compilation, peer transport and Android rendering remain. |
 | Mac screen share | Public per-session ScreenCaptureKit picker, retained frame bounds and a view-only sender with generation-safe teardown | Capture decision/cancellation cases passed. No picker, personal capture or stop-race runtime test ran. `READY` and capture capability remain off. |
 | Local input | Public CoreGraphics adapter, existing-trust check, owned modifier/button/unicode cleanup | Pure planning cases passed. No Accessibility grant or input event was performed; capabilities remain off. |
 | PCM playback | AudioQueue output, explicit device choice, bounded queue/jitter and callback lifetime | Pure format/device/buffer cases passed. No playback or microphone use; audio capabilities remain off. |
@@ -155,9 +155,20 @@ and bounded fixture evidence, not native feature acceptance:
 | Phone folders | Bounded in-app list/save, path identity, cancellation/revocation and exclusive destination publication | Pure cases passed. Explicit Mac opt-in, paired SAF/provider and filesystem acceptance remain; browser flag stays off and Finder mount is not implemented. |
 | Usable display area | Public primary-screen metadata, menu-bar/Dock subtraction and physical-pixel conversion | Two coordinate cases passed. Native Retina/Dock placement still needs the normal app check. |
 
-Mac32 remains installed. Build and test the next Mac update through that
-same normal installation, preserving its identity. Native permissions and
-personal call/audio/capture actions still need the owner's specific approval.
+Mac33 is installed and published from `e90860f4` (private channel
+`0.1.4-local.5`). The normal app, DMG and pinned source archive passed an
+independent artifact review; four full R2 downloads matched and five other
+feeds stayed unchanged. The normal updater reports current. Identity and
+settings survived the direct in-place update; this is not a new OTA cycle.
+Keep using that same installation. Native permissions and personal
+call/audio/capture actions still need the owner's specific approval.
+
+Native notification repair is the next Mac slice. The existing PR24
+`osascript` poster uses the script process's system identity, drops click
+routing and cannot use Waypair's bundle icon. Replace it with public
+UserNotifications from the app, retain the phone title/body, and request
+authorization only from an explicit settings action. This is not yet
+implemented or accepted in the published Mac33 build.
 
 The old browser Dock offer uses `NSApp.dockTile.contentView` in the same app;
 it does not require a helper app or Apple's cross-device Handoff transport.
