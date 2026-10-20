@@ -6,19 +6,21 @@ import app.nectarlink.core.FeatureStatus
 
 /**
  * Negotiated matrix IDs behind the Home PC-card actions (`core/features.rs`
- * `FEATURES`). A gate uses [Device.has] (Available only): these features
- * declare no weaker `partial` set, so `usable` would add nothing.
+ * `FEATURES`). Gates use [Device.has] (Available only), with the Control PC
+ * approval-flow and Webcam permission-path exceptions below.
  */
 internal const val HOME_FEATURE_INPUT_REMOTE = "input.remote"
 internal const val HOME_FEATURE_INPUT_DECK = "input.deck"
 internal const val HOME_FEATURE_CAMERA_WEBCAM = "camera.webcam"
 
 /**
- * Control PC runs only where the desktop negotiates `input.inject`
- * (`remote::check` refuses anything else as Unsupported; `core_host.rs`
- * withholds the cap on Mac, where it stays Locked, never Available).
+ * Control PC runs where the desktop negotiates `input.inject`. While
+ * Windows waits for the user's first remote-input request before announcing
+ * that capability, `remote::check` accepts `deck.actions` to trigger the
+ * one-time approval flow. Mac withholds both capabilities.
  */
-internal fun Device.canControlPc(): Boolean = online && has(HOME_FEATURE_INPUT_REMOTE)
+internal fun Device.canControlPc(): Boolean =
+    online && (has(HOME_FEATURE_INPUT_REMOTE) || has(HOME_FEATURE_INPUT_DECK))
 
 /**
  * Deck runs only where the desktop negotiates `deck.actions` (`deck::press`
@@ -33,8 +35,9 @@ internal fun Device.canOpenDeck(): Boolean = online && has(HOME_FEATURE_INPUT_DE
  * virtual-camera add-on on a new enough build. While the feature is Locked
  * only on the phone-side camera permission, the entry stays reachable: the
  * Webcam screen itself asks for that permission and the matrix flips to
- * Available once granted. Any other missing requirement (Mac withholds every
- * desktop side) keeps the button greyed out.
+ * Available once granted. Matrix metadata proves the phone permission is the
+ * sole unmet requirement, so a missing desktop add-on keeps the button greyed
+ * out too.
  */
 internal fun Device.canOpenWebcam(): Boolean =
     online && (has(HOME_FEATURE_CAMERA_WEBCAM) || webcamLockedOnPhonePermission())
@@ -48,7 +51,8 @@ internal fun Device.canOpenWebcam(): Boolean =
 internal fun Device.webcamLockedOnPhonePermission(): Boolean =
     features.any { feature ->
         feature.id == HOME_FEATURE_CAMERA_WEBCAM &&
-            (feature.status as? FeatureStatus.Locked)?.upgrade?.let {
-                it.action == "grantPermission" && it.target == "camera"
+            (feature.status as? FeatureStatus.Locked)?.let { locked ->
+                locked.soleMissingPermission == "camera" &&
+                    locked.upgrade.action == "grantPermission" && locked.upgrade.target == "camera"
             } == true
     }

@@ -258,11 +258,18 @@ pub enum FeatureState {
 pub struct CapabilityMatrix {
     pub device: DeviceId,
     pub features: BTreeMap<&'static str, FeatureState>,
+    /// A feature ID maps to a permission only when that permission is its
+    /// sole unmet requirement in the current negotiated snapshot.
+    sole_missing_permissions: BTreeMap<&'static str, Permission>,
 }
 
 impl CapabilityMatrix {
     pub fn state(&self, feature: &str) -> Option<FeatureState> {
         self.features.get(feature).copied()
+    }
+
+    pub fn sole_missing_permission(&self, feature: &str) -> Option<Permission> {
+        self.sole_missing_permissions.get(feature).copied()
     }
 }
 
@@ -401,10 +408,11 @@ pub fn compute(device: DeviceId, inputs: MatrixInputs<'_>) -> CapabilityMatrix {
         _ => None,
     };
     let android_pair = local.os == "android" && peer.os == "android";
-    let run = |list: &'static [FeatureDef], applies: Option<(&DeviceFacts, &DeviceFacts)>| {
+    let mut sole_missing_permissions = BTreeMap::new();
+    let mut run = |list: &'static [FeatureDef], applies: Option<(&DeviceFacts, &DeviceFacts)>| {
         list.iter()
             .map(|def| {
-                let state = match applies {
+                let (state, sole_missing_permission) = match applies {
                     Some((phone, desktop)) => {
                         let ctx = Context {
                             phone,
@@ -416,8 +424,11 @@ pub fn compute(device: DeviceId, inputs: MatrixInputs<'_>) -> CapabilityMatrix {
                         };
                         evaluate(def, &ctx)
                     }
-                    None => FeatureState::Unsupported { reason: UnsupportedReason::DeviceKinds },
+                    None => (FeatureState::Unsupported { reason: UnsupportedReason::DeviceKinds }, None),
                 };
+                if let Some(permission) = sole_missing_permission {
+                    sole_missing_permissions.insert(def.id, permission);
+                }
                 (def.id, state)
             })
             .collect::<Vec<_>>()
@@ -427,7 +438,7 @@ pub fn compute(device: DeviceId, inputs: MatrixInputs<'_>) -> CapabilityMatrix {
     let mut features = run(FEATURES, pc_pair);
     features.extend(run(ANDROID_PAIR_FEATURES, android_pair.then_some((peer, local))));
     let features = features.into_iter().collect();
-    CapabilityMatrix { device, features }
+    CapabilityMatrix { device, features, sole_missing_permissions }
 }
 
 struct Context<'a> {
@@ -532,15 +543,32 @@ struct Summary {
     met: bool,
     upgrade: Option<Upgrade>,
     impossible: Option<UnsupportedReason>,
+    unmet_requirements: usize,
+    sole_missing_permission: Option<Permission>,
 }
 
 fn summarize(requires: &[Requirement], ctx: &Context<'_>) -> Summary {
-    let mut summary = Summary { met: true, upgrade: None, impossible: None };
+    let mut summary = Summary {
+        met: true,
+        upgrade: None,
+        impossible: None,
+        unmet_requirements: 0,
+        sole_missing_permission: None,
+    };
     for req in requires {
         match check(req, ctx) {
             Check::Met => {}
             Check::Unlockable(upgrade) => {
                 summary.met = false;
+                summary.unmet_requirements += 1;
+                summary.sole_missing_permission = if summary.unmet_requirements == 1 {
+                    match upgrade.action {
+                        UpgradeAction::GrantPermission(permission) => Some(permission),
+                        _ => None,
+                    }
+                } else {
+                    None
+                };
                 // Keep the first of equally easy upgrades (declaration order).
                 if summary.upgrade.is_none_or(|best| upgrade.effort < best.effort) {
                     summary.upgrade = Some(upgrade);
@@ -548,6 +576,8 @@ fn summarize(requires: &[Requirement], ctx: &Context<'_>) -> Summary {
             }
             Check::Impossible(reason) => {
                 summary.met = false;
+                summary.unmet_requirements += 1;
+                summary.sole_missing_permission = None;
                 summary.impossible.get_or_insert(reason);
             }
         }
@@ -559,22 +589,22 @@ fn summarize(requires: &[Requirement], ctx: &Context<'_>) -> Summary {
 /// Available if everything holds; else Partial if the weaker set holds (part
 /// of the feature works even if the rest never will); else Unsupported if
 /// something can't be met on this pair; else Locked with the easiest upgrade.
-fn evaluate(def: &FeatureDef, ctx: &Context<'_>) -> FeatureState {
+fn evaluate(def: &FeatureDef, ctx: &Context<'_>) -> (FeatureState, Option<Permission>) {
     let full = summarize(def.requires, ctx);
     if full.met {
-        return FeatureState::Available;
+        return (FeatureState::Available, None);
     }
     if let Some(partial) = def.partial
         && summarize(partial.requires, ctx).met
     {
         let upgrade = if full.impossible.is_some() { None } else { full.upgrade };
-        return FeatureState::Partial { limit: partial.limit, upgrade };
+        return (FeatureState::Partial { limit: partial.limit, upgrade }, None);
     }
     match (full.impossible, full.upgrade) {
-        (Some(reason), _) => FeatureState::Unsupported { reason },
-        (None, Some(upgrade)) => FeatureState::Locked { upgrade },
+        (Some(reason), _) => (FeatureState::Unsupported { reason }, None),
+        (None, Some(upgrade)) => (FeatureState::Locked { upgrade }, full.sole_missing_permission),
         // Unreachable: an unmet set has an upgrade or a reason.
-        (None, None) => FeatureState::Unsupported { reason: UnsupportedReason::NotOnThisDevice },
+        (None, None) => (FeatureState::Unsupported { reason: UnsupportedReason::NotOnThisDevice }, None),
     }
 }
 
@@ -1251,6 +1281,36 @@ mod tests {
             m.state("camera.webcam"),
             Some(locked(UpgradeAction::GrantPermission(Permission::Camera), Effort::Instant))
         );
+    }
+
+    #[test]
+    fn webcam_permission_is_sole_missing_requirement_only_when_backend_is_ready() {
+        let caps: Vec<&str> = BASIC_PHONE.iter().copied().filter(|c| *c != "camera.stream").collect();
+        let phone = facts(DeviceKind::Phone, "android", "16", PowerLevel::Basic, &caps);
+        let mut supported_pc_caps = PC.to_vec();
+        supported_pc_caps.push("addon.vcam");
+        let supported_pc = facts(
+            DeviceKind::Desktop,
+            "windows",
+            "10.0.26200",
+            PowerLevel::NotApplicable,
+            &supported_pc_caps,
+        );
+        let supported = matrix_with(&phone, &supported_pc, &HashMap::new());
+        assert_eq!(
+            supported.state("camera.webcam"),
+            Some(locked(UpgradeAction::GrantPermission(Permission::Camera), Effort::Instant))
+        );
+        assert_eq!(supported.sole_missing_permission("camera.webcam"), Some(Permission::Camera));
+
+        // Same phone and best-upgrade suggestion, but without the virtual
+        // camera add-on the Android UI must not offer the permission path.
+        let unsupported = matrix_with(&phone, &pc(), &HashMap::new());
+        assert_eq!(
+            unsupported.state("camera.webcam"),
+            Some(locked(UpgradeAction::GrantPermission(Permission::Camera), Effort::Instant))
+        );
+        assert_eq!(unsupported.sole_missing_permission("camera.webcam"), None);
     }
 
     #[test]

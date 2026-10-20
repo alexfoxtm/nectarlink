@@ -26,8 +26,15 @@ class HomeCapabilitiesTest {
     private fun offline() = Link.Offline(null)
 
     private fun available(id: String) = Feature(id, FeatureStatus.Available)
-    private fun locked(id: String, action: String, target: String) =
-        Feature(id, FeatureStatus.Locked(Upgrade(action, target, 0.toUByte())))
+    private fun locked(
+        id: String,
+        action: String,
+        target: String,
+        onlyMissingPermission: String? = null,
+    ) = Feature(
+        id,
+        FeatureStatus.Locked(Upgrade(action, target, 0.toUByte()), onlyMissingPermission),
+    )
 
     @Test
     fun `negotiated features keep Control Deck and Webcam reachable when online`() {
@@ -50,6 +57,18 @@ class HomeCapabilitiesTest {
     }
 
     @Test
+    fun `Control PC remains reachable for Windows first-use approval through Deck`() {
+        val windows = device(
+            online(),
+            listOf(
+                locked(HOME_FEATURE_INPUT_REMOTE, "updateApp", "desktop"),
+                available(HOME_FEATURE_INPUT_DECK),
+            ),
+        )
+        assertTrue(windows.canControlPc())
+    }
+
+    @Test
     fun `withheld Mac caps grey out Control Deck and Webcam but keep the permission path`() {
         // Mac42 withholds input.inject, deck.actions and every webcam desktop
         // cap, so the matrix reports Locked, never Available.
@@ -68,8 +87,17 @@ class HomeCapabilitiesTest {
         // Webcam screen grants it and the matrix then flips to Available.
         val noPermission = device(
             online(),
-            listOf(locked(HOME_FEATURE_CAMERA_WEBCAM, "grantPermission", "camera")),
+            listOf(locked(HOME_FEATURE_CAMERA_WEBCAM, "grantPermission", "camera", "camera")),
         )
         assertTrue(noPermission.canOpenWebcam())
+
+        // A permission can still be the cheapest upgrade while another
+        // backend requirement, such as Windows' virtual-camera add-on, is
+        // missing. That must not expose the phone permission flow.
+        val backendIncomplete = device(
+            online(),
+            listOf(locked(HOME_FEATURE_CAMERA_WEBCAM, "grantPermission", "camera")),
+        )
+        assertFalse(backendIncomplete.canOpenWebcam())
     }
 }

@@ -222,6 +222,9 @@ pub enum FeatureStatus {
     },
     Locked {
         upgrade: Upgrade,
+        /// Set only when this is the sole unmet requirement in the current
+        /// negotiated snapshot; the other feature requirements are met.
+        sole_missing_permission: Option<String>,
     },
     /// `reason`: "deviceKinds", "android:<release>", "windows:<build>" or
     /// "notOnThisDevice".
@@ -2395,21 +2398,31 @@ fn upgrade(u: core::features::Upgrade) -> Upgrade {
     Upgrade { action: action.into(), target, minutes: u.effort.minutes() }
 }
 
-impl From<FeatureState> for FeatureStatus {
-    fn from(state: FeatureState) -> Self {
-        match state {
-            FeatureState::Available => FeatureStatus::Available,
-            FeatureState::Partial { limit, upgrade: u } => {
-                FeatureStatus::Partial { limit: limit.into(), upgrade: u.map(upgrade) }
-            }
-            FeatureState::Locked { upgrade: u } => FeatureStatus::Locked { upgrade: upgrade(u) },
-            FeatureState::Unsupported { reason } => FeatureStatus::Unsupported { reason: reason.describe() },
+fn feature_status(state: FeatureState, sole_missing_permission: Option<String>) -> FeatureStatus {
+    match state {
+        FeatureState::Available => FeatureStatus::Available,
+        FeatureState::Partial { limit, upgrade: u } => {
+            FeatureStatus::Partial { limit: limit.into(), upgrade: u.map(upgrade) }
         }
+        FeatureState::Locked { upgrade: u } => {
+            FeatureStatus::Locked { upgrade: upgrade(u), sole_missing_permission }
+        }
+        FeatureState::Unsupported { reason } => FeatureStatus::Unsupported { reason: reason.describe() },
     }
 }
 
 fn features(matrix: &CapabilityMatrix) -> Vec<Feature> {
-    matrix.features.iter().map(|(id, state)| Feature { id: (*id).into(), status: (*state).into() }).collect()
+    matrix
+        .features
+        .iter()
+        .map(|(id, state)| Feature {
+            id: (*id).into(),
+            status: feature_status(
+                *state,
+                matrix.sole_missing_permission(id).map(|permission| permission.as_str().into()),
+            ),
+        })
+        .collect()
 }
 
 impl Event {
