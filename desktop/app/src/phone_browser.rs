@@ -29,15 +29,83 @@ use std::{
     time::Duration,
 };
 
+#[cfg(feature = "test-support")]
+use std::sync::atomic::AtomicBool;
+
 use nectarlink_core::{
     ConnectionPath, DeviceId, Error, LinkState, NodeEvent,
     storage::{StorageEntry, is_valid_storage_dir_path, is_valid_storage_name, is_valid_storage_path},
 };
+#[cfg(feature = "test-support")]
+use nectarlink_core::Node;
 use tokio::sync::mpsc;
 
 /// Root sets this true only after native acceptance. While false, every
 /// network and UI entry point is a no-op.
 pub const ENABLED: bool = false;
+
+/// Test-only overrides so the bounded transport fixture can drive the real
+/// production routing (`open`/`on_event`/`view`) against real paired nodes
+/// without touching the production gate above. Gated on the non-default
+/// `test-support` feature; production builds keep `ENABLED` as the only gate.
+#[cfg(feature = "test-support")]
+static TEST_ENABLED: AtomicBool = AtomicBool::new(false);
+#[cfg(feature = "test-support")]
+static TEST_NODE: Mutex<Option<Node>> = Mutex::new(None);
+#[cfg(feature = "test-support")]
+static TEST_SPAWN: Mutex<Option<tokio::runtime::Handle>> = Mutex::new(None);
+
+/// Production gate, plus the test-only enable while a fixture holds it.
+fn browser_enabled() -> bool {
+    if ENABLED {
+        return true;
+    }
+    #[cfg(feature = "test-support")]
+    if TEST_ENABLED.load(Ordering::Relaxed) {
+        return true;
+    }
+    false
+}
+
+/// The node production code issues `storage.list`/`storage.read` against:
+/// the core host, or the fixture's real paired node while a test holds it.
+fn active_node() -> Option<Node> {
+    #[cfg(feature = "test-support")]
+    if let Some(node) = TEST_NODE.lock().unwrap_or_else(|e| e.into_inner()).clone() {
+        return Some(node);
+    }
+    crate::core_host::node()
+}
+
+/// The runtime production code spawns listing/save work on: the core host,
+/// or the fixture's runtime while a test holds it.
+fn spawn_task(fut: impl Future<Output = ()> + Send + 'static) {
+    #[cfg(feature = "test-support")]
+    if let Some(handle) = TEST_SPAWN.lock().unwrap_or_else(|e| e.into_inner()).clone() {
+        handle.spawn(fut);
+        return;
+    }
+    crate::core_host::spawn(fut);
+}
+
+/// Test-only seam: hold the production gate open for the calling fixture.
+/// The fixture must clear it (and the node/runtime below) when done.
+#[cfg(all(test, target_os = "macos", feature = "test-support"))]
+pub(crate) fn set_test_enabled(on: bool) {
+    TEST_ENABLED.store(on, Ordering::Relaxed);
+}
+
+/// Test-only seam: the real paired receiver node production code lists against.
+#[cfg(all(test, target_os = "macos", feature = "test-support"))]
+pub(crate) fn set_test_node(node: Option<Node>) {
+    *TEST_NODE.lock().unwrap_or_else(|e| e.into_inner()) = node;
+}
+
+/// Test-only seam: the fixture runtime production code spawns listing work on.
+#[cfg(all(test, target_os = "macos", feature = "test-support"))]
+pub(crate) fn set_test_runtime(handle: Option<tokio::runtime::Handle>) {
+    *TEST_SPAWN.lock().unwrap_or_else(|e| e.into_inner()) = handle;
+}
 
 /// Rows retained from one `storage.list` reply. The phone already trims the
 /// frame to 1 MiB; this is a second local cap.
@@ -468,7 +536,7 @@ fn notify() {
 }
 
 pub fn view() -> BrowserView {
-    if !ENABLED {
+    if !browser_enabled() {
         return BrowserView {
             enabled: false,
             device: None,
@@ -499,7 +567,7 @@ pub fn take_save_notice() -> Option<bool> {
 
 /// The user chose "Browse shared folders" for `device`.
 pub fn open(device: DeviceId) {
-    if !ENABLED {
+    if !browser_enabled() {
         return;
     }
     let link_path = current_path(device);
@@ -508,7 +576,7 @@ pub fn open(device: DeviceId) {
 
 /// How `device` is reached now, if it's online.
 fn current_path(device: DeviceId) -> Option<ConnectionPath> {
-    let node = crate::core_host::node()?;
+    let node = active_node()?;
     let peer = node.paired_devices().ok()?.into_iter().find(|peer| peer.id == device)?;
     match peer.link {
         LinkState::Online { path, .. } => Some(path),
@@ -534,7 +602,7 @@ pub fn refresh() {
 }
 
 pub fn close() {
-    if !ENABLED {
+    if !browser_enabled() {
         return;
     }
     lock().close();
@@ -543,7 +611,7 @@ pub fn close() {
 
 /// Saves the listed file at `path` into `folder` (an absolute path).
 pub fn save_file(path: &str, folder: Option<PathBuf>) {
-    if !ENABLED {
+    if !browser_enabled() {
         return;
     }
     let job = {
@@ -558,14 +626,14 @@ pub fn save_file(path: &str, folder: Option<PathBuf>) {
         }
     };
     if let Some(job) = job {
-        crate::core_host::spawn(run_save(job));
+        spawn_task(run_save(job));
     }
     notify();
 }
 
 /// Root calls this from `core_host`, beside `storage::on_event`.
 pub fn on_event(event: &NodeEvent) {
-    if !ENABLED {
+    if !browser_enabled() {
         return;
     }
     match event {
@@ -615,7 +683,7 @@ fn session_lost(device: DeviceId, status: BrowseStatus) {
 }
 
 fn request_list(start: impl FnOnce(&mut State) -> Option<ListCommand>) {
-    if !ENABLED {
+    if !browser_enabled() {
         return;
     }
     let spawn = start(&mut lock());
@@ -626,12 +694,12 @@ fn request_list(start: impl FnOnce(&mut State) -> Option<ListCommand>) {
 }
 
 fn spawn_list(command: ListCommand) {
-    crate::core_host::spawn(async move {
+    spawn_task(async move {
         // Await any RPC that we start. Dropping `storage_list` would leave
         // its pending id in the session map; `Session::request` removes that
         // id only when its future finishes.
         let outcome = if list_still_current(&command) {
-            match crate::core_host::node() {
+            match active_node() {
                 Some(node) => {
                     ListOutcome::Done(node.storage_list(command.device, command.path.clone()).await)
                 }
@@ -698,7 +766,7 @@ async fn save(job: &SaveJob) -> Result<(), SaveError> {
 
 /// One explicit length, one stream, one phone-side open.
 async fn stream(job: &SaveJob, tx: &mpsc::Sender<Feed>) -> Result<(), SaveError> {
-    let node = crate::core_host::node().ok_or(SaveError::Failed)?;
+    let node = active_node().ok_or(SaveError::Failed)?;
     let open = node.storage_read_stream(job.device, job.remote.clone(), 0, Some(SAVE_MAX));
     let (meta, mut recv) = wait(job, tx, open).await?.map_err(|_| SaveError::Failed)?;
     let expected = accept_stream_meta(SAVE_MAX, meta.size, meta.length)?;
@@ -1086,5 +1154,467 @@ mod tests {
         assert!(state.session.rows.is_empty());
         assert!(state.finish_list(&recheck, ListOutcome::Done(Err(Error::Denied))).is_none());
         assert_eq!(state.session.device, None);
+    }
+}
+
+/// Bounded synthetic transport fixture for the browser consent gate.
+///
+/// Two real authenticated [`Node`]s pair over 127.0.0.1 with the
+/// `test-support` loopback transport (ephemeral bind, portmapper disabled, no
+/// LAN discovery, no relay, no USB/ADB). The phone is a synthetic in-memory
+/// platform holding only two synthetic folders/files; it never touches a real
+/// provider, an app bundle, or personal data. Every browser change below is
+/// driven by genuine core events (pairing link, `Capabilities` from real
+/// toggle changes, `DeviceRemoved` from a real unpair) forwarded through the
+/// production [`super::on_event`], plus the explicit [`super::open`] UI
+/// action. Nothing here hand-constructs a `NodeEvent` or calls the `State`
+/// transition helpers directly; the one re-delivered link event is the
+/// actually observed loopback event, proving same-path idempotence.
+///
+/// Production `ENABLED` stays `false`; the non-default `test-support` seam
+/// (`set_test_enabled`/`set_test_node`/`set_test_runtime`) is held only while
+/// a test owns `FIXTURE_LOCK` and is always cleared afterwards, including on
+/// panic via `Drop`.
+///
+/// What this proves (and what stays a Root device gate) is listed in
+/// `~/orca/tmp/waypair-wave33-20261020/LINK5-BROWSER.md`.
+#[cfg(all(test, target_os = "macos", feature = "test-support"))]
+mod browser_transport_fixture {
+    use std::{
+        sync::{Arc, Mutex},
+        time::Duration,
+    };
+
+    use nectarlink_core::{
+        DeviceId, DeviceInfo, DeviceKind, LinkState, Node, NodeConfig, NodeEvent, PlainKeyProtector,
+        Platform, StorageEntry, StorageError, STORAGE_READ, STORAGE_WRITE,
+    };
+
+    /// Serializes the fixture tests: they share the global browser state and
+    /// the test-only node/runtime seam.
+    static FIXTURE_LOCK: Mutex<()> = Mutex::new(());
+
+    const WAIT: Duration = Duration::from_secs(15);
+    const POLL: Duration = Duration::from_millis(20);
+
+    const README_NAME: &str = "readme.txt";
+    const README_BYTES: &[u8] = b"synthetic fixture readme";
+    const NOTES_DIR: &str = "SharedDocs";
+    const NOTE_NAME: &str = "note.txt";
+    const NOTE_BYTES: &[u8] = b"synthetic fixture note";
+    const MODIFIED: i64 = 1_717_000_000_000;
+
+    /// In-memory synthetic phone storage: two folders/files only. `SharedDocs`
+    /// answers slowly so a close racing its reply exercises the production
+    /// stale-generation drop over a real transport.
+    #[derive(Debug)]
+    struct SyntheticPhonePlatform {
+        slow_ms: u64,
+    }
+
+    impl SyntheticPhonePlatform {
+        fn entries(path: &str) -> Result<Vec<StorageEntry>, StorageError> {
+            match path {
+                "" => Ok(vec![
+                    StorageEntry { name: NOTES_DIR.into(), size: 0, modified: MODIFIED, is_dir: true },
+                    StorageEntry {
+                        name: README_NAME.into(),
+                        size: README_BYTES.len() as u64,
+                        modified: MODIFIED,
+                        is_dir: false,
+                    },
+                ]),
+                NOTES_DIR => Ok(vec![StorageEntry {
+                    name: NOTE_NAME.into(),
+                    size: NOTE_BYTES.len() as u64,
+                    modified: MODIFIED,
+                    is_dir: false,
+                }]),
+                _ => Err(StorageError::NotFound),
+            }
+        }
+    }
+
+    impl Platform for SyntheticPhonePlatform {
+        fn storage_list(&self, path: &str) -> Result<Vec<StorageEntry>, StorageError> {
+            if path == NOTES_DIR {
+                std::thread::sleep(Duration::from_millis(self.slow_ms));
+            }
+            Self::entries(path)
+        }
+    }
+
+    fn fixture_device(name: &str, kind: DeviceKind) -> DeviceInfo {
+        DeviceInfo {
+            name: name.into(),
+            kind,
+            os: if kind == DeviceKind::Phone { "android" } else { "macos" }.into(),
+            os_ver: "fixture".into(),
+            model: None,
+            accent: None,
+            screen: None,
+            install_id: None,
+        }
+    }
+
+    fn fixture_node_config(
+        directory: &std::path::Path,
+        name: &str,
+        kind: DeviceKind,
+        capabilities: &[&str],
+    ) -> NodeConfig {
+        let mut config = NodeConfig::new(directory, fixture_device(name, kind), "0.0.1-test");
+        config.away_mode = false;
+        config.lan_discovery = false;
+        config.localsend_port = 0;
+        config.adb_server = None;
+        config.usb_port = None;
+        config.key_protector = Some(Arc::new(PlainKeyProtector));
+        // Loopback bind with no portmapper: the paired-nodes transport. The
+        // name mentions the mirror fixture that introduced the flag; no mirror
+        // behavior is enabled by it.
+        config.enable_loopback_mirror_fixture();
+        config.capabilities = capabilities.iter().map(|cap| (*cap).to_owned()).collect();
+        config
+    }
+
+    async fn wait_for_link(receiver: &Node, phone: DeviceId) {
+        tokio::time::timeout(WAIT, async {
+            loop {
+                if receiver.paired_devices().is_ok_and(|peers| {
+                    peers
+                        .iter()
+                        .any(|peer| peer.id == phone && matches!(&peer.link, LinkState::Online { .. }))
+                }) {
+                    return;
+                }
+                tokio::time::sleep(POLL).await;
+            }
+        })
+        .await
+        .expect("paired nodes connect over loopback within 15 seconds");
+    }
+
+    async fn wait_until(label: &str, mut cond: impl FnMut() -> bool) {
+        tokio::time::timeout(WAIT, async {
+            while !cond() {
+                tokio::time::sleep(POLL).await;
+            }
+        })
+        .await
+        .unwrap_or_else(|_| panic!("timed out waiting for {label}"));
+    }
+
+    /// The real RPC admission check, polled: proves a toggle change reached
+    /// the serving phone before the browser step that depends on it.
+    async fn wait_rpc_ok(receiver: &Node, phone: DeviceId, label: &str) {
+        tokio::time::timeout(WAIT, async {
+            loop {
+                if receiver.storage_list(phone, "").await.is_ok() {
+                    return;
+                }
+                tokio::time::sleep(POLL).await;
+            }
+        })
+        .await
+        .unwrap_or_else(|_| panic!("timed out waiting for {label}"));
+    }
+
+    /// Clears the test-only seam and any consent. Idempotent.
+    fn clear_seam() {
+        super::close();
+        super::set_test_node(None);
+        super::set_test_runtime(None);
+        super::set_test_enabled(false);
+    }
+
+    struct Paired {
+        runtime: tokio::runtime::Runtime,
+        receiver: Node,
+        phone: Node,
+        receiver_id: DeviceId,
+        phone_id: DeviceId,
+        pump: tokio::task::JoinHandle<()>,
+        recorded: Arc<Mutex<Vec<NodeEvent>>>,
+        _phone_dir: tempfile::TempDir,
+        _receiver_dir: tempfile::TempDir,
+    }
+
+    impl Drop for Paired {
+        fn drop(&mut self) {
+            self.pump.abort();
+            clear_seam();
+        }
+    }
+
+    impl Paired {
+        /// Starts two nodes, pairs them, installs the test-only seam, and
+        /// pumps every genuine receiver event through production `on_event`.
+        /// The caller must hold `FIXTURE_LOCK`.
+        fn start_locked() -> Self {
+            let receiver_dir = tempfile::tempdir().expect("disposable receiver node state");
+            let phone_dir = tempfile::tempdir().expect("disposable phone node state");
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
+                .enable_all()
+                .build()
+                .expect("fixture Tokio runtime");
+            runtime.block_on(async {
+                let phone_platform = Arc::new(SyntheticPhonePlatform { slow_ms: 300 });
+                let receiver_config =
+                    fixture_node_config(receiver_dir.path(), "Synthetic Mac", DeviceKind::Desktop, &[]);
+                let phone_config = fixture_node_config(
+                    phone_dir.path(),
+                    "Synthetic Phone",
+                    DeviceKind::Phone,
+                    &[STORAGE_READ, STORAGE_WRITE],
+                );
+                let receiver = tokio::time::timeout(
+                    WAIT,
+                    Node::start(receiver_config, Arc::new(nectarlink_core::NoopPlatform)),
+                )
+                .await
+                .expect("synthetic receiver starts within 15 seconds")
+                .expect("synthetic receiver starts");
+                let phone = tokio::time::timeout(WAIT, Node::start(phone_config, phone_platform))
+                    .await
+                    .expect("synthetic phone starts within 15 seconds")
+                    .expect("synthetic phone starts");
+                let receiver_id = receiver.device_id();
+                let phone_id = phone.device_id();
+
+                let mut events = receiver.events();
+                let invitation = tokio::time::timeout(WAIT, receiver.pairing_start_qr())
+                    .await
+                    .expect("pairing invitation within 15 seconds")
+                    .expect("pairing invitation starts");
+                assert!(
+                    !invitation.addrs.is_empty()
+                        && invitation.addrs.iter().all(|address| address.ip().is_loopback()),
+                    "loopback-bound fixture advertised a non-loopback or missing address"
+                );
+                let pairing_uri = invitation.to_uri();
+                tokio::time::timeout(WAIT, phone.pairing_join(&pairing_uri))
+                    .await
+                    .expect("synthetic loopback pairing within 15 seconds")
+                    .expect("synthetic loopback pairing succeeds");
+                wait_for_link(&receiver, phone_id).await;
+                wait_for_link(&phone, receiver_id).await;
+
+                super::set_test_runtime(Some(runtime.handle().clone()));
+                super::set_test_node(Some(receiver.clone()));
+                super::set_test_enabled(true);
+
+                let recorded: Arc<Mutex<Vec<NodeEvent>>> = Arc::new(Mutex::new(Vec::new()));
+                let pump_recorded = recorded.clone();
+                let pump = runtime.spawn(async move {
+                    while let Ok(event) = events.recv().await {
+                        pump_recorded.lock().unwrap_or_else(|e| e.into_inner()).push(event.clone());
+                        super::on_event(&event);
+                    }
+                });
+                Self {
+                    runtime,
+                    receiver,
+                    phone,
+                    receiver_id,
+                    phone_id,
+                    pump,
+                    recorded,
+                    _phone_dir: phone_dir,
+                    _receiver_dir: receiver_dir,
+                }
+            })
+        }
+
+        fn recorded_link_online(&self) -> Option<NodeEvent> {
+            self.recorded
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .iter()
+                .find(|event| {
+                    matches!(
+                        event,
+                        NodeEvent::LinkChanged { device, link: LinkState::Online { .. } }
+                        if *device == self.phone_id
+                    )
+                })
+                .cloned()
+        }
+
+        fn shutdown(&self) {
+            self.pump.abort();
+            self.runtime.block_on(async {
+                let phone_down =
+                    tokio::time::timeout(Duration::from_secs(5), self.phone.shutdown()).await.is_ok();
+                let receiver_down =
+                    tokio::time::timeout(Duration::from_secs(5), self.receiver.shutdown()).await.is_ok();
+                clear_seam();
+                assert!(phone_down, "synthetic phone node shutdown exceeded 5 seconds");
+                assert!(receiver_down, "synthetic receiver node shutdown exceeded 5 seconds");
+            });
+        }
+    }
+
+    /// Full consent gate over a real pairing: nothing lists before the
+    /// explicit open; grant lists; phone revoke and host opt-out clear through
+    /// real `Capabilities` events; a late reply after close is dropped; unpair
+    /// clears. Production `ENABLED` stays false throughout.
+    #[test]
+    fn paired_browser_consent_revoke_optout_and_close_flow() {
+        let _lock = FIXTURE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let paired = Paired::start_locked();
+        paired.runtime.block_on(async {
+            assert!(!super::ENABLED, "production browser gate stays closed");
+            let phone = paired.phone_id;
+
+            // Link is up, but nothing lists before the explicit UI action.
+            let before = super::view();
+            assert!(before.enabled, "test seam opens the browser gate");
+            assert_eq!(before.device, None);
+            assert!(before.rows.is_empty());
+
+            // Consent refusal before approval, over the real RPC.
+            super::open(phone);
+            wait_until("denied listing before grant", || {
+                let view = super::view();
+                view.status == super::BrowseStatus::Denied && view.rows.is_empty()
+            })
+            .await;
+            assert_eq!(super::view().device, None, "refusal ends the consent");
+
+            // Phone grants: the real toggle change propagates, then the
+            // explicit open shows the first synthetic list.
+            paired
+                .phone
+                .set_device_toggle(paired.receiver_id, "storage", true)
+                .expect("phone grants storage");
+            wait_rpc_ok(&paired.receiver, phone, "grant reaches the RPC layer").await;
+            super::open(phone);
+            wait_until("first list after explicit open", || {
+                let view = super::view();
+                view.status == super::BrowseStatus::Ready && view.rows.len() == 2
+            })
+            .await;
+            let listed = super::view();
+            assert_eq!(listed.device, Some(phone));
+            assert_eq!(listed.path, "");
+            assert!(!listed.can_up, "root has no parent");
+            assert!(!listed.truncated);
+            let names: Vec<(&str, bool)> =
+                listed.rows.iter().map(|row| (row.name.as_str(), row.is_dir)).collect();
+            assert_eq!(names, [(NOTES_DIR, true), (README_NAME, false)]);
+            assert_eq!(listed.rows[0].path, NOTES_DIR);
+            assert_eq!(listed.rows[1].path, README_NAME);
+            assert_eq!(listed.rows[1].size, README_BYTES.len() as u64);
+
+            // Phone revokes: the real `Capabilities` event clears the consent.
+            paired
+                .phone
+                .set_device_toggle(paired.receiver_id, "storage", false)
+                .expect("phone revokes storage");
+            wait_until("revoke clears the browser", || {
+                let view = super::view();
+                view.device.is_none()
+                    && view.rows.is_empty()
+                    && view.status == super::BrowseStatus::Unsupported
+            })
+            .await;
+
+            // Re-grant, re-open, then the host opts out of browsing that
+            // phone: the real receiver-side `Capabilities` event denies and
+            // clears.
+            paired
+                .phone
+                .set_device_toggle(paired.receiver_id, "storage", true)
+                .expect("phone re-grants storage");
+            wait_rpc_ok(&paired.receiver, phone, "re-grant reaches the RPC layer").await;
+            super::open(phone);
+            wait_until("second list after explicit open", || {
+                let view = super::view();
+                view.status == super::BrowseStatus::Ready && view.rows.len() == 2
+            })
+            .await;
+            paired.receiver.set_device_toggle(phone, "storage", false).expect("host opts out");
+            wait_until("host opt-out clears the browser", || {
+                let view = super::view();
+                view.device.is_none() && view.rows.is_empty() && view.status == super::BrowseStatus::Denied
+            })
+            .await;
+
+            // Re-allow on the host and open again: consent works, and the
+            // observed same-path link event neither relists nor clears.
+            paired.receiver.set_device_toggle(phone, "storage", true).expect("host re-allows");
+            super::open(phone);
+            wait_until("third list after explicit open", || {
+                let view = super::view();
+                view.status == super::BrowseStatus::Ready && view.rows.len() == 2
+            })
+            .await;
+            let online = paired.recorded_link_online().expect("the real loopback link event was recorded");
+            super::on_event(&online);
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            let kept = super::view();
+            assert_eq!(kept.status, super::BrowseStatus::Ready);
+            assert_eq!(kept.device, Some(phone));
+            assert_eq!(kept.rows.len(), 2, "same-path event keeps the rows");
+
+            // Slow folder in flight, then close: the late real reply is stale.
+            super::open_folder(NOTES_DIR);
+            super::close();
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            let closed = super::view();
+            assert_eq!(closed.device, None);
+            assert!(closed.rows.is_empty());
+            assert_eq!(closed.status, super::BrowseStatus::Idle);
+
+            // Device change clears: a real unpair ends with no names.
+            super::open(phone);
+            wait_until("list before unpair", || {
+                let view = super::view();
+                view.status == super::BrowseStatus::Ready && view.rows.len() == 2
+            })
+            .await;
+            paired.receiver.unpair(phone).await.expect("receiver unpairs the phone");
+            wait_until("unpair clears the browser", || {
+                let view = super::view();
+                view.device.is_none() && view.rows.is_empty() && view.status == super::BrowseStatus::Offline
+            })
+            .await;
+        });
+        paired.shutdown();
+    }
+
+    /// Refusal path: opening while the phone denies lists nothing, and saving
+    /// an unlisted file is refused locally without creating anything.
+    #[test]
+    fn revoked_phone_lists_denied_and_refuses_save() {
+        let _lock = FIXTURE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let paired = Paired::start_locked();
+        paired.runtime.block_on(async {
+            assert!(!super::ENABLED, "production browser gate stays closed");
+            let phone = paired.phone_id;
+
+            super::open(phone);
+            wait_until("denied listing without grant", || {
+                let view = super::view();
+                view.device.is_none() && view.rows.is_empty() && view.status == super::BrowseStatus::Denied
+            })
+            .await;
+
+            let dest = tempfile::tempdir().expect("disposable save folder");
+            super::save_file(README_NAME, Some(dest.path().to_path_buf()));
+            assert_eq!(
+                super::take_save_notice(),
+                Some(false),
+                "an unlisted file is refused without a transfer"
+            );
+            assert!(
+                std::fs::read_dir(dest.path()).expect("save folder reads").next().is_none(),
+                "a refused save creates nothing"
+            );
+            super::close();
+        });
+        paired.shutdown();
     }
 }
