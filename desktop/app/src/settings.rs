@@ -347,6 +347,10 @@ pub struct Settings {
     /// Suggest context chips (Open, Open in Maps, Call, Track, Email) for copied text.
     #[serde(alias = "suggest_clipboard_actions")]
     pub suggest_clipboard_actions: bool,
+    /// macOS: offer web links copied on a paired phone in the Dock (opened
+    /// only by clicking the Dock icon). Off until the user turns it on.
+    #[serde(default, alias = "copied_links")]
+    pub copied_links: bool,
     /// Copy one-time codes from phone notifications and SMS automatically.
     #[serde(alias = "auto_copy_otp", alias = "smart_otp_auto_copy")]
     pub auto_copy_otp: bool,
@@ -517,6 +521,7 @@ impl Default for Settings {
             auto_clipboard: true,
             clipboard_history: true,
             suggest_clipboard_actions: true,
+            copied_links: false,
             auto_copy_otp: false,
             pause_media_on_call: true,
             mute_while_watched: true,
@@ -692,6 +697,7 @@ mod tests {
             auto_clipboard: false,
             clipboard_history: false,
             suggest_clipboard_actions: false,
+            copied_links: true,
             auto_copy_otp: true,
             pause_media_on_call: false,
             mute_while_watched: false,

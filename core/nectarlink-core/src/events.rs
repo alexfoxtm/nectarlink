@@ -129,6 +129,9 @@ pub enum NodeEvent {
     },
     /// The local clipboard history changed (a clip was added, pinned, deleted, or cleared).
     ClipboardHistoryChanged,
+    /// The copied link this Mac offers arrived, was replaced, taken, cleared
+    /// or expired; read it with [`Node::copied_link`](crate::Node::copied_link).
+    CopiedLinkChanged,
     /// A file transfer started, progressed or finished.
     Transfer(Transfer),
     /// A device's media players changed (all of them; empty when nothing

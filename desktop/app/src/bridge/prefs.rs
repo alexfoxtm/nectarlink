@@ -55,6 +55,8 @@ pub mod qobject {
         #[qproperty(bool, clipboard_history)]
         /// Suggest context chips (Open, Open in Maps, Call, Track, Email) for copied text.
         #[qproperty(bool, suggest_clipboard_actions)]
+        /// macOS: offer links copied on a paired phone in the Dock.
+        #[qproperty(bool, copied_links)]
         /// Copy one-time codes from phone notifications and SMS automatically.
         #[qproperty(bool, auto_copy_otp)]
         /// Pause PC media playback while a phone call is ringing or active.
@@ -292,6 +294,7 @@ pub struct PreferencesRust {
     auto_clipboard: bool,
     clipboard_history: bool,
     suggest_clipboard_actions: bool,
+    copied_links: bool,
     auto_copy_otp: bool,
     pause_media_on_call: bool,
     mute_while_watched: bool,
@@ -372,6 +375,8 @@ impl cxx_qt::Initialize for qobject::Preferences {
         crate::clipboard::set_history_enabled(settings.clipboard_history);
         self.as_mut().set_suggest_clipboard_actions(settings.suggest_clipboard_actions);
         crate::clipboard::set_suggest_actions(settings.suggest_clipboard_actions);
+        self.as_mut().set_copied_links(settings.copied_links);
+        crate::clipboard::set_copied_links(settings.copied_links);
         self.as_mut().set_auto_copy_otp(settings.auto_copy_otp);
         crate::notifications::set_auto_copy_otp(settings.auto_copy_otp);
         self.as_mut().set_pause_media_on_call(settings.pause_media_on_call);
@@ -475,6 +480,12 @@ impl cxx_qt::Initialize for qobject::Preferences {
         self.as_mut()
             .on_suggest_clipboard_actions_changed(|p| {
                 crate::clipboard::set_suggest_actions(p.suggest_clipboard_actions);
+                p.save();
+            })
+            .release();
+        self.as_mut()
+            .on_copied_links_changed(|p| {
+                crate::clipboard::set_copied_links(p.copied_links);
                 p.save();
             })
             .release();
@@ -992,6 +1003,7 @@ impl qobject::Preferences {
             auto_clipboard: p.auto_clipboard,
             clipboard_history: p.clipboard_history,
             suggest_clipboard_actions: p.suggest_clipboard_actions,
+            copied_links: p.copied_links,
             auto_copy_otp: p.auto_copy_otp,
             pause_media_on_call: p.pause_media_on_call,
             mute_while_watched: p.mute_while_watched,

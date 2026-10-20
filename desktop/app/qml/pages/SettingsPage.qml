@@ -1262,6 +1262,22 @@ Item {
                                 onToggled: (on) => Preferences.suggestClipboardActions = on
                             }
                         }
+
+                        Divider { width: parent.width; visible: page.onMac }
+
+                        // Row 6 (Mac): copied links offered in the Dock
+                        ListRow {
+                            visible: page.onMac
+                            width: parent.width
+                            iconPath: Icons.globe
+                            title: qsTr("Copied links in the Dock")
+                            description: qsTr("A link you copy on your phone shows on the Dock icon for 5 minutes. Click the icon to open it in your browser.")
+                            Toggle {
+                                label: qsTr("Copied links in the Dock")
+                                checked: Preferences.copiedLinks
+                                onToggled: (on) => Preferences.copiedLinks = on
+                            }
+                        }
                     }
                 }
             }
