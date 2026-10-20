@@ -113,6 +113,40 @@ pub(crate) fn start_receiver_fixture(data_dir: PathBuf) {
         .expect("receiver fixture runs in an isolated test process");
 }
 
+/// Host for `mirror::window_gate`: the caller's loopback receiver node, whose
+/// events reach only the mirror windows.
+#[cfg(all(target_os = "macos", feature = "test-support"))]
+pub(crate) fn start_window_gate(config: NodeConfig, platform: Arc<dyn Platform>) -> Result<Node, String> {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .thread_name("nectarlink-core")
+        .enable_all()
+        .build()
+        .map_err(|e| format!("gate runtime: {e}"))?;
+    let data_dir = config.data_dir.clone();
+    HOST.set(CoreHost { runtime, node: OnceLock::new(), started: Notify::new(), hub: Hub::new(), data_dir })
+        .map_err(|_| "core host already started".to_owned())?;
+    let host = host();
+    let node = host
+        .runtime
+        .block_on(tokio::time::timeout(Duration::from_secs(10), Node::start(config, platform)))
+        .map_err(|_| "gate receiver node did not start within 10 seconds".to_owned())?
+        .map_err(|e| format!("gate receiver node failed to start: {e}"))?;
+    let mut events = node.events();
+    let _ = host.node.set(node.clone());
+    host.started.notify_waiters();
+    host.runtime.spawn(async move {
+        loop {
+            match events.recv().await {
+                Ok(event) => crate::mirror::on_event(&event),
+                Err(RecvError::Lagged(missed)) => tracing::warn!(missed, "window gate missed core events"),
+                Err(RecvError::Closed) => return,
+            }
+        }
+    });
+    Ok(node)
+}
+
 /// Computes the PC's advertised capabilities, advertising capture (`mirror.capture`)
 /// and input injection (`mirror.input`, `input.inject`) only when enabled for at
 /// least one paired device (or actively sharing), and this PC's folders

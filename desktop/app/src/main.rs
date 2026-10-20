@@ -477,6 +477,10 @@ fn connect_services_about_to_quit(
 
 fn main() -> ExitCode {
     let options = parse_options();
+    #[cfg(all(target_os = "macos", feature = "test-support"))]
+    if std::env::args_os().any(|arg| arg == mirror::window_gate::ARG) {
+        return mirror::window_gate::run(options.data_dir.as_deref());
+    }
     if let Some(installer) = options.setup.clone().filter(|p| !p.as_os_str().is_empty()) {
         return run_setup_window(setup::Mode::Install { installer });
     }

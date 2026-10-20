@@ -2110,6 +2110,908 @@ impl Stats {
     }
 }
 
+/// The view-only receiver in its real window, as a runnable gate for the
+/// non-default `test-support` build:
+/// `nectarlink-desktop --mirror-window-gate --data-dir <run>`.
+///
+/// The production `Mirror` bridge, `MirrorWindow.qml` and `VideoView` show a
+/// second, synthetic phone node paired by QR over 127.0.0.1. That phone only
+/// answers `mirror.start` and sends the committed 128x128 red keyframe, which
+/// the receiver scales to each announced format; nothing is captured, and
+/// there is no microphone, sound, input, app window or saved identity.
+#[cfg(all(target_os = "macos", feature = "test-support"))]
+pub mod window_gate {
+    use std::{
+        os::unix::fs::MetadataExt,
+        path::{Path, PathBuf},
+        process::ExitCode,
+        sync::{Arc, Mutex},
+        time::Duration,
+    };
+
+    use cxx_qt_lib::{QByteArray, QGuiApplication, QQmlApplicationEngine, QUrl};
+    use nectarlink_core::{
+        DeviceId, DeviceInfo, DeviceKind, LinkState, MIRROR_CAPTURE, MIRROR_CORRELATION, MIRROR_SCREEN,
+        MIRROR_VIEW, MirrorConfig, MirrorSend, MirrorSink, MirrorStart, MirrorStream, Node, NodeConfig,
+        PacketKind, PlainKeyProtector, Platform,
+    };
+    use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
+
+    use super::{Window, ffi};
+    use crate::win::image::Bitmap;
+
+    pub const ARG: &str = "--mirror-window-gate";
+    /// The only entry of a fresh run directory: a file holding that
+    /// directory's canonical path.
+    pub const SENTINEL: &str = ".mirror-window-gate";
+
+    const PASS: i32 = 0;
+    const FAILED: i32 = 1;
+    const BLOCKED: i32 = 2;
+    /// Formats the phone announces; the decoded picture stays 128x128.
+    const PORTRAIT: (u32, u32) = (360, 640);
+    const LANDSCAPE: (u32, u32) = (640, 360);
+    /// After this the process exits even if Qt never returns.
+    const HARD_TIMEOUT: Duration = Duration::from_secs(180);
+    const GRAB_WAIT: Duration = Duration::from_secs(30);
+
+    pub fn run(data_dir: Option<&Path>) -> ExitCode {
+        let args: Vec<_> = std::env::args_os().skip(1).collect();
+        if args.len() != 3 || args[0] != ARG || args[1] != "--data-dir" {
+            return blocked(format!("usage: nectarlink-desktop {ARG} --data-dir <fresh run directory>"));
+        }
+        for var in ["QT_QPA_PLATFORM", "QT_QUICK_BACKEND", "QSG_RHI_BACKEND"] {
+            if std::env::var_os(var).is_some() {
+                return blocked(format!("{var} is set; the gate only runs the default Cocoa/Metal path"));
+            }
+        }
+        let Some(home) = dirs::home_dir() else { return blocked("no home directory") };
+        let run_dir = match validate_run_dir(data_dir, &home.join("orca/tmp")) {
+            Ok(dir) => dir,
+            Err(e) => return blocked(e),
+        };
+        let _ = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::INFO)
+            .with_writer(std::io::stderr)
+            .try_init();
+        std::thread::spawn(|| {
+            std::thread::sleep(HARD_TIMEOUT);
+            eprintln!("mirror-window-gate: BLOCKED: no result within {} s", HARD_TIMEOUT.as_secs());
+            std::process::exit(BLOCKED);
+        });
+
+        let gate = match Gate::start(&run_dir) {
+            Ok(gate) => gate,
+            Err(e) => return blocked(e),
+        };
+        let shown = gate.show();
+        let phone = if shown.code == PASS { gate.phone_report() } else { Err("not checked".into()) };
+        let shut_down = gate.shut_down();
+
+        let code = if shown.code != PASS {
+            shown.code
+        } else if let Err(e) = &shown.grabs {
+            println!("mirror-window-gate: FAILED render: {e}");
+            FAILED
+        } else if let Err(e) = &phone {
+            println!("mirror-window-gate: FAILED phone: {e}");
+            FAILED
+        } else if shown.qml_problems > 0 {
+            println!(
+                "mirror-window-gate: FAILED: {} QML warning(s) or error(s) from the app's QML",
+                shown.qml_problems
+            );
+            FAILED
+        } else if !shut_down {
+            println!("mirror-window-gate: FAILED: a node did not shut down within 5 seconds");
+            FAILED
+        } else {
+            println!(
+                "mirror-window-gate: PASS lifecycle: Mirror.start opened MirrorWindow; the phone turned it \
+                 portrait to landscape; the phone's end blanked it; Try again reused it; closing destroyed \
+                 it and stopped the phone; Mirror.start opened a new window; closing destroyed it"
+            );
+            for line in shown.grabs.iter().flatten() {
+                println!("mirror-window-gate: PASS render {line}");
+            }
+            if let Ok(line) = &phone {
+                println!("mirror-window-gate: PASS phone {line}");
+            }
+            PASS
+        };
+        ExitCode::from(u8::try_from(code).unwrap_or(1))
+    }
+
+    fn blocked(reason: impl std::fmt::Display) -> ExitCode {
+        eprintln!("mirror-window-gate: BLOCKED: {reason}");
+        ExitCode::from(BLOCKED as u8)
+    }
+
+    /// `dir` must be a canonical, owner-only directory at least two levels
+    /// under `scratch_root` in a `waypair-*` folder, holding only [`SENTINEL`].
+    pub(super) fn validate_run_dir(dir: Option<&Path>, scratch_root: &Path) -> Result<PathBuf, String> {
+        let dir = dir.ok_or("--data-dir <fresh run directory> is required")?;
+        let meta =
+            std::fs::symlink_metadata(dir).map_err(|e| format!("run directory {}: {e}", dir.display()))?;
+        if !meta.is_dir() {
+            return Err("the run directory must be a directory, not a link or a file".into());
+        }
+        let canonical = dir.canonicalize().map_err(|e| format!("run directory: {e}"))?;
+        if canonical != dir {
+            return Err("the run directory must be given as its canonical absolute path".into());
+        }
+        let root = scratch_root
+            .canonicalize()
+            .map_err(|e| format!("scratch root {}: {e}", scratch_root.display()))?;
+        let relative = canonical
+            .strip_prefix(&root)
+            .map_err(|_| format!("the run directory must be under {}", root.display()))?;
+        let mut parts = relative.components();
+        let in_waypair =
+            parts.next().and_then(|c| c.as_os_str().to_str()).is_some_and(|c| c.starts_with("waypair-"));
+        if !in_waypair || parts.next().is_none() {
+            return Err(format!("the run directory must be inside {}/waypair-*/", root.display()));
+        }
+        let owner = std::fs::metadata(&root).map_err(|e| format!("scratch root: {e}"))?.uid();
+        if meta.uid() != owner || meta.mode() & 0o022 != 0 {
+            return Err(
+                "the run directory must belong to the scratch owner and not be group or world writable"
+                    .into(),
+            );
+        }
+        let entries: Vec<_> = std::fs::read_dir(&canonical)
+            .map_err(|e| format!("run directory: {e}"))?
+            .map(|entry| entry.map(|e| e.file_name()))
+            .collect::<Result<_, _>>()
+            .map_err(|e| format!("run directory: {e}"))?;
+        if entries.len() != 1 || entries[0] != SENTINEL {
+            return Err(format!("the run directory must be fresh: only {SENTINEL} may be in it"));
+        }
+        let sentinel = canonical.join(SENTINEL);
+        if !std::fs::symlink_metadata(&sentinel).is_ok_and(|m| m.is_file()) {
+            return Err(format!("{SENTINEL} must be a regular file"));
+        }
+        let names = std::fs::read_to_string(&sentinel).map_err(|e| format!("{SENTINEL}: {e}"))?;
+        if Some(names.trim_end_matches('\n')) != canonical.to_str() {
+            return Err(format!("{SENTINEL} must hold this run directory's path"));
+        }
+        Ok(canonical)
+    }
+
+    fn device(name: &str, kind: DeviceKind) -> DeviceInfo {
+        DeviceInfo {
+            name: name.into(),
+            kind,
+            os: if kind == DeviceKind::Phone { "android" } else { "macos" }.into(),
+            os_ver: "fixture".into(),
+            model: None,
+            accent: None,
+            screen: None,
+            install_id: None,
+        }
+    }
+
+    /// A throwaway node bound to 127.0.0.1: no port mapping, discovery,
+    /// relay, ADB or USB, a plain key in `directory`, and only `capabilities`.
+    pub(super) fn loopback_config(
+        directory: &Path,
+        name: &str,
+        kind: DeviceKind,
+        capabilities: &[&str],
+    ) -> NodeConfig {
+        let mut config = NodeConfig::new(directory, device(name, kind), "0.0.1-test");
+        config.away_mode = false;
+        config.lan_discovery = false;
+        config.adb_server = None;
+        config.usb_port = None;
+        config.enable_loopback_mirror_fixture();
+        config.key_protector = Some(Arc::new(PlainKeyProtector));
+        config.capabilities = capabilities.iter().map(|cap| (*cap).to_owned()).collect();
+        config
+    }
+
+    pub(super) async fn wait_for_link(receiver: &Node, phone: DeviceId) -> Result<(), String> {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if receiver.paired_devices().is_ok_and(|peers| {
+                    peers
+                        .iter()
+                        .any(|peer| peer.id == phone && matches!(&peer.link, LinkState::Online { .. }))
+                }) {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .map_err(|_| "authenticated loopback link did not come online within 5 seconds".to_owned())
+    }
+
+    /// The receiver's video goes to the production sink only.
+    #[derive(Debug)]
+    struct GateReceiver;
+
+    impl Platform for GateReceiver {
+        fn mirror_sink(&self, peer: &DeviceId, session: u32) -> Option<Arc<dyn MirrorSink>> {
+            super::sink(peer, session)
+        }
+    }
+
+    #[derive(Debug)]
+    enum PhoneEvent {
+        Start(DeviceId, MirrorStart),
+        Stop(DeviceId, u32),
+        Keyframe,
+    }
+
+    /// Approves every request in place of a person; never captures anything.
+    #[derive(Debug)]
+    struct GatePhone {
+        events: UnboundedSender<PhoneEvent>,
+    }
+
+    impl Platform for GatePhone {
+        fn mirror_requested(&self, peer: &DeviceId, options: &MirrorStart) -> Result<(), String> {
+            self.events.send(PhoneEvent::Start(*peer, options.clone())).map_err(|_| "gate phone ended".into())
+        }
+        fn mirror_stop_requested(&self, peer: &DeviceId, session: u32) {
+            let _ = self.events.send(PhoneEvent::Stop(*peer, session));
+        }
+        fn mirror_keyframe_requested(&self, _peer: &DeviceId, _session: u32) {
+            let _ = self.events.send(PhoneEvent::Keyframe);
+        }
+    }
+
+    #[derive(Debug, Default)]
+    struct PhoneLog {
+        starts: u32,
+        stops: u32,
+        formats: Vec<(u32, u32)>,
+        problems: Vec<String>,
+    }
+
+    fn lock(log: &Mutex<PhoneLog>) -> std::sync::MutexGuard<'_, PhoneLog> {
+        log.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn idr() -> Vec<u8> {
+        include_bytes!("mac/testdata/red-128x128.annexb").to_vec()
+    }
+
+    /// A format, then the keyframe, as a phone sends them after turning.
+    async fn send_format(
+        stream: &Arc<MirrorStream>,
+        format: (u32, u32),
+        request: u64,
+        time_us: u64,
+    ) -> Result<(), String> {
+        let (width, height) = format;
+        let config = MirrorConfig {
+            codec: "h264".into(),
+            width,
+            height,
+            session: MIRROR_SCREEN,
+            request: Some(request),
+        };
+        let stream = stream.clone();
+        let queued = tokio::time::timeout(
+            Duration::from_secs(5),
+            tokio::task::spawn_blocking(move || {
+                let config = stream.send(PacketKind::Config, time_us, config.to_cbor());
+                (config, stream.send(PacketKind::Keyframe, time_us, idr()))
+            }),
+        )
+        .await
+        .map_err(|_| format!("sending {width}x{height} took over 5 seconds"))?
+        .map_err(|e| format!("sending {width}x{height} panicked: {e}"))?;
+        if queued != (MirrorSend::Queued, MirrorSend::Queued) {
+            return Err(format!("{width}x{height} was not queued: {queued:?}"));
+        }
+        Ok(())
+    }
+
+    async fn wait_for_grab(path: PathBuf) -> Result<(), String> {
+        tokio::time::timeout(GRAB_WAIT, async {
+            while !path.exists() {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        })
+        .await
+        .map_err(|_| format!("the window did not save {} within {} s", path.display(), GRAB_WAIT.as_secs()))
+    }
+
+    /// The phone's side: the first request turns from portrait to landscape
+    /// once each picture is grabbed, then stops sharing on its own; the
+    /// second answers portrait, the third landscape, both until stopped.
+    async fn phone_script(
+        phone: Node,
+        receiver: DeviceId,
+        grabs: PathBuf,
+        mut events: UnboundedReceiver<PhoneEvent>,
+        log: Arc<Mutex<PhoneLog>>,
+    ) {
+        let mut current: Option<Arc<MirrorStream>> = None;
+        while let Some(event) = events.recv().await {
+            match event {
+                PhoneEvent::Start(peer, options) => {
+                    let starts = {
+                        let mut log = lock(&log);
+                        log.starts += 1;
+                        log.starts
+                    };
+                    if peer != receiver
+                        || options.session != MIRROR_SCREEN
+                        || options.audio
+                        || options.app.is_some()
+                    {
+                        lock(&log).problems.push("a request asked for more than the screen's video".into());
+                        continue;
+                    }
+                    let Some(request) = options.request else {
+                        lock(&log).problems.push("mirror.start carried no request token".into());
+                        continue;
+                    };
+                    if let Some(old) = current.take() {
+                        old.close();
+                    }
+                    let stream = match tokio::time::timeout(
+                        Duration::from_secs(10),
+                        phone.mirror_open(receiver),
+                    )
+                    .await
+                    {
+                        Ok(Ok(stream)) => Arc::new(stream),
+                        Ok(Err(e)) => {
+                            lock(&log).problems.push(format!("mirror_open failed: {e}"));
+                            continue;
+                        }
+                        Err(_) => {
+                            lock(&log).problems.push("mirror_open took over 10 seconds".into());
+                            continue;
+                        }
+                    };
+                    let format = if starts == 3 { LANDSCAPE } else { PORTRAIT };
+                    if let Err(e) = send_format(&stream, format, request, 0).await {
+                        lock(&log).problems.push(e);
+                        continue;
+                    }
+                    lock(&log).formats.push(format);
+                    if starts == 1 {
+                        let (stream, grabs, log) = (stream.clone(), grabs.clone(), log.clone());
+                        tokio::spawn(async move {
+                            let turned = async {
+                                wait_for_grab(grabs.join("1-portrait.png")).await?;
+                                send_format(&stream, LANDSCAPE, request, 1_000_000).await?;
+                                lock(&log).formats.push(LANDSCAPE);
+                                wait_for_grab(grabs.join("2-landscape.png")).await
+                            }
+                            .await;
+                            stream.close();
+                            if let Err(e) = turned {
+                                lock(&log).problems.push(e);
+                            }
+                        });
+                    }
+                    current = Some(stream);
+                }
+                PhoneEvent::Stop(peer, session) => {
+                    let mut log = lock(&log);
+                    log.stops += 1;
+                    if peer != receiver || session != MIRROR_SCREEN {
+                        log.problems.push("a stop named another device or session".into());
+                    }
+                    if let Some(stream) = current.take() {
+                        stream.close();
+                    }
+                }
+                PhoneEvent::Keyframe => {
+                    if let Some(stream) = &current {
+                        let _ = stream.send(PacketKind::Keyframe, 0, idr());
+                    }
+                }
+            }
+        }
+        if let Some(stream) = current {
+            stream.close();
+        }
+    }
+
+    struct Shown {
+        code: i32,
+        grabs: Result<Vec<String>, String>,
+        qml_problems: i32,
+    }
+
+    struct Gate {
+        run_dir: PathBuf,
+        grabs: PathBuf,
+        receiver: Node,
+        phone: Node,
+        phone_runtime: tokio::runtime::Runtime,
+        script: tokio::task::JoinHandle<()>,
+        log: Arc<Mutex<PhoneLog>>,
+    }
+
+    fn shut_down_node(runtime: &tokio::runtime::Runtime, node: &Node) -> bool {
+        runtime.block_on(tokio::time::timeout(Duration::from_secs(5), node.shutdown())).is_ok()
+    }
+
+    /// QR pairing over the loopback-only invitation; its secret stays in memory.
+    fn pair(
+        host: &tokio::runtime::Runtime,
+        receiver: &Node,
+        phone_runtime: &tokio::runtime::Runtime,
+        phone: &Node,
+    ) -> Result<(), String> {
+        let invitation = host
+            .block_on(tokio::time::timeout(Duration::from_secs(10), receiver.pairing_start_qr()))
+            .map_err(|_| "pairing invitation took over 10 seconds".to_owned())?
+            .map_err(|e| format!("pairing invitation failed: {e}"))?;
+        if invitation.addrs.is_empty() || !invitation.addrs.iter().all(|a| a.ip().is_loopback()) {
+            return Err("the receiver offered a missing or non-loopback address".to_owned());
+        }
+        let uri = invitation.to_uri();
+        drop(invitation);
+        phone_runtime
+            .block_on(tokio::time::timeout(Duration::from_secs(20), phone.pairing_join(&uri)))
+            .map_err(|_| "loopback QR pairing took over 20 seconds".to_owned())?
+            .map_err(|e| format!("loopback QR pairing failed: {e}"))?;
+        host.block_on(wait_for_link(receiver, phone.device_id()))
+    }
+
+    impl Gate {
+        fn start(run_dir: &Path) -> Result<Gate, String> {
+            let (receiver_dir, phone_dir, grabs) =
+                (run_dir.join("receiver"), run_dir.join("phone"), run_dir.join("grabs"));
+            for dir in [&receiver_dir, &phone_dir, &grabs] {
+                std::fs::create_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+            }
+            let receiver = crate::core_host::start_window_gate(
+                loopback_config(
+                    &receiver_dir,
+                    "Synthetic Mac",
+                    DeviceKind::Desktop,
+                    &[MIRROR_VIEW, MIRROR_CORRELATION],
+                ),
+                Arc::new(GateReceiver),
+            )?;
+            let host = &crate::core_host::host().runtime;
+            let phone_runtime = match tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
+                .thread_name("gate-phone")
+                .enable_all()
+                .build()
+            {
+                Ok(runtime) => runtime,
+                Err(e) => {
+                    shut_down_node(host, &receiver);
+                    return Err(format!("phone runtime: {e}"));
+                }
+            };
+            let (events, phone_events) = unbounded_channel();
+            let phone_config = loopback_config(
+                &phone_dir,
+                "Synthetic Phone",
+                DeviceKind::Phone,
+                &[MIRROR_CAPTURE, MIRROR_CORRELATION],
+            );
+            let phone = match phone_runtime.block_on(tokio::time::timeout(
+                Duration::from_secs(10),
+                Node::start(phone_config, Arc::new(GatePhone { events })),
+            )) {
+                Ok(Ok(phone)) => phone,
+                Ok(Err(e)) => {
+                    shut_down_node(host, &receiver);
+                    return Err(format!("synthetic phone node failed to start: {e}"));
+                }
+                Err(_) => {
+                    shut_down_node(host, &receiver);
+                    return Err("synthetic phone node did not start within 10 seconds".into());
+                }
+            };
+            if let Err(e) = pair(host, &receiver, &phone_runtime, &phone) {
+                shut_down_node(&phone_runtime, &phone);
+                shut_down_node(host, &receiver);
+                return Err(e);
+            }
+            let log = Arc::new(Mutex::new(PhoneLog::default()));
+            let script = phone_runtime.spawn(phone_script(
+                phone.clone(),
+                receiver.device_id(),
+                grabs.clone(),
+                phone_events,
+                log.clone(),
+            ));
+            Ok(Gate { run_dir: run_dir.to_owned(), grabs, receiver, phone, phone_runtime, script, log })
+        }
+
+        /// Runs the window sequence in `GATE_QML` on this (the main) thread.
+        fn show(&self) -> Shown {
+            ffi::prepare_qt_for_ui_check();
+            let mut app = QGuiApplication::new();
+            ffi::keep_running_without_windows();
+            let _ = ffi::load_bundled_fonts();
+            let phone = self.phone.device_id();
+            let quoted = |s: &str| serde_json::Value::from(s).to_string();
+            let qml = GATE_QML
+                .replace("@PHONE@", &quoted(&phone.to_string()))
+                .replace("@KEY@", &quoted(&Window::screen(phone).key()))
+                .replace("@GRABS@", &quoted(&self.grabs.to_string_lossy()));
+            let url = format!("file://{}/mirror-window-gate.qml", self.run_dir.display());
+            let mut engine = QQmlApplicationEngine::new();
+            if let Some(mut engine) = engine.as_mut() {
+                ffi::register_qml_app_engine(engine.as_mut());
+                engine.load_data(&QByteArray::from(qml.as_str()), &QUrl::from(url.as_str()));
+            }
+            let code = app.as_mut().map_or(BLOCKED, |app| app.exec());
+            drop(engine);
+            let grabs = if code == PASS { check_grabs(&self.grabs) } else { Err("not checked".into()) };
+            let qml_problems = ffi::qml_problem_count();
+            drop(app);
+            Shown { code, grabs, qml_problems }
+        }
+
+        fn phone_report(&self) -> Result<String, String> {
+            for _ in 0..100 {
+                if lock(&self.log).stops >= 2 {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            let log = lock(&self.log);
+            if !log.problems.is_empty() {
+                return Err(log.problems.join("; "));
+            }
+            if (log.starts, log.stops) != (3, 2) {
+                return Err(format!("expected 3 requests and 2 stops, saw {} and {}", log.starts, log.stops));
+            }
+            if log.formats != [PORTRAIT, LANDSCAPE, PORTRAIT, LANDSCAPE] {
+                return Err(format!("unexpected format sequence {:?}", log.formats));
+            }
+            Ok(format!(
+                "3 screen-only, video-only requests with live tokens; 2 stops from closed windows; formats {:?}",
+                log.formats
+            ))
+        }
+
+        fn shut_down(self) -> bool {
+            self.script.abort();
+            let phone = shut_down_node(&self.phone_runtime, &self.phone);
+            let receiver = shut_down_node(&crate::core_host::host().runtime, &self.receiver);
+            super::clear_window_buffers(&Window::screen(self.phone.device_id()));
+            phone && receiver
+        }
+    }
+
+    fn is_red(px: &[u8; 4]) -> bool {
+        px[2] >= 230 && px[1] <= 24 && px[0] <= 24
+    }
+
+    /// Checks one window grab (BGRA): a showing window keeps the frame's
+    /// aspect and is red inside its picture, away from the toolbar at the
+    /// top and the control hint at the bottom; an ended one has no red.
+    fn check_grab(name: &str, image: &Bitmap, frame: Option<(u32, u32)>) -> Result<String, String> {
+        let (w, h) = (image.width, image.height);
+        if w < 16 || h < 16 || image.bgra.len() < (w as usize) * (h as usize) * 4 {
+            return Err(format!("{name}: unusable {w}x{h} grab"));
+        }
+        let pixels = image.bgra.as_chunks::<4>().0;
+        let Some((fw, fh)) = frame else {
+            let red = pixels.iter().filter(|px| is_red(px)).count();
+            if red > 0 {
+                return Err(format!("{name}: {red} red pixels left after the stream ended"));
+            }
+            return Ok(format!("{name}: {w}x{h} grab of the ended window has no picture left"));
+        };
+        let (window_aspect, frame_aspect) = (f64::from(w) / f64::from(h), f64::from(fw) / f64::from(fh));
+        if (window_aspect - frame_aspect).abs() > 0.06 {
+            return Err(format!(
+                "{name}: window aspect {window_aspect:.3} does not follow the {fw}x{fh} frame"
+            ));
+        }
+        let scale = (f64::from(w) / f64::from(fw)).min(f64::from(h) / f64::from(fh));
+        let (pw, ph) = (f64::from(fw) * scale, f64::from(fh) * scale);
+        let (left, top) = ((f64::from(w) - pw) / 2.0, (f64::from(h) - ph) / 2.0);
+        let (x0, x1) = ((left + pw * 0.2) as u32, (left + pw * 0.8) as u32);
+        let (y0, y1) = ((top + ph * 0.2) as u32, (top + ph * 0.6) as u32);
+        let mut sampled = 0usize;
+        for y in y0..y1 {
+            for x in x0..x1 {
+                let pixel = &pixels[(y * w + x) as usize];
+                if !is_red(pixel) {
+                    return Err(format!("{name}: pixel ({x},{y}) is {pixel:?} (BGRA), not the red keyframe"));
+                }
+                sampled += 1;
+            }
+        }
+        Ok(format!(
+            "{name}: {w}x{h} grab (aspect {window_aspect:.3}) shows the coded 128x128 keyframe scaled to \
+             {fw}x{fh}; {sampled}/{sampled} sampled pixels red"
+        ))
+    }
+
+    fn check_grabs(grabs: &Path) -> Result<Vec<String>, String> {
+        [
+            ("1-portrait.png", Some(PORTRAIT)),
+            ("2-landscape.png", Some(LANDSCAPE)),
+            ("3-ended.png", None),
+            ("4-reopened.png", Some(PORTRAIT)),
+            ("5-restarted.png", Some(LANDSCAPE)),
+        ]
+        .into_iter()
+        .map(|(name, frame)| {
+            let bytes = std::fs::read(grabs.join(name)).map_err(|e| format!("{name}: {e}"))?;
+            let image = crate::win::image::decode(&bytes).map_err(|e| format!("{name}: {e}"))?;
+            check_grab(name, &image, frame)
+        })
+        .collect()
+    }
+
+    /// Creates a `MirrorWindow` for each key in `Mirror.windows` (as App.qml
+    /// does) and walks it through the lifecycle the way a user would, each
+    /// step bounded; saves a grab of the window's own content at each check.
+    /// Exits 0 (pass), 1 (wrong state) or 2 (not the native path, or stuck).
+    const GATE_QML: &str = r#"
+import QtQml
+import QtQuick
+import app.nectarlink
+
+QtObject {
+    id: gate
+    readonly property string phone: @PHONE@
+    readonly property string key: @KEY@
+    readonly property string grabs: @GRABS@
+    property var windows: ({})
+    property int created: 0
+    property int destroyed: 0
+    property var first: null
+    property var second: null
+    property int step: 0
+    property double stepStarted: Date.now()
+    property double closedAt: 0
+    property bool busy: false
+    property bool finished: false
+
+    readonly property Component mirrorWindow: Component {
+        MirrorWindow {
+            readonly property int gateApi: gateProbe.GraphicsInfo.api
+            Item { id: gateProbe }
+        }
+    }
+
+    readonly property Timer ticker: Timer {
+        interval: 50
+        repeat: true
+        running: true
+        onTriggered: gate.tick()
+    }
+    readonly property Timer watchdog: Timer {
+        interval: 150000
+        running: true
+        onTriggered: gate.fail(2, "the sequence did not finish within 150 s: " + gate.describe())
+    }
+
+    function sync() {
+        let keys = []
+        try {
+            keys = JSON.parse(Mirror.windows).map(w => w.key)
+        } catch (e) {}
+        for (const k of Object.keys(windows)) {
+            if (keys.indexOf(k) < 0) {
+                windows[k].destroy()
+                delete windows[k]
+                destroyed++
+            }
+        }
+        for (const k of keys) {
+            if (!windows[k]) {
+                const w = mirrorWindow.createObject(gate, { mirrorKey: k })
+                if (!w) {
+                    fail(2, "MirrorWindow did not load: " + mirrorWindow.errorString())
+                    return
+                }
+                windows[k] = w
+                created++
+            }
+        }
+    }
+
+    function listed() {
+        try {
+            return JSON.parse(Mirror.windows).some(w => w.key === key)
+        } catch (e) {
+            return false
+        }
+    }
+
+    function video(w) {
+        const items = w.contentItem.children
+        for (let i = 0; i < items.length; i++) {
+            if (items[i].frames !== undefined && items[i].stream === w.mirrorKey)
+                return items[i]
+        }
+        return null
+    }
+
+    function describe() {
+        const w = windows[key]
+        if (!w)
+            return "no window (created " + created + ", destroyed " + destroyed + ")"
+        const v = video(w)
+        return "phase " + w.phase + ", window " + w.width + "x" + w.height + ", frame " + w.frame.width + "x"
+            + w.frame.height + ", frames " + (v ? v.frames : -1) + ", visible " + w.visible
+    }
+
+    function shows(w, width, height) {
+        const v = video(w)
+        return w.visible && w.phase === "showing" && v !== null && v.frames > 0 && w.frame.width === width
+            && w.frame.height === height && w.height > 0 && Math.abs(w.width / w.height - width / height) <= 0.05
+    }
+
+    function nativePath(w) {
+        if (Qt.platform.pluginName !== "cocoa") {
+            fail(2, "the Qt platform is " + Qt.platform.pluginName + ", not cocoa")
+            return false
+        }
+        if (w.gateApi !== GraphicsInfo.Metal) {
+            fail(2, "the window renders with graphics API " + w.gateApi + ", not Metal")
+            return false
+        }
+        return true
+    }
+
+    function grab(w, name, next) {
+        busy = true
+        const state = describe()
+        const ok = w.contentItem.grabToImage(function (result) {
+            if (finished)
+                return
+            if (!result.saveToFile(grabs + "/" + name)) {
+                fail(2, "could not save " + name)
+                return
+            }
+            console.info("mirror-window-gate: " + name + ": " + state)
+            busy = false
+            advance(next)
+        })
+        if (!ok)
+            fail(2, "the window refused grabToImage for " + name)
+    }
+
+    function advance(next) {
+        step = next
+        stepStarted = Date.now()
+    }
+
+    function tick() {
+        if (finished)
+            return
+        if (Date.now() - stepStarted > 20000) {
+            fail(busy ? 2 : 1, "step " + step + " did not complete within 20 s: " + describe())
+            return
+        }
+        if (busy)
+            return
+        const w = windows[key] || null
+        switch (step) {
+        case 0:
+            Mirror.start(phone)
+            advance(1)
+            break
+        case 1:
+            if (w && shows(w, 360, 640) && nativePath(w)) {
+                first = w
+                grab(w, "1-portrait.png", 2)
+            }
+            break
+        case 2:
+            if (w === first && shows(w, 640, 360) && nativePath(w))
+                grab(w, "2-landscape.png", 3)
+            break
+        case 3:
+            if (w === first && w.visible && w.phase === "ended" && w.frame.width <= 0)
+                grab(w, "3-ended.png", 4)
+            break
+        case 4:
+            Mirror.reopen(key)
+            advance(5)
+            break
+        case 5:
+            if (w === first && created === 1 && shows(w, 360, 640) && nativePath(w))
+                grab(w, "4-reopened.png", 6)
+            break
+        case 6:
+            first.close()
+            advance(7)
+            break
+        case 7:
+            if (!w && destroyed === 1 && !listed()) {
+                if (closedAt === 0)
+                    closedAt = Date.now()
+                if (Date.now() - closedAt >= 1000) {
+                    Mirror.start(phone)
+                    advance(8)
+                }
+            }
+            break
+        case 8:
+            if (w && w !== first && created === 2 && shows(w, 640, 360) && nativePath(w)) {
+                second = w
+                grab(w, "5-restarted.png", 9)
+            }
+            break
+        case 9:
+            second.close()
+            advance(10)
+            break
+        case 10:
+            if (!w && destroyed === 2 && !listed())
+                finish(0)
+            break
+        }
+    }
+
+    function fail(code, why) {
+        if (finished)
+            return
+        console.error("mirror-window-gate: " + (code === 2 ? "BLOCKED" : "FAILED") + ": " + why)
+        finish(code)
+    }
+
+    function finish(code) {
+        finished = true
+        ticker.stop()
+        watchdog.stop()
+        for (const k of Object.keys(windows))
+            windows[k].close()
+        Qt.exit(code)
+    }
+
+    Component.onCompleted: {
+        Mirror.windowsChanged.connect(gate.sync)
+        gate.sync()
+    }
+}
+"#;
+
+    #[cfg(test)]
+    mod tests {
+        use std::os::unix::fs::PermissionsExt;
+
+        use super::{SENTINEL, validate_run_dir};
+
+        #[test]
+        fn the_gate_runs_only_in_a_fresh_sentinel_scratch_directory() {
+            let scratch = tempfile::tempdir().expect("scratch root");
+            let root = scratch.path().canonicalize().expect("canonical scratch root");
+            let run = root.join("waypair-gate").join("run");
+            std::fs::create_dir_all(&run).expect("run directory");
+            std::fs::set_permissions(&run, std::fs::Permissions::from_mode(0o700)).expect("owner-only run");
+            let sentinel = format!("{}\n", run.display());
+            std::fs::write(run.join(SENTINEL), &sentinel).expect("sentinel");
+            assert_eq!(validate_run_dir(Some(run.as_path()), &root), Ok(run.clone()));
+
+            assert!(validate_run_dir(None, &root).is_err(), "a run directory is required");
+            assert!(
+                validate_run_dir(Some(root.join("waypair-gate").as_path()), &root).is_err(),
+                "not the wave folder itself"
+            );
+            let other = root.join("other").join("run");
+            std::fs::create_dir_all(&other).expect("other run");
+            std::fs::write(other.join(SENTINEL), format!("{}\n", other.display())).expect("other sentinel");
+            assert!(
+                validate_run_dir(Some(other.as_path()), &root).is_err(),
+                "only waypair-* scratch folders"
+            );
+            std::fs::write(run.join(SENTINEL), "/elsewhere\n").expect("foreign sentinel");
+            assert!(validate_run_dir(Some(run.as_path()), &root).is_err(), "the sentinel names this run");
+            std::fs::write(run.join(SENTINEL), &sentinel).expect("sentinel again");
+            std::fs::create_dir(run.join("receiver")).expect("left over state");
+            assert!(validate_run_dir(Some(run.as_path()), &root).is_err(), "a used run directory is refused");
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -2225,13 +3127,15 @@ mod mac_receive_fixture {
 
     use nectarlink_core::{DeviceId, MIRROR_SCREEN, MirrorConfig, MirrorInput};
     #[cfg(feature = "test-support")]
-    use std::sync::Arc;
-    #[cfg(feature = "test-support")]
     use nectarlink_core::{
-        DeviceInfo, DeviceKind, LinkState, MIRROR_CAPTURE, MIRROR_CORRELATION, MIRROR_VIEW, MirrorSend,
-        MirrorStart, Node, NodeConfig, NodeEvent, PacketKind, PlainKeyProtector, Platform,
+        DeviceKind, MIRROR_CAPTURE, MIRROR_CORRELATION, MIRROR_VIEW, MirrorSend, MirrorStart, Node,
+        NodeEvent, PacketKind, Platform,
     };
+    #[cfg(feature = "test-support")]
+    use std::sync::Arc;
 
+    #[cfg(feature = "test-support")]
+    use super::window_gate::{loopback_config as fixture_node_config, wait_for_link};
     use super::{Phase, Shown, Window};
 
     /// The two receive fixtures share the production mirror state and global
@@ -2341,56 +3245,6 @@ mod mac_receive_fixture {
     }
 
     #[cfg(feature = "test-support")]
-    fn fixture_device(name: &str, kind: DeviceKind) -> DeviceInfo {
-        DeviceInfo {
-            name: name.into(),
-            kind,
-            os: if kind == DeviceKind::Phone { "android" } else { "macos" }.into(),
-            os_ver: "fixture".into(),
-            model: None,
-            accent: None,
-            screen: None,
-            install_id: None,
-        }
-    }
-
-    #[cfg(feature = "test-support")]
-    fn fixture_node_config(
-        directory: &std::path::Path,
-        name: &str,
-        kind: DeviceKind,
-        capabilities: &[&str],
-    ) -> NodeConfig {
-        let mut config = NodeConfig::new(directory, fixture_device(name, kind), "0.0.1-test");
-        config.away_mode = false;
-        config.lan_discovery = false;
-        config.adb_server = None;
-        config.usb_port = None;
-        config.enable_loopback_mirror_fixture();
-        config.key_protector = Some(Arc::new(PlainKeyProtector));
-        // Only the test-only screen-mirror gates are enabled; no capture
-        // implementation, input, audio, or unrelated capability is present.
-        config.capabilities = capabilities.iter().map(|cap| (*cap).to_owned()).collect();
-        config
-    }
-
-    #[cfg(feature = "test-support")]
-    async fn wait_for_link(receiver: &Node, phone: DeviceId) -> Result<(), String> {
-        tokio::time::timeout(Duration::from_secs(5), async {
-            loop {
-                if receiver.paired_devices().is_ok_and(|peers| {
-                    peers.iter().any(|peer| peer.id == phone && matches!(&peer.link, LinkState::Online { .. }))
-                }) {
-                    return;
-                }
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .map_err(|_| "authenticated loopback link did not come online within 5 seconds".to_owned())
-    }
-
-    #[cfg(feature = "test-support")]
     async fn wait_for_mirroring_event(
         events: &mut tokio::sync::broadcast::Receiver<NodeEvent>,
         phone: DeviceId,
@@ -2497,7 +3351,9 @@ mod mac_receive_fixture {
             let config_stream = stream.clone();
             let config_sent = tokio::time::timeout(
                 Duration::from_secs(5),
-                tokio::task::spawn_blocking(move || config_stream.send(PacketKind::Config, 0, config.to_cbor())),
+                tokio::task::spawn_blocking(move || {
+                    config_stream.send(PacketKind::Config, 0, config.to_cbor())
+                }),
             )
             .await
             .map_err(|_| "sending mirror config exceeded 5 seconds".to_owned())?
@@ -2511,12 +3367,15 @@ mod mac_receive_fixture {
             }
 
             wait_for_mirroring_event(&mut events, phone_id, true).await?;
-            let frame = wait_for_frame(window)
-                .await
-                .ok_or_else(|| "production VideoToolbox path did not publish 128x128 within 10 seconds".to_owned())?;
-            let red = frame.bgra.as_chunks::<4>().0.iter().all(|pixel| {
-                pixel[0] <= 10 && pixel[1] <= 10 && pixel[2] >= 244
-            });
+            let frame = wait_for_frame(window).await.ok_or_else(|| {
+                "production VideoToolbox path did not publish 128x128 within 10 seconds".to_owned()
+            })?;
+            let red = frame
+                .bgra
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .all(|pixel| pixel[0] <= 10 && pixel[1] <= 10 && pixel[2] >= 244);
             if !red {
                 return Err("production VideoToolbox output did not match the committed red keyframe".into());
             }
