@@ -101,6 +101,18 @@ pub fn start(data_dir: PathBuf, platform: Arc<dyn Platform>) -> std::io::Result<
     Ok(host)
 }
 
+/// In-memory host for code-only receiver tests: no Node, socket, identity or peer is started.
+#[cfg(test)]
+pub(crate) fn start_receiver_fixture(data_dir: PathBuf) {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .enable_all()
+        .build()
+        .expect("fixture runtime");
+    HOST.set(CoreHost { runtime, node: OnceLock::new(), started: Notify::new(), hub: Hub::new(), data_dir })
+        .expect("receiver fixture runs in an isolated test process");
+}
+
 /// Computes the PC's advertised capabilities, advertising capture (`mirror.capture`)
 /// and input injection (`mirror.input`, `input.inject`) only when enabled for at
 /// least one paired device (or actively sharing), and this PC's folders

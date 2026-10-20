@@ -1771,9 +1771,15 @@ impl Video {
                 s.streams.insert(window, stream);
             }
         });
-        let started = std::thread::Builder::new()
-            .name("mirror-decoder".into())
-            .spawn(move || decode(window, stream, &items, &counter));
+        let started = std::thread::Builder::new().name("mirror-decoder".into()).spawn(move || {
+            decode(window, stream, &items, &counter);
+            #[cfg(test)]
+            FINISHED_DECODERS
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .get_or_insert_with(HashSet::new)
+                .insert(stream);
+        });
         if let Err(e) = started {
             tracing::error!(error = %e, "can't start the video decoder");
         }
@@ -1925,6 +1931,9 @@ fn give_up(window: Window, id: u64, reason: String) {
         }
     });
 }
+
+#[cfg(test)]
+static FINISHED_DECODERS: Mutex<Option<HashSet<u64>>> = Mutex::new(None);
 
 /// The decoder thread: decodes everything (later pictures depend on
 /// earlier ones), shows the newest picture of each batch.
@@ -2218,13 +2227,13 @@ mod tests {
 mod mac_receive_fixture {
     use std::time::{Duration, Instant};
 
-    use nectarlink_core::{DeviceId, MIRROR_SCREEN, MirrorConfig, MirrorInput, MirrorSink};
+    use nectarlink_core::{DeviceId, MIRROR_SCREEN, MirrorConfig, MirrorInput};
 
     use super::{Phase, Shown, Window};
 
-    /// The committed synthetic keyframe: solid red 32x32 baseline IDR.
+    /// The committed synthetic keyframe: solid red 128x128 baseline IDR.
     fn fixture_idr() -> Vec<u8> {
-        include_bytes!("mac/testdata/red-32x32.annexb").to_vec()
+        include_bytes!("mac/testdata/red-128x128.annexb").to_vec()
     }
 
     fn fixture_config(width: u32, height: u32, generation: u64) -> MirrorConfig {
@@ -2289,10 +2298,12 @@ mod mac_receive_fixture {
 
     #[test]
     fn mac_view_only_receive_shows_decoded_frame_and_cancels() {
+        let _ = tracing_subscriber::fmt().with_max_level(tracing::Level::DEBUG).with_test_writer().try_init();
+        let directory = tempfile::tempdir().expect("disposable receiver state");
+        crate::core_host::start_receiver_fixture(directory.path().to_path_buf());
         // The Mac receive seam is present; capture and audio stay refused.
         assert!(super::VIEW_ONLY, "mac stays view-only until native acceptance");
         assert!(!super::OPTIONS.audio, "mac never asks for the phone's sound");
-        crate::win::mirror_receive::seam_check().expect("mac receive seam present, capture/audio off");
 
         // View-only gates: no app windows, no input, no control requests.
         let device = DeviceId([0x4D; 32]);
@@ -2311,9 +2322,9 @@ mod mac_receive_fixture {
         // Config + keyframe: the real decoder publishes the red fixture to
         // the production VideoView path (`ffi::video_frame` + latest frame).
         let idr = fixture_idr();
-        sink.config(fixture_config(32, 32, 0x9E3779B9_7F4A7C15));
+        sink.config(fixture_config(128, 128, 0x9E3779B9_7F4A7C15));
         sink.packet(true, 0, idr.clone());
-        let frame = await_bitmap(window, 32, 32, Duration::from_secs(10))
+        let frame = await_bitmap(window, 128, 128, Duration::from_secs(10))
             .expect("decoder publishes the fixture frame");
         assert_solid_red(&frame.bgra);
         let dims = super::LAST_CONFIG
@@ -2321,21 +2332,24 @@ mod mac_receive_fixture {
             .unwrap_or_else(|e| e.into_inner())
             .as_ref()
             .and_then(|m| m.get(&window).copied());
-        assert_eq!(dims, Some((32, 32)), "rotation seam tracks the live format");
+        assert_eq!(dims, Some((128, 128)), "rotation seam tracks the live format");
 
         // Rotation re-negotiation on the same stream: the decoder survives
         // the new format and keeps publishing.
-        sink.config(fixture_config(32, 32, 0x9E3779B9_7F4A7C15));
+        if let Some(frames) = super::FRAMES.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+            frames.remove(&window);
+        }
+        sink.config(fixture_config(128, 128, 0x9E3779B9_7F4A7C15));
         sink.packet(true, 33_333, idr.clone());
         let rotated =
-            await_bitmap(window, 32, 32, Duration::from_secs(10)).expect("stream survives re-negotiation");
+            await_bitmap(window, 128, 128, Duration::from_secs(10)).expect("stream survives re-negotiation");
         assert_solid_red(&rotated.bgra);
 
         // Rotation size change: flush, then the scaled picture publishes.
-        sink.config(fixture_config(48, 32, 0x9E3779B9_7F4A7C15));
+        sink.config(fixture_config(192, 128, 0x9E3779B9_7F4A7C15));
         sink.packet(true, 66_666, idr.clone());
-        let resized =
-            await_bitmap(window, 48, 32, Duration::from_secs(10)).expect("resized rotation frame publishes");
+        let resized = await_bitmap(window, 192, 128, Duration::from_secs(10))
+            .expect("resized rotation frame publishes");
         assert_solid_red(&resized.bgra);
 
         // Close: `ended` with a current stream clears its buffers and blanks
@@ -2350,28 +2364,38 @@ mod mac_receive_fixture {
         assert!(super::sink(&device, MIRROR_SCREEN).is_none(), "closed request owns no sink");
 
         // Replacement: a stale stream must neither publish over nor clear
-        // its successor. The old thread breaks on ownership; the 48x32
+        // its successor. The old thread breaks on ownership; the 192x128
         // successor frame stays exactly as published.
         let device_b = DeviceId([0x4E; 32]);
         let window_b = live_screen_request(device_b, 0xABCDEF01_23456789);
         let old = super::sink(&device_b, MIRROR_SCREEN).expect("old stream owns a sink");
-        old.config(fixture_config(32, 32, 0xABCDEF01_23456789));
+        old.config(fixture_config(128, 128, 0xABCDEF01_23456789));
         old.packet(true, 0, idr.clone());
-        await_bitmap(window_b, 32, 32, Duration::from_secs(10)).expect("old stream shows first");
+        await_bitmap(window_b, 128, 128, Duration::from_secs(10)).expect("old stream shows first");
+        let old_stream = super::state(|s| s.streams[&window_b]);
         super::state(|s| {
             s.requests.insert(window_b, 0xFEDCBA98_76543210);
         });
         let next = super::sink(&device_b, MIRROR_SCREEN).expect("replacement owns the sink");
-        next.config(fixture_config(48, 32, 0xFEDCBA98_76543210));
+        next.config(fixture_config(192, 128, 0xFEDCBA98_76543210));
         next.packet(true, 1, idr.clone());
         let successor =
-            await_bitmap(window_b, 48, 32, Duration::from_secs(10)).expect("replacement stream shows");
+            await_bitmap(window_b, 192, 128, Duration::from_secs(10)).expect("replacement stream shows");
         old.packet(true, 99_999, idr.clone());
         old.ended();
         next.packet(true, 2, idr.clone());
-        std::thread::sleep(Duration::from_secs(2));
+        let ended = Instant::now();
+        while !super::FINISHED_DECODERS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .is_some_and(|ids| ids.contains(&old_stream))
+        {
+            assert!(ended.elapsed() < Duration::from_secs(10), "stale decoder must exit");
+            std::thread::sleep(Duration::from_millis(10));
+        }
         let kept = super::latest_bitmap(&window_b).expect("stale stream must not clear its successor");
-        assert_eq!((kept.width, kept.height), (48, 32), "successor format survives the stale stream");
+        assert_eq!((kept.width, kept.height), (192, 128), "successor format survives the stale stream");
         assert_eq!(kept.bgra, successor.bgra, "successor pixels survive the stale stream");
         next.ended();
         drop_fixture_window(window_b);

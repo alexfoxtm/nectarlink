@@ -19,7 +19,6 @@ pub mod image;
 pub mod input;
 pub mod jumplist;
 pub mod media_sessions;
-pub mod mirror_receive;
 pub mod mp4;
 pub mod net;
 pub mod screen_capture;

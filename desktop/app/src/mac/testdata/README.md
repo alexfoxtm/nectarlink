@@ -21,3 +21,9 @@ ffmpeg -hide_banner -loglevel error -f lavfi -i color=c=red:size=32x32:rate=1 \
 ```
 
 This test data is dedicated to the public domain under CC0-1.0.
+
+`red-128x128.annexb` uses the same command with `size=128x128` and
+`-level:v 3.1`. It exercises the production hardware-preferred sink; this Mac
+refuses the 32x32 format when hardware is required with OSStatus -12911,
+while the existing software-selected 32x32 decoder fixture remains separate.
+Original synthetic data, CC0-1.0, SHA-256: 10d5435dda2f47dfd5de159484ce34c1f464bb00361515d01aabb8e62ea83b43.
