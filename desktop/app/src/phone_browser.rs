@@ -32,10 +32,8 @@ use std::{
 #[cfg(feature = "test-support")]
 use std::sync::atomic::AtomicBool;
 
-#[cfg(feature = "test-support")]
-use nectarlink_core::Node;
 use nectarlink_core::{
-    ConnectionPath, DeviceId, Error, LinkState, NodeEvent,
+    ConnectionPath, DeviceId, Error, LinkState, Node, NodeEvent,
     storage::{StorageEntry, is_valid_storage_dir_path, is_valid_storage_name, is_valid_storage_path},
 };
 use tokio::sync::mpsc;
