@@ -5,7 +5,7 @@
 //!   (`desktop/app/qml/Tokens.qml`, `android/.../ui/theme/Tokens.kt`) from
 //!   `docs/design/tokens.json`, the single source of truth.
 //! - `tokens --check`: fails if the generated files are out of date (CI).
-//! - `notices <out>`: the third-party notices shipped with the Windows app.
+//! - `notices <out>`: target-specific third-party notices for desktop or FFI.
 //! - `strings [--check]`: the Windows app's Rust-built text for Qt's
 //!   translation tools (`desktop/app/i18n/rust_strings.h`).
 
@@ -35,7 +35,7 @@ fn main() -> ExitCode {
         ["strings", "--check"] => strings::run(true),
         _ => {
             eprintln!(
-                "usage: cargo xtask tokens [--check] | strings [--check] | notices <out> [--target <triple>]"
+                "usage: cargo xtask tokens [--check] | strings [--check] | notices <out> [--target <triple>] [--package <crate>] [--license-texts <dir>]"
             );
             return ExitCode::from(2);
         }

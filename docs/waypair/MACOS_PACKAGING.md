@@ -1,9 +1,12 @@
-# macOS packaging — personal NectarLink local build
+# macOS packaging — personal Waypair Link build
 
-Packaging for the macOS port. These builds are for Alex's personal use only.
-They keep the NectarLink name and mark and say they are a local build, not an
-official NectarLink release (`FORK_POLICY.md`). They are not endorsed by
-upstream and are not distributed as a product.
+Packaging for the macOS port. These builds are for Alex's personal use only,
+under the Waypair Link name and original monochrome mark. About identifies an
+independently maintained fork; original notices remain (`FORK_POLICY.md`).
+Keep one installation at `/Applications/Waypair Link.app`, with its existing
+identity, settings and pairing. Develop and test it in place; do not create
+separate QA/test apps or alternate bundle IDs. Code tests and synthetic data
+fixtures remain appropriate. The bootstrap release snapshot below is historical.
 
 Current personal release, packaged from source `9b93a5c5` (native code
 `0194b69d`):
@@ -29,9 +32,10 @@ The script assembles an **unsigned** `.app` from:
   compiles anything), and
 - a **discovered** `macdeployqt` (`--macdeployqt`, `--qt-bin-dir`/`QT_BIN_DIR`,
   `MACDEPLOYQT`, `PATH`, or `qmake -query QT_INSTALL_BINS`). Repo CI pins
-  Qt 6.12.0 (`.github/workflows/ci.yml`). Here `macdeployqt` is
-  `/opt/homebrew/bin/macdeployqt` (Homebrew `qtbase`, `qtdeclarative`,
-  `qtsvg` 6.12.0_1).
+  Qt 6.12.0 (`.github/workflows/ci.yml`), but the shipped Mac builds deploy
+  Homebrew bottles: `macdeployqt` is `/opt/homebrew/bin/macdeployqt`
+  (`qtbase`, `qtdeclarative`, `qtsvg` 6.12.0_1). The exact Qt and library
+  sources of a build are the ones its notices record (below).
 
 It creates `Contents/MacOS/nectarlink-desktop` and an `Info.plist` with
 `CFBundleIdentifier`, `CFBundleName`/`DisplayName` (default `NectarLink`),
@@ -47,14 +51,24 @@ qmake's `QT_INSTALL_LIBS` (`/opt/homebrew/lib`, since Homebrew splits Qt into
 separate prefixes) and `-qmldir=desktop/app/qml`. The desktop build declares
 the Svg module, so its image plugin dependencies are deployed, and embeds the
 `@executable_path/../Frameworks` rpath (`desktop/app/build.rs`). `LICENSE`
-and all of `LICENSES/` are copied into `Contents/Resources/`.
+and all of `LICENSES/` are copied into `Contents/Resources/`, with the three
+`assets/fonts/OFL-*.txt` texts and the prepared third-party notices
+(`--notices-dir`, see Third-party notices below) in `Resources/LICENSES`.
 
 The script fails with a specific message on:
 
 - a missing or non-executable binary, an undiscoverable `macdeployqt`, or an
   existing file, directory, or dangling symlink at the output path;
 - invalid app names (must be one filename component), bundle ids, or
-  versions, or missing license texts;
+  versions, or missing license texts, font licenses, or `--notices-dir`;
+- notices that differ from their manifest, or would overwrite a repository
+  license file;
+- any bundled Mach-O (thin or fat, 32- or 64-bit), other than the app
+  executable and the updater helper's own executable, whose framework,
+  library, or helper no notice covers (a new Homebrew dependency fails here
+  until its keg is added to the notices);
+- a bundled `Sparkle.framework` that is not the one the notices were
+  prepared from (version, build, or binary slices without signatures);
 - a `macdeployqt` `ERROR:` line, even when the tool exits 0;
 - an executable whose linked `Qt*.framework`s are not all under
   `Contents/Frameworks` (a directory holding only `Sparkle.framework` does
@@ -142,16 +156,32 @@ swiftc -parse-as-library -O -warnings-as-errors -target arm64-apple-macos14.4 \
   -Xlinker -rpath -Xlinker @executable_path/../../../../Frameworks \
   scripts/macos/WaypairUpdater.swift -o <scratch>/WaypairUpdater
 
-# 3. Unsigned bundle.
+# 3. Third-party notices, offline (see Third-party notices below).
+cargo xtask notices <scratch>/rust-notices.txt --target aarch64-apple-darwin \
+  --license-texts <spdx-texts>
+python3 scripts/macos/prepare-notices.py prepare \
+  --rust-notices <scratch>/rust-notices.txt \
+  --keg /opt/homebrew/opt/qtbase --keg /opt/homebrew/opt/qtdeclarative --keg /opt/homebrew/opt/qtsvg \
+  --keg /opt/homebrew/opt/<each bundled library's formula> ... \
+  --license-texts <spdx-texts> \
+  --sparkle-framework <dir containing Sparkle.framework 2.10.0>/Sparkle.framework \
+  --sparkle-license <Sparkle checkout at tag 2.10.0>/LICENSE \
+  --adb-pin scripts/macos/adb-platform-tools.json \
+  --source-commit <full commit> --source-archive-url <published source archive URL> \
+  --source-archive-sha256 <its SHA-256> --output-dir <scratch>/notices
+
+# 4. Unsigned bundle.
 scripts/macos/package-app.sh \
   --binary target/release/nectarlink-desktop \
   --output-dir <scratch>/nectar-release30 \
   --bundle-id com.waypair.mac --version 0.1.4 --build-version 30 \
+  --notices-dir <scratch>/notices \
   --updater-helper <scratch>/WaypairUpdater \
-  --sparkle-framework <dir containing Sparkle.framework 2.10.0>/Sparkle.framework
+  --sparkle-framework <dir containing Sparkle.framework 2.10.0>/Sparkle.framework \
+  --adb-helper <signed-adb> --adb-seal <seal.json> --adb-notice <ADB-NOTICE.txt>
 ```
 
-4. **Sign inside out** with the existing Apple Development identity: first
+5. **Sign inside out** with the existing Apple Development identity: first
    verify and preserve the pre-signed `Contents/Helpers/adb` against its seal
    when present. Sign every other Mach-O file deepest first, then every `.app`, `.xpc`, `.framework`, and
    `.bundle` deepest first, then the app, each with
@@ -159,11 +189,11 @@ scripts/macos/package-app.sh \
    `--entitlements`. Then
    `codesign --verify --deep --strict --verbose=2 NectarLink.app`. This
    step is a Root script outside the repository.
-5. **DMG and appcast:** `hdiutil create` a DMG holding the signed app, sign
+6. **DMG and appcast:** `hdiutil create` a DMG holding the signed app, sign
    it with Sparkle's Ed25519 tooling (the private key stays in the login
    Keychain, not synchronizable), and write the appcast item for the DMG URL,
    size, `sparkle:version`, and signature.
-6. **Publish** with `scripts/releases/publish-r2.py` (`R2_RELEASE.md`), then
+7. **Publish** with `scripts/releases/publish-r2.py` (`R2_RELEASE.md`), then
    read every object back.
 
 Credentials are supplied at execution time and never written into the repo
@@ -176,6 +206,76 @@ core libraries MPL-2.0. The bundle carries `LICENSE` and `LICENSES/*` under
 `Contents/Resources/`, and the source archive of the exact built commit is
 published beside each DMG. Retain all upstream copyright notices; upstream
 contributions use DCO sign-off.
+
+### Third-party notices
+
+Settings › Open-source licenses opens `Contents/Resources/LICENSES`. Besides
+the repository texts it holds:
+
+| File | Made by | Contents |
+| --- | --- | --- |
+| `THIRD-PARTY-NOTICES.txt` | `cargo xtask notices --target aarch64-apple-darwin` | Every crate in the desktop app's normal dependency graph for that target, with its license files; Qt's LGPL-3.0 statement; the fonts' OFL texts. Crates that ship no license file get the standard texts of the licenses they name. |
+| `OFL-*.txt` | `package-app.sh`, from `assets/fonts` | The licenses of the three fonts compiled into the app. |
+| `QT-NOTICES.txt` | `prepare-notices.py` | The exact Qt version and Homebrew packages, the upstream source archives, Homebrew patches, formulas and bottles with SHA-256, and the third-party code Qt's SBOMs declare, with every license text that code needs. |
+| `THIRD-PARTY-SOURCES.txt`, `third-party/` | `prepare-notices.py` | Each bundled Homebrew library's own license files, formula and SBOM, and the license texts its declared license names (`third-party/licenses/`, or the repository texts beside them); Qt's SBOMs; Sparkle's LICENSE; provenance records (`PROVENANCE.json`) for Homebrew, Sparkle, ADB, the pinned license texts and the notice coverage. |
+| `SOURCE-OFFER.txt` | `prepare-notices.py` | The exact commit, its published source archive URL and SHA-256. |
+| `BUNDLED-COMPONENTS.txt` | `package-app.sh` (after deployment) | Every executable file in the bundle and the notice that covers it. |
+| `ADB-NOTICE.txt` | `--adb-notice` | Google's platform-tools notice; it must match the pin's `noticeSha256`. |
+
+Everything is prepared offline from explicit inputs; nothing is downloaded,
+built, or read from a keychain. `cargo xtask notices` runs `cargo metadata
+--locked --offline --filter-platform aarch64-apple-darwin`, so the crate set
+is the target's resolved graph rather than the whole `Cargo.lock`. Feature
+unification across the workspace can only add crates, never drop one.
+
+`prepare-notices.py prepare` refuses to write anything when an input is
+missing or does not match:
+
+- `--rust-notices` must be the macOS output, not the Windows one.
+- Each `--keg` (a `/opt/homebrew/opt/<formula>` link or a Cellar directory)
+  must be from homebrew/core, record its source archive and SHA-256 in its
+  `sbom.spdx.json`, keep its formula in `.brew/`, and ship a license file
+  (Qt kegs are covered by their SBOMs instead). The license each keg's SBOM
+  declares must resolve to texts: the first `OR` choice whose texts all
+  exist and every `AND` part, from `--license-texts` or the repository's
+  `LICENSES/`. `NOASSERTION` or an unmet expression refuses. The keg's own
+  files still ship, for their copyright lines. Pass every formula whose
+  libraries macdeployqt bundles: for build 32 these were qtbase,
+  qtdeclarative, qtsvg, glib, gettext, graphite2, dbus, freetype, icu4c@78,
+  openssl@4, harfbuzz, pcre2, libpng, jpeg-turbo, zstd, brotli, libb2,
+  double-conversion and md4c. The bundle check names any that is missing.
+- `--license-texts` is a directory of `<SPDX id>.txt` files from one
+  commit of [SPDX license-list-data](https://github.com/spdx/license-list-data)
+  (`text/`). Its `PROVENANCE.json` must name that commit and list each
+  file's `id` and `sha256`. A text whose hash differs refuses, and an unlisted
+  text is never used. The commit and the hash of every text used are recorded
+  in `third-party/PROVENANCE.json`. For the current graph, the build-32 kegs
+  and Qt 6.12.0, these texts are needed: AFL-2.1, Apache-2.0, BSD-2-Clause,
+  BSD-3-Clause, BSD-4-Clause, BSL-1.0, CC0-1.0, FTL,
+  GFDL-1.3-no-invariants-only, GPL-2.0-only, HPND, HPND-sell-variant, ICU,
+  IJG, Imlib2, LGPL-2.1-or-later, libpng-2.0, Linux-syscall-note, MIT,
+  Qt-GPL-exception-1.0, Unicode-3.0, X11 and Zlib. Both tools say what is
+  missing. Qt's `LicenseRef-*` texts come from its SBOMs;
+  `LicenseRef-Qt-Commercial` is never chosen.
+- `--sparkle-framework` must be Sparkle 2.10.0 (2064) whose binary, with
+  signatures removed, equals the official release artifact's, and
+  `--sparkle-license` must be the LICENSE at tag 2.10.0 (commit
+  `eef1a539a373c1f1a320624b1130fc5de7b2e100`).
+- `--source-commit` is the full commit; `--source-archive-url` and
+  `--source-archive-sha256` name the source archive published beside the
+  DMG, so it is made before packaging.
+
+`verify` also requires the manifest's coverage map to equal the one in the
+hashed `third-party/PROVENANCE.json`. `check-bundle` (run by
+`package-app.sh`) checks every bundled `Sparkle.framework` against
+`PROVENANCE.json`: version, build, and the SHA-256 of each architecture
+slice with its signature removed (from temporary copies; the bundle is not
+touched). A notices folder prepared before this record existed must be
+prepared again.
+
+ADB's notice is Google's aggregated file. The pin records no tag or commit
+for r37.0.1, and AOSP has no `platform-tools-37.0.1` tag for adb, so the
+notices say that the exact adb source revision is not recorded.
 
 ## Remaining gates
 

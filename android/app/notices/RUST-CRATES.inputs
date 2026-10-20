@@ -19,4 +19,4 @@ a9e1b7c37a663f97b30f8e80eed2857c2ea693aea9c04ae6175395753ad92f0d  core/nectarlin
 2678c7fd2d716da17e6522bc4ea21851ac49145843c53d194069ef82749990c7  tools/xtask/Cargo.toml
 8476a139a958d796402cfb222e7cbce665533f0c99c0128cdd6006853054e63a  spikes/s1-qt-rust/Cargo.toml
 f330309e01507cc7b8429d48a5551fe18c4ae183d7acce19a21ed752fa8d4dbc  android/app/notices/RUST-CRATES.spdx-texts.json
-a990eda4f225960abcfa1f33ca53305c219437588083cc8d00c41856ba71cf0b  android/app/notices/RUST-CRATES.txt
+c50b7fd268496d6056b31d1f1c6bb2fe623755f70a668906d071c7a170744c02  android/app/notices/RUST-CRATES.txt

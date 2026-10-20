@@ -15,8 +15,11 @@
 # It fails clearly on: missing/non-executable input binary, undiscoverable
 # macdeployqt, an existing bundle at the output path, missing license
 # texts (GPL/MPL source-and-notice material must travel with the bundle),
+# missing or altered prepared third-party notices (prepare-notices.py),
 # macdeployqt ERROR lines (that tool exits 0 when it cannot resolve an
-# @rpath), or a post-deploy bundle that is not closed.
+# @rpath), a post-deploy bundle that is not closed, a bundled framework,
+# library or helper that no notice covers, or a bundled Sparkle.framework
+# that is not the one the notices were prepared from.
 set -euo pipefail
 
 BINARY=""
@@ -32,6 +35,7 @@ UPDATER_HELPER=""
 ADB_HELPER=""
 ADB_SEAL=""
 ADB_NOTICE=""
+NOTICES_DIR=""
 SPARKLE_FRAMEWORK_ARG=""
 # Dedicated Nectar feed (Alex-authorized, Root-published): never the legacy
 # Swift appcast, whose items must not offer themselves to this app; Sparkle
@@ -52,6 +56,14 @@ Required:
   --binary <path>        Existing compiled nectarlink-desktop executable.
   --output-dir <dir>     Directory to create <App Name>.app in (created if absent).
                          Fails if the .app already exists there.
+  --notices-dir <dir>    Third-party notices made beforehand by
+                         `scripts/macos/prepare-notices.py prepare` (Rust crates,
+                         Qt, Homebrew libraries, Sparkle, ADB, source offer).
+                         Verified against its manifest, copied into
+                         Resources/LICENSES with the font licenses, then every
+                         bundled Mach-O must be covered by it, and the bundled
+                         Sparkle.framework must be the one it was prepared from
+                         (pass the same --sparkle-framework to both).
 
 Options:
   --app-name <name>      App/display name. Default: "Waypair Link".
@@ -471,6 +483,7 @@ while [[ $# -gt 0 ]]; do
         --adb-helper) [[ $# -ge 2 ]] || fail "--adb-helper needs a value"; ADB_HELPER="$2"; shift 2 ;;
         --adb-seal) [[ $# -ge 2 ]] || fail "--adb-seal needs a value"; ADB_SEAL="$2"; shift 2 ;;
         --adb-notice) [[ $# -ge 2 ]] || fail "--adb-notice needs a value"; ADB_NOTICE="$2"; shift 2 ;;
+        --notices-dir) [[ $# -ge 2 ]] || fail "--notices-dir needs a value"; NOTICES_DIR="$2"; shift 2 ;;
         --update-feed)  [[ $# -ge 2 ]] || fail "--update-feed needs a value"; UPDATE_FEED="$2"; shift 2 ;;
         --update-ed-key) [[ $# -ge 2 ]] || fail "--update-ed-key needs a value"; UPDATE_ED_KEY="$2"; shift 2 ;;
         -h|--help)      usage; exit 0 ;;
@@ -561,6 +574,16 @@ fi
 # GPL-3.0 (apps) / MPL-2.0 (core) notice + source requirement material.
 [[ -f "$REPO_ROOT/LICENSE" ]]   || fail "LICENSE not found at repo root: $REPO_ROOT (license texts must travel with the bundle)"
 [[ -d "$REPO_ROOT/LICENSES" ]] || fail "LICENSES/ not found at repo root: $REPO_ROOT (license texts must travel with the bundle)"
+# The fonts are compiled into the binary; their licenses ship as files.
+FONT_LICENSES=(OFL-Figtree.txt OFL-InstrumentSerif.txt OFL-SpaceMono.txt)
+for ofl in "${FONT_LICENSES[@]}"; do
+    ofl_path="$REPO_ROOT/assets/fonts/$ofl"
+    [[ -f "$ofl_path" && ! -L "$ofl_path" && -s "$ofl_path" ]] || fail "font license missing: assets/fonts/$ofl"
+    grep -q 'SIL OPEN FONT LICENSE' "$ofl_path" || fail "assets/fonts/$ofl is not an SIL Open Font License text"
+done
+[[ -n "$NOTICES_DIR" ]] || fail "--notices-dir is required: third-party notices must travel with the bundle (make them with scripts/macos/prepare-notices.py prepare; nothing is generated or downloaded here)"
+[[ -d "$NOTICES_DIR" && ! -L "$NOTICES_DIR" ]] || fail "notices directory not found: $NOTICES_DIR"
+python3 "$REPO_ROOT/scripts/macos/prepare-notices.py" verify "$NOTICES_DIR" >/dev/null || fail "prepared notices failed verification: $NOTICES_DIR"
 
 APP_PATH="$OUTPUT_DIR/$APP_NAME.app"
 # -e alone misses a dangling symlink at the output path; refuse on either.
@@ -708,6 +731,13 @@ mkdir -p "$APP_PATH/Contents/Resources/LICENSES"
 # let any copy error abort the packaging (set -e): notices must not be
 # silently dropped.
 cp -R "$REPO_ROOT/LICENSES/." "$APP_PATH/Contents/Resources/LICENSES/" || fail "failed to copy LICENSES/ into the bundle"
+for ofl in "${FONT_LICENSES[@]}"; do
+    cp "$REPO_ROOT/assets/fonts/$ofl" "$APP_PATH/Contents/Resources/LICENSES/$ofl" || fail "failed to copy $ofl into the bundle"
+done
+for entry in "$NOTICES_DIR"/*; do
+    [[ ! -e "$APP_PATH/Contents/Resources/LICENSES/$(basename "$entry")" ]] || fail "prepared notice $(basename "$entry") would overwrite a repository license file"
+done
+cp -R "$NOTICES_DIR/." "$APP_PATH/Contents/Resources/LICENSES/" || fail "failed to copy the prepared notices into the bundle"
 
 # Nested helper app, so LaunchServices and Sparkle see a different bundle id
 # and path from the host. Sparkle.framework stays in the host's
@@ -763,6 +793,9 @@ fi
 qt_names="$(linked_qt_framework_names "$APP_PATH/Contents/MacOS/$EXEC_NAME")"
 require_named_qt_frameworks "$APP_PATH/Contents/Frameworks" "$qt_names"
 require_bundle_closure "$APP_PATH"
+# Every Mach-O except the app's own executables needs a notice. This also
+# writes Resources/LICENSES/BUNDLED-COMPONENTS.txt, before signing.
+python3 "$REPO_ROOT/scripts/macos/prepare-notices.py" check-bundle "$NOTICES_DIR" "$APP_PATH" >/dev/null || fail "bundle notices are incomplete; bundle left in place for inspection: $APP_PATH"
 # Derive the supported OS from every actual bundled architecture, never from
 # the compiler host or a stale fixed deployment promise. Run before signing.
 python3 "$REPO_ROOT/scripts/macos/record-minimum-os.py" "$APP_PATH"
