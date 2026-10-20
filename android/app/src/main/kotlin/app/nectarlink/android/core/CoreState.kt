@@ -134,6 +134,12 @@ data class Device(
     val accent: UInt? = null,
     val pairedAt: Long,
     val link: Link,
+    /** DISPLAY-ONLY selected path class ("lan"/"usb"/"relay") from the live session. */
+    val displayPath: String = "lan",
+    /** DISPLAY-ONLY ADB tunnel origin ("physical"/"network"/"unknown"). */
+    val usbMedium: String = "unknown",
+    /** DISPLAY-ONLY proven route transport ("wifi"/"cellular"/"ethernet"/"usb"), or null when unknown. */
+    val routeTransport: String? = null,
     val canWake: Boolean = false,
     val wakeState: WakeState = WakeState.Idle,
     val battery: app.nectarlink.core.Battery? = null,
@@ -151,12 +157,6 @@ data class Device(
         get() = kind == app.nectarlink.core.DeviceKind.PHONE || kind == app.nectarlink.core.DeviceKind.TABLET
 
     val online: Boolean get() = link is Link.Online
-    /** DISPLAY-ONLY selected path class ("lan"/"usb"/"relay") from the live session. */
-    val displayPath: String = "lan",
-    /** DISPLAY-ONLY ADB tunnel origin ("physical"/"network"/"unknown"). */
-    val usbMedium: String = "unknown",
-    /** DISPLAY-ONLY proven route transport ("wifi"/"cellular"/"ethernet"/"usb"), or null when unknown. */
-    val routeTransport: String? = null,
 
     /** Whether a feature works with this device now (the capability matrix). */
     fun has(feature: String): Boolean =

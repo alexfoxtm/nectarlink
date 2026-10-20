@@ -376,6 +376,56 @@ impl Session {
         crate::node::match_route(&routes, local_ip)
     }
 
+    /// DISPLAY-ONLY triple for the Home badge, read coherently from ONE
+    /// selected-path snapshot plus ONE bridge-record and ONE route-table read,
+    /// so the three values cannot tear across a session replacement or path
+    /// change. Same classification as [`Session::display_path`],
+    /// [`Session::tunnel_medium`] and [`Session::link_transport`] together;
+    /// those keep their behavior and tests. Unknown (LAN/unknown/None) when
+    /// there is no live selected path or no proof — never a stale cable.
+    pub(crate) fn display_metadata(&self) -> (ConnectionPath, TunnelMedium, Option<LinkTransport>) {
+        // ONE selected-path snapshot: relay flag, remote and local addresses.
+        // No selected path, or a non-IP (custom) remote, behaves as LAN here.
+        let selected = self.conn.paths().iter().find(|p| p.is_selected()).map(|p| {
+            let remote = match p.remote_addr() {
+                iroh::TransportAddr::Ip(addr) => Some(*addr),
+                _ => None,
+            };
+            let local = match p.local_addr() {
+                LocalTransportAddr::Ip(Some(ip)) => Some(*ip),
+                _ => None,
+            };
+            (p.is_relay(), remote, local)
+        });
+        // ONE bridge-record read for this peer.
+        let (bridge, medium, outer) = match self.usb_peers.lock().unwrap_or_else(|e| e.into_inner()).get(&self.peer)
+        {
+            Some(t) => (Some(t.bridge), t.medium, t.adb_endpoint),
+            None => (None, TunnelMedium::Unknown, None),
+        };
+        // ONE route-table read.
+        let routes = self.network_routes.lock().unwrap_or_else(|e| e.into_inner());
+        // The snapshot is all Copy, so both classifications below read the
+        // same values without re-locking.
+        let display = match selected {
+            Some((true, _, _)) => ConnectionPath::Relay,
+            Some((false, Some(remote), _)) if Some(remote) == bridge => ConnectionPath::Usb,
+            _ => ConnectionPath::Lan,
+        };
+        let transport = match selected {
+            Some((true, _, _)) => None,
+            Some((false, Some(remote), local)) => {
+                if Some(remote) == bridge {
+                    outer.and_then(|ip| crate::node::match_route(&routes, ip))
+                } else {
+                    local.and_then(|ip| crate::node::match_route(&routes, ip))
+                }
+            }
+            _ => None,
+        };
+        (display, medium, transport)
+    }
+
     /// The peer's direct IP addresses currently in use, for reconnecting later.
     pub fn remote_ip_addrs(&self) -> Vec<std::net::SocketAddr> {
         self.conn

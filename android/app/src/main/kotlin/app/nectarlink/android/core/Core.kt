@@ -642,11 +642,19 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
     /**
      * Re-reads the live session's display-only classification (selected path,
      * tunnel origin, proven transport) after a link or device change. Enum
-     * strings only; failures keep the last snapshot.
+     * strings only. A failed read clears the triple to unknown rather than
+     * retaining a possibly stale physical hint.
      */
     private fun refreshSessionDisplay(id: String) {
-        val display = node?.let { n -> runCatching { n.sessionDisplay(id) }.getOrNull() } ?: return
-        _state.update { it.withSessionDisplay(id, display.displayPath, display.tunnelMedium, display.linkTransport) }
+        val node = node ?: return
+        val display = runCatching { node.sessionDisplay(id) }.getOrNull()
+        _state.update {
+            if (display != null) {
+                it.withSessionDisplay(id, display.displayPath, display.tunnelMedium, display.linkTransport)
+            } else {
+                it.withSessionDisplay(id, "lan", "unknown", null)
+            }
+        }
     }
 
     override fun onEvent(event: Event) {

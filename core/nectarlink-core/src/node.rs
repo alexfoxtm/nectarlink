@@ -845,14 +845,28 @@ impl Shared {
         self.session(peer).map(|s| s.display_path()).unwrap_or(ConnectionPath::Lan)
     }
 
-    /// DISPLAY-ONLY proven route transport for `peer`'s live session, if any
-    /// (see [`Session::link_transport`]): the selected tunnel's outer endpoint
-    /// or the selected native local address matched against this device's own
-    /// route table. Unknown when there is no live session or no proof; never
-    /// guessed from signal bars. The badge reads this with
-    /// [`Shared::display_path`] and [`Shared::tunnel_medium`].
-    pub(crate) fn session_link_transport(&self, peer: &DeviceId) -> Option<LinkTransport> {
-        self.session(peer).and_then(|s| s.link_transport())
+    /// DISPLAY-ONLY triple for one peer's live session, captured coherently:
+    /// the call pins ONE current session, and if it was replaced or closed
+    /// during the read the triple falls back to unknown (LAN/unknown/None)
+    /// rather than reporting a stale cable. See
+    /// [`Session::display_metadata`].
+    pub(crate) fn session_display_snapshot(
+        &self,
+        peer: &DeviceId,
+    ) -> (ConnectionPath, TunnelMedium, Option<LinkTransport>) {
+        const FALLBACK: (ConnectionPath, TunnelMedium, Option<LinkTransport>) =
+            (ConnectionPath::Lan, TunnelMedium::Unknown, None);
+        match self.session(peer) {
+            Some(s) => {
+                let meta = s.display_metadata();
+                if s.is_alive() {
+                    meta
+                } else {
+                    FALLBACK
+                }
+            }
+            None => FALLBACK,
+        }
     }
 
     /// Whether `peer` is a PC this phone is plugged into: the PC dials through the cable.
@@ -2020,11 +2034,14 @@ impl Node {
         self.shared.display_path(peer)
     }
 
-    /// DISPLAY-ONLY proven route transport for `peer`'s live session, if any.
-    /// Enum only; no addresses leave the core. See
-    /// [`Shared::session_link_transport`].
-    pub fn session_link_transport(&self, peer: &DeviceId) -> Option<LinkTransport> {
-        self.shared.session_link_transport(peer)
+    /// DISPLAY-ONLY triple for `peer`'s live session, captured coherently from
+    /// one current session. Enum values only; no addresses leave the core.
+    /// See [`Shared::session_display_snapshot`].
+    pub fn session_display_snapshot(
+        &self,
+        peer: &DeviceId,
+    ) -> (ConnectionPath, TunnelMedium, Option<LinkTransport>) {
+        self.shared.session_display_snapshot(peer)
     }
 
     // ---- Pairing ----
@@ -4750,6 +4767,63 @@ mod tests {
             ConnectionPath::Lan,
             "bridge present but NOT selected: display stays LAN, never cable"
         );
+        node.shutdown().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn session_display_snapshot_never_cables_without_selection() {
+        // Same setup as above: a physical bridge record exists, but there is
+        // no live session (nothing selected). The coherent snapshot keeps the
+        // record's proof and the unknown route, yet the display stays LAN:
+        // never a stale cable from one torn read.
+        let dir = tempfile::tempdir().unwrap();
+        let (node, phone) = mac_with_phone(&dir).await;
+        let fake_bridge: SocketAddr = "127.0.0.1:53399".parse().unwrap();
+        node.shared.on_usb_tunnel_connected(
+            phone,
+            "Pixel".into(),
+            UsbTunnel {
+                bridge: fake_bridge,
+                cancel: tokio_util::sync::CancellationToken::new(),
+                medium: TunnelMedium::PhysicalUsb,
+                adb_endpoint: None,
+            },
+            true,
+        );
+        let (display, medium, transport) = node.shared.session_display_snapshot(&phone);
+        assert_eq!(display, ConnectionPath::Lan, "nothing selected: display stays LAN");
+        assert_eq!(medium, TunnelMedium::PhysicalUsb, "record keeps physical proof");
+        assert_eq!(transport, None, "no live session: route stays unknown");
+        node.shutdown().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn session_display_snapshot_clears_teardown_to_unknown() {
+        // The tunnel's own generation tears down: the snapshot must fall back
+        // to unknown everywhere rather than retain a stale physical hint.
+        let dir = tempfile::tempdir().unwrap();
+        let (node, phone) = mac_with_phone(&dir).await;
+        let bridge: SocketAddr = "127.0.0.1:53411".parse().unwrap();
+        node.shared.on_usb_tunnel_connected(
+            phone,
+            "Pixel".into(),
+            UsbTunnel {
+                bridge,
+                cancel: tokio_util::sync::CancellationToken::new(),
+                medium: TunnelMedium::PhysicalUsb,
+                adb_endpoint: None,
+            },
+            true,
+        );
+        node.shared.on_usb_tunnel_disconnected(phone, bridge).await;
+        let (display, medium, transport) = node.shared.session_display_snapshot(&phone);
+        assert_eq!(display, ConnectionPath::Lan);
+        assert_eq!(
+            medium,
+            TunnelMedium::Unknown,
+            "teardown must not retain a stale physical hint"
+        );
+        assert_eq!(transport, None);
         node.shutdown().await;
     }
 
