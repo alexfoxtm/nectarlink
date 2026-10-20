@@ -622,7 +622,7 @@ Item {
         // descriptor; a bridge that is present but not selected, wireless
         // tunnels and unknown origins never render USB. Proven phone hints
         // render their own transport; anything unproven (including updated
-        // peers with an unknown SDK route) shows an honest unavailable state,
+        // peers with an unknown SDK route) shows Connected without claiming a transport,
         // never a signal-bars guess, a forced Wi-Fi claim, or a stale
         // update-phone-app prompt.
         readonly property bool provenCable: home.displayPath === "usb" && home.usbMedium === "physical"
@@ -1112,7 +1112,7 @@ Item {
                                                      ? (home.rttMs >= 1 ? qsTr("Ethernet · %1 ms").arg(home.rttMs) : qsTr("Ethernet"))
                                                      : (home.linkTransport === "usb"
                                                         ? (home.rttMs >= 1 ? qsTr("USB · %1 ms").arg(home.rttMs) : qsTr("USB"))
-                                                        : (home.rttMs >= 1 ? qsTr("Unavailable · %1 ms").arg(home.rttMs) : qsTr("Unavailable"))))))))
+                                                        : (home.rttMs >= 1 ? qsTr("Connected · %1 ms").arg(home.rttMs) : qsTr("Connected"))))))))
                                       : (home.lastSeen > 0 ? qsTr("Offline · %1").arg(page.relativeTime(home.lastSeen))
                                                            : qsTr("Offline"))
                             }

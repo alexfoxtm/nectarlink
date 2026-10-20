@@ -3573,14 +3573,22 @@ What it needs
         <translation type="vanished">更新手机应用</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="1115"/>
         <source>Unavailable · %1 ms</source>
-        <translation>不可用 · %1 ms</translation>
+        <translation type="vanished">不可用 · %1 ms</translation>
+    </message>
+    <message>
+        <source>Unavailable</source>
+        <translation type="vanished">不可用</translation>
     </message>
     <message>
         <location filename="../qml/pages/HomePage.qml" line="1115"/>
-        <source>Unavailable</source>
-        <translation>不可用</translation>
+        <source>Connected · %1 ms</source>
+        <translation>已连接 · %1 毫秒</translation>
+    </message>
+    <message>
+        <location filename="../qml/pages/HomePage.qml" line="1115"/>
+        <source>Connected</source>
+        <translation type="unfinished">已连接</translation>
     </message>
     <message>
         <location filename="../qml/pages/HomePage.qml" line="1116"/>

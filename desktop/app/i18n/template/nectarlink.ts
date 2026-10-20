@@ -3292,12 +3292,12 @@ What it needs
     </message>
     <message>
         <location filename="../../qml/pages/HomePage.qml" line="1115"/>
-        <source>Unavailable · %1 ms</source>
+        <source>Connected · %1 ms</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../../qml/pages/HomePage.qml" line="1115"/>
-        <source>Unavailable</source>
+        <source>Connected</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
