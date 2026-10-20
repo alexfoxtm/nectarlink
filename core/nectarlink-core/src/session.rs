@@ -3,7 +3,7 @@
 //! control stream, request/response correlation and the heartbeat.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{
         Arc, Mutex, Weak,
         atomic::{AtomicU32, AtomicU64, Ordering},
@@ -36,6 +36,23 @@ const HEARTBEAT_INTERVAL: Duration = Duration::from_millis(2500);
 const HEARTBEAT_TIMEOUT: Duration = Duration::from_millis(3000);
 const HEARTBEAT_RETRY_TIMEOUT: Duration = Duration::from_millis(1500);
 const OUTBOX_CAPACITY: usize = 256;
+
+/// Classifies the selected path using only live bridge-port registration.
+/// Peer tunnel records and unselected paths are not transport proof.
+pub(crate) fn classify_selected_path(
+    selected: Option<(bool, Option<std::net::SocketAddr>)>,
+    usb_bridge_ports: &HashSet<u16>,
+) -> ConnectionPath {
+    match selected {
+        Some((true, _)) => ConnectionPath::Relay,
+        Some((false, Some(addr)))
+            if addr.ip().to_canonical().is_loopback() && usb_bridge_ports.contains(&addr.port()) =>
+        {
+            ConnectionPath::Usb
+        }
+        _ => ConnectionPath::Lan,
+    }
+}
 
 /// QUIC close code used when a duplicate connection is dropped.
 pub(crate) const CLOSE_DUPLICATE: u32 = 100;
@@ -261,34 +278,19 @@ impl Session {
             && self.usb_bridge_ports.lock().unwrap_or_else(|e| e.into_inner()).contains(&addr.port())
     }
 
-    fn has_usb_tunnel(&self) -> bool {
-        self.usb_peers.lock().unwrap_or_else(|e| e.into_inner()).contains_key(&self.peer)
-    }
-
-    /// The path the connection currently uses. A tunnel always reports USB
-    /// here so transport preference, admission, and accounting never depend
-    /// on display metadata (see [`Session::tunnel_medium`]).
+    /// The path the connection currently uses. USB requires a selected remote
+    /// on a registered loopback bridge; a tunnel record or alternate path is
+    /// not enough (see [`Session::tunnel_medium`]).
     pub fn path(&self) -> ConnectionPath {
-        if self.has_usb_tunnel() {
-            return ConnectionPath::Usb;
-        }
-        let paths = self.conn.paths();
-        let selected = paths.iter().find(|p| p.is_selected()).or_else(|| paths.iter().next());
-        match selected {
-            Some(p) if p.is_relay() => ConnectionPath::Relay,
-            Some(p) if matches!(p.remote_addr(), iroh::TransportAddr::Ip(addr) if self.is_usb_addr(addr)) => {
-                ConnectionPath::Usb
-            }
-            _ => {
-                if paths.iter().any(
-                    |p| matches!(p.remote_addr(), iroh::TransportAddr::Ip(addr) if self.is_usb_addr(addr)),
-                ) {
-                    ConnectionPath::Usb
-                } else {
-                    ConnectionPath::Lan
-                }
-            }
-        }
+        let selected = self.conn.paths().iter().find(|p| p.is_selected()).map(|p| {
+            let remote = match p.remote_addr() {
+                iroh::TransportAddr::Ip(addr) => Some(*addr),
+                _ => None,
+            };
+            (p.is_relay(), remote)
+        });
+        let bridge_ports = self.usb_bridge_ports.lock().unwrap_or_else(|e| e.into_inner());
+        classify_selected_path(selected, &bridge_ports)
     }
 
     /// Display-only origin of this session's ADB tunnel: a proven physical
@@ -875,8 +877,12 @@ async fn heartbeat(session: &Arc<Session>, shared: &Weak<Shared>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_lan_ip, is_same_ipv6_subnet};
-    use std::net::{IpAddr, Ipv6Addr};
+    use super::{UsbTunnel, classify_selected_path, is_lan_ip, is_same_ipv6_subnet};
+    use crate::{events::ConnectionPath, usb::TunnelMedium};
+    use std::{
+        collections::{HashMap, HashSet},
+        net::{IpAddr, Ipv6Addr},
+    };
 
     #[test]
     fn lan_ip_accepts_private_local_and_rejects_wan_and_cgnat() {
@@ -908,5 +914,42 @@ mod tests {
         let phone_lte: Ipv6Addr = "2001:db8:1c2a:9911:1122:3344:5566:7788".parse().unwrap();
         assert!(is_same_ipv6_subnet(pc_wifi, phone_wifi));
         assert!(!is_same_ipv6_subnet(pc_wifi, phone_lte));
+    }
+
+    #[test]
+    fn registered_selected_bridge_is_usb_without_a_peer_record() {
+        let bridge: std::net::SocketAddr = "127.0.0.1:53319".parse().unwrap();
+        let bridge_ports = HashSet::from([bridge.port()]);
+
+        assert_eq!(
+            classify_selected_path(Some((false, Some(bridge))), &bridge_ports),
+            ConnectionPath::Usb,
+            "the registered selected bridge is sufficient before a phone-side peer record exists"
+        );
+    }
+
+    #[test]
+    fn selected_relay_stays_relay_with_stale_tunnel_record_and_alternate_bridge() {
+        let peer = super::DeviceId([0x5A; 32]);
+        let stale_bridge: std::net::SocketAddr = "127.0.0.1:53319".parse().unwrap();
+        let stale_tunnels = HashMap::from([(
+            peer,
+            UsbTunnel {
+                bridge: stale_bridge,
+                cancel: tokio_util::sync::CancellationToken::new(),
+                medium: TunnelMedium::PhysicalUsb,
+                adb_endpoint: None,
+            },
+        )]);
+        let alternate_bridge: std::net::SocketAddr = "127.0.0.1:53320".parse().unwrap();
+        let active_bridge_ports = HashSet::from([alternate_bridge.port()]);
+        assert!(stale_tunnels.contains_key(&peer));
+
+        // The production classifier intentionally receives neither the stale
+        // peer record nor the unselected alternate bridge as path evidence.
+        assert_eq!(
+            classify_selected_path(Some((true, None)), &active_bridge_ports),
+            ConnectionPath::Relay
+        );
     }
 }

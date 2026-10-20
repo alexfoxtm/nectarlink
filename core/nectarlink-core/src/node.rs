@@ -756,7 +756,7 @@ impl Shared {
         match selected {
             Some(p) if p.is_relay() => false,
             Some(p) => match p.remote_addr() {
-                iroh::TransportAddr::Ip(addr) => self.is_usb_addr(addr) || self.is_allowed_peer_ip(addr.ip()),
+                iroh::TransportAddr::Ip(addr) => !self.is_usb_addr(addr) && self.is_allowed_peer_ip(addr.ip()),
                 _ => false,
             },
             None => false,
@@ -878,14 +878,14 @@ impl Shared {
     }
 
     pub(crate) fn is_usb_connection(&self, conn: &Connection) -> bool {
-        let peer = crate::device_id(&conn.remote_id());
-        if self.usb_peer_addr(&peer).is_some() {
-            return true;
-        }
-        conn.paths().iter().any(|p| match p.remote_addr() {
-            iroh::TransportAddr::Ip(addr) => self.is_usb_addr(addr),
-            _ => false,
-        })
+        let selected = conn.paths().iter().find(|p| p.is_selected()).map(|p| {
+            let remote = match p.remote_addr() {
+                iroh::TransportAddr::Ip(addr) => Some(*addr),
+                _ => None,
+            };
+            (p.is_relay(), remote)
+        });
+        session::classify_selected_path(selected, &lock(&self.usb_bridge_ports)) == ConnectionPath::Usb
     }
 
     pub(crate) fn note_discovered(&self, peer: DeviceId, name: Option<String>) {
