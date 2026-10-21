@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! macOS speaker volume, mute, and state.
+mod devices;
 
 fn parse_speaker_state(text: &str) -> Option<(u8, bool)> {
     let mut parts = text.split_whitespace();
@@ -105,14 +106,17 @@ pub fn toggle_mic_mute() -> Result<bool, String> {
 }
 
 pub fn output_devices() -> Vec<nectarlink_core::AudioOutputDevice> {
-    vec![nectarlink_core::AudioOutputDevice {
-        id: "default".into(),
-        name: "Default macOS Output".into(),
-        is_default: true,
-    }]
+    devices::output_devices()
 }
 
-pub fn watch(_changed: fn()) {}
+mod watch;
+
+/// Calls `changed` on a worker thread after the default output's volume or
+/// mute, or the output devices, change; see `watch.rs`. Like
+/// `win::audio::watch`, it runs for the rest of the process.
+pub fn watch(changed: fn()) {
+    watch::watch(changed);
+}
 
 #[allow(dead_code)]
 pub fn start(_on_changed: impl Fn() + Send + Sync + 'static) {}
