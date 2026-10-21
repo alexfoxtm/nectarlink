@@ -301,9 +301,9 @@ fun HomeScreen(
         state = listState,
         modifier = modifier.glassModalBlur(isGlass && anyModalOpen),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(
-            start = 16.dp,
+            start = 20.dp,
             top = 16.dp,
-            end = 16.dp,
+            end = 20.dp,
             bottom = 104.dp,
         ),
         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -312,7 +312,7 @@ fun HomeScreen(
             Row(Modifier.padding(top = 8.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     stringResource(R.string.home_title),
-                    style = MaterialTheme.typography.headlineMedium,
+                    style = MaterialTheme.typography.headlineLarge,
                     modifier = Modifier.weight(1f),
                 )
                 TextButton(
@@ -1323,13 +1323,24 @@ private fun PeerCard(
             .padding(22.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        val peerStatusLabel = linkText(device.link, device.displayPath, device.usbMedium, device.routeTransport)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.semantics { stateDescription = peerStatusLabel },
+        ) {
+            val peerDot = if (device.online) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+            Spacer(
+                modifier = Modifier
+                    .size(10.dp)
+                    .drawBehind { drawCircle(peerDot) },
+            )
+            Spacer(Modifier.width(8.dp))
             Column(Modifier.weight(1f)) {
                 Text(device.name, style = MaterialTheme.typography.titleLarge)
                 Text(
                     text = stringResource(
                         if (device.kind == app.nectarlink.core.DeviceKind.TABLET) R.string.peer_kind_tablet else R.string.peer_kind_phone,
-                    ) + " · " + linkText(device.link, device.displayPath, device.usbMedium, device.routeTransport),
+                    ) + " · " + peerStatusLabel,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1407,12 +1418,14 @@ private fun PcCard(
     }
     var ringing by remember(device.id) { mutableStateOf(false) }
     val isGlass = LocalGlassTheme.current
+    val reducedMotion = LocalReducedMotion.current
     androidx.compose.runtime.CompositionLocalProvider(
         androidx.compose.material3.LocalContentColor provides MaterialTheme.colorScheme.onPrimaryContainer,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .animateContentSize(tween(if (reducedMotion) 0 else 220))
                 .liquidGlassCard(
                     cornerRadius = 28.dp,
                     isGlass = isGlass,
@@ -1452,8 +1465,13 @@ private fun PcCard(
             val webcamReason = unsupportedReason.takeIf { device.online && !webcamEnabled }
             val browsePcReason = pcFilesUnavailableReason.takeIf { device.online && !browsePcEnabled }
 
+            val connectionStatusLabel = if (!device.online && device.wakeState == WakeState.Waking) {
+                stringResource(R.string.wake_waking, device.name)
+            } else {
+                linkText(device.link, device.displayPath, device.usbMedium, device.routeTransport)
+            }
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().semantics { stateDescription = connectionStatusLabel },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Spacer(
@@ -1464,11 +1482,7 @@ private fun PcCard(
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    if (!device.online && device.wakeState == WakeState.Waking) {
-                        stringResource(R.string.wake_waking, device.name)
-                    } else {
-                        linkText(device.link, device.displayPath, device.usbMedium, device.routeTransport)
-                    },
+                    connectionStatusLabel,
                     style = MaterialTheme.typography.labelLarge,
                     modifier = Modifier.weight(1f),
                 )
@@ -1488,14 +1502,14 @@ private fun PcCard(
                     }
                 }
             }
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(6.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(device.name, style = MaterialTheme.typography.headlineLarge)
+                    Text(device.name, style = MaterialTheme.typography.headlineSmall)
                     device.model?.let {
                         Text(it, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 2.dp))
                     }
@@ -1516,7 +1530,7 @@ private fun PcCard(
                 }
             }
             Spacer(Modifier.height(16.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 // 1. Primary Workspace Bento Grid (2x2): Control PC, Deck, Desk Mode, Webcam
                 Text(
                     text = stringResource(R.string.home_section_screen),
@@ -1615,7 +1629,7 @@ private fun PcCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .bentoWell(
-                            cornerRadius = 20.dp,
+                            cornerRadius = 12.dp,
                             fillColor = ink.copy(alpha = if (isGlass) 0.11f else 0.07f),
                             borderColor = if (isGlass) ink.copy(alpha = 0.16f) else Color.Transparent,
                         )
@@ -1787,7 +1801,7 @@ private fun PcCard(
             }
             if (!device.online && device.wakeState == WakeState.Waking) {
                 Spacer(Modifier.height(14.dp))
-                if (LocalReducedMotion.current) {
+                if (reducedMotion) {
                     LinearProgressIndicator(progress = { 0.5f }, modifier = Modifier.fillMaxWidth())
                 } else {
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
