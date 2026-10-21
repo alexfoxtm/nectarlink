@@ -16,9 +16,11 @@ import app.nectarlink.android.NectarlinkApplication
 import app.nectarlink.android.R
 import app.nectarlink.android.clipboard.SendActivity
 import app.nectarlink.android.core.CoreState
+import app.nectarlink.android.core.CoreStatus
 import app.nectarlink.android.core.Device
 import app.nectarlink.android.core.WakeState
 import app.nectarlink.android.ui.MainActivity
+import app.nectarlink.android.ui.Preferences
 import app.nectarlink.android.ui.home.PeerOnlineLabel
 import app.nectarlink.android.ui.home.resolvePeerOnlineLabel
 import app.nectarlink.core.Link
@@ -38,8 +40,14 @@ class PcWidgetProvider : AppWidgetProvider() {
         appWidgetManager: AppWidgetManager,
         appWidgetIds: IntArray,
     ) {
-        val core = (context.applicationContext as? NectarlinkApplication)?.core
-        core?.start()
+        val application = context.applicationContext as? NectarlinkApplication
+        val core = application?.core
+        startForWidget(
+            backgroundEnabled = Preferences.isBackgroundServiceEnabled(context),
+            explicitUserAction = false,
+            start = { core?.start() },
+            stopWhenIdle = { application?.onBackgroundServiceDisabled() },
+        )
         val state = core?.state?.value
         // Avoid overwriting a previously rendered widget with "No PC paired" while Core is still starting up.
         if (state != null && (state.devices.isNotEmpty() || state.status != app.nectarlink.android.core.CoreStatus.Starting)) {
@@ -57,7 +65,12 @@ class PcWidgetProvider : AppWidgetProvider() {
         override fun onReceive(context: Context, intent: Intent) {
             val action = intent.action ?: return
             val app = context.applicationContext as? NectarlinkApplication ?: return
-            app.core.start()
+            startForWidget(
+                backgroundEnabled = Preferences.isBackgroundServiceEnabled(context),
+                explicitUserAction = true,
+                start = { app.core.start() },
+                stopWhenIdle = { app.onBackgroundServiceDisabled() },
+            )
             val state = app.core.state.value
             val pcId = intent.getStringExtra(EXTRA_PC_ID)?.takeIf { it.isNotBlank() }
                 ?: primaryPc(state)?.id
@@ -66,25 +79,26 @@ class PcWidgetProvider : AppWidgetProvider() {
             val pcName = pc?.name?.takeIf { it.isNotBlank() }
                 ?: context.getString(R.string.your_pc)
 
+            val notConnected = {
+                Toast.makeText(context, context.getString(R.string.error_not_connected), Toast.LENGTH_SHORT).show()
+            }
             when (action) {
-                ACTION_RING_PC -> {
-                    if (pc != null && !pc.online) return
+                ACTION_RING_PC -> sendIfConnected(state.status, pc, notConnected = notConnected, send = {
                     app.core.ring(pcId, true)
                     Toast.makeText(
                         context,
                         context.getString(R.string.widget_pc_ringing_toast, pcName),
                         Toast.LENGTH_SHORT,
                     ).show()
-                }
-                ACTION_LOCK_PC -> {
-                    if (pc != null && !pc.online) return
+                })
+                ACTION_LOCK_PC -> sendIfConnected(state.status, pc, notConnected = notConnected, send = {
                     app.core.pcPower(pcId, sleep = false)
                     Toast.makeText(
                         context,
                         context.getString(R.string.pc_locked, pcName),
                         Toast.LENGTH_SHORT,
                     ).show()
-                }
+                })
                 ACTION_WAKE_PC -> {
                     app.core.wake(pcId)
                     Toast.makeText(
@@ -328,5 +342,36 @@ class PcWidgetProvider : AppWidgetProvider() {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
         }
+    }
+}
+
+/**
+ * With Run in the background off, a silent widget refresh never starts the node, and a
+ * tap starts it and then asks for the app's usual delayed stop: a broadcast never reaches
+ * onActivityStopped, so nothing else would stop that node.
+ *
+ * Top level rather than in the companion, so unit tests can call it without initializing
+ * [PcWidgetProvider], whose companion calls `Color.parseColor`.
+ */
+internal fun startForWidget(
+    backgroundEnabled: Boolean,
+    explicitUserAction: Boolean,
+    start: () -> Unit,
+    stopWhenIdle: () -> Unit,
+) {
+    if (!backgroundEnabled && !explicitUserAction) return
+    start()
+    if (!backgroundEnabled) stopWhenIdle()
+}
+
+/**
+ * Ring and Lock need a live session to [pc]. A node that isn't Ready (a tap that just started
+ * it, or one stopped or failed) has no session yet, so the tap says the PC isn't connected
+ * instead of claiming success. A Ready node with [pc] offline or unknown stays silent.
+ */
+internal fun sendIfConnected(status: CoreStatus, pc: Device?, notConnected: () -> Unit, send: () -> Unit) {
+    when {
+        status !is CoreStatus.Ready -> notConnected()
+        pc?.online == true -> send()
     }
 }

@@ -251,12 +251,16 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
     private val _clipSuggestions = MutableSharedFlow<ClipSuggestionNotice>(extraBufferCapacity = 4)
     @Volatile private var node: NectarlinkNode? = null
     @Volatile private var startJob: Job? = null
+    /** The latest [start] call. It sets [startJob] only once it holds the lifecycle lock. */
+    @Volatile private var startCall: Job? = null
     @Volatile private var runJob: Job? = null
     @Volatile private var runScope: CoroutineScope? = null
     @Volatile private var networkChange: Job? = null
     private val lifecycleMutex = Mutex()
     private val startGuard = StartGuard()
     private val wakeTimers = java.util.concurrent.ConcurrentHashMap<String, Job>()
+    /** Wakes in flight (send and its ~60 s poll); counted in [busy] so an idle stop doesn't cut them. */
+    private val wakesInFlight = MutableStateFlow(0)
 
     @Volatile private var lastBattery: app.nectarlink.core.Battery? = null
     @Volatile private var lastSignal: SignalSnapshot = SignalSnapshot()
@@ -326,18 +330,23 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
 
     val state: StateFlow<CoreState> = _state.asStateFlow()
 
-    /** True while a user-facing stream or transfer is active. */
+    /** True while a user-facing stream, transfer or Wake is active. */
     val busy: StateFlow<Boolean> = combine(
-        _state.map { s ->
-            s.transfers.any { !it.isFinished() } ||
-                s.sendQueue.any { it.status is FfiQueueStatus.Sending || it.status is FfiQueueStatus.Waiting }
-        }.distinctUntilChanged(),
-        MirrorService.session.map { it.active }.distinctUntilChanged(),
-        WebcamService.session.map { it.active || it.connecting }.distinctUntilChanged(),
-        MicService.streaming.map { it != null }.distinctUntilChanged(),
-        pcSpeakerPlayer.playing.map { it }.distinctUntilChanged(),
-    ) { hasTransfers: Boolean, isMirroring: Boolean, isWebcam: Boolean, isMic: Boolean, isSpeaker: Boolean ->
-        hasTransfers || isMirroring || isWebcam || isMic || isSpeaker
+        combine(
+            _state.map { s ->
+                s.transfers.any { !it.isFinished() } ||
+                    s.sendQueue.any { it.status is FfiQueueStatus.Sending || it.status is FfiQueueStatus.Waiting }
+            }.distinctUntilChanged(),
+            MirrorService.session.map { it.active }.distinctUntilChanged(),
+            WebcamService.session.map { it.active || it.connecting }.distinctUntilChanged(),
+            MicService.streaming.map { it != null }.distinctUntilChanged(),
+            pcSpeakerPlayer.playing.map { it }.distinctUntilChanged(),
+        ) { hasTransfers: Boolean, isMirroring: Boolean, isWebcam: Boolean, isMic: Boolean, isSpeaker: Boolean ->
+            hasTransfers || isMirroring || isWebcam || isMic || isSpeaker
+        },
+        wakesInFlight.map { it > 0 }.distinctUntilChanged(),
+    ) { busy: Boolean, isWaking: Boolean ->
+        busy || isWaking
     }.stateIn(scope, SharingStarted.Eagerly, false)
 
     /** Short messages for the user (a command failed). */
@@ -396,7 +405,7 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
      * Only a stop cancels a start; starts never cancel each other.
      */
     fun start() {
-        scope.launch(Dispatchers.IO) {
+        startCall = scope.launch(Dispatchers.IO) {
             lifecycleMutex.withLock {
                 if (node != null || startJob?.isActive == true) return@withLock
                 val token = startGuard.beginStart()
@@ -576,6 +585,16 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
     }
 
     /**
+     * Waits for the latest [start] call and the node start it began. Wake can be the call
+     * right after [start] (a widget tap on a stopped core), when [startJob] may not be set yet.
+     * Bounded by the node start; a [stop] cancels it, and then no node is running.
+     */
+    private suspend fun awaitStart() {
+        startCall?.join()
+        startJob?.join()
+    }
+
+    /**
      * Shuts down the active node and all per-run collectors, monitors, and loops.
      * Sets status back to [CoreStatus.Starting] and clears node references.
      * [shouldStop] is checked while holding the lifecycle lock so a newer
@@ -639,7 +658,16 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
                 wakeTimers.values.forEach { it.cancel() }
                 wakeTimers.clear()
 
-                _state.update { it.withDevicesOffline().copy(status = CoreStatus.Starting) }
+                // No node is left to finish a Wake, so no PC stays "Waking".
+                _state.update { s ->
+                    val offline = s.withDevicesOffline()
+                    offline.copy(
+                        status = CoreStatus.Starting,
+                        devices = offline.devices.map {
+                            if (it.wakeState == WakeState.Waking) it.copy(wakeState = WakeState.Idle) else it
+                        },
+                    )
+                }
                 app.nectarlink.android.widget.PcWidgetProvider.refreshAll(context, _state.value)
             }
         }
@@ -2060,8 +2088,10 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
     fun wake(id: String) {
         wakeTimers.remove(id)?.cancel()
         _state.update { it.withWakeState(id, WakeState.Waking) }
+        // The timer outlives the send, so its whole lifetime (even a cancel before it starts) is the Wake's.
+        wakesInFlight.update { it + 1 }
         val timer = scope.launch(Dispatchers.IO) {
-            startJob?.join()
+            awaitStart()
             val node = node ?: return@launch
             repeat(15) {
                 delay(4_000)
@@ -2078,9 +2108,10 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
                 }
             }
         }
+        timer.invokeOnCompletion { wakesInFlight.update { it - 1 } }
         wakeTimers[id] = timer
         scope.launch(Dispatchers.IO) {
-            startJob?.join()
+            awaitStart()
             val node = node ?: return@launch
             try {
                 node.wake(id)
