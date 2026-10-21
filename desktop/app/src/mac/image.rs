@@ -24,7 +24,59 @@ pub fn decode(bytes: &[u8]) -> Result<Bitmap, String> {
 }
 
 pub fn encode_png(bitmap: &Bitmap) -> Result<Vec<u8>, String> {
+    // Bounded PR38 reuse: linux/image.rs encode_png validation (upstream PR38
+    // head 94f2e461edc6255440baf5220d837d41c2c97daf, GPL-3.0-or-later, same as
+    // this file), extended to bound the existing Mac encoder's u32 row,
+    // capacity, and IDAT-length arithmetic before it allocates or reads pixels.
+    let expected = checked_png_bgra_len(bitmap.width, bitmap.height)?;
+    if bitmap.bgra.len() < expected {
+        return Err("bitmap buffer too short".into());
+    }
     Ok(create_png(bitmap.width, bitmap.height, &bitmap.bgra))
+}
+
+fn checked_png_bgra_len(width: u32, height: u32) -> Result<usize, String> {
+    if width == 0 || height == 0 {
+        return Err("empty bitmap".into());
+    }
+
+    // create_png evaluates width * 4 + 1 and height * row_bytes as u32.
+    let row_bytes = width
+        .checked_mul(4)
+        .and_then(|pixels| pixels.checked_add(1))
+        .ok_or_else(|| "bitmap dimensions overflow".to_string())?;
+    let raw_len_u32 =
+        height.checked_mul(row_bytes).ok_or_else(|| "bitmap dimensions overflow".to_string())?;
+    let raw_len = <usize as std::convert::TryFrom<u32>>::try_from(raw_len_u32)
+        .map_err(|_| "bitmap dimensions overflow".to_string())?;
+
+    // The existing encoder stores raw data in <= 65,535-byte deflate blocks.
+    // The IDAT payload is zlib header (2) + raw bytes + 5 bytes per block
+    // + Adler-32 (4), and write_chunk stores its length as u32.
+    let full_blocks = raw_len / 65_535;
+    let stored_blocks = if raw_len % 65_535 == 0 {
+        full_blocks
+    } else {
+        full_blocks.checked_add(1).ok_or_else(|| "bitmap dimensions overflow".to_string())?
+    };
+    let stored_overhead =
+        stored_blocks.checked_mul(5).ok_or_else(|| "bitmap dimensions overflow".to_string())?;
+    let idat_len = raw_len
+        .checked_add(stored_overhead)
+        .and_then(|length| length.checked_add(6))
+        .ok_or_else(|| "bitmap dimensions overflow".to_string())?;
+    if <u32 as std::convert::TryFrom<usize>>::try_from(idat_len).is_err() {
+        return Err("bitmap dimensions overflow".into());
+    }
+
+    let width = <usize as std::convert::TryFrom<u32>>::try_from(width)
+        .map_err(|_| "bitmap dimensions overflow".to_string())?;
+    let height = <usize as std::convert::TryFrom<u32>>::try_from(height)
+        .map_err(|_| "bitmap dimensions overflow".to_string())?;
+    width
+        .checked_mul(height)
+        .and_then(|pixels| pixels.checked_mul(4))
+        .ok_or_else(|| "bitmap dimensions overflow".to_string())
 }
 
 #[allow(dead_code)]
@@ -175,5 +227,41 @@ mod tests {
         assert_eq!(decoded.height, 2);
         assert_eq!(decoded.bgra.len(), 16);
         assert_eq!(decoded.bgra, original.bgra);
+    }
+
+    #[test]
+    fn encode_png_rejects_zero_overflow_and_short_buffer() {
+        let cases = [
+            ("zero width", Bitmap { width: 0, height: 2, bgra: vec![0; 8] }, "empty bitmap"),
+            ("zero height", Bitmap { width: 2, height: 0, bgra: vec![0; 8] }, "empty bitmap"),
+            (
+                "u32 max dimensions exceed row limit",
+                Bitmap { width: u32::MAX, height: u32::MAX, bgra: Vec::new() },
+                "bitmap dimensions overflow",
+            ),
+            (
+                "u32 row width overflows",
+                Bitmap { width: 1_073_741_824, height: 1, bgra: Vec::new() },
+                "bitmap dimensions overflow",
+            ),
+            (
+                "u32 raw capacity overflows",
+                Bitmap { width: 1_073_741_823, height: 2, bgra: Vec::new() },
+                "bitmap dimensions overflow",
+            ),
+            (
+                "IDAT format length overflows u32",
+                Bitmap { width: 1, height: 858_993_459, bgra: Vec::new() },
+                "bitmap dimensions overflow",
+            ),
+            (
+                "BGRA buffer is short",
+                Bitmap { width: 2, height: 2, bgra: vec![0; 15] },
+                "bitmap buffer too short",
+            ),
+        ];
+        for (case, bitmap, expected_error) in cases {
+            assert_eq!(encode_png(&bitmap).unwrap_err(), expected_error, "{case}");
+        }
     }
 }

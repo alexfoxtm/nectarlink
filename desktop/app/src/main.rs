@@ -563,8 +563,16 @@ fn main() -> ExitCode {
             return ExitCode::SUCCESS;
         }
         Err(e) => {
-            tracing::warn!(error = %e, "single-instance check failed; continuing");
-            None
+            #[cfg(target_os = "macos")]
+            {
+                tracing::warn!(error = %e, "single-instance check failed; exiting");
+                return ExitCode::FAILURE;
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                tracing::warn!(error = %e, "single-instance check failed; continuing");
+                None
+            }
         }
     };
 
