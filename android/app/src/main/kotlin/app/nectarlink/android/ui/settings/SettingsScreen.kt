@@ -628,8 +628,32 @@ fun SettingsScreen(
                             modifier = Modifier.semantics { contentDescription = runInBackgroundTitle },
                         )
                     }
-                    SettingRowDivider()
-                    BackgroundBatteryAccess(state.backgroundUnrestricted)
+                    if (backgroundServiceEnabled && !state.backgroundUnrestricted) {
+                        val context = LocalContext.current
+                        val oemGuide = BackgroundAccess.oemGuideResId()?.let { stringResource(it) }
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(start = 16.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Text(
+                                stringResource(R.string.background_restriction_warning),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            if (oemGuide != null) {
+                                Text(
+                                    oemGuide,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            TextButton(onClick = {
+                                runCatching { context.startActivity(BackgroundAccess.oemSettingsIntent(context)) }
+                            }) {
+                                Text(stringResource(R.string.battery_open_oem_settings))
+                            }
+                        }
+                    }
                     SettingRowDivider()
                     CompanionWakeAccess(
                         associated = state.companionAssociated,
@@ -1190,52 +1214,6 @@ private fun NotificationAccess(granted: Boolean, onChooseFilter: () -> Unit) {
                 modifier = Modifier.weight(1f),
             )
             TextButton(onClick = { openAppInfoSettings(context) }) { Text(stringResource(R.string.action_app_info)) }
-        }
-    }
-}
-
-/** Unrestricted background execution and OEM-specific battery settings. */
-@Composable
-private fun BackgroundBatteryAccess(unrestricted: Boolean) {
-    val context = LocalContext.current
-    val oemGuide = BackgroundAccess.oemGuideResId()?.let { stringResource(it) }
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                Text(stringResource(R.string.background_title), style = MaterialTheme.typography.titleSmall)
-                Text(
-                    stringResource(if (unrestricted) R.string.background_on else R.string.background_text),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            if (!unrestricted) {
-                Button(onClick = {
-                    runCatching { context.startActivity(BackgroundAccess.requestIntent(context)) }
-                }) {
-                    Text(stringResource(R.string.action_allow))
-                }
-            } else {
-                OutlinedButton(onClick = {
-                    runCatching { context.startActivity(BackgroundAccess.oemSettingsIntent(context)) }
-                }) {
-                    Text(stringResource(R.string.battery_open_oem_settings))
-                }
-            }
-        }
-        if (oemGuide != null) {
-            Text(
-                oemGuide,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        if (!unrestricted) {
-            OutlinedButton(onClick = {
-                runCatching { context.startActivity(BackgroundAccess.oemSettingsIntent(context)) }
-            }) {
-                Text(stringResource(R.string.battery_open_oem_settings))
-            }
         }
     }
 }

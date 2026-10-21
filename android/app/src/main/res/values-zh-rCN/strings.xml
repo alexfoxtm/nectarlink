@@ -206,10 +206,10 @@
     <string name="clip_action_email">邮件</string>
     <string name="background_title">在后台保持可连接</string>
     <string name="background_text">Android为省电暂停了Waypair Link，导致电脑无法连接。请允许它在后台运行。</string>
-    <string name="background_on">已允许在后台保持连接</string>
     <string name="settings_background_title">后台与电池</string>
     <string name="settings_run_in_background">在后台运行</string>
     <string name="settings_run_in_background_hint">让此手机可以被电脑访问。关闭时，Waypair Link 仅在打开时连接，通知也会消失。</string>
+    <string name="background_restriction_warning">Android 电池限制可能会中断后台连接。</string>
     <string name="home_background_off_title">后台连接已关闭</string>
     <string name="home_background_off_text">Waypair Link 仅在应用打开时连接。开启以保持此手机可被电脑访问。</string>
     <string name="battery_open_oem_settings">电池设置</string>

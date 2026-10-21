@@ -212,10 +212,10 @@
     <string name="clip_action_email">Email</string>
     <string name="background_title">Stay reachable in the background</string>
     <string name="background_text">Android is pausing Waypair Link to save battery, so your computer can\'t reach it. Let it run in the background.</string>
-    <string name="background_on">Allowed to stay connected in the background</string>
     <string name="settings_background_title">Background &amp; battery</string>
     <string name="settings_run_in_background">Run in the background</string>
     <string name="settings_run_in_background_hint">Keeps this phone reachable from your computer. When off, Waypair Link connects only while it\'s open, and the notification goes away.</string>
+    <string name="background_restriction_warning">Android battery restrictions may interrupt background connections.</string>
     <string name="home_background_off_title">Background connection is off</string>
     <string name="home_background_off_text">Waypair Link connects only while the app is open. Turn it on to keep this phone reachable from your computer.</string>
     <string name="battery_open_oem_settings">Battery settings</string>
