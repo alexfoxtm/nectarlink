@@ -20,6 +20,27 @@ Window {
     readonly property string phase: info.phase || ""
     readonly property bool canControl: info.canControl === true
     readonly property bool viewOnly: info.viewOnly === true
+    readonly property bool onMac: Qt.platform.os === "osx" || Qt.platform.os === "macos"
+    readonly property bool fullScreen: visibility === Window.FullScreen
+    property int visibilityBeforeFullScreen: Window.Windowed
+
+    function toggleFullScreen() {
+        if (fullScreen) {
+            visibility = visibilityBeforeFullScreen
+        } else {
+            visibilityBeforeFullScreen = visibility === Window.Maximized ? Window.Maximized : Window.Windowed
+            visibility = Window.FullScreen
+        }
+    }
+
+    // Full screen from anywhere in this window, including toolbar buttons:
+    // StandardKey.FullScreen is Ctrl+Meta+F (Command+Control+F) on macOS
+    // and F11 on Windows/Linux.
+    Shortcut {
+        sequences: [StandardKey.FullScreen]
+        enabled: win.phase === "showing"
+        onActivated: win.toggleFullScreen()
+    }
 
     visible: true
     title: info.app ? qsTr("%1 · %2").arg(info.title).arg(deviceName)
@@ -41,7 +62,8 @@ Window {
         onTriggered: {
             if (!win.info.app || !win.sized)
                 return
-            Mirror.saveGeometry(win.mirrorKey, win.x, win.y, win.width, win.height)
+            if (!win.fullScreen)
+                Mirror.saveGeometry(win.mirrorKey, win.x, win.y, win.width, win.height)
             if (win.phase === "showing")
                 Mirror.resize(win.mirrorKey, win.width, win.height)
         }
@@ -52,7 +74,7 @@ Window {
         interval: 300
         repeat: false
         onTriggered: {
-            if (win.info.app && win.sized)
+            if (win.info.app && win.sized && !win.fullScreen)
                 Mirror.saveGeometry(win.mirrorKey, win.x, win.y, win.width, win.height)
         }
     }
@@ -86,7 +108,7 @@ Window {
         const maxH = availH * 0.85
         const maxW = availW * 0.85
         const scale = Math.min(maxH / frame.height, maxW / frame.width, 1)
-        if (!sized || (!info.app && Math.abs(width / height - frame.width / frame.height) > 0.05)) {
+        if (!sized || (!info.app && !fullScreen && Math.abs(width / height - frame.width / frame.height) > 0.05)) {
             readyForResize = false
             width = Math.round(frame.width * scale)
             height = Math.round(frame.height * scale)
@@ -99,7 +121,7 @@ Window {
     width: 420
     height: 860
     onClosing: {
-        if (info.app && sized)
+        if (info.app && sized && !fullScreen)
             Mirror.saveGeometry(mirrorKey, x, y, width, height)
         Mirror.stop(mirrorKey)
     }
@@ -213,6 +235,9 @@ Window {
 
         // The keyboard: shortcuts for screenshots and recording work even
         // without remote control; text and navigation keys go to the phone.
+        // On macOS Qt reports Command as ControlModifier and the Control
+        // key as MetaModifier. Full screen is a window-level Shortcut above
+        // so it also fires from toolbar buttons.
         Keys.onPressed: (event) => {
             if (win.phase !== "showing")
                 return
@@ -308,6 +333,7 @@ Window {
         visible: win.phase === "showing" && video.frameSize.width > 0
         readonly property bool toolbarHasFocus: copyShotBtn.activeFocus || saveShotBtn.activeFocus
             || recordBtn.activeFocus || stayAwakeBtn.activeFocus || screenOffBtn.activeFocus || soundBtn.activeFocus
+            || fullScreenBtn.activeFocus
         opacity: topZoneHover.hovered || toolbarHover.hovered || toolbarWakeTimer.running
             || win.info.recording === true || win.info.screenOff === true || toolbarHasFocus ? 1 : 0
         Behavior on opacity { enabled: !Theme.reduceMotion; NumberAnimation { duration: Theme.fadeFast } }
@@ -323,21 +349,22 @@ Window {
                 id: copyShotBtn
                 iconPath: Icons.copy
                 iconColor: "white"
-                label: qsTr("Copy screenshot (Ctrl+Shift+C)")
+                label: qsTr("Copy screenshot (%1)").arg(win.onMac ? "⌘⇧C" : "Ctrl+Shift+C")
                 onClicked: Mirror.screenshotClipboard(win.mirrorKey)
             }
             IconButton {
                 id: saveShotBtn
                 iconPath: Icons.camera
                 iconColor: "white"
-                label: qsTr("Save screenshot (Ctrl+S)")
+                label: qsTr("Save screenshot (%1)").arg(win.onMac ? "⌘S" : "Ctrl+S")
                 onClicked: Mirror.screenshotFile(win.mirrorKey)
             }
             IconButton {
                 id: recordBtn
                 iconPath: win.info.recording === true ? Icons.stopSquare : Icons.record
                 iconColor: win.info.recording === true ? Theme.error : "white"
-                label: win.info.recording === true ? qsTr("Stop recording (Ctrl+R)") : qsTr("Record video (Ctrl+R)")
+                label: (win.info.recording === true ? qsTr("Stop recording (%1)") : qsTr("Record video (%1)"))
+                    .arg(win.onMac ? "⌘R" : "Ctrl+R")
                 onClicked: Mirror.toggleRecording(win.mirrorKey)
             }
             Txt {
@@ -376,6 +403,16 @@ Window {
                 iconColor: "white"
                 label: Mirror.muted ? qsTr("Play the phone's sound here") : qsTr("Mute the phone's sound here")
                 onClicked: Mirror.toggleSound()
+            }
+            IconButton {
+                id: fullScreenBtn
+                iconPath: win.fullScreen
+                    ? "M9 3v6H3M15 3v6h6M9 21v-6H3M15 21v-6h6"
+                    : "M3 9V3h6M21 9V3h-6M3 15v6h6M21 15v6h-6"
+                iconColor: "white"
+                label: (win.fullScreen ? qsTr("Exit full screen (%1)") : qsTr("Full screen (%1)"))
+                    .arg(win.onMac ? "⌃⌘F" : "F11")
+                onClicked: win.toggleFullScreen()
             }
         }
     }

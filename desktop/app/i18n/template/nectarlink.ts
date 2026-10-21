@@ -5031,6 +5031,26 @@ What it needs
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <location filename="../../qml/MirrorWindow.qml" line="352"/>
+        <source>Copy screenshot (%1)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../qml/MirrorWindow.qml" line="359"/>
+        <source>Save screenshot (%1)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../qml/MirrorWindow.qml" line="366"/>
+        <source>Stop recording (%1)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../qml/MirrorWindow.qml" line="366"/>
+        <source>Record video (%1)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <location filename="../../qml/MirrorWindow.qml" line="357"/>
         <source>Phone stays awake while mirroring (turn off)</source>
         <translation type="unfinished"></translation>
@@ -5062,6 +5082,16 @@ What it needs
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <location filename="../../qml/MirrorWindow.qml" line="413"/>
+        <source>Full screen (%1)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../qml/MirrorWindow.qml" line="413"/>
+        <source>Exit full screen (%1)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <location filename="../../qml/MirrorWindow.qml" line="412"/>
         <source>Release to send files to %1</source>
         <translation type="unfinished"></translation>
@@ -5069,6 +5099,11 @@ What it needs
     <message>
         <location filename="../../qml/MirrorWindow.qml" line="412"/>
         <source>phone</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../qml/MirrorWindow.qml" line="519"/>
+        <source>Viewing only on Mac. Phone control is not yet available.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>

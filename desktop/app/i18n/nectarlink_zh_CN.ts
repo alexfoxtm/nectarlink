@@ -5323,6 +5323,26 @@ What it needs
         <translation>录制视频 (Ctrl+R)</translation>
     </message>
     <message>
+        <location filename="../qml/MirrorWindow.qml" line="352"/>
+        <source>Copy screenshot (%1)</source>
+        <translation>复制截图 (%1)</translation>
+    </message>
+    <message>
+        <location filename="../qml/MirrorWindow.qml" line="359"/>
+        <source>Save screenshot (%1)</source>
+        <translation>保存截图 (%1)</translation>
+    </message>
+    <message>
+        <location filename="../qml/MirrorWindow.qml" line="366"/>
+        <source>Stop recording (%1)</source>
+        <translation>停止录制 (%1)</translation>
+    </message>
+    <message>
+        <location filename="../qml/MirrorWindow.qml" line="366"/>
+        <source>Record video (%1)</source>
+        <translation>录制视频 (%1)</translation>
+    </message>
+    <message>
         <location filename="../qml/MirrorWindow.qml" line="357"/>
         <source>Phone stays awake while mirroring (turn off)</source>
         <translation>投屏时手机保持唤醒（点击关闭）</translation>
@@ -5354,6 +5374,16 @@ What it needs
         <translation>在本机静音手机声音</translation>
     </message>
     <message>
+        <location filename="../qml/MirrorWindow.qml" line="413"/>
+        <source>Full screen (%1)</source>
+        <translation>全屏 (%1)</translation>
+    </message>
+    <message>
+        <location filename="../qml/MirrorWindow.qml" line="413"/>
+        <source>Exit full screen (%1)</source>
+        <translation>退出全屏 (%1)</translation>
+    </message>
+    <message>
         <location filename="../qml/MirrorWindow.qml" line="412"/>
         <source>Release to send files to %1</source>
         <translation>松开即可发送文件到 %1</translation>
@@ -5362,6 +5392,11 @@ What it needs
         <location filename="../qml/MirrorWindow.qml" line="412"/>
         <source>phone</source>
         <translation>手机</translation>
+    </message>
+    <message>
+        <location filename="../qml/MirrorWindow.qml" line="519"/>
+        <source>Viewing only on Mac. Phone control is not yet available.</source>
+        <translation>在 Mac 上仅支持查看，暂不支持控制手机。</translation>
     </message>
     <message>
         <location filename="../qml/MirrorWindow.qml" line="480"/>
