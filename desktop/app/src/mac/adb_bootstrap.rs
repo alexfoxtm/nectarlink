@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! One-shot macOS start of a seal-checked bundled `adb` server.
+//! Supervised macOS start of a seal-checked bundled `adb` server.
 //!
 //! The USB watcher in `nectarlink-core` only dials `127.0.0.1:5037`. This
 //! module does not download platform-tools, does not search `PATH` or an SDK,
@@ -33,13 +33,18 @@ use std::{
     path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::Once,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 const SEAL_MAX_BYTES: u64 = 4096;
 /// Same positive-size ceiling the packaging checker uses before it copies a helper.
 const HELPER_MAX_BYTES: u64 = 64 * 1024 * 1024;
 const PROBE_TIMEOUT: Duration = Duration::from_millis(200);
+// Healthy observation cadence and maximum continuous unready-child grace.
+const OBSERVE_INTERVAL: Duration = Duration::from_secs(30);
+// Unready-child polls and first failure retry; retries double up to 30s.
+const FAILURE_BASE_DELAY: Duration = Duration::from_secs(2);
+const MAX_SPAWN_FAILURES: u32 = 5;
 const RELATIVE_HELPER: &str = "Helpers/adb";
 const HELPER_PARTS: [&str; 2] = ["Helpers", "adb"];
 const SEAL_PARTS: [&str; 3] = ["Resources", "PhoneSetup", "adb-seal.json"];
@@ -78,34 +83,97 @@ fn bootstrap_thread() {
     if adb_disabled() {
         return;
     }
-    let probe_open = probe_local_server();
     let Ok(current) = std::env::current_exe() else {
         tracing::info!("adb bootstrap skipped; executable path is unknown");
         return;
     };
-    match decide(&current, probe_open, adb_disabled()) {
-        Decision::Disabled => {}
-        Decision::UseExistingServer => {
-            tracing::info!("adb server already listening on 127.0.0.1:5037");
-        }
-        Decision::Skip => {
-            tracing::info!("no sealed bundled adb; USB will keep retrying an existing server");
-        }
-        Decision::Spawn { exe } => {
-            if sealed_helper(&current).as_ref() != Some(&exe) {
-                tracing::info!("sealed adb helper changed before start; not executing");
-                return;
+    let started = Instant::now();
+    let mut recovery = RecoveryState::default();
+    let mut child: Option<std::process::Child> = None;
+    loop {
+        if adb_disabled() {
+            if child.is_some() {
+                tracing::warn!(
+                    "adb supervision disabled with an owned child; its cleanup is not established"
+                );
             }
-            match spawn_server(&exe) {
-                Ok(mut child) => {
-                    tracing::info!("sealed adb server starting");
-                    match child.wait() {
-                        Ok(status) => tracing::info!(%status, "sealed adb server exited"),
-                        Err(e) => tracing::warn!(error = %e, "sealed adb server reap failed"),
+            return;
+        }
+        let observation = match child.as_mut() {
+            None => ChildObservation::Absent,
+            Some(owned) => match owned.try_wait() {
+                Ok(None) => ChildObservation::Running,
+                Ok(Some(status)) => {
+                    tracing::info!(%status, "sealed adb server exited");
+                    if status.success() {
+                        ChildObservation::ExitedClean
+                    } else {
+                        ChildObservation::ExitedFailed
                     }
                 }
-                Err(e) => tracing::warn!(error = %e, "sealed adb server did not start"),
+                Err(e) => {
+                    tracing::warn!(error = %e, "sealed adb server exit/reap is unknown");
+                    ChildObservation::Unknown
+                }
+            },
+        };
+        if matches!(observation, ChildObservation::ExitedClean | ChildObservation::ExitedFailed) {
+            // try_wait returned a reaped exit status; only now release ownership.
+            child = None;
+        }
+        let probe_open = observation != ChildObservation::Unknown && probe_local_server();
+        match recovery.observe(observation, probe_open, started.elapsed()) {
+            RecoveryAction::Wait(delay) => std::thread::sleep(delay),
+            RecoveryAction::Stop => {
+                if child.is_some() {
+                    tracing::warn!(
+                        ?observation,
+                        "adb supervision stopped with child exit/reap unconfirmed; not starting another"
+                    );
+                } else {
+                    tracing::info!(
+                        "adb bootstrap spawn exhausted; USB watcher keeps retrying an existing server"
+                    );
+                }
+                return;
             }
+            RecoveryAction::Spawn => match decide(&current, probe_open, adb_disabled()) {
+                Decision::Disabled => return,
+                Decision::UseExistingServer => std::thread::sleep(OBSERVE_INTERVAL),
+                Decision::Skip => {
+                    tracing::info!("no sealed bundled adb; USB will keep retrying an existing server");
+                    return;
+                }
+                Decision::Spawn { exe } => {
+                    if sealed_helper(&current).as_ref() != Some(&exe) {
+                        tracing::info!("sealed adb helper changed before start; not executing");
+                        return;
+                    }
+                    match spawn_server(&exe) {
+                        Ok(owned) => {
+                            // Creation is not readiness. Keep this one Child until
+                            // try_wait confirms exit or supervision stops fail-closed.
+                            child = Some(owned);
+                            tracing::info!(
+                                "sealed adb server process created; listener readiness is unconfirmed"
+                            );
+                        }
+                        Err(e) => {
+                            tracing::warn!(error = %e, "sealed adb server did not start");
+                            if let RecoveryAction::Wait(delay) =
+                                recovery.observe(ChildObservation::SpawnFailed, false, started.elapsed())
+                            {
+                                std::thread::sleep(delay);
+                            } else {
+                                tracing::info!(
+                                    "adb bootstrap spawn exhausted; USB watcher keeps retrying an existing server"
+                                );
+                                return;
+                            }
+                        }
+                    }
+                }
+            },
         }
     }
 }
@@ -122,6 +190,90 @@ pub(crate) fn decide(current_exe: &Path, probe_open: bool, adb_disabled: bool) -
         Some(exe) => Decision::Spawn { exe },
         None => Decision::Skip,
     }
+}
+
+// These observations come directly from the owned Child and the existing TCP
+// probe. Tests inject only those outcomes and elapsed time, never processes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ChildObservation {
+    Absent,
+    Running,
+    ExitedClean,
+    ExitedFailed,
+    SpawnFailed,
+    Unknown,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum RecoveryAction {
+    Spawn,
+    Wait(Duration),
+    Stop,
+}
+
+#[derive(Debug, Default)]
+struct RecoveryState {
+    consecutive_failures: u32,
+    unready_since: Option<Duration>,
+    stopped: bool,
+}
+
+impl RecoveryState {
+    fn observe(&mut self, child: ChildObservation, probe_open: bool, now: Duration) -> RecoveryAction {
+        if self.stopped || child == ChildObservation::Unknown {
+            self.stopped = true;
+            return RecoveryAction::Stop;
+        }
+        if matches!(
+            child,
+            ChildObservation::ExitedClean | ChildObservation::ExitedFailed | ChildObservation::SpawnFailed
+        ) {
+            // Even a zero exit is a lost foreground listener, not readiness.
+            self.consecutive_failures = self.consecutive_failures.saturating_add(1);
+            self.unready_since = None;
+        }
+        if probe_open {
+            // An accepting socket is the only positive health evidence here.
+            // It need not be ours: an existing owner always takes precedence.
+            self.consecutive_failures = 0;
+            self.unready_since = None;
+            return RecoveryAction::Wait(OBSERVE_INTERVAL);
+        }
+        if self.consecutive_failures >= MAX_SPAWN_FAILURES {
+            self.stopped = true;
+            return RecoveryAction::Stop;
+        }
+        match child {
+            ChildObservation::Absent => {
+                self.unready_since = None;
+                RecoveryAction::Spawn
+            }
+            ChildObservation::Running => {
+                let since = *self.unready_since.get_or_insert(now);
+                if now.saturating_sub(since) >= OBSERVE_INTERVAL {
+                    // Cannot replace a live child. Stop admission rather than
+                    // killing it or declaring its cleanup complete.
+                    self.consecutive_failures = self.consecutive_failures.saturating_add(1);
+                    self.stopped = true;
+                    RecoveryAction::Stop
+                } else {
+                    RecoveryAction::Wait(FAILURE_BASE_DELAY)
+                }
+            }
+            ChildObservation::ExitedClean
+            | ChildObservation::ExitedFailed
+            | ChildObservation::SpawnFailed => {
+                RecoveryAction::Wait(failure_backoff(self.consecutive_failures))
+            }
+            ChildObservation::Unknown => RecoveryAction::Stop,
+        }
+    }
+}
+
+fn failure_backoff(failures: u32) -> Duration {
+    let shift = failures.saturating_sub(1).min(5);
+    let secs = FAILURE_BASE_DELAY.as_secs().saturating_mul(1u64 << shift);
+    Duration::from_secs(secs.min(OBSERVE_INTERVAL.as_secs()))
 }
 
 fn adb_disabled() -> bool {
@@ -413,5 +565,82 @@ mod tests {
         seal.replace_range(at..at + 1, &flipped.to_string());
         fs::write(&seal_path, seal).unwrap();
         assert_eq!(decide(&exe, false, false), Decision::Skip);
+    }
+
+    #[test]
+    fn observed_listener_survives_hours_then_admits_recovery() {
+        use ChildObservation::{Absent, ExitedFailed, Running};
+        use RecoveryAction::{Spawn, Wait};
+
+        let mut st = RecoveryState::default();
+        let mut now = Duration::ZERO;
+        assert_eq!(st.observe(Absent, true, now), Wait(OBSERVE_INTERVAL));
+        // Six hours of a foreign listener never consume the startup budget.
+        for _ in 0..720 {
+            now += OBSERVE_INTERVAL;
+            assert_eq!(st.observe(Absent, true, now), Wait(OBSERVE_INTERVAL));
+        }
+        now += OBSERVE_INTERVAL;
+        assert_eq!(st.observe(Absent, false, now), Spawn);
+        // Production retains the created child; a live, unready child fences exec.
+        assert_eq!(st.observe(Running, false, now), Wait(FAILURE_BASE_DELAY));
+        now += FAILURE_BASE_DELAY;
+        assert_eq!(st.observe(Running, true, now), Wait(OBSERVE_INTERVAL));
+        now += Duration::from_secs(6 * 60 * 60);
+        assert_eq!(st.observe(Running, true, now), Wait(OBSERVE_INTERVAL));
+        // A real reaped exit, not a spawn return value, permits another attempt.
+        assert_eq!(st.observe(ExitedFailed, false, now), Wait(FAILURE_BASE_DELAY));
+        assert_eq!(st.consecutive_failures, 1);
+        now += FAILURE_BASE_DELAY;
+        assert_eq!(st.observe(Absent, false, now), Spawn);
+        assert_eq!(st.consecutive_failures, 1);
+        assert_eq!(st.observe(Running, false, now), Wait(FAILURE_BASE_DELAY));
+        assert_eq!(st.consecutive_failures, 1);
+        now += FAILURE_BASE_DELAY;
+        assert_eq!(st.observe(Running, true, now), Wait(OBSERVE_INTERVAL));
+        assert_eq!(st.consecutive_failures, 0);
+    }
+
+    #[test]
+    fn failed_children_exhaust_and_live_or_unknown_children_fence_admission() {
+        use ChildObservation::{Absent, ExitedClean, ExitedFailed, Running, SpawnFailed, Unknown};
+        use RecoveryAction::{Spawn, Stop, Wait};
+
+        let mut st = RecoveryState::default();
+        let mut now = Duration::ZERO;
+        for attempt in 1..=MAX_SPAWN_FAILURES {
+            assert_eq!(st.observe(Absent, false, now), Spawn);
+            // Successful creation may be followed by exit before the first poll.
+            // Alternate zero/nonzero statuses; neither clears earlier failures.
+            let exit = if attempt % 2 == 0 { ExitedClean } else { ExitedFailed };
+            let action = st.observe(exit, false, now);
+            assert_eq!(st.consecutive_failures, attempt);
+            if attempt == MAX_SPAWN_FAILURES {
+                assert_eq!(action, Stop);
+            } else {
+                let delay = Duration::from_secs(1u64 << attempt);
+                assert_eq!(action, Wait(delay));
+                now += delay;
+            }
+        }
+        assert_eq!(st.observe(Absent, false, now), Stop);
+
+        let mut live = RecoveryState::default();
+        assert_eq!(live.observe(SpawnFailed, false, Duration::ZERO), Wait(FAILURE_BASE_DELAY));
+        assert_eq!(live.consecutive_failures, 1);
+        assert_eq!(live.observe(Absent, false, now), Spawn);
+        assert_eq!(live.observe(Running, false, now), Wait(FAILURE_BASE_DELAY));
+        assert_eq!(live.consecutive_failures, 1);
+        assert_eq!(live.observe(Running, false, now + OBSERVE_INTERVAL), Stop);
+        assert_eq!(live.consecutive_failures, 2);
+        assert_eq!(live.observe(Absent, true, now + OBSERVE_INTERVAL), Stop);
+
+        let mut unknown = RecoveryState::default();
+        assert_eq!(unknown.observe(Absent, false, now), Spawn);
+        assert_eq!(unknown.observe(Running, false, now), Wait(FAILURE_BASE_DELAY));
+        // Even an open socket cannot prove that our uncertain child was reaped.
+        assert_eq!(unknown.observe(Unknown, true, now), Stop);
+        assert_eq!(unknown.observe(Absent, false, now + OBSERVE_INTERVAL), Stop);
+        assert_eq!(unknown.observe(Absent, true, now + OBSERVE_INTERVAL), Stop);
     }
 }
