@@ -4817,6 +4817,11 @@ What it needs
         <source>Paste into active window</source>
         <translation>粘贴到当前窗口</translation>
     </message>
+    <message>
+        <location filename="../qml/MainWindow.qml" line="685"/>
+        <source>More</source>
+        <translation>更多</translation>
+    </message>
 </context>
 <context>
     <name>Media</name>

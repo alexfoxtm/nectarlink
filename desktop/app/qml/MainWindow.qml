@@ -2,6 +2,7 @@
 import QtQuick
 import QtQuick.Window
 import QtQuick.Effects
+import QtQuick.Controls as QQC2
 import app.nectarlink
 
 // The main window: navigation rail, title bar and pages. Before any device
@@ -554,6 +555,8 @@ NativeWindow {
         }
     }
 
+    readonly property bool macNavOverflow: Qt.platform.os === "osx" || Qt.platform.os === "macos"
+
     // ---- Navigation rail ----
     Rectangle {
         id: rail
@@ -651,6 +654,7 @@ NativeWindow {
                 onClicked: window.page = "apps"
             }
             NavItem {
+                visible: !window.macNavOverflow
                 iconPath: Icons.deck
                 text: qsTr("Deck")
                 selected: window.page === "deck"
@@ -662,6 +666,7 @@ NativeWindow {
                 onClicked: window.page = "deck"
             }
             NavItem {
+                visible: !window.macNavOverflow
                 iconPath: Icons.book
                 text: qsTr("Guide")
                 selected: window.page === "guide"
@@ -671,6 +676,57 @@ NativeWindow {
                     else if (rail.hoveredNav === "guide") rail.hoveredNav = ""
                 }
                 onClicked: window.page = "guide"
+            }
+            NavItem {
+                id: moreItem
+                property bool restoreMenuFocus: false
+                visible: window.macNavOverflow
+                iconPath: Icons.more
+                text: qsTr("More")
+                selected: window.page === "deck" || window.page === "guide"
+                activeHover: rail.hoveredNav === "more"
+                Accessible.role: Accessible.Button
+                Accessible.selected: false
+                Accessible.expandable: true
+                Accessible.expanded: moreMenu.visible
+                onHoveredChanged: {
+                    if (hovered) rail.hoveredNav = "more"
+                    else if (rail.hoveredNav === "more") rail.hoveredNav = ""
+                }
+                onClicked: {
+                    if (moreMenu.visible) {
+                        moreMenu.close()
+                        return
+                    }
+                    restoreMenuFocus = moreItem.activeFocus
+                    moreMenu.open()
+                }
+                Keys.onDownPressed: (event) => {
+                    moreItem.clicked()
+                    event.accepted = true
+                }
+
+                QQC2.Menu {
+                    id: moreMenu
+                    x: moreItem.width + 8
+                    y: 0
+                    popupType: QQC2.Popup.Native
+                    onClosed: {
+                        const restoreFocus = moreItem.restoreMenuFocus
+                        Qt.callLater(() => {
+                            if (restoreFocus && !moreMenu.visible && moreItem.visible && window.active)
+                                moreItem.forceActiveFocus(Qt.TabFocusReason)
+                        })
+                    }
+                    QQC2.MenuItem {
+                        text: qsTr("Deck")
+                        onTriggered: window.page = "deck"
+                    }
+                    QQC2.MenuItem {
+                        text: qsTr("Guide")
+                        onTriggered: window.page = "guide"
+                    }
+                }
             }
             NavItem {
                 iconPath: Icons.settings

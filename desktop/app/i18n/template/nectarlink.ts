@@ -4525,6 +4525,11 @@ What it needs
         <source>Paste into active window</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <location filename="../../qml/MainWindow.qml" line="685"/>
+        <source>More</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>Media</name>

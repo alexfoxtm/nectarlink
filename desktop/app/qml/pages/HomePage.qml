@@ -24,6 +24,10 @@ Item {
     property string currentDeviceName
     property bool currentCanReceive: false
     signal pairRequested
+    // Hybrid Mac Home: macOS-only visual tightening (column count, rhythm,
+    // secondary-affordance quieting). Every use is gated on this flag so
+    // other platforms render exactly as before.
+    readonly property bool macTidy: Qt.platform.os === "osx" || Qt.platform.os === "macos"
 
     readonly property var localsendPeers: {
         if (!AppController.localsendEnabled || !AppController.localsendPeersJson || AppController.localsendPeersJson.length === 0)
@@ -211,7 +215,8 @@ Item {
             width: Math.min(parent.width - Theme.contentPadding * 2, maxContentWidth)
             x: Math.round((parent.width - width) / 2)
             y: Theme.contentPadding
-            spacing: Theme.gutter
+            // macOS hybrid: tighter section rhythm; other platforms unchanged.
+            spacing: page.macTidy ? Math.max(8, Theme.gutter - 4) : Theme.gutter
 
             // Gentle "What's new" banner for returning or upgraded users.
             Card {
@@ -674,7 +679,7 @@ Item {
                 }
                 readonly property bool hasGlanceSummary: true
                 height: wide
-                    ? Math.max(188, Math.max(phoneArt.height, Math.max(identityCol.height, summaryPanel.height)) + 36)
+                    ? Math.max(188, Math.max(phoneArt.height, Math.max(identityCol.height, summaryPanel.height)) + (page.macTidy ? 28 : 36))
                     : topHeroRow.height + 1 + summaryPanel.height + 60
                 Behavior on height {
                     enabled: home.canAnimateHero
@@ -1230,12 +1235,22 @@ Item {
             }
 
             // ---- Quick actions ----
+            // macOS hybrid: primary Mirror/transfer tiles keep full prominence;
+            // the grid breathes less on Mac. Four-column threshold stays at
+            // 640 px so LockChip reasons keep their proven width (H3).
             Grid {
                 id: actions
                 width: parent.width
                 columns: width > 640 ? 4 : 2
-                spacing: 12
+                spacing: page.macTidy ? 8 : 12
                 readonly property real tileWidth: (width - spacing * (columns - 1)) / columns
+                // Polished reflow: tiles ease when the grid reflows outside
+                // resize/reduceMotion (existing gates plus the Mac gate). No
+                // motion during window resize; no idle animation.
+                move: Transition {
+                    enabled: page.macTidy && !Theme.reduceMotion && !page.resizing
+                    NumberAnimation { properties: "x,y"; duration: 180; easing.type: Easing.OutCubic }
+                }
 
                 ActionTile {
                     width: actions.tileWidth
@@ -2980,6 +2995,10 @@ Item {
         // The Mac build lacks this action's desktop side, whatever the phone's
         // state, so on a Mac it stays greyed with LockChip's Mac reason.
         property bool macPortGap: false
+        // macOS hybrid: secondary corner actions (folder, history, open-app)
+        // stay visible, labelled and clickable, but render quieter so the
+        // primary Mirror/transfer tiles lead. Other platforms unchanged.
+        readonly property bool quietSide: Qt.platform.os === "osx" || Qt.platform.os === "macos"
         readonly property bool macGap: macPortGap && (Qt.platform.os === "osx" || Qt.platform.os === "macos")
         signal clicked
         signal sideClicked
@@ -3078,7 +3097,10 @@ Item {
             visible: tile.sideIcon.length > 0 && (tile.available || tile.sideAlwaysAvailable)
             iconPath: tile.sideIcon
             label: tile.sideLabel
-            iconColor: tile.ink
+            // Mac-only quieting via ink only (H2): the focus ring (IconButton
+            // focus Rectangle) and hover/press veil stay full-opacity; only
+            // the glyph dims. Full ink on keyboard focus keeps the ring legible.
+            iconColor: tile.quietSide && !activeFocus ? Qt.rgba(tile.ink.r, tile.ink.g, tile.ink.b, 0.62) : tile.ink
             onClicked: tile.sideClicked()
         }
     }
