@@ -122,6 +122,27 @@ mod tests {
         assert_eq!(tr!("Tests", "Done"), "Done");
     }
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn bundled_catalog_loads_from_resources_and_missing_locale_falls_back() {
+        let _app = cxx_qt_lib::QCoreApplication::new();
+        let scratch = tempfile::tempdir().unwrap();
+        // A data-only directory layout, without an app bundle or registration.
+        let contents = scratch.path().join("translation-fixture/Contents");
+        let executable_dir = contents.join("MacOS");
+        let resources = contents.join("Resources");
+        std::fs::create_dir_all(&executable_dir).unwrap();
+        std::fs::create_dir_all(&resources).unwrap();
+        std::fs::write(resources.join("nectarlink_zh_CN.qm"), include_bytes!("mac/testdata/i18n-fixture.qm"))
+            .unwrap();
+
+        let dir = executable_dir.to_string_lossy();
+        assert!(crate::bridge::native::ffi::install_translator(&dir, "zh_CN"));
+        assert_eq!(translate("WaypairI18nFixture", "Resource path"), "资源路径");
+        assert!(!crate::bridge::native::ffi::install_translator(&dir, "en"));
+        assert_eq!(translate("WaypairI18nFixture", "Resource path"), "Resource path");
+    }
+
     #[test]
     fn only_offered_languages_are_kept() {
         assert!(is_known("") && is_known("zh_CN") && is_known("en"));

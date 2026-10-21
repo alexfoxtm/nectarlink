@@ -27,3 +27,16 @@ This test data is dedicated to the public domain under CC0-1.0.
 refuses the 32x32 format when hardware is required with OSStatus -12911,
 while the existing software-selected 32x32 decoder fixture remains separate.
 Original synthetic data, CC0-1.0, SHA-256: 10d5435dda2f47dfd5de159484ce34c1f464bb00361515d01aabb8e62ea83b43.
+
+## Translation resource fixture
+
+`i18n-fixture.ts` contains one synthetic context, isolated from application text.
+`i18n-fixture.qm` is its Qt6.12.0 `lrelease` output:
+
+```sh
+lrelease i18n-fixture.ts -qm i18n-fixture.qm
+```
+
+The production-loader test creates only temporary `Contents/MacOS` and
+`Contents/Resources` data directories. It uses Qt Core without a GUI, bundle
+identity, registration, or device, and checks both loading and locale fallback.

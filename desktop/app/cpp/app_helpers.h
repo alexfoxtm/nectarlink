@@ -41,8 +41,9 @@ bool start_external_drag(rust::Str file_path, rust::Str text_fallback);
 
 // Installs the NectarLink and Qt translations for `language` (a locale name
 // such as "zh_CN", or "" for the system's), replacing those installed before.
-// `dir` is the folder holding the executable, where windeployqt and the
-// packaging script stage the .qm files. Call after QGuiApplication is
+// `dir` is the executable folder. Windows and standalone builds load there;
+// a macOS bundle loads from Contents/Resources, outside its signed-code folder.
+// Call after the Qt application is
 // created and before the QML engine loads, so that every qsTr() resolves on
 // the first pass; called again later, it retranslates the open windows.
 // Returns true when NectarLink's own translation was found and installed.

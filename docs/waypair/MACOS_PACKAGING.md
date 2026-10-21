@@ -89,6 +89,15 @@ The script itself never signs, installs,
 touches a keychain or credential, or uses the network. `--help` documents
 every option.
 
+Compile offered app catalogs before final signing and stage them at
+`Contents/Resources/nectarlink_<locale>.qm`. Matching Qt catalogs go in
+`Contents/Resources/translations/`, with their copyright, license and source
+material included in the notices. The Mac loader resolves these paths from
+the executable's standard bundle location. Do not put catalogs in
+`Contents/MacOS`: the signer treats that directory as nested code and rejects
+the data files. Windows and standalone builds retain their executable-folder
+lookup.
+
 ## Identity and data preserved
 
 - Bundle id `com.waypair.mac` is the installed app's id. The release keeps

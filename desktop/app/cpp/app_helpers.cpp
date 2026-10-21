@@ -266,7 +266,12 @@ void drop(QPointer<QTranslator> &translator)
 
 bool install_translator(rust::Str dir, rust::Str language)
 {
-    const QString folder = QString::fromUtf8(dir.data(), static_cast<qsizetype>(dir.size()));
+    QString folder = QString::fromUtf8(dir.data(), static_cast<qsizetype>(dir.size()));
+#ifdef Q_OS_MACOS
+    // Data belongs in Resources; putting catalogs in MacOS breaks code signing.
+    if (folder.endsWith(QStringLiteral("/Contents/MacOS")))
+        folder = QDir::cleanPath(folder + QStringLiteral("/../Resources"));
+#endif
     const QString chosen = QString::fromUtf8(language.data(), static_cast<qsizetype>(language.size()));
     const QLocale locale = chosen.isEmpty() ? QLocale::system() : QLocale(chosen);
     QLocale::setDefault(locale);
