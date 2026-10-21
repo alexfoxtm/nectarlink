@@ -115,6 +115,8 @@ internal class PhoneCalls(
         logObserver = null
         main.removeCallbacks(notifyLog)
         current = null
+        // The IDLE broadcast that would unmute it no longer arrives.
+        restoreRinger()
     }
 
     private fun stateChanged(state: String, number: String?) {
