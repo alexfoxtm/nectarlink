@@ -1047,6 +1047,7 @@ impl qobject::Preferences {
             nectar_island_media: p.nectar_island_media,
             nectar_island_notifications: p.nectar_island_notifications,
             automation_rules: crate::settings::automation_rules(),
+            mac_call_audio_bindings: crate::calls::pc_audio_bindings(),
             stream_pc_audio_to_phone: p.stream_pc_audio_to_phone,
             share_pc_storage: p.share_pc_storage,
             forward_pc_notifications_to_phone: p.forward_pc_notifications_to_phone,

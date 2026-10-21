@@ -632,10 +632,13 @@ fn install_mac_notification_permission(qt: CxxQtThread<qobject::AppController>) 
     });
 }
 
-/// Asks the app to quit (from any thread), as Quit in the tray does.
+/// Asks the app to quit (from any thread), as Quit in the tray does. Owned
+/// PC call audio goes back to the phone first, while the event loop runs.
 pub fn request_quit() {
     if let Some(qt) = controller() {
-        let _ = qt.queue(|object| object.quit_requested());
+        crate::calls::hand_back_pc_audio_then(move || {
+            let _ = qt.queue(|object| object.quit_requested());
+        });
     }
 }
 
@@ -1045,9 +1048,7 @@ fn on_tray_event(qt: &CxxQtThread<qobject::AppController>, event: tray::TrayEven
         tray::TrayEvent::TakePhoto => crate::continuity_camera::start("photo"),
         tray::TrayEvent::ScanDocument => crate::continuity_camera::start("scan"),
         tray::TrayEvent::OpenLinkOnPhone => crate::links::open_copied_link_on_phone(),
-        tray::TrayEvent::Quit => {
-            let _ = qt.queue(|object| object.quit_requested());
-        }
+        tray::TrayEvent::Quit => request_quit(),
         tray::TrayEvent::FindPhone => {
             let phone = core_host::host().hub.read(|s| {
                 s.devices

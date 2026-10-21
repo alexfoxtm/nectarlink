@@ -636,10 +636,17 @@ cat > "$APP_PATH/Contents/Info.plist" <<EOF
     <true/>
     <!-- Actually needed: core config lan_discovery announces/discovers via
          mDNS service "nectarlink" (MdnsAddressLookup::builder().service_name("nectarlink"),
-         i.e. _nectarlink._udp). No microphone/camera keys are declared: this
-         packaging step claims no such capture. -->
+         i.e. _nectarlink._udp). No camera key is declared. -->
     <key>NSLocalNetworkUsageDescription</key>
     <string>$PLIST_APP_NAME finds and connects to your paired phone on your local network.</string>
+    <!-- PC call audio (desktop/app/src/mac/bt_hfp.rs): only after the user
+         starts it during a call, the Mac serves an already-paired phone as
+         a Bluetooth hands-free unit. Without these keys the app never
+         touches Bluetooth and reports call audio unavailable. -->
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>$PLIST_APP_NAME uses Bluetooth to bring a phone call's audio to this Mac when you ask it to.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>$PLIST_APP_NAME uses the microphone for a phone call you move to this Mac.</string>
     <key>NSBonjourServices</key>
     <array>
         <string>_nectarlink._udp</string>

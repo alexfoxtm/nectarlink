@@ -75,7 +75,8 @@ data class MirrorRequest(
 /**
  * Asking the user: Android shows its screen capture prompt only from a
  * screen the user is on, so a PC's request waits in a notification; tapping
- * it opens [MirrorConsentActivity], which shows the prompt.
+ * it opens [MirrorConsentActivity], which shows the prompt. While the app
+ * is on screen the prompt opens right away, with or without notifications.
  *
  * Each PC waits on one request at a time: a newer one replaces it, the PC's
  * Stop forgets it, and the consent shares for that request alone, once.
@@ -165,15 +166,60 @@ object MirrorRequests {
         )
     }
 
+    /** How a request reaches the phone's owner; with neither, nobody is asked. */
+    internal data class Delivery(val notify: Boolean, val open: Boolean) {
+        val asks: Boolean get() = notify || open
+    }
+
     /**
-     * Shows the request that arrived on `connection`; false if notifications
-     * are off for the app.
+     * A notification only where the owner would see it: the app's
+     * notifications and this channel on, and (Android 13 and later) the
+     * permission granted. The prompt itself only while the app is on screen,
+     * where Android lets it open; a background request never opens it.
+     */
+    internal fun delivery(
+        sdk: Int,
+        permissionGranted: Boolean,
+        appNotificationsEnabled: Boolean,
+        channelImportance: Int?,
+        onScreen: Boolean,
+    ): Delivery = Delivery(
+        notify = (sdk < Build.VERSION_CODES.TIRAMISU || permissionGranted) && appNotificationsEnabled &&
+            channelImportance != null && channelImportance != NotificationManager.IMPORTANCE_NONE,
+        open = onScreen,
+    )
+
+    private fun onScreen(context: Context): Boolean {
+        val am = context.getSystemService(android.app.ActivityManager::class.java)
+        return am?.runningAppProcesses?.any {
+            it.pid == android.os.Process.myPid() &&
+                it.importance == android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
+        } == true
+    }
+
+    /** Only `request`'s own entry and timeout go; a newer request for its PC stays. */
+    private fun withdraw(request: MirrorRequest) {
+        claim(request)
+        take(request)
+    }
+
+    /**
+     * Shows the request that arrived on `connection`: a notification when the
+     * owner can see one, and the prompt right away when the app is on screen.
+     * False when neither reached the owner.
      */
     fun show(context: Context, received: MirrorRequest, pcName: String, connection: ULong?): Boolean {
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            return false
-        }
         createChannel(context)
+        val plan = delivery(
+            sdk = Build.VERSION.SDK_INT,
+            permissionGranted = android.os.Build.VERSION.SDK_INT < 33 ||
+                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED,
+            appNotificationsEnabled = NotificationManagerCompat.from(context).areNotificationsEnabled(),
+            channelImportance = context.getSystemService(NotificationManager::class.java)
+                ?.getNotificationChannel(CHANNEL)?.importance,
+            onScreen = onScreen(context),
+        )
+        if (!plan.asks) return false
         val request = if (received.connection != null) received else received.copy(connection = connection)
         ask(request)
         val state = core(context).state.value
@@ -186,36 +232,32 @@ object MirrorRequests {
         )
         val activityIntent = request.toIntent(Intent(context, MirrorConsentActivity::class.java))
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        val open = PendingIntent.getActivity(
-            context,
-            request.pcId.hashCode(),
-            activityIntent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
-        val notification = NotificationCompat.Builder(context, CHANNEL)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(context.getString(R.string.mirror_request_title, pcName.ifEmpty { context.getString(R.string.your_pc) }))
-            .setContentText(context.getString(if (control) R.string.mirror_request_text_control else R.string.mirror_request_text))
-            .setContentIntent(open)
-            .setAutoCancel(true)
-            .setTimeoutAfter(REQUEST_TIMEOUT_MS)
-            .setCategory(NotificationCompat.CATEGORY_CALL)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .build()
-        val posted = runCatching { NotificationManagerCompat.from(context).notify(TAG, request.pcId.hashCode(), notification) }.isSuccess
-        if (!posted) {
-            // The PC hears this phone couldn't ask, so nothing may share for it.
-            forget(request.pcId)
-            return false
-        }
+        val posted = plan.notify && runCatching {
+            val open = PendingIntent.getActivity(
+                context,
+                request.pcId.hashCode(),
+                activityIntent,
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
+            val notification = NotificationCompat.Builder(context, CHANNEL)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(context.getString(R.string.mirror_request_title, pcName.ifEmpty { context.getString(R.string.your_pc) }))
+                .setContentText(context.getString(if (control) R.string.mirror_request_text_control else R.string.mirror_request_text))
+                .setContentIntent(open)
+                .setAutoCancel(true)
+                .setTimeoutAfter(REQUEST_TIMEOUT_MS)
+                .setCategory(NotificationCompat.CATEGORY_CALL)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .build()
+            NotificationManagerCompat.from(context).notify(TAG, request.pcId.hashCode(), notification)
+        }.isSuccess
+        // Before the prompt opens, so its claim always finds this timeout.
         expireLater(context.applicationContext, request)
-        val am = context.getSystemService(android.app.ActivityManager::class.java)
-        val inForeground = am?.runningAppProcesses?.any {
-            it.pid == android.os.Process.myPid() &&
-                it.importance == android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
-        } == true
-        if (inForeground) {
-            runCatching { context.startActivity(activityIntent) }
+        val opened = plan.open && runCatching { context.startActivity(activityIntent) }.isSuccess
+        if (!posted && !opened) {
+            // The PC hears this phone couldn't ask, so nothing may share for it.
+            withdraw(request)
+            return false
         }
         return true
     }

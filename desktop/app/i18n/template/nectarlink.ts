@@ -329,6 +329,161 @@
         <source>PC call audio isn&apos;t available on macOS yet; the call&apos;s audio stays on your phone.</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <location filename="../rust_strings.h" line="42" />
+        <source>Allow Bluetooth access to use this Mac for calls.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="43" />
+        <source>Allow microphone access to use this Mac for calls.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="44" />
+        <source>Another Mac call audio attempt is in progress.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="45" />
+        <source>Asking the phone to send this call's audio to the Mac…</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="46" />
+        <source>Bluetooth access for Waypair Link is off in System Settings &gt; Privacy &amp; Security &gt; Bluetooth.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="49" />
+        <source>Can try during a call: %1 over Bluetooth, with this Mac's current microphone and speaker.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="50" />
+        <source>Checking that Bluetooth sees this same call…</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="51" />
+        <source>Choose the phone from the list again.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="52" />
+        <source>Choose which of this Mac's paired Bluetooth devices is this phone.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="53" />
+        <source>Connecting to %1 over Bluetooth…</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="54" />
+        <source>Couldn't list this Mac's Bluetooth devices.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="55" />
+        <source>Couldn't read this Mac's microphone and speaker.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="56" />
+        <source>Mac call audio can only be set up from the Waypair Link window.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="57" />
+        <source>Mac call audio didn't start; the call's audio stays on your phone.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="58" />
+        <source>Microphone access for Waypair Link is off in System Settings &gt; Privacy &amp; Security &gt; Microphone.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="61" />
+        <source>Pair the phone with Waypair Link first.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="62" />
+        <source>Pick this Mac's built-in or wired microphone and speaker in System Settings &gt; Sound, then choose again.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="63" />
+        <source>Returning the call's audio to the phone isn't confirmed yet. If you can't hear the call, use the audio button on the phone.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="64" />
+        <source>Returning the call's audio to the phone…</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="65" />
+        <source>Start this during the phone's only call, once it's answered.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="66" />
+        <source>That Bluetooth device is already chosen for another phone.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="67" />
+        <source>The chosen Bluetooth device doesn't offer call audio.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="68" />
+        <source>The chosen Bluetooth device isn't paired with this Mac anymore.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="69" />
+        <source>The last Mac call audio attempt is still being closed.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="70" />
+        <source>The phone didn't share this call's number, so Bluetooth can't be matched to it.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="71" />
+        <source>The phone opened a Bluetooth audio link to this Mac. Whether both sides hear each other isn't verified; you can return the audio to the phone at any time.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="72" />
+        <source>The phone or its call changed; try again.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="73" />
+        <source>The phone's Bluetooth call audio is already in use on this Mac.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="74" />
+        <source>This Mac let go of the call's Bluetooth audio.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="75" />
+        <source>This Mac's microphone or speaker changed since setup. Choose the phone's Bluetooth device again to use the current ones.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="76" />
+        <source>This version of Waypair Link can't use the Mac for call audio yet.</source>
+        <translation type="unfinished" />
+    </message>
 </context>
 <context>
     <name>CallCard</name>
@@ -401,6 +556,16 @@
         <location filename="../../qml/components/CallCard.qml" line="301"/>
         <source>Call volume up</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../qml/components/CallCard.qml" line="273" />
+        <source>Use this Mac for call audio</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../../qml/components/CallCard.qml" line="281" />
+        <source>Return audio to phone</source>
+        <translation type="unfinished" />
     </message>
 </context>
 <context>
@@ -713,6 +878,61 @@
         <location filename="../../qml/pages/CallsPage.qml" line="1156"/>
         <source>+%1 more</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../qml/pages/CallsPage.qml" line="909" />
+        <source>Call audio on this Mac</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../../qml/pages/CallsPage.qml" line="926" />
+        <source>Bluetooth device: %1</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../../qml/pages/CallsPage.qml" line="937" />
+        <source>Allow Bluetooth</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../../qml/pages/CallsPage.qml" line="938" />
+        <source>Allow microphone</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../../qml/pages/CallsPage.qml" line="939" />
+        <source>Choose phone…</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../../qml/pages/CallsPage.qml" line="940" />
+        <source>Change phone</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../../qml/pages/CallsPage.qml" line="958" />
+        <source>Forget Bluetooth choice</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../../qml/pages/CallsPage.qml" line="966" />
+        <source>Return audio to phone</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../../qml/pages/CallsPage.qml" line="976" />
+        <source>Which of these is this phone?</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../../qml/pages/CallsPage.qml" line="989" />
+        <source>Unnamed device</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../../qml/pages/CallsPage.qml" line="1004" />
+        <source>No paired phone that offers call audio was listed. Pair the phone with this Mac in Bluetooth settings, then choose again.</source>
+        <translation type="unfinished" />
     </message>
 </context>
 <context>

@@ -11,13 +11,14 @@ use std::{
     path::PathBuf,
     sync::{
         Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
 };
 
 use nectarlink_core::{
     CallCommand, CallLogEntry, CallState, Contact, DeviceId, Error, FeatureState, LinkState, NodeEvent,
 };
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::{
@@ -61,6 +62,37 @@ fn note_call_ended(device: DeviceId) {
         bt_hfp::disconnect_audio();
         refresh_hfp_cache(None);
     }
+}
+
+/// Bumped whenever which call is live may have changed (a call answered,
+/// replaced or over, a phone gone): PC call audio is bound to one value.
+static CALL_GENERATION: AtomicU64 = AtomicU64::new(1);
+
+#[cfg(target_os = "macos")]
+pub(crate) fn call_generation() -> u64 {
+    CALL_GENERATION.load(Ordering::SeqCst)
+}
+
+/// The live call changed: PC call audio bound to the old one goes back to the phone.
+fn call_identity_changed() {
+    CALL_GENERATION.fetch_add(1, Ordering::SeqCst);
+    #[cfg(target_os = "macos")]
+    bt_hfp::hand_back();
+}
+
+/// The only call on any phone, when it's answered and no other call rings,
+/// waits or is held.
+#[cfg(target_os = "macos")]
+pub(crate) fn sole_active_call() -> Option<(DeviceId, CallState)> {
+    if ringing(|r| !r.is_empty()) || ongoing_calls(|c| c.len()) != 1 {
+        return None;
+    }
+    in_progress(|c| (c.len() == 1).then(|| c.iter().next().map(|(d, call)| (*d, call.clone()))).flatten())
+        .filter(|(d, call)| {
+            ongoing_calls(|c| c.contains(d))
+                && call.state == "active"
+                && !call.controls.is_some_and(|k| k.held)
+        })
 }
 
 /// Call log entries read at a time, and contacts per page.
@@ -171,6 +203,7 @@ pub fn on_event(event: &NodeEvent) {
             stop_ringing(*device);
             finish(*device);
             note_call_ended(*device);
+            call_identity_changed();
             if Some(*device) == page_device {
                 page_state(|s| {
                     if s.log.is_empty() {
@@ -191,6 +224,7 @@ pub fn on_event(event: &NodeEvent) {
             stop_ringing(*device);
             finish(*device);
             note_call_ended(*device);
+            call_identity_changed();
         }
         // A call can arrive before what the phone can do with it: once the
         // PC may end it, its notification shows.
@@ -228,6 +262,7 @@ fn changed(device: DeviceId, call: &CallState) {
         match in_progress(|c| c.insert(device, call.clone())) {
             Some(previous) if previous.id == call.id => {}
             previous => {
+                call_identity_changed();
                 if let Some(previous) = previous {
                     toast::remove(TOAST_GROUP, &format!("{ACTIVE}{}", key(device, &previous.id)));
                 }
@@ -242,6 +277,7 @@ fn changed(device: DeviceId, call: &CallState) {
     }
     match call.state.as_str() {
         "ringing" if call.incoming => {
+            call_identity_changed();
             if let Some(previous) = ringing(|r| r.insert(device, call.clone()))
                 && previous.id != call.id
             {
@@ -263,6 +299,7 @@ fn changed(device: DeviceId, call: &CallState) {
 fn finish(device: DeviceId) {
     notified(|n| n.remove(&device));
     if let Some(call) = in_progress(|c| c.remove(&device)) {
+        call_identity_changed();
         toast::remove(TOAST_GROUP, &format!("{ACTIVE}{}", key(device, &call.id)));
         core_host::host().hub.changed(Changes::CALLS);
     }
@@ -605,6 +642,7 @@ pub fn open_device(device: DeviceId) {
         same
     });
     refresh_hfp_cache(Some(device));
+    refresh_pc_audio_prerequisites();
     if !same {
         page_changed();
     }
@@ -631,6 +669,7 @@ pub fn ensure_contacts(device: DeviceId) {
 pub fn reload() {
     let dev = page_state(|s| s.device);
     refresh_hfp_cache(dev);
+    refresh_pc_audio_prerequisites();
     load_call_log(None);
     load_contacts();
 }
@@ -935,6 +974,209 @@ pub fn connect_pc_audio(device: Option<DeviceId>) {
 /// Opens Windows Bluetooth & devices settings (`ms-settings:bluetooth`).
 pub fn open_bluetooth_settings() {
     bt_hfp::open_bluetooth_settings();
+}
+
+// ---- PC call audio on a Mac: the user's Bluetooth pick per phone ----
+
+/// Which of a Mac's paired Bluetooth devices the user said a phone is, and
+/// the Mac microphone and speaker in use then (`macCallAudioBindings` in
+/// the app's settings). Bound to the phone's Device ID, which is its
+/// authenticated key. `bluetooth_name` is only shown, never matched.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MacCallAudioBinding {
+    pub phone_id: String,
+    pub trusted_key_sha256: String,
+    pub bluetooth_address: String,
+    #[serde(default)]
+    pub bluetooth_name: String,
+    #[serde(rename = "inputUID")]
+    pub input_uid: String,
+    #[serde(rename = "outputUID")]
+    pub output_uid: String,
+}
+
+static PC_AUDIO_BINDINGS: Mutex<Vec<MacCallAudioBinding>> = Mutex::new(Vec::new());
+
+fn pc_audio_bindings_mut<T>(f: impl FnOnce(&mut Vec<MacCallAudioBinding>) -> T) -> T {
+    f(&mut PC_AUDIO_BINDINGS.lock().unwrap_or_else(|e| e.into_inner()))
+}
+
+/// The bindings as stored (all of them, on every platform, so saving keeps them).
+pub fn pc_audio_bindings() -> Vec<MacCallAudioBinding> {
+    pc_audio_bindings_mut(|b| b.clone())
+}
+
+pub fn set_pc_audio_bindings(bindings: Vec<MacCallAudioBinding>) {
+    pc_audio_bindings_mut(|b| *b = bindings);
+}
+
+/// A phone's key as the binding names it: SHA-256 of its Device ID.
+#[cfg(target_os = "macos")]
+pub(crate) fn trusted_key_sha256(device: DeviceId) -> String {
+    use sha2::{Digest, Sha256};
+    data_encoding::HEXLOWER.encode(&Sha256::digest(device.as_bytes()))
+}
+
+/// `device`'s binding, if it names that phone and key exactly.
+#[cfg(target_os = "macos")]
+pub(crate) fn pc_audio_binding(device: DeviceId) -> Option<MacCallAudioBinding> {
+    let id = device.to_string();
+    let key = trusted_key_sha256(device);
+    pc_audio_bindings_mut(|b| b.iter().find(|b| b.phone_id == id && b.trusted_key_sha256 == key).cloned())
+}
+
+/// Replaces the phone's binding. A Bluetooth device bound to another phone stays with it.
+#[cfg(target_os = "macos")]
+pub(crate) fn put_pc_audio_binding(binding: MacCallAudioBinding) -> Result<(), String> {
+    pc_audio_bindings_mut(|b| {
+        if b.iter()
+            .any(|o| o.phone_id != binding.phone_id && o.bluetooth_address == binding.bluetooth_address)
+        {
+            return Err(tr!("BtHfp", "That Bluetooth device is already chosen for another phone."));
+        }
+        b.retain(|o| o.phone_id != binding.phone_id);
+        b.push(binding);
+        Ok(())
+    })?;
+    save_pc_audio_bindings();
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn remove_pc_audio_binding(device: DeviceId) {
+    let id = device.to_string();
+    if pc_audio_bindings_mut(|b| {
+        let before = b.len();
+        b.retain(|o| o.phone_id != id);
+        b.len() != before
+    }) {
+        save_pc_audio_bindings();
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn save_pc_audio_bindings() {
+    let dir = &core_host::host().data_dir;
+    let mut settings = crate::settings::Settings::load(dir);
+    settings.mac_call_audio_bindings = pc_audio_bindings();
+    if let Err(e) = settings.save(dir) {
+        tracing::warn!(error = %e, "can't save PC call audio setup");
+    }
+}
+
+/// The Calls page's PC call audio controls for one phone.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct PcAudioView {
+    /// "unsupported", "unknown", "unavailable", "bluetooth-denied",
+    /// "microphone-denied", "choose-phone", "microphone-undecided",
+    /// "bluetooth-undecided" or "ready".
+    pub setup: String,
+    pub bluetooth_name: String,
+    /// The native attempt's phase, or "" without one.
+    pub phase: String,
+    pub slc_observed: bool,
+    pub sco_observed: bool,
+    /// Both directions heard and the handset return confirmed; never claimed yet.
+    pub verified: bool,
+    pub can_start: bool,
+    pub can_stop: bool,
+    pub detail: String,
+    /// The Bluetooth devices the user just listed: `[{address, name}]`.
+    pub gateways: Value,
+}
+
+/// PC call audio for `device`, whose shown call is `call`.
+#[cfg(target_os = "macos")]
+pub fn pc_audio_view(device: Option<DeviceId>, call: Option<&str>) -> PcAudioView {
+    device
+        .map(|device| bt_hfp::view(device, call))
+        .unwrap_or_else(|| PcAudioView { gateways: json!([]), ..PcAudioView::default() })
+}
+
+/// Only a Mac has a native HF-unit provider.
+#[cfg(not(target_os = "macos"))]
+pub fn pc_audio_view(_device: Option<DeviceId>, _call: Option<&str>) -> PcAudioView {
+    PcAudioView { setup: "unsupported".into(), gateways: json!([]), ..PcAudioView::default() }
+}
+
+#[cfg(target_os = "macos")]
+fn report(result: Result<(), String>) {
+    if let Err(message) = result
+        && !message.is_empty()
+    {
+        show_message(message);
+    }
+    page_changed();
+}
+
+/// Lists this Mac's paired phones offering call audio, for the user to pick `device`.
+pub fn find_bluetooth_phones(device: DeviceId) {
+    #[cfg(target_os = "macos")]
+    report(bt_hfp::find_phones(device));
+    #[cfg(not(target_os = "macos"))]
+    let _ = device;
+}
+
+/// The user picked `address` from the list as `device`'s Bluetooth device.
+pub fn bind_bluetooth_phone(device: DeviceId, address: &str) {
+    #[cfg(target_os = "macos")]
+    report(bt_hfp::bind(device, address));
+    #[cfg(not(target_os = "macos"))]
+    let _ = (device, address);
+}
+
+pub fn forget_bluetooth_phone(device: DeviceId) {
+    #[cfg(target_os = "macos")]
+    bt_hfp::forget(device);
+    #[cfg(not(target_os = "macos"))]
+    let _ = device;
+    page_changed();
+}
+
+pub fn allow_bluetooth() {
+    #[cfg(target_os = "macos")]
+    bt_hfp::allow_bluetooth();
+}
+
+pub fn allow_microphone() {
+    #[cfg(target_os = "macos")]
+    bt_hfp::allow_microphone();
+}
+
+/// The user asked to try this Mac for `device`'s live call.
+pub fn start_pc_audio(device: DeviceId) {
+    #[cfg(target_os = "macos")]
+    report(bt_hfp::start(device));
+    #[cfg(not(target_os = "macos"))]
+    let _ = device;
+}
+
+/// The user asked for the call's audio back on the phone.
+pub fn stop_pc_audio() {
+    #[cfg(target_os = "macos")]
+    bt_hfp::hand_back();
+    page_changed();
+}
+
+/// Explicit quit: owned PC call audio goes back to the phone (briefly
+/// waiting to see that while the event loop runs), then `quit` runs.
+pub fn hand_back_pc_audio_then(quit: impl FnOnce() + Send + 'static) {
+    #[cfg(target_os = "macos")]
+    bt_hfp::hand_back_then(quit);
+    #[cfg(not(target_os = "macos"))]
+    quit();
+}
+
+/// After the event loop: whatever PC call audio is still owned goes back to the phone.
+pub fn shutdown_pc_audio() {
+    #[cfg(target_os = "macos")]
+    bt_hfp::shutdown();
+}
+
+fn refresh_pc_audio_prerequisites() {
+    #[cfg(target_os = "macos")]
+    bt_hfp::refresh_prerequisites();
 }
 
 #[cfg(test)]

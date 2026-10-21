@@ -39,10 +39,41 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Battery", "%1 is fully charged"), // desktop/app/src/battery.rs
     QT_TRANSLATE_NOOP("Battery", "You can unplug it."), // desktop/app/src/battery.rs
     QT_TRANSLATE_NOOP("Battery", "Your phone"), // desktop/app/src/battery.rs
+    QT_TRANSLATE_NOOP("BtHfp", "Allow Bluetooth access to use this Mac for calls."), // desktop/app/src/mac/bt_hfp.rs
+    QT_TRANSLATE_NOOP("BtHfp", "Allow microphone access to use this Mac for calls."), // desktop/app/src/mac/bt_hfp.rs
+    QT_TRANSLATE_NOOP("BtHfp", "Another Mac call audio attempt is in progress."), // desktop/app/src/mac/bt_hfp.rs
+    QT_TRANSLATE_NOOP("BtHfp", "Asking the phone to send this call's audio to the Mac…"), // desktop/app/src/mac/bt_hfp.rs
+    QT_TRANSLATE_NOOP("BtHfp", "Bluetooth access for Waypair Link is off in System Settings > Privacy & Security > Bluetooth."), // desktop/app/src/mac/bt_hfp.rs
     QT_TRANSLATE_NOOP("BtHfp", "Bluetooth connected (%1)."), // desktop/app/src/win/bt_hfp.rs
     QT_TRANSLATE_NOOP("BtHfp", "Bluetooth paired with %1 (not currently connected)."), // desktop/app/src/win/bt_hfp.rs
+    QT_TRANSLATE_NOOP("BtHfp", "Can try during a call: %1 over Bluetooth, with this Mac's current microphone and speaker."), // desktop/app/src/mac/bt_hfp.rs
+    QT_TRANSLATE_NOOP("BtHfp", "Checking that Bluetooth sees this same call…"), // desktop/app/src/mac/bt_hfp.rs
+    QT_TRANSLATE_NOOP("BtHfp", "Choose the phone from the list again."), // desktop/app/src/mac/bt_hfp.rs
+    QT_TRANSLATE_NOOP("BtHfp", "Choose which of this Mac's paired Bluetooth devices is this phone."), // desktop/app/src/mac/bt_hfp.rs
+    QT_TRANSLATE_NOOP("BtHfp", "Connecting to %1 over Bluetooth…"), // desktop/app/src/mac/bt_hfp.rs
+    QT_TRANSLATE_NOOP("BtHfp", "Couldn't list this Mac's Bluetooth devices."), // desktop/app/src/mac/bt_hfp.rs
+    QT_TRANSLATE_NOOP("BtHfp", "Couldn't read this Mac's microphone and speaker."), // desktop/app/src/mac/bt_hfp.rs
+    QT_TRANSLATE_NOOP("BtHfp", "Mac call audio can only be set up from the Waypair Link window."), // desktop/app/src/mac/bt_hfp.rs
+    QT_TRANSLATE_NOOP("BtHfp", "Mac call audio didn't start; the call's audio stays on your phone."), // desktop/app/src/mac/bt_hfp.rs
+    QT_TRANSLATE_NOOP("BtHfp", "Microphone access for Waypair Link is off in System Settings > Privacy & Security > Microphone."), // desktop/app/src/mac/bt_hfp.rs
     QT_TRANSLATE_NOOP("BtHfp", "No paired Bluetooth phone endpoint found in Windows."), // desktop/app/src/win/bt_hfp.rs
     QT_TRANSLATE_NOOP("BtHfp", "PC call audio isn't available on macOS yet; the call's audio stays on your phone."), // desktop/app/src/mac/bt_hfp.rs
+    QT_TRANSLATE_NOOP("BtHfp", "Pair the phone with Waypair Link first."), // desktop/app/src/mac/bt_hfp.rs
+    QT_TRANSLATE_NOOP("BtHfp", "Pick this Mac's built-in or wired microphone and speaker in System Settings > Sound, then choose again."), // desktop/app/src/mac/bt_hfp.rs
+    QT_TRANSLATE_NOOP("BtHfp", "Returning the call's audio to the phone isn't confirmed yet. If you can't hear the call, use the audio button on the phone."), // desktop/app/src/mac/bt_hfp.rs
+    QT_TRANSLATE_NOOP("BtHfp", "Returning the call's audio to the phone…"), // desktop/app/src/mac/bt_hfp.rs
+    QT_TRANSLATE_NOOP("BtHfp", "Start this during the phone's only call, once it's answered."), // desktop/app/src/mac/bt_hfp.rs
+    QT_TRANSLATE_NOOP("BtHfp", "That Bluetooth device is already chosen for another phone."), // desktop/app/src/calls.rs
+    QT_TRANSLATE_NOOP("BtHfp", "The chosen Bluetooth device doesn't offer call audio."), // desktop/app/src/mac/bt_hfp.rs
+    QT_TRANSLATE_NOOP("BtHfp", "The chosen Bluetooth device isn't paired with this Mac anymore."), // desktop/app/src/mac/bt_hfp.rs
+    QT_TRANSLATE_NOOP("BtHfp", "The last Mac call audio attempt is still being closed."), // desktop/app/src/mac/bt_hfp.rs
+    QT_TRANSLATE_NOOP("BtHfp", "The phone didn't share this call's number, so Bluetooth can't be matched to it."), // desktop/app/src/mac/bt_hfp.rs
+    QT_TRANSLATE_NOOP("BtHfp", "The phone opened a Bluetooth audio link to this Mac. Whether both sides hear each other isn't verified; you can return the audio to the phone at any time."), // desktop/app/src/mac/bt_hfp.rs
+    QT_TRANSLATE_NOOP("BtHfp", "The phone or its call changed; try again."), // desktop/app/src/mac/bt_hfp.rs
+    QT_TRANSLATE_NOOP("BtHfp", "The phone's Bluetooth call audio is already in use on this Mac."), // desktop/app/src/mac/bt_hfp.rs
+    QT_TRANSLATE_NOOP("BtHfp", "This Mac let go of the call's Bluetooth audio."), // desktop/app/src/mac/bt_hfp.rs
+    QT_TRANSLATE_NOOP("BtHfp", "This Mac's microphone or speaker changed since setup. Choose the phone's Bluetooth device again to use the current ones."), // desktop/app/src/mac/bt_hfp.rs
+    QT_TRANSLATE_NOOP("BtHfp", "This version of Waypair Link can't use the Mac for call audio yet."), // desktop/app/src/mac/bt_hfp.rs
     QT_TRANSLATE_NOOP("Calls", "Calling %1"), // desktop/app/src/calls.rs
     QT_TRANSLATE_NOOP("Calls", "Missed call from %1"), // desktop/app/src/calls.rs
     QT_TRANSLATE_NOOP("Calls", "On a call with %1"), // desktop/app/src/calls.rs

@@ -70,4 +70,37 @@ pub mod ffi {
         #[allow(dead_code)]
         fn mac_free_space(path: &str, ok: &mut bool) -> u64;
     }
+
+    #[cfg(target_os = "macos")]
+    unsafe extern "C++" {
+        include!("mac_hfp.h");
+
+        /// Main thread. Starts one owned attempt for an exact binding; both
+        /// callbacks run synchronously on the main thread with `session`,
+        /// and must not call back into this API. 0: nothing was started.
+        fn mac_hfp_start(
+            binding_json: &str,
+            session: u64,
+            lease: fn(u64, &[u8]) -> bool,
+            event: fn(u64, &[u8]),
+        ) -> u64;
+        /// Main thread, never from a callback. Irreversible handback request.
+        fn mac_hfp_handback(handle: u64) -> bool;
+        /// Main thread, never from a callback. True once the handle is freed.
+        fn mac_hfp_release(handle: u64) -> bool;
+
+        /// Usage descriptions and authorization status; requests nothing.
+        fn mac_hfp_prerequisites() -> String;
+        /// Main thread, explicit user action only.
+        fn mac_hfp_paired_gateways(ok: &mut bool) -> String;
+        fn mac_hfp_default_endpoints(ok: &mut bool) -> String;
+        /// Main thread, explicit user action only; macOS asks while undecided.
+        /// Both requests retain the same process-lifetime fn item. It runs on
+        /// Main after native completion/state updates, and only refreshes status.
+        fn mac_hfp_request_bluetooth(changed: fn()) -> bool;
+        /// Same callback lifetime/thread contract as the Bluetooth request.
+        fn mac_hfp_request_microphone(changed: fn()) -> bool;
+        /// Main thread.
+        fn mac_hfp_pump_main_run_loop(seconds: f64);
+    }
 }

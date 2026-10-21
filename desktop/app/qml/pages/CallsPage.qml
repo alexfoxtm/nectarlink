@@ -20,6 +20,23 @@ Item {
 
     readonly property var callLog: { try { return JSON.parse(PhoneCall.callLog) } catch (e) { return [] } }
     readonly property var contacts: { try { return JSON.parse(PhoneCall.contacts) } catch (e) { return [] } }
+
+    // Call audio on this Mac (PhoneCall.pcAudio*): the paired Bluetooth
+    // devices the user just listed, and whether a listing found none.
+    readonly property var pcAudioGateways: { try { return JSON.parse(PhoneCall.pcAudioGateways) } catch (e) { return [] } }
+    property bool pcAudioListed: false
+    readonly property bool pcAudioBound: PhoneCall.pcAudioBluetoothName.length > 0
+        || PhoneCall.pcAudioSetup === "ready" || PhoneCall.pcAudioSetup === "microphone-undecided"
+    // The call card shows starting, returning or closing for this phone's call.
+    readonly property bool pcAudioOnCallCard: PhoneCall.active && PhoneCall.device === page.deviceId
+        && (PhoneCall.pcAudioCanStart || PhoneCall.pcAudioCanStop || PhoneCall.pcAudioPhase.length > 0)
+    Connections {
+        target: PhoneCall
+        // A new list, a choice or an expired list: "none found" no longer applies.
+        function onPcAudioGatewaysChanged() { page.pcAudioListed = false }
+        function onPcAudioSetupChanged() { page.pcAudioListed = false }
+    }
+
     readonly property string query: search.text.trim().toLocaleLowerCase()
 
     readonly property var shownCalls: query.length === 0 ? callLog
@@ -133,6 +150,7 @@ Item {
     Component.onCompleted: load()
     onDeviceIdChanged: {
         selectedContact = null
+        pcAudioListed = false
         load()
     }
 
@@ -867,6 +885,131 @@ Item {
                             else
                                 PhoneCall.openBluetoothSettings()
                         }
+                    }
+                }
+            }
+
+            // ---- Call audio on this Mac: set-up, and an attempt still closing ----
+            // Every action is a click; pcAudioDetail says where things stand.
+            // The call card takes over while it can start or return the audio.
+            Card {
+                id: pcAudioCard
+                objectName: "pcAudioCard"
+                width: parent.width
+                visible: PhoneCall.pcAudioSetup.length > 0 && PhoneCall.pcAudioSetup !== "unsupported"
+                    && PhoneCall.pcAudioSetup !== "unknown" && !page.pcAudioOnCallCard
+                Column {
+                    width: parent.width
+                    spacing: 8
+                    Accessible.role: Accessible.Grouping
+                    Accessible.name: pcAudioTitle.text + ". " + pcAudioDetailText.text
+                    Txt {
+                        id: pcAudioTitle
+                        role: "label"
+                        text: qsTr("Call audio on this Mac")
+                    }
+                    Txt {
+                        id: pcAudioDetailText
+                        width: parent.width
+                        visible: text.length > 0
+                        role: "caption"
+                        muted: true
+                        wrapMode: Text.WordWrap
+                        text: PhoneCall.pcAudioDetail
+                    }
+                    Txt {
+                        width: parent.width
+                        visible: PhoneCall.pcAudioBluetoothName.length > 0
+                        role: "caption"
+                        muted: true
+                        elide: Text.ElideRight
+                        text: qsTr("Bluetooth device: %1").arg(PhoneCall.pcAudioBluetoothName)
+                    }
+                    Flow {
+                        width: parent.width
+                        spacing: 8
+                        Button {
+                            objectName: "pcAudioAction"
+                            readonly property string setup: PhoneCall.pcAudioSetup
+                            visible: text.length > 0
+                            variant: "tonal"
+                            size: "sm"
+                            text: setup === "bluetooth-undecided" ? qsTr("Allow Bluetooth")
+                                : setup === "microphone-undecided" ? qsTr("Allow microphone")
+                                : setup === "choose-phone" ? qsTr("Choose phone…")
+                                : setup === "ready" ? qsTr("Change phone")
+                                : ""
+                            onClicked: {
+                                if (setup === "bluetooth-undecided") {
+                                    PhoneCall.allowBluetooth()
+                                } else if (setup === "microphone-undecided") {
+                                    PhoneCall.allowMicrophone()
+                                } else if (setup === "choose-phone" || setup === "ready") {
+                                    page.pcAudioListed = true
+                                    PhoneCall.findBluetoothPhones()
+                                }
+                            }
+                        }
+                        Button {
+                            objectName: "pcAudioForget"
+                            visible: page.pcAudioBound
+                            variant: "text"
+                            size: "sm"
+                            text: qsTr("Forget Bluetooth choice")
+                            onClicked: PhoneCall.forgetBluetoothPhone()
+                        }
+                        Button {
+                            objectName: "pcAudioStopSetup"
+                            visible: PhoneCall.pcAudioCanStop
+                            variant: "tonal"
+                            size: "sm"
+                            text: qsTr("Return audio to phone")
+                            onClicked: PhoneCall.stopPcAudio()
+                        }
+                    }
+                    // The address picks the device; the name is only shown.
+                    Txt {
+                        width: parent.width
+                        visible: page.pcAudioGateways.length > 0
+                        role: "caption"
+                        wrapMode: Text.WordWrap
+                        text: qsTr("Which of these is this phone?")
+                    }
+                    Flow {
+                        width: parent.width
+                        spacing: 8
+                        visible: page.pcAudioGateways.length > 0
+                        Repeater {
+                            model: page.pcAudioGateways
+                            delegate: Button {
+                                required property var modelData
+                                objectName: "pcAudioGateway"
+                                variant: "tonal"
+                                size: "sm"
+                                text: ((modelData.name || "").length > 0 ? modelData.name : qsTr("Unnamed device"))
+                                    + " · " + modelData.address
+                                onClicked: {
+                                    page.pcAudioListed = false
+                                    PhoneCall.chooseBluetoothPhone(modelData.address)
+                                }
+                            }
+                        }
+                    }
+                    Txt {
+                        width: parent.width
+                        visible: page.pcAudioListed && page.pcAudioGateways.length === 0
+                        role: "caption"
+                        muted: true
+                        wrapMode: Text.WordWrap
+                        text: qsTr("No paired phone that offers call audio was listed. Pair the phone with this Mac in Bluetooth settings, then choose again.")
+                    }
+                    Button {
+                        objectName: "pcAudioPairHelp"
+                        visible: page.pcAudioListed && page.pcAudioGateways.length === 0
+                        variant: "text"
+                        size: "sm"
+                        text: qsTr("Open Bluetooth settings")
+                        onClicked: PhoneCall.openBluetoothSettings()
                     }
                 }
             }

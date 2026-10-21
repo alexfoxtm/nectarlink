@@ -735,6 +735,8 @@ fn main() -> ExitCode {
     // Restores the app icon and Qt's own reopen handling.
     #[cfg(target_os = "macos")]
     win::browser_handoff::stop();
+    // While the main run loop can still deliver Bluetooth callbacks.
+    calls::shutdown_pc_audio();
     // QML first (it holds references into Qt), then the core.
     drop(engine);
     pc_audio_stream::set_enabled(false);

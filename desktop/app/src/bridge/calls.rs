@@ -64,6 +64,27 @@ pub mod qobject {
         #[qproperty(bool, hfp_connected, cxx_name = "hfpConnected")]
         /// Human-readable Bluetooth HFP status or pairing guidance.
         #[qproperty(QString, hfp_detail, cxx_name = "hfpDetail")]
+        /// Trying a Mac for the phone's call audio (see `calls::PcAudioView`):
+        /// "unsupported", "unknown", "unavailable", "bluetooth-denied",
+        /// "microphone-denied", "choose-phone", "microphone-undecided",
+        /// "bluetooth-undecided" or "ready".
+        #[qproperty(QString, pc_audio_setup, cxx_name = "pcAudioSetup")]
+        /// The Bluetooth device the user chose for the phone (shown only).
+        #[qproperty(QString, pc_audio_bluetooth_name, cxx_name = "pcAudioBluetoothName")]
+        /// The attempt's native phase, or "" without one.
+        #[qproperty(QString, pc_audio_phase, cxx_name = "pcAudioPhase")]
+        /// The Bluetooth link to the phone was observed (not proof of audio).
+        #[qproperty(bool, pc_audio_slc_observed, cxx_name = "pcAudioSlcObserved")]
+        /// A Bluetooth audio link was observed (not proof either side hears).
+        #[qproperty(bool, pc_audio_sco_observed, cxx_name = "pcAudioScoObserved")]
+        /// Both directions heard and the handset return confirmed.
+        #[qproperty(bool, pc_audio_verified, cxx_name = "pcAudioVerified")]
+        #[qproperty(bool, pc_audio_can_start, cxx_name = "pcAudioCanStart")]
+        #[qproperty(bool, pc_audio_can_stop, cxx_name = "pcAudioCanStop")]
+        /// Plain-words status or the next step.
+        #[qproperty(QString, pc_audio_detail, cxx_name = "pcAudioDetail")]
+        /// The paired Bluetooth devices just listed (JSON `[{address, name}]`).
+        #[qproperty(QString, pc_audio_gateways, cxx_name = "pcAudioGateways")]
         type PhoneCall = super::PhoneCallRust;
     }
 
@@ -121,6 +142,33 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "openBluetoothSettings"]
         fn open_bluetooth_settings(self: Pin<&mut PhoneCall>);
+        /// Lists the Mac's already-paired phones that offer call audio (`pcAudioGateways`).
+        #[qinvokable]
+        #[cxx_name = "findBluetoothPhones"]
+        fn find_bluetooth_phones(self: Pin<&mut PhoneCall>);
+        /// The user picked this listed address as the phone's Bluetooth device.
+        #[qinvokable]
+        #[cxx_name = "chooseBluetoothPhone"]
+        fn choose_bluetooth_phone(self: Pin<&mut PhoneCall>, address: &QString);
+        #[qinvokable]
+        #[cxx_name = "forgetBluetoothPhone"]
+        fn forget_bluetooth_phone(self: Pin<&mut PhoneCall>);
+        /// Asks macOS for Bluetooth access while it's undecided.
+        #[qinvokable]
+        #[cxx_name = "allowBluetooth"]
+        fn allow_bluetooth(self: Pin<&mut PhoneCall>);
+        /// Asks macOS for microphone access while it's undecided.
+        #[qinvokable]
+        #[cxx_name = "allowMicrophone"]
+        fn allow_microphone(self: Pin<&mut PhoneCall>);
+        /// Tries this Mac for the shown call's audio.
+        #[qinvokable]
+        #[cxx_name = "startPcAudio"]
+        fn start_pc_audio(self: Pin<&mut PhoneCall>);
+        /// Returns the call's audio to the phone.
+        #[qinvokable]
+        #[cxx_name = "stopPcAudio"]
+        fn stop_pc_audio(self: Pin<&mut PhoneCall>);
     }
 }
 
@@ -149,6 +197,16 @@ pub struct PhoneCallRust {
     hfp_available: bool,
     hfp_connected: bool,
     hfp_detail: QString,
+    pc_audio_setup: QString,
+    pc_audio_bluetooth_name: QString,
+    pc_audio_phase: QString,
+    pc_audio_slc_observed: bool,
+    pc_audio_sco_observed: bool,
+    pc_audio_verified: bool,
+    pc_audio_can_start: bool,
+    pc_audio_can_stop: bool,
+    pc_audio_detail: QString,
+    pc_audio_gateways: QString,
     /// The call's ID on the phone, for its commands.
     call: Option<(DeviceId, String)>,
     /// What the Calls page last showed, to skip JSON updates that changed nothing.
@@ -161,6 +219,7 @@ impl cxx_qt::Initialize for qobject::PhoneCall {
         self.as_mut().set_call_log(QString::from("[]"));
         self.as_mut().set_contacts_status(QString::from("idle"));
         self.as_mut().set_contacts(QString::from("[]"));
+        self.as_mut().set_pc_audio_gateways(QString::from("[]"));
         super::subscribe(self.qt_thread(), Changes::CALLS | Changes::CAPABILITIES, Self::refresh_state);
     }
 }
@@ -222,6 +281,55 @@ impl qobject::PhoneCall {
         calls::open_bluetooth_settings();
     }
 
+    /// The phone PC call audio set-up is for: the one shown, else the call's.
+    fn pc_audio_device(&self) -> Option<DeviceId> {
+        super::parse_device(&self.rust().device).or_else(|| self.rust().call.as_ref().map(|(d, _)| *d))
+    }
+
+    pub fn find_bluetooth_phones(self: Pin<&mut Self>) {
+        if let Some(device) = self.pc_audio_device() {
+            calls::find_bluetooth_phones(device);
+        }
+        self.refresh_state();
+    }
+
+    pub fn choose_bluetooth_phone(self: Pin<&mut Self>, address: &QString) {
+        if let Some(device) = self.pc_audio_device() {
+            calls::bind_bluetooth_phone(device, &String::from(address));
+        }
+        self.refresh_state();
+    }
+
+    pub fn forget_bluetooth_phone(self: Pin<&mut Self>) {
+        if let Some(device) = self.pc_audio_device() {
+            calls::forget_bluetooth_phone(device);
+        }
+        self.refresh_state();
+    }
+
+    pub fn allow_bluetooth(self: Pin<&mut Self>) {
+        calls::allow_bluetooth();
+        self.refresh_state();
+    }
+
+    pub fn allow_microphone(self: Pin<&mut Self>) {
+        calls::allow_microphone();
+        self.refresh_state();
+    }
+
+    /// Only for the call this page shows.
+    pub fn start_pc_audio(self: Pin<&mut Self>) {
+        if let Some((device, _)) = self.rust().call.clone() {
+            calls::start_pc_audio(device);
+        }
+        self.refresh_state();
+    }
+
+    pub fn stop_pc_audio(self: Pin<&mut Self>) {
+        calls::stop_pc_audio();
+        self.refresh_state();
+    }
+
     fn refresh_state(mut self: Pin<&mut Self>) {
         let preferred_device = super::parse_device(&self.rust().device);
         let active_call = calls::active_or_ringing(preferred_device);
@@ -259,6 +367,21 @@ impl qobject::PhoneCall {
         self.as_mut().set_hfp_available(hfp.available);
         self.as_mut().set_hfp_connected(hfp.connected);
         self.as_mut().set_hfp_detail(QString::from(&hfp.detail));
+
+        let pc_audio_device = preferred_device.or(call_device);
+        let shown_call =
+            call.as_ref().filter(|_| !is_ringing && call_device == pc_audio_device).map(|c| c.id.as_str());
+        let pc_audio = calls::pc_audio_view(pc_audio_device, shown_call);
+        self.as_mut().set_pc_audio_setup(QString::from(&pc_audio.setup));
+        self.as_mut().set_pc_audio_bluetooth_name(QString::from(&pc_audio.bluetooth_name));
+        self.as_mut().set_pc_audio_phase(QString::from(&pc_audio.phase));
+        self.as_mut().set_pc_audio_slc_observed(pc_audio.slc_observed);
+        self.as_mut().set_pc_audio_sco_observed(pc_audio.sco_observed);
+        self.as_mut().set_pc_audio_verified(pc_audio.verified);
+        self.as_mut().set_pc_audio_can_start(pc_audio.can_start);
+        self.as_mut().set_pc_audio_can_stop(pc_audio.can_stop);
+        self.as_mut().set_pc_audio_detail(QString::from(&pc_audio.detail));
+        self.as_mut().set_pc_audio_gateways(QString::from(&pc_audio.gateways.to_string()));
 
         let view = calls::view();
         if self.rust().last_view.as_ref() != Some(&view) {

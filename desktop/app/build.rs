@@ -252,8 +252,10 @@ fn main() {
     let builder = CxxQtBuilder::new_qml_module(module).qt_module("Quick");
     // SVG icons use Qt's image plugin. Make its framework part of the Mac
     // executable's dependency graph so macdeployqt can resolve that plugin.
+    // PC call audio's CXX bridge and C++ side are Mac only; its Objective-C
+    // objects are built by `mac_objc_library` below.
     let builder = if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
-        builder.qt_module("Svg")
+        builder.qt_module("Svg").cpp_file("cpp/mac_hfp.cpp")
     } else {
         builder
     };
@@ -298,11 +300,62 @@ fn main() {
         println!("cargo:rustc-link-lib=shell32");
         println!("cargo:rustc-link-lib=user32");
     } else if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
+        mac_objc_library("nectarlink_mac_hfp", &["src/mac/bt_hfp_provider.m", "src/mac/bt_hfp_support.m"]);
         println!("cargo:rustc-link-arg=-Wl,-rpath,@executable_path/../Frameworks");
         println!("cargo:rustc-link-lib=framework=AppKit");
         println!("cargo:rustc-link-lib=framework=CoreGraphics");
         println!("cargo:rustc-link-lib=framework=CoreAudio");
         println!("cargo:rustc-link-lib=framework=AudioToolbox");
         println!("cargo:rustc-link-lib=framework=IOKit");
+        println!("cargo:rustc-link-lib=framework=Foundation");
+        println!("cargo:rustc-link-lib=framework=IOBluetooth");
+        println!("cargo:rustc-link-lib=framework=CoreBluetooth");
+        println!("cargo:rustc-link-lib=framework=AVFoundation");
     }
+}
+
+/// The oldest macOS the app supports (`LSMinimumSystemVersion` before
+/// packaging raises it), unless `MACOSX_DEPLOYMENT_TARGET` says otherwise.
+const MAC_MIN_OS: &str = "14.4";
+
+/// Compiles Objective-C sources with the macOS SDK's clang (ARC, warnings
+/// as errors) into one static library linked into the app. cc's C++ build
+/// can't take them: it forces C++17 and has no per-file ARC.
+fn mac_objc_library(name: &str, sources: &[&str]) {
+    let out = PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR"));
+    let arch = match std::env::var("CARGO_CFG_TARGET_ARCH").as_deref() {
+        Ok("aarch64") => "arm64",
+        Ok("x86_64") => "x86_64",
+        other => panic!("no Objective-C build for macOS architecture {other:?}"),
+    };
+    println!("cargo::rerun-if-env-changed=MACOSX_DEPLOYMENT_TARGET");
+    let min_os = std::env::var("MACOSX_DEPLOYMENT_TARGET").unwrap_or_else(|_| MAC_MIN_OS.to_owned());
+    let mut objects = Vec::new();
+    for source in sources {
+        println!("cargo::rerun-if-changed={source}");
+        let file = Path::new(source).file_name().expect("a source file");
+        let object = out.join(file).with_extension("o");
+        let status = std::process::Command::new("xcrun")
+            .args(["--sdk", "macosx", "clang", "-x", "objective-c", "-fobjc-arc", "-fblocks", "-arch", arch])
+            .arg(format!("-mmacosx-version-min={min_os}"))
+            .args(["-O2", "-g", "-Wall", "-Wextra", "-Werror", "-c"])
+            .arg(source)
+            .arg("-o")
+            .arg(&object)
+            .status()
+            .unwrap_or_else(|e| panic!("run clang for {source}: {e}"));
+        assert!(status.success(), "compile {source}");
+        objects.push(object);
+    }
+    let library = out.join(format!("lib{name}.a"));
+    let _ = fs::remove_file(&library);
+    let status = std::process::Command::new("xcrun")
+        .args(["--sdk", "macosx", "libtool", "-static", "-o"])
+        .arg(&library)
+        .args(&objects)
+        .status()
+        .unwrap_or_else(|e| panic!("run libtool for {name}: {e}"));
+    assert!(status.success(), "archive {name}");
+    println!("cargo:rustc-link-search=native={}", out.display());
+    println!("cargo:rustc-link-lib=static={name}");
 }

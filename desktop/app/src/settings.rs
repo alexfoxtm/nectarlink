@@ -463,6 +463,11 @@ pub struct Settings {
     /// Configured "When X, Do Y" automation rules.
     #[serde(default, skip_serializing_if = "Vec::is_empty", alias = "automation_rules")]
     pub automation_rules: Vec<crate::automations::AutomationRule>,
+    /// macOS: which already-paired Bluetooth device each phone is, chosen by
+    /// the user for PC call audio (`calls::MacCallAudioBinding`). Other
+    /// platforms keep it as stored.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mac_call_audio_bindings: Vec<crate::calls::MacCallAudioBinding>,
     /// Stream PC system audio to the connected phone (Phone as Speaker / Headphones).
     #[serde(default, alias = "stream_pc_audio_to_phone")]
     pub stream_pc_audio_to_phone: bool,
@@ -561,6 +566,7 @@ impl Default for Settings {
             nectar_island_media: true,
             nectar_island_notifications: false,
             automation_rules: Vec::new(),
+            mac_call_audio_bindings: Vec::new(),
             stream_pc_audio_to_phone: false,
             share_pc_storage: false,
             forward_pc_notifications_to_phone: false,
@@ -642,6 +648,7 @@ impl Settings {
         );
         set_nectar_island(self.nectar_island);
         set_automation_rules(self.automation_rules.clone());
+        crate::calls::set_pc_audio_bindings(self.mac_call_audio_bindings.clone());
         set_stream_pc_audio_to_phone(self.stream_pc_audio_to_phone);
         set_share_pc_storage(self.share_pc_storage);
         set_forward_pc_notifications_to_phone(self.forward_pc_notifications_to_phone);
@@ -758,6 +765,14 @@ mod tests {
             nectar_island_media: true,
             nectar_island_notifications: false,
             automation_rules: Vec::new(),
+            mac_call_audio_bindings: vec![crate::calls::MacCallAudioBinding {
+                phone_id: "phone".into(),
+                trusted_key_sha256: "0".repeat(64),
+                bluetooth_address: "00-11-22-33-44-55".into(),
+                bluetooth_name: "Phone".into(),
+                input_uid: "mic".into(),
+                output_uid: "speaker".into(),
+            }],
             stream_pc_audio_to_phone: true,
             share_pc_storage: true,
             forward_pc_notifications_to_phone: true,

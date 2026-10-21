@@ -329,6 +329,161 @@
         <source>PC call audio isn&apos;t available on macOS yet; the call&apos;s audio stays on your phone.</source>
         <translation>macOS 上暂不支持电脑通话音频；通话音频仍保留在你的手机上。</translation>
     </message>
+    <message>
+        <location filename="rust_strings.h" line="42" />
+        <source>Allow Bluetooth access to use this Mac for calls.</source>
+        <translation>允许蓝牙权限，才能用这台 Mac 处理通话。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="43" />
+        <source>Allow microphone access to use this Mac for calls.</source>
+        <translation>允许麦克风权限，才能用这台 Mac 处理通话。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="44" />
+        <source>Another Mac call audio attempt is in progress.</source>
+        <translation>另一个 Mac 通话音频尝试正在进行中。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="45" />
+        <source>Asking the phone to send this call's audio to the Mac…</source>
+        <translation>正在请求手机将此通话的音频发送到 Mac…</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="46" />
+        <source>Bluetooth access for Waypair Link is off in System Settings &gt; Privacy &amp; Security &gt; Bluetooth.</source>
+        <translation>Waypair Link 的蓝牙权限已在“系统设置 &gt; 隐私与安全性 &gt; 蓝牙”中关闭。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="49" />
+        <source>Can try during a call: %1 over Bluetooth, with this Mac's current microphone and speaker.</source>
+        <translation>可在通话中尝试：通过蓝牙连接 %1，使用这台 Mac 当前的麦克风和扬声器。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="50" />
+        <source>Checking that Bluetooth sees this same call…</source>
+        <translation>正在确认蓝牙识别到的是同一通话…</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="51" />
+        <source>Choose the phone from the list again.</source>
+        <translation>请重新从列表中选择手机。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="52" />
+        <source>Choose which of this Mac's paired Bluetooth devices is this phone.</source>
+        <translation>请选择这台 Mac 已配对的哪个蓝牙设备是这部手机。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="53" />
+        <source>Connecting to %1 over Bluetooth…</source>
+        <translation>正在通过蓝牙连接 %1…</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="54" />
+        <source>Couldn't list this Mac's Bluetooth devices.</source>
+        <translation>无法列出这台 Mac 的蓝牙设备。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="55" />
+        <source>Couldn't read this Mac's microphone and speaker.</source>
+        <translation>无法读取这台 Mac 的麦克风和扬声器。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="56" />
+        <source>Mac call audio can only be set up from the Waypair Link window.</source>
+        <translation>只能在 Waypair Link 窗口中设置 Mac 通话音频。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="57" />
+        <source>Mac call audio didn't start; the call's audio stays on your phone.</source>
+        <translation>Mac 通话音频未启动；通话音频仍在手机上。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="58" />
+        <source>Microphone access for Waypair Link is off in System Settings &gt; Privacy &amp; Security &gt; Microphone.</source>
+        <translation>Waypair Link 的麦克风权限已在“系统设置 &gt; 隐私与安全性 &gt; 麦克风”中关闭。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="61" />
+        <source>Pair the phone with Waypair Link first.</source>
+        <translation>请先将手机与 Waypair Link 配对。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="62" />
+        <source>Pick this Mac's built-in or wired microphone and speaker in System Settings &gt; Sound, then choose again.</source>
+        <translation>请在“系统设置 &gt; 声音”中选择这台 Mac 的内置或有线麦克风和扬声器，然后重新选择。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="63" />
+        <source>Returning the call's audio to the phone isn't confirmed yet. If you can't hear the call, use the audio button on the phone.</source>
+        <translation>尚未确认通话音频已切回手机。如果听不到通话，请使用手机上的音频按钮。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="64" />
+        <source>Returning the call's audio to the phone…</source>
+        <translation>正在将通话音频切回手机…</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="65" />
+        <source>Start this during the phone's only call, once it's answered.</source>
+        <translation>请在手机仅有的一通电话接通后再开始。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="66" />
+        <source>That Bluetooth device is already chosen for another phone.</source>
+        <translation>该蓝牙设备已被选给另一部手机。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="67" />
+        <source>The chosen Bluetooth device doesn't offer call audio.</source>
+        <translation>所选蓝牙设备不提供通话音频。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="68" />
+        <source>The chosen Bluetooth device isn't paired with this Mac anymore.</source>
+        <translation>所选蓝牙设备已不再与这台 Mac 配对。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="69" />
+        <source>The last Mac call audio attempt is still being closed.</source>
+        <translation>上一次 Mac 通话音频尝试仍在关闭中。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="70" />
+        <source>The phone didn't share this call's number, so Bluetooth can't be matched to it.</source>
+        <translation>手机未提供此通话的号码，因此无法与蓝牙匹配。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="71" />
+        <source>The phone opened a Bluetooth audio link to this Mac. Whether both sides hear each other isn't verified; you can return the audio to the phone at any time.</source>
+        <translation>手机已与这台 Mac 建立蓝牙音频链路。双方能否听到彼此尚未验证；你可以随时将音频切回手机。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="72" />
+        <source>The phone or its call changed; try again.</source>
+        <translation>手机或其通话已变化；请重试。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="73" />
+        <source>The phone's Bluetooth call audio is already in use on this Mac.</source>
+        <translation>手机的蓝牙通话音频已在这台 Mac 上使用中。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="74" />
+        <source>This Mac let go of the call's Bluetooth audio.</source>
+        <translation>这台 Mac 已释放通话的蓝牙音频。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="75" />
+        <source>This Mac's microphone or speaker changed since setup. Choose the phone's Bluetooth device again to use the current ones.</source>
+        <translation>设置后这台 Mac 的麦克风或扬声器已更改。请重新选择手机的蓝牙设备以使用当前设备。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="76" />
+        <source>This version of Waypair Link can't use the Mac for call audio yet.</source>
+        <translation>此版本的 Waypair Link 暂时无法用 Mac 处理通话音频。</translation>
+    </message>
 </context>
 <context>
     <name>CallCard</name>
@@ -401,6 +556,16 @@
         <location filename="../qml/components/CallCard.qml" line="301"/>
         <source>Call volume up</source>
         <translation>提高通话音量</translation>
+    </message>
+    <message>
+        <location filename="../qml/components/CallCard.qml" line="273" />
+        <source>Use this Mac for call audio</source>
+        <translation>用这台 Mac 处理通话音频</translation>
+    </message>
+    <message>
+        <location filename="../qml/components/CallCard.qml" line="281" />
+        <source>Return audio to phone</source>
+        <translation>将音频切回手机</translation>
     </message>
 </context>
 <context>
@@ -713,6 +878,61 @@
         <location filename="../qml/pages/CallsPage.qml" line="1156"/>
         <source>+%1 more</source>
         <translation>另有%1项</translation>
+    </message>
+    <message>
+        <location filename="../qml/pages/CallsPage.qml" line="909" />
+        <source>Call audio on this Mac</source>
+        <translation>这台 Mac 上的通话音频</translation>
+    </message>
+    <message>
+        <location filename="../qml/pages/CallsPage.qml" line="926" />
+        <source>Bluetooth device: %1</source>
+        <translation>蓝牙设备：%1</translation>
+    </message>
+    <message>
+        <location filename="../qml/pages/CallsPage.qml" line="937" />
+        <source>Allow Bluetooth</source>
+        <translation>允许蓝牙</translation>
+    </message>
+    <message>
+        <location filename="../qml/pages/CallsPage.qml" line="938" />
+        <source>Allow microphone</source>
+        <translation>允许麦克风</translation>
+    </message>
+    <message>
+        <location filename="../qml/pages/CallsPage.qml" line="939" />
+        <source>Choose phone…</source>
+        <translation>选择手机…</translation>
+    </message>
+    <message>
+        <location filename="../qml/pages/CallsPage.qml" line="940" />
+        <source>Change phone</source>
+        <translation>更换手机</translation>
+    </message>
+    <message>
+        <location filename="../qml/pages/CallsPage.qml" line="958" />
+        <source>Forget Bluetooth choice</source>
+        <translation>忘记蓝牙选择</translation>
+    </message>
+    <message>
+        <location filename="../qml/pages/CallsPage.qml" line="966" />
+        <source>Return audio to phone</source>
+        <translation>将音频切回手机</translation>
+    </message>
+    <message>
+        <location filename="../qml/pages/CallsPage.qml" line="976" />
+        <source>Which of these is this phone?</source>
+        <translation>以下哪一个是这部手机？</translation>
+    </message>
+    <message>
+        <location filename="../qml/pages/CallsPage.qml" line="989" />
+        <source>Unnamed device</source>
+        <translation>未命名设备</translation>
+    </message>
+    <message>
+        <location filename="../qml/pages/CallsPage.qml" line="1004" />
+        <source>No paired phone that offers call audio was listed. Pair the phone with this Mac in Bluetooth settings, then choose again.</source>
+        <translation>未列出可提供通话音频的已配对手机。请先在蓝牙设置中将手机与这台 Mac 配对，然后重新选择。</translation>
     </message>
 </context>
 <context>

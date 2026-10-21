@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package app.nectarlink.android.mirror
 
+import android.app.NotificationManager
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -54,5 +56,34 @@ class MirrorRequestsTest {
         assertFalse(canControl())
         assertFalse(canControl(inputRunning = true, typingStopped = true))
         assertFalse(canControl(inputRunning = true, correlated = false))
+    }
+
+    @Test
+    fun anOnScreenAppOpensThePromptEvenWithNotificationsOff() {
+        // Android 14 with the permission denied: no notification, the prompt itself.
+        val blocked = MirrorRequests.delivery(
+            sdk = 34,
+            permissionGranted = false,
+            appNotificationsEnabled = false,
+            channelImportance = NotificationManager.IMPORTANCE_HIGH,
+            onScreen = true,
+        )
+        assertEquals(MirrorRequests.Delivery(notify = false, open = true), blocked)
+        assertTrue(blocked.asks)
+        // Before Android 13 there is no permission to hold: notifications on is enough.
+        val older = MirrorRequests.delivery(31, false, true, NotificationManager.IMPORTANCE_HIGH, onScreen = false)
+        assertEquals(MirrorRequests.Delivery(notify = true, open = false), older)
+    }
+
+    @Test
+    fun inTheBackgroundABlockedChannelOrAppAsksNobody() {
+        val granted = { importance: Int?, appOn: Boolean ->
+            MirrorRequests.delivery(34, permissionGranted = true, appNotificationsEnabled = appOn,
+                channelImportance = importance, onScreen = false)
+        }
+        // The permission alone isn't enough: the owner turned this channel off.
+        assertFalse(granted(NotificationManager.IMPORTANCE_NONE, true).asks)
+        assertFalse(granted(NotificationManager.IMPORTANCE_HIGH, false).asks)
+        assertFalse(granted(null, true).asks)
     }
 }

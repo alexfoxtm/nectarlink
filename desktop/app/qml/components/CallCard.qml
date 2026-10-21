@@ -244,6 +244,46 @@ Card {
             }
         }
 
+        // ---- Trying this Mac for the call's audio (user-started; closing stays shown) ----
+        // pcAudioDetail says what was observed; a Bluetooth link is never
+        // shown as heard audio. Set-up lives on the Calls page.
+        Column {
+            objectName: "pcAudioRow"
+            width: parent.width
+            spacing: 8
+            visible: PhoneCall.pcAudioCanStart || PhoneCall.pcAudioCanStop || PhoneCall.pcAudioPhase.length > 0
+            Accessible.role: Accessible.Grouping
+            Accessible.name: pcAudioRowText.text
+            Txt {
+                id: pcAudioRowText
+                width: parent.width
+                visible: text.length > 0
+                role: "caption"
+                muted: true
+                wrapMode: Text.WordWrap
+                text: PhoneCall.pcAudioDetail
+            }
+            Row {
+                spacing: 8
+                Button {
+                    objectName: "pcAudioStart"
+                    visible: PhoneCall.pcAudioCanStart
+                    variant: "tonal"
+                    size: "sm"
+                    text: qsTr("Use this Mac for call audio")
+                    onClicked: PhoneCall.startPcAudio()
+                }
+                Button {
+                    objectName: "pcAudioStop"
+                    visible: PhoneCall.pcAudioCanStop
+                    variant: "tonal"
+                    size: "sm"
+                    text: qsTr("Return audio to phone")
+                    onClicked: PhoneCall.stopPcAudio()
+                }
+            }
+        }
+
         // ---- Volume and hanging up ----
         Row {
             visible: PhoneCall.canEnd
