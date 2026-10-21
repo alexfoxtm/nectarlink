@@ -158,7 +158,7 @@ pub fn set_output(id: String) {
     save(|s| s.phone_mic_output = Some(id));
     // Already playing: move there now rather than on the next start.
     if let Some(sink) = ACTIVE.lock().unwrap_or_else(|e| e.into_inner()).upgrade() {
-        sink.restart();
+        sink.output_changed();
     }
     core_host::host().hub.changed(Changes::MIC);
 }
@@ -247,7 +247,8 @@ fn after(phase: Phase, event: &NodeEvent) -> Phase {
 
 /// Where a phone's microphone goes: [`Platform::mic_sink`](nectarlink_core::Platform::mic_sink).
 pub fn sink(_peer: &DeviceId) -> Option<Arc<dyn MicSink>> {
-    let sink = Arc::new(Sink { player: Mutex::new(None), config: Mutex::new(None) });
+    let sink =
+        Arc::new(Sink { player: Mutex::new(None), config: Mutex::new(None), generation: AtomicU64::new(0) });
     *ACTIVE.lock().unwrap_or_else(|e| e.into_inner()) = Arc::downgrade(&sink);
     Some(sink)
 }
@@ -256,23 +257,75 @@ struct Sink {
     player: Mutex<Option<Player>>,
     /// The stream's format, to start again on another output.
     config: Mutex<Option<MirrorAudioConfig>>,
+    /// Changed only under the `player` lock: a new format, another output or
+    /// the stream's end bumps it, and a player built before the bump is stale.
+    generation: AtomicU64,
+}
+
+/// Whether a player built at generation `started` may be installed: nothing
+/// changed while it was built (no new format, other output or end, even one
+/// that came back to the same format) and the stream is still live.
+fn may_install(started: u64, current: u64, live: bool) -> bool {
+    live && started == current
 }
 
 impl Sink {
     /// Plays into the output chosen now.
     fn restart(&self) {
-        let Some(config) = self.config.lock().unwrap_or_else(|e| e.into_inner()).clone() else { return };
+        let (started, config) = {
+            let _guard = self.player.lock().unwrap_or_else(|e| e.into_inner());
+            let config = self.config.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            (self.generation.load(Ordering::Relaxed), config)
+        };
+        let Some(config) = config else { return };
         let (_, output) = outputs();
         match Player::start_on(output, config.rate, u16::from(config.channels)) {
-            Ok(player) => *self.player.lock().unwrap_or_else(|e| e.into_inner()) = Some(player),
+            Ok(player) => {
+                let mut installed = self.player.lock().unwrap_or_else(|e| e.into_inner());
+                let live = self.config.lock().unwrap_or_else(|e| e.into_inner()).is_some();
+                let current = self.generation.load(Ordering::Relaxed);
+                let stale = if may_install(started, current, live) {
+                    installed.replace(player)
+                } else {
+                    Some(player)
+                };
+                drop(installed);
+                // Dropped outside the lock: the queue is disposed on its own
+                // thread and the sound must not wait for it.
+                drop(stale);
+            }
             Err(e) => tracing::warn!(error = %e, "can't play the phone's microphone"),
         }
+    }
+
+    /// Another output was chosen: a player still being built for the old one
+    /// is stale. The one playing stays until the new one is installed.
+    fn output_changed(&self) {
+        let guard = self.player.lock().unwrap_or_else(|e| e.into_inner());
+        self.generation.fetch_add(1, Ordering::Relaxed);
+        drop(guard);
+        self.restart();
+    }
+
+    /// Sets the stream's format (`None` once it ended) and takes the player
+    /// that is playing out: it belongs to the old format or stream.
+    fn reset(&self, config: Option<MirrorAudioConfig>) {
+        let mut player = self.player.lock().unwrap_or_else(|e| e.into_inner());
+        *self.config.lock().unwrap_or_else(|e| e.into_inner()) = config;
+        self.generation.fetch_add(1, Ordering::Relaxed);
+        let old = player.take();
+        drop(player);
+        // Dropped outside the lock: the queue is disposed on its own thread
+        // and the sound must not wait for it.
+        drop(old);
     }
 }
 
 impl MicSink for Sink {
     fn config(&self, config: MirrorAudioConfig) {
-        *self.config.lock().unwrap_or_else(|e| e.into_inner()) = Some(config);
+        // If the new player cannot start, the microphone stays silent until a
+        // later start succeeds: the new format's sound never reaches the old queue.
+        self.reset(Some(config));
         self.restart();
     }
 
@@ -284,7 +337,7 @@ impl MicSink for Sink {
     }
 
     fn ended(&self) {
-        self.player.lock().unwrap_or_else(|e| e.into_inner()).take();
+        self.reset(None);
     }
 }
 
@@ -353,5 +406,17 @@ mod tests {
     #[test]
     fn without_a_cable_it_is_the_default_output() {
         assert_eq!(preferred(&[device("spk", "Speakers", true)], None), None);
+    }
+
+    #[test]
+    fn a_player_started_for_an_older_format_is_never_installed() {
+        assert!(may_install(7, 7, true), "nothing changed while it was built");
+        assert!(!may_install(7, 8, true), "a new format or another output came first");
+        assert!(
+            !may_install(7, 9, true),
+            "the format went A → B → A: the value matches, the generation does not"
+        );
+        assert!(!may_install(7, 7, false), "the stream ended");
+        assert!(!may_install(7, 8, false), "the stream ended after a change");
     }
 }

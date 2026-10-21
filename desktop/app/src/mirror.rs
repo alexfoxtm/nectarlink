@@ -176,8 +176,13 @@ struct State {
     active_window: Option<Window>,
     /// Last clipboard text synced on window focus so unchanged text isn't resent.
     last_focus_clip: Option<String>,
-    /// Phones whose sound is coming in.
-    sound: HashSet<DeviceId>,
+    /// Phones whose sound is coming in, and the sink that owns each: a
+    /// stream that was replaced must not clear the flag of the one that
+    /// replaced it.
+    sound: HashMap<DeviceId, u64>,
+    /// The next sound generation, one per sink: a later sink owns a device's
+    /// sound over an earlier one.
+    sound_generation: u64,
     /// Phones kept awake while mirroring (their screen or app windows).
     stay_awake: HashSet<DeviceId>,
     /// Phones whose physical screen is turned off while mirroring (their
@@ -231,6 +236,39 @@ impl State {
     fn shows(&self, window: &Window, stream: u64) -> bool {
         self.streams.get(window) == Some(&stream)
     }
+
+    /// A sink takes over a device's sound (see `claim_sound_owner`).
+    fn claim_sound(&mut self, device: DeviceId, generation: u64, playing: bool) {
+        claim_sound_owner(&mut self.sound, device, generation, playing);
+    }
+
+    /// A sink lets go of a device's sound (see `release_sound_owner`).
+    fn release_sound(&mut self, device: DeviceId, generation: u64) {
+        release_sound_owner(&mut self.sound, device, generation);
+    }
+}
+
+/// A sink takes over a device's sound: it owns the flag from now on, and
+/// only it may clear it. A sink older than the owner changes nothing: a
+/// late format on a replaced stream must not take the flag back, nor
+/// clear the newer owner's flag when its own player fails.
+fn claim_sound_owner(sound: &mut HashMap<DeviceId, u64>, device: DeviceId, generation: u64, playing: bool) {
+    if sound.get(&device).is_some_and(|&owner| owner > generation) {
+        return;
+    }
+    if playing {
+        sound.insert(device, generation);
+    } else {
+        sound.remove(&device);
+    }
+}
+
+/// A sink lets go of a device's sound. Only the owner may clear the flag:
+/// a sink that was replaced must not hide the sound that replaced it.
+fn release_sound_owner(sound: &mut HashMap<DeviceId, u64>, device: DeviceId, generation: u64) {
+    if sound.get(&device) == Some(&generation) {
+        sound.remove(&device);
+    }
 }
 
 impl Default for State {
@@ -239,7 +277,8 @@ impl Default for State {
             windows: HashMap::new(),
             active_window: None,
             last_focus_clip: None,
-            sound: HashSet::new(),
+            sound: HashMap::new(),
+            sound_generation: 0,
             stay_awake: HashSet::new(),
             screen_off: HashSet::new(),
             keyboard_device: None,
@@ -292,12 +331,7 @@ pub fn set_muted(muted: bool) {
 
 /// Whether `device`'s sound is coming in.
 pub fn has_sound(device: &DeviceId) -> bool {
-    state(|s| s.sound.contains(device))
-}
-
-fn set_sound(device: DeviceId, on: bool) {
-    state(|s| if on { s.sound.insert(device) } else { s.sound.remove(&device) });
-    core_host::host().hub.changed(Changes::MIRROR);
+    state(|s| s.sound.contains_key(device))
 }
 
 /// Whether `device` is set to stay awake while mirroring.
@@ -1766,8 +1800,14 @@ pub fn sink(device: &DeviceId, session: u32) -> Option<Arc<dyn MirrorSink>> {
     let wanted = !VIEW_ONLY || session == MIRROR_SCREEN;
     state(|s| {
         let request = *s.requests.get(&window)?;
-        (wanted && s.windows.get(&window).is_some_and(|w| matches!(w.phase, Phase::Asking | Phase::Showing)))
-            .then(|| Arc::new(Sink::new(window, request)) as Arc<dyn MirrorSink>)
+        let live = s.windows.get(&window).is_some_and(|w| matches!(w.phase, Phase::Asking | Phase::Showing));
+        if !(wanted && live) {
+            return None;
+        }
+        // Each sink gets a generation, so a later sound stream can tell that
+        // it owns a device's sound over an earlier one.
+        s.sound_generation = s.sound_generation.saturating_add(1);
+        Some(Arc::new(Sink::new(window, request, s.sound_generation)) as Arc<dyn MirrorSink>)
     })
 }
 
@@ -1782,6 +1822,9 @@ enum Item {
 struct Sink {
     window: Window,
     request: u64,
+    /// This sink's sound generation: it owns its device's sound flag while it
+    /// plays, and only it may clear it.
+    generation: u64,
     video: OnceLock<Video>,
     sound: Mutex<Option<Player>>,
 }
@@ -1797,8 +1840,8 @@ struct Video {
 }
 
 impl Sink {
-    fn new(window: Window, request: u64) -> Sink {
-        Sink { window, request, video: OnceLock::new(), sound: Mutex::new(None) }
+    fn new(window: Window, request: u64, generation: u64) -> Sink {
+        Sink { window, request, generation, video: OnceLock::new(), sound: Mutex::new(None) }
     }
 }
 
@@ -1909,16 +1952,26 @@ impl MirrorSink for Sink {
         {
             rec.on_audio_config(config.rate, config.channels);
         }
-        let mut sound = self.sound.lock().unwrap_or_else(|e| e.into_inner());
-        // A new format: a new player (the old one ends when dropped).
-        *sound = match Player::start(config.rate, u16::from(config.channels)) {
-            Ok(player) => Some(player),
-            Err(e) => {
-                tracing::warn!(error = %e, "can't play the phone's sound");
-                None
-            }
+        let (old_player, playing) = {
+            let mut sound = self.sound.lock().unwrap_or_else(|e| e.into_inner());
+            // A new format: a new player (the old one ends when dropped).
+            let new_player = match Player::start(config.rate, u16::from(config.channels)) {
+                Ok(player) => Some(player),
+                Err(e) => {
+                    tracing::warn!(error = %e, "can't play the phone's sound");
+                    None
+                }
+            };
+            let old_player = std::mem::replace(&mut *sound, new_player);
+            let playing = sound.is_some();
+            drop(sound);
+            (old_player, playing)
         };
-        set_sound(self.window.device, sound.is_some());
+        drop(old_player);
+        // This sink owns the device's sound from now on: a stream that
+        // replaces it later takes the flag over.
+        state(|s| s.claim_sound(self.window.device, self.generation, playing));
+        core_host::host().hub.changed(Changes::MIRROR);
     }
 
     fn audio(&self, time_us: u64, data: Vec<u8>) {
@@ -1942,8 +1995,17 @@ impl MirrorSink for Sink {
     }
 
     fn audio_ended(&self) {
-        self.sound.lock().unwrap_or_else(|e| e.into_inner()).take();
-        set_sound(self.window.device, false);
+        let old_player = {
+            let mut sound = self.sound.lock().unwrap_or_else(|e| e.into_inner());
+            let old_player = sound.take();
+            drop(sound);
+            old_player
+        };
+        drop(old_player);
+        // Only the sink that owns the device's sound may clear the flag: a
+        // stream that was replaced must not hide the sound that replaced it.
+        state(|s| s.release_sound(self.window.device, self.generation));
+        core_host::host().hub.changed(Changes::MIRROR);
     }
 }
 
@@ -3402,6 +3464,28 @@ mod tests {
         assert!(saved_apps(dir.path(), &nectarlink_core::DeviceId([0x33; 32])).is_none());
         std::fs::write(saved_apps_path(dir.path(), &phone), b"{not json").unwrap();
         assert!(saved_apps(dir.path(), &phone).is_none());
+    }
+
+    /// A sound stream that was replaced must not take the flag back, clear it
+    /// when its player fails, or clear it when it ends: the newer sink owns it.
+    /// No audio is started and no `State` is built (its default needs the
+    /// core host); the fence is a plain map.
+    #[test]
+    fn a_superseded_sound_sink_cannot_reclaim_or_clear_the_newer_owners_flag() {
+        let device = nectarlink_core::DeviceId([0x44; 32]);
+        let (older, newer) = (1, 2);
+        let mut sound = std::collections::HashMap::new();
+        super::claim_sound_owner(&mut sound, device, older, true);
+        super::claim_sound_owner(&mut sound, device, newer, true);
+        assert_eq!(sound.get(&device), Some(&newer), "the newer sink takes the sound over");
+        super::claim_sound_owner(&mut sound, device, older, true);
+        assert_eq!(sound.get(&device), Some(&newer), "a late format on the old stream can't reclaim");
+        super::claim_sound_owner(&mut sound, device, older, false);
+        assert_eq!(sound.get(&device), Some(&newer), "the old player failing can't clear it");
+        super::release_sound_owner(&mut sound, device, older);
+        assert_eq!(sound.get(&device), Some(&newer), "the old stream's end can't clear it");
+        super::release_sound_owner(&mut sound, device, newer);
+        assert!(!sound.contains_key(&device), "the owner's end clears the flag");
     }
 }
 
