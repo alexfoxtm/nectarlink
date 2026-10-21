@@ -649,10 +649,9 @@ fn feed_recorder(window: Window, feed: impl FnOnce(&mut MirrorRecorder)) -> Opti
     feed(recorder);
     if let Some(reason) = recorder.format_changed() {
         tracing::info!(reason, "mirror recording stopped: the phone's video format changed");
-    } else if let Some(reason) = recorder.limit_reached() {
-        tracing::info!(reason, "mirror recording stopped: it reached its length or size limit");
     } else {
-        return None;
+        let reason = recorder.limit_reached()?;
+        tracing::info!(reason, "mirror recording stopped: it reached its length or size limit");
     }
     let recorder = map.remove(&window);
     ACTIVE_RECORDERS.store(map.len(), Ordering::Release);
@@ -2875,8 +2874,10 @@ pub mod window_gate {
         }
     }
 
+    type Mp4Box<'a> = ([u8; 4], &'a [u8]);
+
     /// The `(type, payload)` of each top-level MP4 box, in file order.
-    fn top_level_boxes(file: &[u8]) -> Result<Vec<([u8; 4], &[u8])>, String> {
+    fn top_level_boxes(file: &[u8]) -> Result<Vec<Mp4Box<'_>>, String> {
         let mut boxes = Vec::new();
         let mut rest = file;
         while !rest.is_empty() {

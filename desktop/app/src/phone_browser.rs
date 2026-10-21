@@ -1466,7 +1466,7 @@ mod browser_transport_fixture {
         let _lock = FIXTURE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let paired = Paired::start_locked();
         paired.runtime.block_on(async {
-            assert!(!super::ENABLED, "production browser gate stays closed");
+            const { assert!(!super::ENABLED, "production browser gate stays closed") };
             let phone = paired.phone_id;
 
             // Link is up, but nothing lists before the explicit UI action.
@@ -1593,7 +1593,7 @@ mod browser_transport_fixture {
         let _lock = FIXTURE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let paired = Paired::start_locked();
         paired.runtime.block_on(async {
-            assert!(!super::ENABLED, "production browser gate stays closed");
+            const { assert!(!super::ENABLED, "production browser gate stays closed") };
             let phone = paired.phone_id;
 
             super::open(phone);
@@ -2163,8 +2163,9 @@ pub mod browser_gate {
                 return Err((FAILED, "a node did not shut down within 5 seconds".to_owned()));
             }
             Ok(vec![
-                format!("ready: production page browsed SharedDocs+readme.txt (exact rows) over Cocoa/Metal"),
-                format!("revoke: real phone revoke ended the consent (device empty, rows cleared)"),
+                "ready: production page browsed SharedDocs+readme.txt (exact rows) over Cocoa/Metal"
+                    .to_owned(),
+                "revoke: real phone revoke ended the consent (device empty, rows cleared)".to_owned(),
             ])
         }
 
