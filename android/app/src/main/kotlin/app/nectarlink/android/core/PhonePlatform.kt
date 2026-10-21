@@ -89,6 +89,8 @@ internal class PhonePlatform(
     private val nameOf: (String) -> String = { "" },
     /** Notifies when a PC starts or stops typing on this phone without mirroring. */
     private val onKeyboardFromPc: (String, Boolean) -> Unit = { _, _ -> },
+    /** Whether a PC's screen input admitted under a typing generation may still reach the OS. */
+    private val typingCurrent: (String, ULong) -> Boolean = { _, _ -> false },
 ) : Platform {
     private val context = context.applicationContext
 
@@ -177,9 +179,17 @@ internal class PhonePlatform(
         if (session != SCREEN) appWindows.resize(pcId, session, width.toInt(), height.toInt())
     }
 
-    // Real events when Elevated runs; gestures through the accessibility service otherwise.
+    // The screen's input comes through mirrorScreenInput, with its typing generation.
     override fun mirrorInput(pcId: String, session: UInt, input: MirrorInputEvent) {
         if (session != SCREEN) return appWindows.input(pcId, session, input)
+    }
+
+    // Real events when Elevated runs; gestures through the accessibility service otherwise.
+    // The generation is checked again right before the OS sees the input: a Stop on this
+    // phone drops what's already on its way.
+    override fun mirrorScreenInput(pcId: String, input: MirrorInputEvent, generation: ULong) {
+        val current = { typingCurrent(pcId, generation) }
+        if (!current()) return
         if (input is MirrorInputEvent.Key) {
             when (input.key) {
                 "keyboard_on" -> {
@@ -193,10 +203,11 @@ internal class PhonePlatform(
             }
         }
         if (input is MirrorInputEvent.Text && input.text.any { it.code > 127 } && InputService.running) {
-            InputService.handle(input)
+            InputService.handle(input, current)
             return
         }
-        if (!Elevated.handle(input)) InputService.handle(input)
+        if (!current()) return
+        if (!Elevated.handle(input)) InputService.handle(input, current)
     }
 
     override fun webcamRequested(pcId: String, options: WebcamOptions): Boolean {

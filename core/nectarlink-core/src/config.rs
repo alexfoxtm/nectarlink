@@ -230,6 +230,20 @@ pub trait Platform: Send + Sync + 'static {
     fn mirror_input(&self, _peer: &nectarlink_protocol::DeviceId, _session: u32, _input: crate::MirrorInput) {
     }
 
+    /// The PC's mouse or keyboard on this device's mirrored screen
+    /// (session 0), admitted under typing `generation`. A platform that
+    /// hands it to another thread before the OS sees it checks
+    /// [`crate::Node::mirror_typing_current`] with that generation right
+    /// before dispatch and drops it when that's false. Must return quickly.
+    fn mirror_screen_input(
+        &self,
+        peer: &nectarlink_protocol::DeviceId,
+        input: crate::MirrorInput,
+        _generation: u64,
+    ) {
+        self.mirror_input(peer, crate::MIRROR_SCREEN, input);
+    }
+
     /// The PC's decoder needs a fresh start: encode a keyframe next.
     fn mirror_keyframe_requested(&self, _peer: &nectarlink_protocol::DeviceId, _session: u32) {}
 

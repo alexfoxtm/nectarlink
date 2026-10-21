@@ -147,6 +147,262 @@ fn input_envelope(input: &MirrorInput, mirroring: u32) -> Result<Envelope> {
     Ok(nectarlink_protocol::messages::mirror_input_envelope(input, mirroring)?)
 }
 
+/// The phone owner's Stop on a PC's typing (screen input, session 0), per
+/// peer. Every admitted screen input carries the generation it was admitted
+/// under to the platform, which checks it again right before the OS sees it
+/// ([`Shared::mirror_typing_current`]). Generations never repeat across a
+/// stored node lifetime: node start, Stop, owner rearm and unpair each move
+/// them, so input admitted before any of those never lands after it. Only the
+/// phone owner changes this; nothing a peer sends does.
+#[derive(Debug, Clone)]
+pub(crate) struct TypingFence {
+    next: u64,
+    /// The generation of every peer without an entry; moves on Node start and unpair.
+    floor: u64,
+    /// Peers the owner stopped (and maybe rearmed since), until unpaired.
+    peers: std::collections::HashMap<DeviceId, Typing>,
+    /// A durable marker that this phone Node may still be admitting input.
+    node_running: bool,
+    /// Exact Store value observed or last committed by this Node; protects a newer Node's row.
+    persisted_value: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+struct Typing {
+    generation: u64,
+    stopped: bool,
+    /// The epoch the phone owner's last mirroring "off" was tapped at
+    /// ([`Shared::mirror_typing_epoch`]). Only an off tapped after the Stop
+    /// carries the Stop's own generation; a Stop clears it.
+    owner_off: Option<u64>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct StoredTypingFence {
+    version: u8,
+    next: u64,
+    floor: u64,
+    peers: std::collections::BTreeMap<String, Typing>,
+    #[serde(default)]
+    node_running: Option<bool>,
+}
+
+impl Default for TypingFence {
+    fn default() -> Self {
+        Self {
+            next: 2,
+            floor: 1,
+            peers: std::collections::HashMap::new(),
+            node_running: false,
+            persisted_value: None,
+        }
+    }
+}
+
+impl TypingFence {
+    fn advance(&mut self) -> u64 {
+        let generation = self.next;
+        self.next = self.next.saturating_add(1);
+        generation
+    }
+
+    fn current(&self, peer: &DeviceId) -> Typing {
+        self.peers.get(peer).copied().unwrap_or(Typing {
+            generation: self.floor,
+            stopped: false,
+            owner_off: None,
+        })
+    }
+
+    pub(crate) fn load(store: &crate::store::Store) -> Result<Self> {
+        let Some(value) = store.mirror_typing_fence()? else { return Ok(Self::default()) };
+        let stored: StoredTypingFence = serde_json::from_str(&value)
+            .map_err(|error| Error::Internal(format!("invalid persisted mirror typing fence: {error}")))?;
+        let node_running = match (stored.version, stored.node_running) {
+            // Legacy state has no clean-shutdown marker, so recover it as unclean.
+            (1, None) => true,
+            (2, Some(node_running)) => node_running,
+            _ => return Err(Error::Internal("invalid persisted mirror typing fence state".into())),
+        };
+        if stored.floor == 0
+            || stored.next <= stored.floor
+            || stored.peers.values().any(|typing| typing.generation == 0 || typing.generation >= stored.next)
+        {
+            return Err(Error::Internal("invalid persisted mirror typing fence state".into()));
+        }
+        let peers = stored
+            .peers
+            .into_iter()
+            .map(|(id, typing)| {
+                id.parse::<DeviceId>()
+                    .map(|id| (id, typing))
+                    .map_err(|_| Error::Internal("invalid peer in persisted mirror typing fence".into()))
+            })
+            .collect::<Result<std::collections::HashMap<_, _>>>()?;
+        Ok(Self { next: stored.next, floor: stored.floor, peers, node_running, persisted_value: Some(value) })
+    }
+
+    pub(crate) fn node_was_running(&self) -> bool {
+        self.node_running
+    }
+
+    /// Whether this fence was absent from Store. With existing paired peers,
+    /// an absent fence cannot prove the prior phone lifetime ended cleanly.
+    pub(crate) fn has_no_durable_state(&self) -> bool {
+        self.persisted_value.is_none()
+    }
+
+    /// On an unclean restart, deny every still-paired peer and clear orphaned
+    /// entries. Persist the deny before the caller continues Node startup; the
+    /// stopped entries remain until the phone owner explicitly rearms them.
+    pub(crate) fn recover_unclean_node_lifetime(
+        &mut self,
+        store: &crate::store::Store,
+        paired_peers: &[DeviceId],
+    ) -> Result<()> {
+        let paired: std::collections::HashSet<_> = paired_peers.iter().copied().collect();
+        self.floor = self.advance();
+        self.peers.retain(|peer, _| paired.contains(peer));
+        for peer in paired_peers {
+            let generation = self.advance();
+            self.peers.insert(*peer, Typing { generation, stopped: true, owner_off: None });
+        }
+        self.node_running = false;
+        self.persist(store)
+    }
+
+    /// Moves admissions to this new Node lifetime and discards any
+    /// half-completed owner off tap. A fresh off → on is required afterward.
+    pub(crate) fn begin_node_lifetime(&mut self) {
+        self.floor = self.advance();
+        let peers: Vec<_> = self.peers.keys().copied().collect();
+        for peer in peers {
+            let generation = self.advance();
+            if let Some(typing) = self.peers.get_mut(&peer) {
+                typing.generation = generation;
+                typing.owner_off = None;
+            }
+        }
+        self.node_running = true;
+    }
+
+    pub(crate) fn end_node_lifetime(&mut self, store: &crate::store::Store) -> Result<()> {
+        if self.persisted_value.is_none() {
+            return Ok(());
+        }
+        let mut stopped = self.clone();
+        stopped.node_running = false;
+        stopped.persist(store)?;
+        *self = stopped;
+        Ok(())
+    }
+
+    pub(crate) fn persist(&mut self, store: &crate::store::Store) -> Result<()> {
+        let stored = StoredTypingFence {
+            version: 2,
+            next: self.next,
+            floor: self.floor,
+            peers: self.peers.iter().map(|(id, typing)| (id.to_string(), *typing)).collect(),
+            node_running: Some(self.node_running),
+        };
+        let value = serde_json::to_string(&stored)
+            .map_err(|error| Error::Internal(format!("can't encode mirror typing fence: {error}")))?;
+        store.compare_and_set_mirror_typing_fence(self.persisted_value.as_deref(), &value)?;
+        self.persisted_value = Some(value);
+        Ok(())
+    }
+}
+
+impl Shared {
+    fn typing_fence(&self) -> std::sync::MutexGuard<'_, TypingFence> {
+        self.mirror_typing.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// The generation `peer`'s screen input is admitted under, or `None`
+    /// while the phone owner has it stopped.
+    pub(crate) fn mirror_typing_admit(&self, peer: &DeviceId) -> Option<u64> {
+        let typing = self.typing_fence().current(peer);
+        (!typing.stopped).then_some(typing.generation)
+    }
+
+    pub(crate) fn mirror_typing_stopped(&self, peer: &DeviceId) -> bool {
+        self.typing_fence().current(peer).stopped
+    }
+
+    /// Whether screen input admitted under `generation` may still reach the
+    /// OS: not stopped since, and no rearm or unpair in between.
+    pub(crate) fn mirror_typing_current(&self, peer: &DeviceId, generation: u64) -> bool {
+        let typing = self.typing_fence().current(peer);
+        !typing.stopped && typing.generation == generation
+    }
+
+    /// `peer`'s typing epoch now. The phone owner's mirroring switch reads it
+    /// when tapped; a later Stop moves it, which voids that tap's resume.
+    pub(crate) fn mirror_typing_epoch(&self, peer: &DeviceId) -> u64 {
+        self.typing_fence().current(peer).generation
+    }
+
+    /// The phone owner's Stop: drops `peer`'s screen input from now on,
+    /// including input already admitted and on its way to the OS. Every
+    /// owner switch tap made before it can no longer end it.
+    pub(crate) fn stop_mirror_typing(&self, peer: &DeviceId) -> Result<u64> {
+        let mut fence = self.typing_fence();
+        let generation = fence.advance();
+        fence.peers.insert(*peer, Typing { generation, stopped: true, owner_off: None });
+        // Keep the in-memory denial even when persistence fails. The durable
+        // running marker makes the next Node start recover all paired peers
+        // fail-closed instead of trusting the old allow-on value.
+        fence.persist(&self.store)?;
+        Ok(generation)
+    }
+
+    /// The phone owner turned mirroring for `peer` off, tapped at epoch
+    /// `tapped_at`.
+    pub(crate) fn note_owner_mirroring_off(&self, peer: &DeviceId, tapped_at: u64) -> Result<()> {
+        let mut fence = self.typing_fence();
+        if fence.peers.contains_key(peer) {
+            let mut noted = fence.clone();
+            let typing = noted.peers.get_mut(peer).expect("peer checked above");
+            typing.owner_off = Some(tapped_at);
+            noted.persist(&self.store)?;
+            *fence = noted;
+        }
+        Ok(())
+    }
+
+    /// The phone owner turned mirroring for `peer` back on, tapped at epoch
+    /// `tapped_at`: a Stop ends, under a fresh generation, only when both
+    /// that on and the off before it were tapped after the Stop (no Stop
+    /// since either). Checked and changed under one lock, so a Stop can't
+    /// slip in between. True when it ended one.
+    pub(crate) fn rearm_mirror_typing(&self, peer: &DeviceId, tapped_at: u64) -> Result<bool> {
+        let mut fence = self.typing_fence();
+        let typing = fence.current(peer);
+        if !typing.stopped || typing.owner_off != Some(typing.generation) || tapped_at != typing.generation {
+            return Ok(false);
+        }
+        let mut resumed = fence.clone();
+        let generation = resumed.advance();
+        resumed.peers.insert(*peer, Typing { generation, stopped: false, owner_off: None });
+        resumed.persist(&self.store)?;
+        *fence = resumed;
+        Ok(true)
+    }
+
+    /// `peer` is unpaired: its entry goes, and the floor moves, so nothing
+    /// admitted before (stopped or not) reaches the OS after a re-pairing.
+    pub(crate) fn forget_mirror_typing(&self, peer: &DeviceId) -> Result<()> {
+        let mut fence = self.typing_fence();
+        // Unpair has already removed the peer and cannot be rolled back. Drop
+        // its in-memory authority before persisting; the running marker keeps
+        // recovery fail-closed if this write also fails.
+        fence.peers.remove(peer);
+        let floor = fence.advance();
+        fence.floor = floor;
+        fence.persist(&self.store)
+    }
+}
+
 pub(crate) async fn request_keyframe(session: &Session, mirroring: u32) {
     if let Ok(env) =
         Envelope::new(types::MIRROR_KEYFRAME, &MirrorSession { session: mirroring, request: None })
@@ -482,9 +738,19 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
             let remote_input_on = !desktop || shared.toggle_on(&peer, crate::remote::TOGGLE);
             let has_cap = shared.local_capabilities().iter().any(|c| c == needs);
             let allowed = mirror_on && remote_input_on && has_cap;
-            if allowed && input.is_valid() {
+            if mirroring == mirror::SCREEN && allowed && input.is_valid() {
+                // Stopped by the phone owner: dropped here. The platform checks
+                // the generation again right before the OS sees the input.
+                if let Some(generation) = shared.mirror_typing_admit(&peer) {
+                    platform.mirror_screen_input(&peer, input, generation);
+                }
+            } else if allowed && input.is_valid() {
                 platform.mirror_input(&peer, mirroring, input);
-            } else if mirroring == mirror::SCREEN && mirror_on && input.is_valid() {
+            } else if mirroring == mirror::SCREEN
+                && mirror_on
+                && input.is_valid()
+                && !shared.mirror_typing_stopped(&peer)
+            {
                 if desktop {
                     if !remote_input_on {
                         let first_time =

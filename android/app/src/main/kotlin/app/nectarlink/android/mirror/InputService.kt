@@ -363,10 +363,13 @@ class InputService : AccessibilityService() {
         /** Whether the user turned it on (and Android has it running). */
         val running: Boolean get() = instance != null
 
-        /** The PC's input; ignored while the service is off. */
-        fun handle(input: MirrorInputEvent) {
+        /**
+         * The PC's input; ignored while the service is off, and dropped on the main thread
+         * unless [stillCurrent] holds right before it's performed.
+         */
+        fun handle(input: MirrorInputEvent, stillCurrent: () -> Boolean) {
             val service = instance ?: return
-            service.main.post { service.handle(input) }
+            service.main.post { if (stillCurrent()) service.handle(input) }
         }
 
         /** Whether it's turned on in Settings (it may not be running yet). */

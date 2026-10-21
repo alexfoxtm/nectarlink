@@ -23,6 +23,16 @@ const WAIT: Duration = Duration::from_secs(20);
 type MmsRecord = (Vec<String>, String, Vec<nectarlink_core::SmsAttachment>);
 type RichClipboardRecord = (String, Option<String>, Option<String>);
 
+/// Screen input the core handed a phone's platform, as the phone would post
+/// it toward its OS: text by byte length only, with the typing generation it
+/// was admitted under.
+#[derive(Debug, Clone, Copy)]
+struct ScreenInput {
+    peer: nectarlink_core::DeviceId,
+    text_bytes: Option<usize>,
+    generation: u64,
+}
+
 #[derive(Debug, Default)]
 struct RecordingPlatform {
     rings: Mutex<Vec<bool>>,
@@ -39,6 +49,7 @@ struct RecordingPlatform {
     texts: Mutex<Vec<(Vec<String>, String)>>,
     mms_sent: Mutex<Vec<MmsRecord>>,
     mirror_asks: Mutex<Vec<String>>,
+    screen_inputs: Mutex<Vec<ScreenInput>>,
     mirror_requests: Mutex<Vec<nectarlink_core::MirrorStart>>,
     mirror_reject: std::sync::atomic::AtomicBool,
     watch_offers: Mutex<Vec<String>>,
@@ -181,6 +192,19 @@ impl Platform for RecordingPlatform {
         input: nectarlink_core::MirrorInput,
     ) {
         self.mirror_asks.lock().unwrap().push(format!("{input:?} on {session}"));
+    }
+    fn mirror_screen_input(
+        &self,
+        peer: &nectarlink_core::DeviceId,
+        input: nectarlink_core::MirrorInput,
+        generation: u64,
+    ) {
+        let text_bytes = match &input {
+            nectarlink_core::MirrorInput::Text { text } => Some(text.len()),
+            _ => None,
+        };
+        self.screen_inputs.lock().unwrap().push(ScreenInput { peer: *peer, text_bytes, generation });
+        self.mirror_input(peer, nectarlink_core::MIRROR_SCREEN, input);
     }
     fn mic_sink(&self, _peer: &nectarlink_core::DeviceId) -> Option<Arc<dyn nectarlink_core::MicSink>> {
         Some(self.mic.clone())
@@ -679,16 +703,33 @@ fn init_logging() {
 }
 
 async fn start_in(dir: TempDir, name: &'static str, kind: DeviceKind) -> TestDevice {
+    start_in_with_platform(dir, name, kind, Arc::new(RecordingPlatform::default())).await
+}
+
+async fn start_in_with_platform(
+    dir: TempDir,
+    name: &'static str,
+    kind: DeviceKind,
+    platform: Arc<RecordingPlatform>,
+) -> TestDevice {
     init_logging();
     let mut config = NodeConfig::new(dir.path(), info(name, kind), "0.0.1-test");
     config.lan_discovery = false;
     config.away_mode = false;
     config.key_protector = Some(Arc::new(PlainKeyProtector));
     config.capabilities = vec!["media.control".into()];
-    let platform = Arc::new(RecordingPlatform::default());
+    #[cfg(feature = "test-support")]
+    config.enable_loopback_mirror_fixture();
     let node = Node::start(config, platform.clone()).await.expect("node starts");
     let events = node.events();
     TestDevice { node, events, platform, dir, name }
+}
+
+async fn restart_with_same_store(dev: TestDevice, kind: DeviceKind) -> TestDevice {
+    let TestDevice { node, platform, dir, name, .. } = dev;
+    node.shutdown().await;
+    drop(node);
+    start_in_with_platform(dir, name, kind, platform).await
 }
 
 async fn device(name: &'static str, kind: DeviceKind) -> TestDevice {
@@ -1900,6 +1941,415 @@ async fn the_phone_screen_streams_to_the_pc() {
     }
     let shown = pc.platform.mirror_asks.lock().unwrap().clone();
     assert_eq!(shown, ["sink 0", "sink 0"], "the screen and its sound");
+}
+
+/// A PC and a phone it may type on, open app windows on and set the volume
+/// of, paired.
+async fn typing_pair() -> (TestDevice, TestDevice) {
+    let mut pc = device_with(
+        "Desktop",
+        DeviceKind::Desktop,
+        &[nectarlink_core::MIRROR_VIEW, nectarlink_core::MIRROR_LISTEN],
+    )
+    .await;
+    let mut phone = device_with(
+        "Pixel",
+        DeviceKind::Phone,
+        &[
+            nectarlink_core::MIRROR_CAPTURE,
+            nectarlink_core::MIRROR_INPUT,
+            nectarlink_core::MIRROR_VIRTUAL_DISPLAY,
+            nectarlink_core::TOGGLES_VOLUME,
+        ],
+    )
+    .await;
+    pair_qr(&mut pc, &mut phone).await;
+    (pc, phone)
+}
+
+/// Waits until the phone's platform got at least `n` screen inputs, and
+/// takes them all.
+async fn take_screen_inputs(phone: &TestDevice, n: usize) -> Vec<ScreenInput> {
+    let deadline = tokio::time::Instant::now() + WAIT;
+    loop {
+        {
+            let mut got = phone.platform.screen_inputs.lock().unwrap();
+            if got.len() >= n {
+                return std::mem::take(&mut *got);
+            }
+            assert!(tokio::time::Instant::now() < deadline, "{n} screen inputs: {got:?}");
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+/// What the phone's OS gets of posted screen input: the byte lengths of the
+/// texts still current at dispatch, checked with the call the app makes.
+fn dispatch_texts(phone: &TestDevice, posted: &[ScreenInput]) -> Vec<usize> {
+    posted
+        .iter()
+        .filter(|p| phone.node.mirror_typing_current(p.peer, p.generation))
+        .filter_map(|p| p.text_bytes)
+        .collect()
+}
+
+/// Sends an app-window touch (session 7) and waits until the phone handled
+/// it. It follows everything sent before it on the control stream, handled
+/// in order, so by then the phone admitted or dropped all of that.
+async fn app_window_probe(pc: &TestDevice, phone: &TestDevice) {
+    use nectarlink_core::{MirrorInput, TouchAction};
+    let seen = || {
+        phone.platform.mirror_asks.lock().unwrap().iter().filter(|a| a.as_str() == "Touch(Down) on 7").count()
+    };
+    let before = seen();
+    let touch = MirrorInput::Touch { action: TouchAction::Down, x: 0.5, y: 0.25 };
+    pc.node.mirror_input(phone.node.device_id(), 7, touch).await.unwrap();
+    let deadline = tokio::time::Instant::now() + WAIT;
+    while seen() == before {
+        assert!(tokio::time::Instant::now() < deadline, "the app-window touch never arrived");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stopped_pc_types_nothing_until_the_owner_turns_mirroring_back_on() {
+    use nectarlink_core::{MirrorInput, PhoneToggleValue, toggle_ids};
+    let (mut pc, mut phone) = typing_pair().await;
+    let (pc_id, phone_id) = (pc.node.device_id(), phone.node.device_id());
+    let text = |t: &str| MirrorInput::Text { text: t.into() };
+    let key = |k: &str| MirrorInput::Key { key: k.into() };
+    assert!(!phone.node.mirror_typing_stopped(pc_id));
+
+    // The PC types: the phone's OS gets 5 bytes.
+    pc.node.mirror_input(phone_id, 0, key("keyboard_on")).await.unwrap();
+    pc.node.mirror_input(phone_id, 0, text("hello")).await.unwrap();
+    assert_eq!(dispatch_texts(&phone, &take_screen_inputs(&phone, 2).await), [5]);
+
+    // 6 more bytes are posted, not yet dispatched, when the owner taps Stop:
+    // the OS never gets them.
+    pc.node.mirror_input(phone_id, 0, text("secret")).await.unwrap();
+    let posted_before_stop = take_screen_inputs(&phone, 1).await;
+    // The owner had tapped the mirroring switch off and on just before; those
+    // writes are still queued when Stop is tapped.
+    let tapped_before_stop = phone.node.mirror_typing_epoch(pc_id);
+    let stop = phone.node.mirror_deny_typing(pc_id).unwrap();
+    assert!(phone.node.mirror_typing_stopped(pc_id));
+    assert!(dispatch_texts(&phone, &posted_before_stop).is_empty(), "typed after the Stop");
+    assert_ne!(tapped_before_stop, stop);
+
+    // Nothing the PC sends rearms it: typing markers, a quick toggle, a
+    // capability refresh.
+    pc.node.mirror_input(phone_id, 0, key("keyboard_on")).await.unwrap();
+    pc.node.mirror_input(phone_id, 0, text("secret")).await.unwrap();
+    pc.node.mirror_input(phone_id, 0, key("keyboard_off")).await.unwrap();
+    with_timeout(
+        "remote volume",
+        pc.node.set_phone_toggle(phone_id, toggle_ids::VOLUME.into(), PhoneToggleValue::Level(80)),
+    )
+    .await
+    .unwrap();
+    pc.node
+        .update_power(
+            PowerLevel::NotApplicable,
+            vec![
+                "media.control".into(),
+                nectarlink_core::MIRROR_VIEW.into(),
+                nectarlink_core::MIRROR_LISTEN.into(),
+            ],
+        )
+        .await;
+    pc.node.mirror_input(phone_id, 0, text("secret")).await.unwrap();
+    // Nor does any local switch but the owner's mirroring off → on: mirroring
+    // set on while it's on, `pc_mirror`, the generic toggle setter.
+    phone.node.set_mirroring_enabled(pc_id, true, phone.node.mirror_typing_epoch(pc_id)).unwrap();
+    phone.node.set_device_toggle(pc_id, "pc_mirror", true).unwrap();
+    phone.node.set_device_toggle(pc_id, "pc_mirror", false).unwrap();
+    phone.node.set_device_toggle(pc_id, "mirroring", true).unwrap();
+    pc.node.mirror_input(phone_id, 0, text("secret")).await.unwrap();
+    app_window_probe(&pc, &phone).await;
+    let reached = phone.platform.screen_inputs.lock().unwrap().clone();
+    assert!(reached.is_empty(), "the stopped PC's input reached the platform: {reached:?}");
+    assert_eq!(phone.platform.phone_toggles.lock().unwrap().len(), 1, "the quick toggle did arrive");
+
+    // The owner's off and on tapped before the Stop, written only now, don't
+    // end it; nor does an off tapped before it followed by an on after it.
+    phone.node.set_mirroring_enabled(pc_id, false, tapped_before_stop).unwrap();
+    phone.node.set_mirroring_enabled(pc_id, true, tapped_before_stop).unwrap();
+    phone.node.set_mirroring_enabled(pc_id, false, tapped_before_stop).unwrap();
+    phone.node.set_mirroring_enabled(pc_id, true, phone.node.mirror_typing_epoch(pc_id)).unwrap();
+    pc.node.mirror_input(phone_id, 0, text("secret")).await.unwrap();
+    app_window_probe(&pc, &phone).await;
+    let reached = phone.platform.screen_inputs.lock().unwrap().clone();
+    assert!(reached.is_empty(), "a resume tapped before the Stop ended it: {reached:?}");
+
+    // Recreating the phone Node keeps the deny but creates a new token
+    // lifetime. Work queued by the old Node cannot reuse its Stop generation.
+    let queued_resume = phone.node.mirror_typing_epoch(pc_id);
+    phone = restart_with_same_store(phone, DeviceKind::Phone).await;
+    assert!(phone.node.mirror_typing_stopped(pc_id), "a clean restart preserves the Stop");
+    phone
+        .node
+        .update_power(
+            PowerLevel::NotApplicable,
+            vec![
+                "media.control".into(),
+                nectarlink_core::MIRROR_CAPTURE.into(),
+                nectarlink_core::MIRROR_INPUT.into(),
+                nectarlink_core::MIRROR_VIRTUAL_DISPLAY.into(),
+                nectarlink_core::TOGGLES_VOLUME.into(),
+            ],
+        )
+        .await;
+    wait_online(&mut pc, phone_id).await;
+    wait_online(&mut phone, pc_id).await;
+    let restarted_epoch = phone.node.mirror_typing_epoch(pc_id);
+    assert_ne!(queued_resume, restarted_epoch, "a new Node must move the typing epoch");
+    assert!(
+        !phone.node.mirror_typing_current(pc_id, posted_before_stop[0].generation),
+        "a pre-Stop input generation survived Node recreation"
+    );
+    phone.node.set_mirroring_enabled(pc_id, false, queued_resume).unwrap();
+    phone.node.set_mirroring_enabled(pc_id, true, queued_resume).unwrap();
+    pc.node.mirror_input(phone_id, 0, text("secret")).await.unwrap();
+    app_window_probe(&pc, &phone).await;
+    let reached = phone.platform.screen_inputs.lock().unwrap().clone();
+    assert!(reached.is_empty(), "a queued old-Node resume ended the Stop: {reached:?}");
+
+    // The owner's switch, off then on, both tapped after the Stop, rearms
+    // under a fresh generation: the 6 bytes posted before the Stop stay
+    // dropped, new typing gets through.
+    let tapped = phone.node.mirror_typing_epoch(pc_id);
+    assert_eq!(tapped, restarted_epoch, "the recreated Node owns the current Stop epoch");
+    phone.node.set_mirroring_enabled(pc_id, false, tapped).unwrap();
+    phone.node.set_mirroring_enabled(pc_id, true, phone.node.mirror_typing_epoch(pc_id)).unwrap();
+    assert!(!phone.node.mirror_typing_stopped(pc_id), "only the owner's off-on clears the Stop");
+    assert!(
+        dispatch_texts(&phone, &posted_before_stop).is_empty(),
+        "a rearm revived input from before the Stop"
+    );
+    assert!(!phone.node.mirror_typing_current(pc_id, stop));
+    pc.node.mirror_input(phone_id, 0, text("again!!")).await.unwrap();
+    let posted = take_screen_inputs(&phone, 1).await;
+    assert_eq!(dispatch_texts(&phone, &posted), [7]);
+    assert_ne!(posted[0].generation, posted_before_stop[0].generation);
+
+    // A paired PC with no durable fence row is uncertain, not proof of a
+    // clean lifetime. Recovery keeps Node/network startup available but
+    // requires this phone owner to rearm typing.
+    phone.node.shutdown().await;
+    wait_for(&mut pc, "phone offline before removing fence row", |event| match event {
+        NodeEvent::LinkChanged { device, link: LinkState::Offline { .. } } if *device == phone_id => Some(()),
+        _ => None,
+    })
+    .await;
+    let TestDevice {
+        node: stopped_phone, platform: phone_platform, dir: phone_dir, name: phone_name, ..
+    } = phone;
+    drop(stopped_phone);
+    let fence_db = rusqlite::Connection::open(phone_dir.path().join("nectarlink.db")).unwrap();
+    fence_db.execute("DELETE FROM meta WHERE key = 'mirror_typing_fence'", []).unwrap();
+    drop(fence_db);
+
+    phone = start_in_with_platform(phone_dir, phone_name, DeviceKind::Phone, phone_platform).await;
+    phone
+        .node
+        .update_power(
+            PowerLevel::NotApplicable,
+            vec![
+                "media.control".into(),
+                nectarlink_core::MIRROR_CAPTURE.into(),
+                nectarlink_core::MIRROR_INPUT.into(),
+                nectarlink_core::MIRROR_VIRTUAL_DISPLAY.into(),
+                nectarlink_core::TOGGLES_VOLUME.into(),
+            ],
+        )
+        .await;
+    wait_online(&mut pc, phone_id).await;
+    wait_online(&mut phone, pc_id).await;
+    assert!(phone.node.mirror_typing_stopped(pc_id), "a missing fence with a paired PC recovers stopped");
+    pc.node.mirror_input(phone_id, 0, key("keyboard_on")).await.unwrap();
+    pc.node.mirror_input(phone_id, 0, text("still stopped")).await.unwrap();
+    app_window_probe(&pc, &phone).await;
+    assert!(phone.platform.screen_inputs.lock().unwrap().is_empty(), "an uncertain fence must deny typing");
+
+    let uncertain_epoch = phone.node.mirror_typing_epoch(pc_id);
+    phone.node.set_mirroring_enabled(pc_id, false, uncertain_epoch).unwrap();
+    phone.node.set_mirroring_enabled(pc_id, true, phone.node.mirror_typing_epoch(pc_id)).unwrap();
+    assert!(!phone.node.mirror_typing_stopped(pc_id), "the explicit off-on rearms the uncertain fence");
+    pc.node.mirror_input(phone_id, 0, text("again!!")).await.unwrap();
+    let after_uncertain_rearm = take_screen_inputs(&phone, 1).await;
+    assert_eq!(dispatch_texts(&phone, &after_uncertain_rearm), [7]);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stop_during_screen_mirroring_outlives_a_reconnect() {
+    use nectarlink_core::MirrorInput;
+    let (pc, mut phone) = typing_pair().await;
+    let (pc_id, phone_id) = (pc.node.device_id(), phone.node.device_id());
+    let text = |t: &str| MirrorInput::Text { text: t.into() };
+    let reached = |phone: &TestDevice| phone.platform.screen_inputs.lock().unwrap().clone();
+
+    // The phone shares its screen; the PC's keyboard on it reaches the OS.
+    let options = nectarlink_core::MirrorStart {
+        max_size: 1920,
+        fps: 60,
+        bitrate: 8_000_000,
+        audio: false,
+        session: 0,
+        app: None,
+        stay_awake: false,
+        screen_off: false,
+        watch: None,
+        request: None,
+    };
+    with_timeout("start", pc.node.mirror_start(phone_id, options)).await.unwrap();
+    let screen = with_timeout("open", phone.node.mirror_open(pc_id)).await.unwrap();
+    pc.node.mirror_input(phone_id, 0, text("mine")).await.unwrap();
+    let posted_before_stop = take_screen_inputs(&phone, 1).await;
+    assert_eq!(dispatch_texts(&phone, &posted_before_stop), [4]);
+
+    // The Store refuses the production fence write. The in-memory fence still
+    // drops current and already-posted input, and the durable running marker
+    // makes the next Node start recover all paired peers fail-closed.
+    let fence_db = rusqlite::Connection::open(phone.dir.path().join("nectarlink.db")).unwrap();
+    fence_db
+        .execute_batch(
+            "CREATE TRIGGER fail_mirror_typing_fence_write
+             BEFORE UPDATE ON meta
+             WHEN OLD.key = 'mirror_typing_fence'
+             BEGIN SELECT RAISE(ABORT, 'injected Store write failure'); END;",
+        )
+        .unwrap();
+    let epoch_before_stop = phone.node.mirror_typing_epoch(pc_id);
+    assert!(phone.node.mirror_deny_typing(pc_id).is_err());
+    assert!(phone.node.mirror_typing_stopped(pc_id), "a Store error keeps the in-memory denial");
+    let stop = phone.node.mirror_typing_epoch(pc_id);
+    assert_ne!(epoch_before_stop, stop);
+    assert!(!phone.node.mirror_typing_current(pc_id, posted_before_stop[0].generation));
+    assert!(
+        dispatch_texts(&phone, &posted_before_stop).is_empty(),
+        "posted typing survived the failed Stop write"
+    );
+    let queued_owner_tap = phone.node.mirror_typing_epoch(pc_id);
+    pc.node.mirror_input(phone_id, 0, text("secret")).await.unwrap();
+    app_window_probe(&pc, &phone).await;
+    assert!(reached(&phone).is_empty(), "typed on the mirrored screen after the Stop");
+    drop(screen);
+
+    // The PC restarts: its new session can't type either.
+    pc.node.shutdown().await;
+    wait_for(&mut phone, "pc offline", |e| match e {
+        NodeEvent::LinkChanged { device, link: LinkState::Offline { .. } } if *device == pc_id => Some(()),
+        _ => None,
+    })
+    .await;
+    let TestDevice { node: stopped, dir, .. } = pc;
+    drop(stopped);
+    let mut pc = start_in(dir, "Desktop", DeviceKind::Desktop).await;
+    wait_online(&mut phone, pc_id).await;
+    wait_online(&mut pc, phone_id).await;
+    pc.node.mirror_input(phone_id, 0, text("secret")).await.unwrap();
+    app_window_probe(&pc, &phone).await;
+    assert!(reached(&phone).is_empty(), "a new session inherited typing");
+
+    // Shutdown cannot persist through the injected Store failure. Recovery
+    // durably stops every still-paired PC while allowing Node/network startup.
+    phone.node.shutdown().await;
+    let TestDevice {
+        node: stopped_phone, platform: phone_platform, dir: phone_dir, name: phone_name, ..
+    } = phone;
+    drop(stopped_phone);
+    fence_db.execute_batch("DROP TRIGGER fail_mirror_typing_fence_write;").unwrap();
+    drop(fence_db);
+    let mut recovery_config =
+        NodeConfig::new(phone_dir.path(), info(phone_name, DeviceKind::Phone), "0.0.1-test");
+    recovery_config.lan_discovery = false;
+    recovery_config.away_mode = false;
+    recovery_config.key_protector = Some(Arc::new(PlainKeyProtector));
+    recovery_config.capabilities = vec!["media.control".into()];
+    #[cfg(feature = "test-support")]
+    recovery_config.enable_loopback_mirror_fixture();
+    let recovered_node = Node::start(recovery_config, phone_platform.clone())
+        .await
+        .expect("typing recovery persists the denial and continues Node startup");
+    assert!(recovered_node.mirror_typing_stopped(pc_id));
+    phone = TestDevice {
+        events: recovered_node.events(),
+        node: recovered_node,
+        platform: phone_platform,
+        dir: phone_dir,
+        name: phone_name,
+    };
+
+    // Restore the exact phone offers before any post-recovery probe or positive assertion.
+    phone
+        .node
+        .update_power(
+            PowerLevel::NotApplicable,
+            vec![
+                "media.control".into(),
+                nectarlink_core::MIRROR_CAPTURE.into(),
+                nectarlink_core::MIRROR_INPUT.into(),
+                nectarlink_core::MIRROR_VIRTUAL_DISPLAY.into(),
+                nectarlink_core::TOGGLES_VOLUME.into(),
+            ],
+        )
+        .await;
+    wait_online(&mut pc, phone_id).await;
+    wait_online(&mut phone, pc_id).await;
+    // A queued tap from the old Node is stale.
+    let restarted_epoch = phone.node.mirror_typing_epoch(pc_id);
+    assert_ne!(queued_owner_tap, restarted_epoch, "phone Node recreation must move the token");
+    phone.node.set_mirroring_enabled(pc_id, false, queued_owner_tap).unwrap();
+    phone.node.set_mirroring_enabled(pc_id, true, queued_owner_tap).unwrap();
+    pc.node.mirror_input(phone_id, 0, text("secret")).await.unwrap();
+    app_window_probe(&pc, &phone).await;
+    assert!(reached(&phone).is_empty(), "a queued old-Node owner tap resumed typing");
+
+    // The generic toggle setter turning mirroring off and on isn't the
+    // owner's switch: still stopped.
+    phone.node.set_device_toggle(pc_id, "mirroring", false).unwrap();
+    phone.node.set_device_toggle(pc_id, "mirroring", true).unwrap();
+    pc.node.mirror_input(phone_id, 0, text("secret")).await.unwrap();
+    app_window_probe(&pc, &phone).await;
+    assert!(reached(&phone).is_empty(), "the generic setter rearmed typing");
+
+    // The owner's switch does, under a generation of its own.
+    let tapped = phone.node.mirror_typing_epoch(pc_id);
+    phone.node.set_mirroring_enabled(pc_id, false, tapped).unwrap();
+    phone.node.set_mirroring_enabled(pc_id, true, phone.node.mirror_typing_epoch(pc_id)).unwrap();
+    assert!(!phone.node.mirror_typing_stopped(pc_id), "the explicit owner rearm clears the recovery deny");
+    pc.node.mirror_input(phone_id, 0, text("again!!")).await.unwrap();
+    let posted = take_screen_inputs(&phone, 1).await;
+    assert_eq!(dispatch_texts(&phone, &posted), [7]);
+    assert_ne!(posted[0].generation, stop);
+
+    // A stale Node handle cannot overwrite the current Node's whole fence.
+    phone.node.shutdown().await;
+    let TestDevice { node: old_phone, platform: phone_platform, dir: phone_dir, name: phone_name, .. } =
+        phone;
+    phone = start_in_with_platform(phone_dir, phone_name, DeviceKind::Phone, phone_platform).await;
+    phone
+        .node
+        .update_power(
+            PowerLevel::NotApplicable,
+            vec![
+                "media.control".into(),
+                nectarlink_core::MIRROR_CAPTURE.into(),
+                nectarlink_core::MIRROR_INPUT.into(),
+                nectarlink_core::MIRROR_VIRTUAL_DISPLAY.into(),
+                nectarlink_core::TOGGLES_VOLUME.into(),
+            ],
+        )
+        .await;
+    let current_epoch = phone.node.mirror_typing_epoch(pc_id);
+    assert!(matches!(
+        old_phone.mirror_deny_typing(pc_id),
+        Err(Error::Internal(error)) if error == "mirror typing fence ownership changed"
+    ));
+    assert_eq!(phone.node.mirror_typing_epoch(pc_id), current_epoch);
+    assert!(phone.node.mirror_typing_current(pc_id, current_epoch));
+    drop(old_phone);
 }
 
 #[tokio::test(flavor = "multi_thread")]

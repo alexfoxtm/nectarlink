@@ -256,6 +256,9 @@ pub(crate) struct Shared {
     pub(crate) remote: Mutex<crate::remote::RemoteState>,
     /// Per-peer prompt state and open folders for the storage service.
     pub(crate) storage: Mutex<crate::storage::StorageState>,
+    /// The phone owner's Stop on PCs' typing, with the generation screen
+    /// input carries to the platform (see [`crate::mirror::TypingFence`]).
+    pub(crate) mirror_typing: Mutex<crate::mirror::TypingFence>,
     /// Encrypted-at-rest history of the last 50 clips exchanged with peers.
     pub(crate) clipboard_history: crate::clipboard_history::ClipboardHistoryStore,
     /// Smart suggestion for the most recently received text clip, if any.
@@ -1380,6 +1383,7 @@ impl Shared {
         self.deck.remove_peer(peer);
         self.stop_webcam(peer);
         self.clear_mirror_peer(peer);
+        let typing_fence_error = self.forget_mirror_typing(peer).err();
         crate::copied_link::clear(self, Some(peer));
         if !dropped_queue.is_empty() {
             self.emit(NodeEvent::QueueChanged);
@@ -1390,7 +1394,10 @@ impl Shared {
         if existed {
             self.emit(NodeEvent::DeviceRemoved(*peer));
         }
-        Ok(())
+        match typing_fence_error {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
     }
 
     /// Registers an established session, resolving duplicates: if both
@@ -1807,6 +1814,24 @@ impl Node {
         let protector = config.key_protector.clone().unwrap_or_else(identity::default_protector);
         let secret = identity::load_or_create(&config.data_dir, protector.as_ref())?;
         let store = Store::open(&config.data_dir)?;
+        // Recover an unclean lifetime, or a missing fence with existing
+        // paired peers, into durable per-peer denials before network setup.
+        // Begin the new Node lifetime after fallible LAN discovery succeeds,
+        // but before any input-admission task starts.
+        let mirror_typing = if features::role_of(&config.device) == Some(features::Role::Phone) {
+            let mut fence = crate::mirror::TypingFence::load(&store)?;
+            let lifetime_uncertain = fence.node_was_running();
+            let fence_missing = fence.has_no_durable_state();
+            if lifetime_uncertain || fence_missing {
+                let paired_peers = store.list_peers()?.into_iter().map(|peer| peer.id).collect::<Vec<_>>();
+                if lifetime_uncertain || !paired_peers.is_empty() {
+                    fence.recover_unclean_node_lifetime(&store, &paired_peers)?;
+                }
+            }
+            fence
+        } else {
+            crate::mirror::TypingFence::default()
+        };
         let _ = store.reset_interrupted_sending();
         let _ = store.expire_stale_queue_items(crate::now_unix_ms());
         let clipboard_history =
@@ -1897,6 +1922,7 @@ impl Node {
             mic_stops: Mutex::new(HashMap::new()),
             remote: Mutex::new(Default::default()),
             storage: Mutex::new(Default::default()),
+            mirror_typing: Mutex::new(mirror_typing),
             clipboard_history,
             last_clip_suggestion: Mutex::new(None),
             copied_link: Default::default(),
@@ -1922,6 +1948,13 @@ impl Node {
 
         if config.lan_discovery {
             start_lan_discovery(&shared, &config.device.name)?;
+        }
+        // LAN discovery can wake only supervisors already in this map. This
+        // Node has created none yet, so seed its lifetime before admission.
+        if features::role_of(&config.device) == Some(features::Role::Phone) {
+            let mut fence = lock(&shared.mirror_typing);
+            fence.begin_node_lifetime();
+            fence.persist(&shared.store)?;
         }
         if shared.localsend.enabled() {
             shared.localsend.start(&shared);
@@ -2020,6 +2053,11 @@ impl Node {
             tracing::warn!(error = %e, "router shutdown failed");
         }
         self.shared.endpoint.close().await;
+        if lock(&self.shared.mirror_typing).end_node_lifetime(&self.shared.store).is_err() {
+            tracing::warn!(
+                "mirror typing fence shutdown persist failed; next start will recover fail-closed"
+            );
+        }
     }
 
     pub fn device_id(&self) -> DeviceId {
@@ -2950,6 +2988,50 @@ impl Node {
         if let Ok(session) = self.connected(&peer) {
             let _ = crate::mirror::stop(&session, mirroring, request).await;
         }
+    }
+
+    /// The phone owner's Stop on `peer`'s typing here: from the moment this
+    /// returns, its screen input is dropped, including input already on its
+    /// way to the OS. Returns the Stop's generation. Only the owner's
+    /// mirroring switch turned off and on after it
+    /// ([`Self::set_mirroring_enabled`]) ends it.
+    pub fn mirror_deny_typing(&self, peer: DeviceId) -> Result<u64> {
+        self.shared.stop_mirror_typing(&peer)
+    }
+
+    /// The phone owner's mirroring switch for `peer` (local UI only), tapped
+    /// at `tapped_at` ([`Self::mirror_typing_epoch`] read on the tap). Turning
+    /// it off then on, both tapped after a Stop on its typing, ends that Stop;
+    /// a tap made before a Stop never does, however late this runs. Nothing
+    /// else ends one: not the generic [`Self::set_device_toggle`],
+    /// `pc_mirror`, or anything the peer sends.
+    pub fn set_mirroring_enabled(&self, peer: DeviceId, enabled: bool, tapped_at: u64) -> Result<()> {
+        let was_on = self.shared.toggle_on(&peer, crate::mirror::TOGGLE);
+        self.set_device_toggle(peer, crate::mirror::TOGGLE, enabled)?;
+        if !enabled {
+            self.shared.note_owner_mirroring_off(&peer, tapped_at)?;
+        } else if !was_on {
+            self.shared.rearm_mirror_typing(&peer, tapped_at)?;
+        }
+        Ok(())
+    }
+
+    /// `peer`'s typing epoch now, for the phone owner's mirroring switch to
+    /// read when tapped and pass to [`Self::set_mirroring_enabled`].
+    pub fn mirror_typing_epoch(&self, peer: DeviceId) -> u64 {
+        self.shared.mirror_typing_epoch(&peer)
+    }
+
+    /// Whether `peer`'s screen input admitted under `generation` may still
+    /// reach the OS; the platform asks right before dispatching it.
+    pub fn mirror_typing_current(&self, peer: DeviceId, generation: u64) -> bool {
+        self.shared.mirror_typing_current(&peer, generation)
+    }
+
+    /// Whether the phone owner's typing fence currently stops this peer.
+    /// The phone uses this for per-PC status; it does not change the fence.
+    pub fn mirror_typing_stopped(&self, peer: DeviceId) -> bool {
+        self.shared.mirror_typing_stopped(&peer)
     }
 
     /// Asks a phone for a keyframe (the decoder lost its place).

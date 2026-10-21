@@ -2733,6 +2733,11 @@ pub trait Platform: Send + Sync {
     /// The PC's mouse or keyboard on the mirrored screen (only while this
     /// phone offers `mirror.input`) or an app window. Return quickly.
     fn mirror_input(&self, pc_id: String, session: u32, input: MirrorInputEvent);
+    /// The PC's mouse or keyboard on the mirrored screen (session 0), admitted
+    /// under typing `generation`. Right before the OS sees it (after any post
+    /// to another thread), check `mirror_typing_current(pc_id, generation)`
+    /// and drop it when that's false. Return quickly.
+    fn mirror_screen_input(&self, pc_id: String, input: MirrorInputEvent, generation: u64);
     /// A PC asked for this phone's camera as a webcam: start streaming (or
     /// ask the user) and call `webcam_open`. False if it can't or the user
     /// declined.
@@ -2947,6 +2952,9 @@ impl core::Platform for PlatformAdapter {
     }
     fn mirror_input(&self, peer: &DeviceId, session: u32, input: core::MirrorInput) {
         self.0.mirror_input(peer.to_string(), session, input.into());
+    }
+    fn mirror_screen_input(&self, peer: &DeviceId, input: core::MirrorInput, generation: u64) {
+        self.0.mirror_screen_input(peer.to_string(), input.into(), generation);
     }
     fn webcam_requested(&self, peer: &DeviceId, options: &core::WebcamStart) -> Result<(), String> {
         let options = WebcamOptions {
@@ -4096,6 +4104,39 @@ impl NectarlinkNode {
             Ok(())
         })
         .await
+    }
+
+    /// The phone owner's Stop on `pc_id`'s typing. Synchronous: call it before
+    /// the Stop tap returns. From then on that PC's screen input is dropped,
+    /// even input already posted toward the OS. Returns the Stop's generation.
+    pub fn mirror_deny_typing(&self, pc_id: String) -> Result<u64> {
+        Ok(self.node.mirror_deny_typing(parse_id(&pc_id)?)?)
+    }
+
+    /// The phone owner's mirroring switch for `pc_id` (local UI only), with
+    /// `tapped_at` read from `mirror_typing_epoch` on the tap itself. Off then
+    /// on, both tapped after a Stop on that PC's typing, ends it; nothing else
+    /// does, and no tap made before the Stop does.
+    pub fn set_mirroring_enabled(&self, pc_id: String, enabled: bool, tapped_at: u64) -> Result<()> {
+        Ok(self.node.set_mirroring_enabled(parse_id(&pc_id)?, enabled, tapped_at)?)
+    }
+
+    /// `pc_id`'s typing epoch now. Synchronous: the mirroring switch reads it
+    /// on the tap and passes it to `set_mirroring_enabled`.
+    pub fn mirror_typing_epoch(&self, pc_id: String) -> Result<u64> {
+        Ok(self.node.mirror_typing_epoch(parse_id(&pc_id)?))
+    }
+
+    /// Whether `pc_id`'s screen input admitted under `generation` may still
+    /// reach the OS; ask right before dispatching it. False for a bad ID.
+    pub fn mirror_typing_current(&self, pc_id: String, generation: u64) -> bool {
+        parse_id(&pc_id).is_ok_and(|id| self.node.mirror_typing_current(id, generation))
+    }
+
+    /// Whether the phone owner's typing fence currently stops `pc_id`.
+    /// Read by the phone's existing per-PC UI; this does not change the fence.
+    pub fn mirror_typing_stopped(&self, pc_id: String) -> Result<bool> {
+        Ok(self.node.mirror_typing_stopped(parse_id(&pc_id)?))
     }
 
     /// Asks a paired PC to stream its screen to this phone (`mirror.start`, `session == 0`),

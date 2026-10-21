@@ -945,6 +945,7 @@ private fun App(
                                     updater = (context.applicationContext as NectarlinkApplication).updater,
                                     onSetStorageEnabled = core::setStorageEnabled,
                                     onSetMicEnabled = core::setMicEnabled,
+                                    onSetMirroringEnabled = core::setMirroringEnabled,
                                     onAddSafFolder = core::addSafFolder,
                                     onRemoveSafFolder = core::removeSafFolder,
                                     onSetClipboardHistoryEnabled = core::setClipboardHistoryEnabled,

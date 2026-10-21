@@ -767,6 +767,37 @@ impl Store {
         })
     }
 
+    /// The local phone owner's mirroring typing fence. It shares this node's
+    /// existing identity-scoped store so a Node restart cannot forget a Stop.
+    pub(crate) fn mirror_typing_fence(&self) -> Result<Option<String>> {
+        self.with(|c| {
+            c.query_row("SELECT value FROM meta WHERE key = 'mirror_typing_fence'", [], |r| r.get(0))
+                .optional()
+        })
+    }
+
+    pub(crate) fn compare_and_set_mirror_typing_fence(
+        &self,
+        expected: Option<&str>,
+        value: &str,
+    ) -> Result<()> {
+        let changed = self.with(|c| match expected {
+            Some(expected) => c.execute(
+                "UPDATE meta SET value = ?1 WHERE key = 'mirror_typing_fence' AND value = ?2",
+                params![value, expected],
+            ),
+            None => c.execute(
+                "INSERT INTO meta (key, value) VALUES ('mirror_typing_fence', ?1)
+                 ON CONFLICT(key) DO NOTHING",
+                [value],
+            ),
+        })?;
+        if changed != 1 {
+            return Err(Error::Internal("mirror typing fence ownership changed".into()));
+        }
+        Ok(())
+    }
+
     /// Removes a device. Returns whether it existed.
     pub fn remove_peer(&self, id: &DeviceId) -> Result<bool> {
         let peer_str = id.to_string();
