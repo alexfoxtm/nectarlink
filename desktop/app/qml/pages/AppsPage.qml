@@ -11,7 +11,8 @@ Item {
     property string deviceId
     property string deviceName
 
-    // mirror.view is advertised on Windows only (core_host.rs), whatever the phone's state.
+    // The Mac does not run the phone's apps in windows (the desktop's start_app
+    // is view-only), whatever the phone's state.
     readonly property bool macGap: Qt.platform.os === "osx" || Qt.platform.os === "macos"
     readonly property var feature: macGap && deviceId.length > 0
         ? ({ state: "locked", action: "updateApp", target: "desktop" })

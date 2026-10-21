@@ -134,7 +134,8 @@ fn normalize_webcam_camera(cam: &str) -> String {
     if cam.trim().eq_ignore_ascii_case("front") { "front".to_owned() } else { "back".to_owned() }
 }
 
-static CLIPBOARD_AUTO_COPY_FILES: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+static CLIPBOARD_AUTO_COPY_FILES: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(!cfg!(target_os = "macos"));
 static NECTAR_ISLAND: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static STREAM_PC_AUDIO: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static SHARE_PC_STORAGE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -151,14 +152,9 @@ type WindowGeometryState = (Option<String>, Option<i32>, Option<i32>, u32, u32, 
 static WINDOW_GEOMETRY: std::sync::Mutex<WindowGeometryState> =
     std::sync::Mutex::new((None, None, None, DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT, false));
 
-/// Whether a newly received file should be placed on the clipboard.
-///
-/// The stored preference is unchanged. On macOS file pasteboard writes are
-/// not implemented, so the effective value is false and `write_files` is not called.
+/// Whether a newly received file should be placed on the clipboard
+/// (`Settings::copy_received_files`).
 pub fn clipboard_auto_copy_received_files() -> bool {
-    if cfg!(target_os = "macos") {
-        return false;
-    }
     CLIPBOARD_AUTO_COPY_FILES.load(std::sync::atomic::Ordering::Relaxed)
 }
 
@@ -431,8 +427,13 @@ pub struct Settings {
     #[serde(default = "default_local_api_port", alias = "local_api_port")]
     pub local_api_port: u16,
     /// Automatically place small incoming received files onto the Windows clipboard (`CF_HDROP`).
+    /// macOS keeps this key as stored but doesn't read it.
     #[serde(default = "default_true", alias = "clipboard_auto_copy_received_files")]
     pub clipboard_auto_copy_received_files: bool,
+    /// macOS: place finished incoming files on the pasteboard as file URLs for
+    /// Finder. Unset, so off, until the user turns it on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clipboard_auto_copy_received_files_mac: Option<bool>,
     /// Open a single photo or document shared from the phone as soon as it
     /// arrives. Off by default: it's saved in Downloads\Nectarlink either way.
     #[serde(default, alias = "open_shared_files")]
@@ -550,6 +551,7 @@ impl Default for Settings {
             local_api_enabled: false,
             local_api_port: default_local_api_port(),
             clipboard_auto_copy_received_files: true,
+            clipboard_auto_copy_received_files_mac: None,
             open_shared_files: false,
             flow_follow_clipboard: true,
             folder_sync_rules: Vec::new(),
@@ -609,8 +611,28 @@ impl Settings {
         }
     }
 
+    /// The "Copy received files" toggle. macOS has its own key: the shared one
+    /// was saved as `true` while the Mac build couldn't copy files, so it never
+    /// meant the user turned it on there.
+    pub fn copy_received_files(&self) -> bool {
+        if cfg!(target_os = "macos") {
+            self.clipboard_auto_copy_received_files_mac.unwrap_or(false)
+        } else {
+            self.clipboard_auto_copy_received_files
+        }
+    }
+
+    /// Records the user's choice in this platform's key; the other stays as stored.
+    pub fn set_copy_received_files(&mut self, on: bool) {
+        if cfg!(target_os = "macos") {
+            self.clipboard_auto_copy_received_files_mac = Some(on);
+        } else {
+            self.clipboard_auto_copy_received_files = on;
+        }
+    }
+
     pub fn apply_runtime(&self) {
-        set_clipboard_auto_copy_received_files(self.clipboard_auto_copy_received_files);
+        set_clipboard_auto_copy_received_files(self.copy_received_files());
         set_open_shared_files(self.open_shared_files);
         set_flow_follow_clipboard(self.flow_follow_clipboard);
         set_folder_sync_rules(self.folder_sync_rules.clone());
@@ -726,6 +748,7 @@ mod tests {
             local_api_enabled: true,
             local_api_port: 54321,
             clipboard_auto_copy_received_files: false,
+            clipboard_auto_copy_received_files_mac: None,
             open_shared_files: true,
             flow_follow_clipboard: false,
             folder_sync_rules: Vec::new(),
@@ -767,6 +790,44 @@ mod tests {
         fs::write(dir.path().join(FILE_NAME), "{ not json").unwrap();
         assert_eq!(Settings::load(dir.path()), Settings::default());
         assert!(dir.path().join("desktop-settings.json.corrupt").exists());
+    }
+
+    #[test]
+    fn shared_copy_received_files_key_is_kept_but_not_read_on_mac() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join(FILE_NAME), r#"{ "clipboardAutoCopyReceivedFiles": true }"#).unwrap();
+        let loaded = Settings::load(dir.path());
+        assert_eq!(loaded.copy_received_files(), !cfg!(target_os = "macos"));
+        loaded.apply_runtime();
+        assert_eq!(clipboard_auto_copy_received_files(), !cfg!(target_os = "macos"));
+
+        loaded.save(dir.path()).unwrap();
+        let text = fs::read_to_string(dir.path().join(FILE_NAME)).unwrap();
+        assert!(text.contains(r#""clipboardAutoCopyReceivedFiles": true"#));
+        assert!(!text.contains("clipboardAutoCopyReceivedFilesMac"));
+        assert_eq!(Settings::load(dir.path()), loaded);
+    }
+
+    #[test]
+    fn copy_received_files_choice_round_trips_in_this_platforms_key() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join(FILE_NAME), r#"{ "clipboardAutoCopyReceivedFiles": false }"#).unwrap();
+        let mut settings = Settings::load(dir.path());
+        assert!(!settings.copy_received_files());
+
+        for on in [true, false] {
+            settings.set_copy_received_files(on);
+            settings.save(dir.path()).unwrap();
+            let loaded = Settings::load(dir.path());
+            assert_eq!(loaded.copy_received_files(), on);
+            if cfg!(target_os = "macos") {
+                assert_eq!(loaded.clipboard_auto_copy_received_files_mac, Some(on));
+                assert!(!loaded.clipboard_auto_copy_received_files);
+            } else {
+                assert_eq!(loaded.clipboard_auto_copy_received_files, on);
+                assert_eq!(loaded.clipboard_auto_copy_received_files_mac, None);
+            }
+        }
     }
 
     #[test]

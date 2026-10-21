@@ -482,8 +482,9 @@ pub fn on_toast(event: ToastEvent) {
         ToastEvent::Opened { device, key } => {
             if let Ok(dev) = device.parse::<DeviceId>() {
                 let app_target = core_host::host().hub.read(|s| {
-                    let can_open = s.matrices.get(&dev).and_then(|m| m.state("mirroring.app_windows"))
-                        == Some(nectarlink_core::FeatureState::Available);
+                    let can_open = !crate::mirror::VIEW_ONLY
+                        && s.matrices.get(&dev).and_then(|m| m.state("mirroring.app_windows"))
+                            == Some(nectarlink_core::FeatureState::Available);
                     if !can_open {
                         return None;
                     }

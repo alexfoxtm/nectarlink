@@ -4903,83 +4903,88 @@ What it needs
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="355"/>
+        <location filename="../rust_strings.h" line="356"/>
         <source>Saved %1 to %2.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="357"/>
+        <location filename="../rust_strings.h" line="358"/>
         <source>Screenshot from %1, saved in %2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="360"/>
+        <location filename="../rust_strings.h" line="361"/>
         <source>Set up Wireless debugging in Waypair Link on the phone to open its apps here.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="362"/>
+        <location filename="../rust_strings.h" line="363"/>
         <source>The app didn&apos;t open on the phone. Try again, or open Waypair Link on the phone to check Wireless debugging.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="367"/>
+        <location filename="../rust_strings.h" line="368"/>
         <source>This phone&apos;s app doesn&apos;t share its screen yet. Update Waypair Link on the phone.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="354"/>
+        <location filename="../rust_strings.h" line="355"/>
         <source>Saved %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="356"/>
+        <location filename="../rust_strings.h" line="357"/>
         <source>Screenshot copied to clipboard.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="358"/>
+        <location filename="../rust_strings.h" line="359"/>
         <source>Sending %1 files…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="359"/>
+        <location filename="../rust_strings.h" line="360"/>
         <source>Sending %1…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="361"/>
+        <location filename="../rust_strings.h" line="362"/>
         <source>Show in folder</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="363"/>
+        <location filename="../rust_strings.h" line="364"/>
         <source>The phone isn&apos;t connected.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="364"/>
+        <location filename="../rust_strings.h" line="365"/>
         <source>The screenshot couldn&apos;t be copied to the clipboard.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="365"/>
+        <location filename="../rust_strings.h" line="366"/>
         <source>The screenshot couldn&apos;t be saved.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="366"/>
+        <location filename="../rust_strings.h" line="367"/>
         <source>This PC can&apos;t decode the phone&apos;s video.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="368"/>
+        <location filename="../rust_strings.h" line="369"/>
         <source>Wait for the screen to appear first.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../rust_strings.h" line="353"/>
         <source>Recording limit reached. Saved %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="354"/>
+        <source>Recording stopped: the file couldn&apos;t be written.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -5130,7 +5135,7 @@ What it needs
 <context>
     <name>Mp4</name>
     <message>
-        <location filename="../rust_strings.h" line="369"/>
+        <location filename="../rust_strings.h" line="370"/>
         <source>No video frames were recorded yet.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -5224,37 +5229,37 @@ What it needs
 <context>
     <name>Notifications</name>
     <message>
-        <location filename="../rust_strings.h" line="370"/>
+        <location filename="../rust_strings.h" line="371"/>
         <source>Code copied</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="371"/>
+        <location filename="../rust_strings.h" line="372"/>
         <source>Copy code</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="372"/>
+        <location filename="../rust_strings.h" line="373"/>
         <source>Dismissed %1 from %2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="373"/>
+        <location filename="../rust_strings.h" line="374"/>
         <source>Dismissed %1 notifications</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="374"/>
+        <location filename="../rust_strings.h" line="375"/>
         <source>Dismissed from %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="375"/>
+        <location filename="../rust_strings.h" line="376"/>
         <source>Notification dismissed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="376"/>
+        <location filename="../rust_strings.h" line="377"/>
         <source>That notification is gone from the phone.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -5370,17 +5375,17 @@ What it needs
 <context>
     <name>Obs</name>
     <message>
-        <location filename="../rust_strings.h" line="377"/>
+        <location filename="../rust_strings.h" line="378"/>
         <source>OBS isn&apos;t reachable on port %1. Turn on its WebSocket server.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="378"/>
+        <location filename="../rust_strings.h" line="379"/>
         <source>OBS: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="379"/>
+        <location filename="../rust_strings.h" line="380"/>
         <source>The service on that port isn&apos;t OBS.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -5551,7 +5556,7 @@ What it needs
 <context>
     <name>PcMirror</name>
     <message>
-        <location filename="../rust_strings.h" line="380"/>
+        <location filename="../rust_strings.h" line="381"/>
         <source>Can&apos;t find the player&apos;s window. Play the video on this PC again, then turn on Play on phone.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -5785,17 +5790,17 @@ What it needs
 <context>
     <name>PhoneMic</name>
     <message>
-        <location filename="../rust_strings.h" line="381"/>
+        <location filename="../rust_strings.h" line="382"/>
         <source>Tap Start on %1 to use its microphone.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="382"/>
+        <location filename="../rust_strings.h" line="383"/>
         <source>The microphone is turned off for this PC on %1.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="383"/>
+        <location filename="../rust_strings.h" line="384"/>
         <source>Update Waypair Link on %1 to use its microphone.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -5803,62 +5808,62 @@ What it needs
 <context>
     <name>PhotoBackup</name>
     <message>
-        <location filename="../rust_strings.h" line="384"/>
+        <location filename="../rust_strings.h" line="385"/>
         <source>Can&apos;t write to the backup folder.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="385"/>
+        <location filename="../rust_strings.h" line="386"/>
         <source>Copying, %1 left</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="386"/>
+        <location filename="../rust_strings.h" line="387"/>
         <source>Looking for new photos…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="387"/>
+        <location filename="../rust_strings.h" line="388"/>
         <source>Off</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="388"/>
+        <location filename="../rust_strings.h" line="389"/>
         <source>Photo backup is not available on %1.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="389"/>
+        <location filename="../rust_strings.h" line="390"/>
         <source>Photos or Files sharing is turned off for this computer on %1.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="390"/>
+        <location filename="../rust_strings.h" line="391"/>
         <source>The backup folder&apos;s drive is full.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="391"/>
+        <location filename="../rust_strings.h" line="392"/>
         <source>The backup stopped. It tries again in a few minutes.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="392"/>
+        <location filename="../rust_strings.h" line="393"/>
         <source>Turn on Photos and Files sharing for this device to back up its photos.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="393"/>
+        <location filename="../rust_strings.h" line="394"/>
         <source>Up to date</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="394"/>
+        <location filename="../rust_strings.h" line="395"/>
         <source>Up to date, %1 backed up</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="395"/>
+        <location filename="../rust_strings.h" line="396"/>
         <source>Waiting for %1</source>
         <translation type="unfinished"></translation>
     </message>
@@ -5866,67 +5871,67 @@ What it needs
 <context>
     <name>Photos</name>
     <message>
-        <location filename="../rust_strings.h" line="396"/>
+        <location filename="../rust_strings.h" line="397"/>
         <source>Copied to clipboard.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="397"/>
+        <location filename="../rust_strings.h" line="398"/>
         <source>From %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="398"/>
+        <location filename="../rust_strings.h" line="399"/>
         <source>New photo</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="399"/>
+        <location filename="../rust_strings.h" line="400"/>
         <source>New screenshot</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="400"/>
+        <location filename="../rust_strings.h" line="401"/>
         <source>No recent photos found on the phone.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="401"/>
+        <location filename="../rust_strings.h" line="402"/>
         <source>Opening latest photo…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="402"/>
+        <location filename="../rust_strings.h" line="403"/>
         <source>Saved %1 items to %2.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="403"/>
+        <location filename="../rust_strings.h" line="404"/>
         <source>Saved %1 to %2.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="404"/>
+        <location filename="../rust_strings.h" line="405"/>
         <source>That photo isn&apos;t on the phone anymore.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="405"/>
+        <location filename="../rust_strings.h" line="406"/>
         <source>The phone doesn&apos;t share photos or files with this PC.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="406"/>
+        <location filename="../rust_strings.h" line="407"/>
         <source>The phone isn&apos;t connected right now.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="407"/>
+        <location filename="../rust_strings.h" line="408"/>
         <source>The photo couldn&apos;t be copied to the clipboard.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="408"/>
+        <location filename="../rust_strings.h" line="409"/>
         <source>The photo couldn&apos;t be copied. It&apos;s in %1.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -6206,32 +6211,32 @@ What it needs
 <context>
     <name>PlayOnPhone</name>
     <message>
-        <location filename="../rust_strings.h" line="409"/>
+        <location filename="../rust_strings.h" line="410"/>
         <source>Connect your phone to play on it.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="410"/>
+        <location filename="../rust_strings.h" line="411"/>
         <source>Media is turned off for %1.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="411"/>
+        <location filename="../rust_strings.h" line="412"/>
         <source>Opening in %1 on %2. Tap the notification there.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="412"/>
+        <location filename="../rust_strings.h" line="413"/>
         <source>Sent to %1. Tap the notification there.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="413"/>
+        <location filename="../rust_strings.h" line="414"/>
         <source>Tap the notification on %1 to watch.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="414"/>
+        <location filename="../rust_strings.h" line="415"/>
         <source>Update Waypair Link on %1 to play on it.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -6239,7 +6244,7 @@ What it needs
 <context>
     <name>Prefs</name>
     <message>
-        <location filename="../rust_strings.h" line="415"/>
+        <location filename="../rust_strings.h" line="416"/>
         <source>Connected to OBS.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -6247,7 +6252,7 @@ What it needs
 <context>
     <name>Recordings</name>
     <message>
-        <location filename="../rust_strings.h" line="416"/>
+        <location filename="../rust_strings.h" line="417"/>
         <source>Recording from %1 saved</source>
         <translation type="unfinished"></translation>
     </message>
@@ -6263,57 +6268,57 @@ What it needs
 <context>
     <name>SendTo</name>
     <message>
-        <location filename="../rust_strings.h" line="417"/>
+        <location filename="../rust_strings.h" line="418"/>
         <source>Copied to your phone&apos;s clipboard.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="418"/>
+        <location filename="../rust_strings.h" line="419"/>
         <source>Couldn&apos;t reach %1.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="419"/>
+        <location filename="../rust_strings.h" line="420"/>
         <source>Couldn&apos;t send %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="420"/>
+        <location filename="../rust_strings.h" line="421"/>
         <source>Couldn&apos;t send to %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="421"/>
+        <location filename="../rust_strings.h" line="422"/>
         <source>Couldn&apos;t share with %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="422"/>
+        <location filename="../rust_strings.h" line="423"/>
         <source>File failed integrity check; partial file kept to resume.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="423"/>
+        <location filename="../rust_strings.h" line="424"/>
         <source>Send to %1 with Waypair Link</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="424"/>
+        <location filename="../rust_strings.h" line="425"/>
         <source>Sending to %1…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="425"/>
+        <location filename="../rust_strings.h" line="426"/>
         <source>Sent to %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="426"/>
+        <location filename="../rust_strings.h" line="427"/>
         <source>The transfer didn&apos;t go through.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="427"/>
+        <location filename="../rust_strings.h" line="428"/>
         <source>Waiting for %1…</source>
         <translation type="unfinished"></translation>
     </message>
@@ -6909,18 +6914,13 @@ What it needs
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/pages/SettingsPage.qml" line="1240"/>
-        <location filename="../../qml/pages/SettingsPage.qml" line="1245"/>
+        <location filename="../../qml/pages/SettingsPage.qml" line="1239"/>
+        <location filename="../../qml/pages/SettingsPage.qml" line="1244"/>
         <source>Copy received files</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../../qml/pages/SettingsPage.qml" line="1242"/>
-        <source>Copying files to the clipboard isn&apos;t available on Mac yet.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../../qml/pages/SettingsPage.qml" line="1243"/>
         <source>Ready to Ctrl+V incoming files anywhere.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -7773,6 +7773,11 @@ What it needs
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <location filename="../../qml/pages/SettingsPage.qml" line="1241"/>
+        <source>Put finished incoming files on the clipboard, ready to ⌘V in Finder.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <location filename="../../qml/pages/SettingsPage.qml" line="3376"/>
         <source>Update download</source>
         <translation type="unfinished"></translation>
@@ -7912,27 +7917,27 @@ What it needs
 <context>
     <name>Setup</name>
     <message>
-        <location filename="../rust_strings.h" line="428"/>
+        <location filename="../rust_strings.h" line="429"/>
         <source>Couldn&apos;t start setup: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="429"/>
+        <location filename="../rust_strings.h" line="430"/>
         <source>Setup is taking too long. Try again after restarting the PC.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="430"/>
+        <location filename="../rust_strings.h" line="431"/>
         <source>Setup stopped with code %1.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="431"/>
+        <location filename="../rust_strings.h" line="432"/>
         <source>Steps that need administrator rights aren&apos;t available on macOS yet.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="432"/>
+        <location filename="../rust_strings.h" line="433"/>
         <source>The uninstaller is missing. Reinstall Waypair Link, then uninstall it.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -8297,147 +8302,147 @@ What it needs
 <context>
     <name>Timeline</name>
     <message>
-        <location filename="../rust_strings.h" line="433"/>
+        <location filename="../rust_strings.h" line="434"/>
         <source>App window #%1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="434"/>
+        <location filename="../rust_strings.h" line="435"/>
         <source>Clip (removed from clipboard history)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="435"/>
+        <location filename="../rust_strings.h" line="436"/>
         <source>Copied image</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="436"/>
+        <location filename="../rust_strings.h" line="437"/>
         <source>Copied link to clipboard.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="437"/>
+        <location filename="../rust_strings.h" line="438"/>
         <source>Copied to clipboard.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="438"/>
+        <location filename="../rust_strings.h" line="439"/>
         <source>From %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="439"/>
+        <location filename="../rust_strings.h" line="440"/>
         <source>In progress</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="440"/>
+        <location filename="../rust_strings.h" line="441"/>
         <source>No phone is paired yet.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="441"/>
+        <location filename="../rust_strings.h" line="442"/>
         <source>Opened from %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="442"/>
+        <location filename="../rust_strings.h" line="443"/>
         <source>Opened on %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="443"/>
+        <location filename="../rust_strings.h" line="444"/>
         <source>Phone microphone</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="444"/>
+        <location filename="../rust_strings.h" line="445"/>
         <source>Phone webcam</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="445"/>
+        <location filename="../rust_strings.h" line="446"/>
         <source>Recorded on %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="446"/>
+        <location filename="../rust_strings.h" line="447"/>
         <source>Saved from %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="447"/>
+        <location filename="../rust_strings.h" line="448"/>
         <source>Screen mirroring</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="448"/>
+        <location filename="../rust_strings.h" line="449"/>
         <source>Sending to %1…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="449"/>
+        <location filename="../rust_strings.h" line="450"/>
         <source>Sent clip to %1.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="450"/>
+        <location filename="../rust_strings.h" line="451"/>
         <source>Sent to %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="451"/>
+        <location filename="../rust_strings.h" line="452"/>
         <source>Session</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="452"/>
+        <location filename="../rust_strings.h" line="453"/>
         <source>That clip is no longer in clipboard history.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="453"/>
+        <location filename="../rust_strings.h" line="454"/>
         <source>That entry couldn&apos;t be removed. Try again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="454"/>
+        <location filename="../rust_strings.h" line="455"/>
         <source>That file was moved or deleted.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="455"/>
+        <location filename="../rust_strings.h" line="456"/>
         <source>That isn&apos;t a web link.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="456"/>
+        <location filename="../rust_strings.h" line="457"/>
         <source>That photo was moved or deleted.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="457"/>
+        <location filename="../rust_strings.h" line="458"/>
         <source>The Timeline couldn&apos;t be cleared. Try again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="458"/>
+        <location filename="../rust_strings.h" line="459"/>
         <source>The photo couldn&apos;t be copied to the clipboard.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="459"/>
+        <location filename="../rust_strings.h" line="460"/>
         <source>Voice recording</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="460"/>
+        <location filename="../rust_strings.h" line="461"/>
         <source>With %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="461"/>
+        <location filename="../rust_strings.h" line="462"/>
         <source>device</source>
         <translation type="unfinished"></translation>
     </message>
@@ -8729,37 +8734,37 @@ What it needs
 <context>
     <name>Transfers</name>
     <message>
-        <location filename="../rust_strings.h" line="463"/>
+        <location filename="../rust_strings.h" line="464"/>
         <source>Files are turned off for that device.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="462"/>
+        <location filename="../rust_strings.h" line="463"/>
         <source>Accept in Waypair Link to save to %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="464"/>
+        <location filename="../rust_strings.h" line="465"/>
         <source>From %1, opened from %2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="465"/>
+        <location filename="../rust_strings.h" line="466"/>
         <source>From %1, saved in %2</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="466"/>
+        <location filename="../rust_strings.h" line="467"/>
         <source>Nearby device</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="467"/>
+        <location filename="../rust_strings.h" line="468"/>
         <source>That&apos;s too many files to send at once.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="468"/>
+        <location filename="../rust_strings.h" line="469"/>
         <source>There&apos;s nothing to send in there.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -8767,92 +8772,92 @@ What it needs
 <context>
     <name>Updater</name>
     <message>
-        <location filename="../rust_strings.h" line="470"/>
+        <location filename="../rust_strings.h" line="471"/>
         <source>Couldn&apos;t check for updates. Check your internet connection.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="469"/>
+        <location filename="../rust_strings.h" line="470"/>
         <source>Checking for updates…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="471"/>
+        <location filename="../rust_strings.h" line="472"/>
         <source>Couldn&apos;t open the update window.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="472"/>
+        <location filename="../rust_strings.h" line="473"/>
         <source>On this Mac, updates install from the update window. Use Check for updates.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="473"/>
+        <location filename="../rust_strings.h" line="474"/>
         <source>The download was damaged, so it wasn&apos;t installed. Try again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="474"/>
+        <location filename="../rust_strings.h" line="475"/>
         <source>The update couldn&apos;t be downloaded. Check your internet connection and try again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="475"/>
+        <location filename="../rust_strings.h" line="476"/>
         <source>The update couldn&apos;t be saved. Check that there&apos;s free space and try again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="476"/>
+        <location filename="../rust_strings.h" line="477"/>
         <source>The update couldn&apos;t be started. Try again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="477"/>
+        <location filename="../rust_strings.h" line="478"/>
         <source>The update didn&apos;t install</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="478"/>
+        <location filename="../rust_strings.h" line="479"/>
         <source>The update window is already open.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="479"/>
+        <location filename="../rust_strings.h" line="480"/>
         <source>This build can&apos;t check for updates yet.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="480"/>
+        <location filename="../rust_strings.h" line="481"/>
         <source>Update now, or later from Settings.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="481"/>
+        <location filename="../rust_strings.h" line="482"/>
         <source>Waypair Link %1 is available</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="482"/>
+        <location filename="../rust_strings.h" line="483"/>
         <source>Waypair Link %1 is available.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="483"/>
+        <location filename="../rust_strings.h" line="484"/>
         <source>Waypair Link is still on the version you had. Try again from Settings.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="484"/>
+        <location filename="../rust_strings.h" line="485"/>
         <source>Waypair Link is up to date.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="485"/>
+        <location filename="../rust_strings.h" line="486"/>
         <source>Waypair Link is updated to %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="486"/>
+        <location filename="../rust_strings.h" line="487"/>
         <source>Your phone reconnects on its own.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -8860,7 +8865,7 @@ What it needs
 <context>
     <name>Wake</name>
     <message>
-        <location filename="../rust_strings.h" line="487"/>
+        <location filename="../rust_strings.h" line="488"/>
         <source>Waking other PCs isn&apos;t available on macOS yet.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -9102,17 +9107,17 @@ What it needs
 <context>
     <name>Webcam</name>
     <message>
-        <location filename="../rust_strings.h" line="488"/>
+        <location filename="../rust_strings.h" line="489"/>
         <source>Phone as webcam isn&apos;t available on macOS yet.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="489"/>
+        <location filename="../rust_strings.h" line="490"/>
         <source>Starting camera on %1…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="490"/>
+        <location filename="../rust_strings.h" line="491"/>
         <source>Streaming %1 × %2 · %3 fps from %4</source>
         <translation type="unfinished"></translation>
     </message>
@@ -9143,17 +9148,17 @@ What it needs
 <context>
     <name>Widget</name>
     <message>
-        <location filename="../rust_strings.h" line="491"/>
+        <location filename="../rust_strings.h" line="492"/>
         <source>No phone connected</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="492"/>
+        <location filename="../rust_strings.h" line="493"/>
         <source>No recent clipboard items</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="493"/>
+        <location filename="../rust_strings.h" line="494"/>
         <source>Not available</source>
         <translation type="unfinished"></translation>
     </message>

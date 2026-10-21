@@ -186,6 +186,15 @@ pub fn compute_capabilities(
         caps.push(nectarlink_core::MEDIA_STREAM.into());
         caps.push(nectarlink_core::MIC_LISTEN.into());
     }
+    // macOS stays view only: the phone's screen may be received and recorded
+    // video-only, so `mirror.view` is advertised, and the correlation
+    // capability keeps the request and stream generations tagged. Audio,
+    // input, capture, webcam, storage, deck, wake and the rest stay off.
+    #[cfg(target_os = "macos")]
+    {
+        caps.push(nectarlink_core::MIRROR_VIEW.into());
+        caps.push(nectarlink_core::MIRROR_CORRELATION.into());
+    }
     #[cfg(windows)]
     let mut pc_mirror_enabled = crate::pc_mirror::is_active();
     #[cfg(windows)]
@@ -507,7 +516,17 @@ mod tests {
     fn macos_advertises_only_supported_capabilities() {
         let caps = compute_capabilities(None);
         // Ensure unsupported features on macOS are never advertised
-        assert!(!caps.contains(&"mirror.view".into()), "macOS must not advertise mirror.view");
+        // macOS is view only: the phone's screen may be received and recorded
+        // video-only, so `mirror.view` is advertised; audio, input and the rest
+        // stay off.
+        assert!(
+            caps.contains(&"mirror.view".into()),
+            "macOS must advertise mirror.view so the phone's screen can be received"
+        );
+        assert!(
+            caps.contains(&nectarlink_core::MIRROR_CORRELATION.into()),
+            "macOS must advertise mirror.correlation so the request and stream generations stay tagged"
+        );
         assert!(!caps.contains(&"mirror.listen".into()), "macOS must not advertise mirror.listen");
         assert!(!caps.contains(&nectarlink_core::MIRROR_CAPTURE.into()));
         assert!(!caps.contains(&nectarlink_core::MIRROR_INPUT.into()));
@@ -550,5 +569,17 @@ mod tests {
         assert!(caps.contains(&nectarlink_core::CONTACTS_SHOW.into()));
         assert!(caps.contains(&nectarlink_core::SMS_SHOW.into()));
         assert!(caps.contains(&nectarlink_core::TOGGLES_SHOW.into()));
+    }
+
+    /// The Mac's per-peer "Screen mirroring" permission must stay editable: the
+    /// mirroring toggle is not one of the rows the Mac greys out.
+    #[test]
+    fn the_mac_gap_rows_do_not_disable_the_screen_mirroring_permission() {
+        let page = include_str!("../qml/pages/SettingsPage.qml");
+        let list = page.lines().find(|l| l.contains("macGapToggleNames: [")).expect("the Mac gap list");
+        assert!(
+            !list.contains("\"mirroring\""),
+            "the Screen mirroring permission must stay editable on the Mac: {list}"
+        );
     }
 }

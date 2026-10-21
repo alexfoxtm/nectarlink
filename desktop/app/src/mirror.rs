@@ -638,16 +638,19 @@ pub fn stop_recording(window: Window) {
     finish_recording(window, recorder);
 }
 
-/// Feeds `window`'s recorder under the `RECORDERS` lock. Once the stream left
-/// the recorded format or the recording reached its limit, removes that same
-/// recorder under the same lock, so a newer recording started in between is
-/// never the one stopped.
+/// Feeds `window`'s recorder under the `RECORDERS` lock. Once its file can't
+/// be written, the stream left the recorded format or the recording reached
+/// its limit, removes that same recorder under the same lock, so a newer
+/// recording started in between is never the one stopped. A packet the
+/// recorder merely refuses (a malformed one) keeps it recording.
 fn feed_recorder(window: Window, feed: impl FnOnce(&mut MirrorRecorder)) -> Option<MirrorRecorder> {
     let mut guard = RECORDERS.lock().unwrap_or_else(|e| e.into_inner());
     let map = guard.as_mut()?;
     let recorder = map.get_mut(&window)?;
     feed(recorder);
-    if let Some(reason) = recorder.format_changed() {
+    if recorder.io_failure().is_some() {
+        tracing::warn!("mirror recording stopped: its file couldn't be written");
+    } else if let Some(reason) = recorder.format_changed() {
         tracing::info!(reason, "mirror recording stopped: the phone's video format changed");
     } else {
         let reason = recorder.limit_reached()?;
@@ -663,6 +666,7 @@ fn finish_recording(window: Window, recorder: MirrorRecorder) {
     core_host::host().hub.changed(Changes::MIRROR);
     let duration_secs = recorder.started_at().elapsed().as_secs().max(1);
     let limit_reached = recorder.limit_reached().is_some();
+    let io_failed = recorder.io_failure().is_some();
 
     core_host::spawn(async move {
         let res = tokio::task::spawn_blocking(move || recorder.finish()).await;
@@ -720,6 +724,14 @@ fn finish_recording(window: Window, recorder: MirrorRecorder) {
                     file_name,
                     crate::downloads::user_visible_location()
                 ));
+            }
+            // `finish` refuses a recorder whose file couldn't be written, so
+            // nothing is saved. Keep paths in the I/O error out of logs.
+            Ok(Err(_)) if io_failed => {
+                tracing::warn!("mirror recording not saved");
+                let text = tr!("Mirror", "Recording stopped: the file couldn't be written.");
+                set_notice(window, text.clone());
+                show_message(text);
             }
             Ok(Err(msg)) => {
                 set_notice(window, msg.clone());
@@ -4105,6 +4117,67 @@ mod mac_receive_fixture {
         assert!(!contains(&bytes, b"soun"), "video-only file must not carry an audio track");
         let stsz = bytes.windows(4).rposition(|w| w == b"stsz").expect("stsz") + 4;
         assert_eq!(bytes[stsz + 8..stsz + 12], 1u32.to_be_bytes(), "the one frame before the limit");
+
+        sink.ended();
+        drop_fixture_window(window);
+    }
+
+    /// A recording whose file can't be written: a malformed packet only is
+    /// refused and the recording goes on, but the I/O failure stops it, saves
+    /// nothing and says so, and leaves a file this recorder didn't create alone.
+    #[cfg(feature = "test-support")]
+    #[test]
+    fn production_sink_io_failure_stops_recording_without_saving() {
+        use std::collections::HashMap;
+        use std::sync::atomic::Ordering;
+
+        let _fixture = FIXTURE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        fixture_host();
+        fixture_received_dir();
+
+        let device = DeviceId([0x57; 32]);
+        let generation = 0x510E_527F_ADE6_82D1u64;
+        let window = live_screen_request(device, generation);
+        let sink = super::sink(&device, MIRROR_SCREEN).expect("live screen request owns a sink");
+        let idr = fixture_idr();
+        sink.config(fixture_config(128, 128, generation));
+        sink.packet(true, 0, idr.clone());
+
+        // The path is taken: the recorder can't create its file, an I/O failure.
+        let dir = tempfile::tempdir().expect("disposable recording dir");
+        let path = dir.path().join("Mirror taken.mp4");
+        std::fs::write(&path, b"owner").expect("a file the recorder didn't create");
+        let mut recorder =
+            crate::win::mp4::MirrorRecorder::new(path.clone(), 128, 128, super::OPTIONS.fps, None);
+        if let Some(sps_pps) = super::LAST_SPS_PPS
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .and_then(|m| m.get(&window).cloned())
+        {
+            recorder.set_sps_pps(&sps_pps);
+        }
+        {
+            let mut guard = super::RECORDERS.lock().unwrap_or_else(|e| e.into_inner());
+            let map = guard.get_or_insert_with(HashMap::new);
+            map.insert(window, recorder);
+            super::ACTIVE_RECORDERS.store(map.len(), Ordering::Release);
+        }
+        sink.packet(true, 33_333, vec![0x65, 0x88, 0x84]);
+        assert!(super::is_recording(&window), "a malformed packet doesn't stop the recording");
+
+        sink.packet(true, 66_666, idr.clone());
+        assert!(!super::is_recording(&window), "the I/O failure stops the recording");
+        assert_eq!(super::recording_started_ms(&window), 0, "QML's elapsed timer has no start");
+
+        let notice = "Recording stopped: the file couldn't be written.";
+        let started = Instant::now();
+        while super::last_notice(&window) != notice && started.elapsed() < Duration::from_secs(10) {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(super::last_notice(&window), notice, "the stop says the recording failed");
+        assert_eq!(std::fs::read(&path).expect("the other file stays"), b"owner", "never truncated");
+        assert_eq!(std::fs::read_dir(dir.path()).expect("recording dir").count(), 1, "nothing was saved");
 
         sink.ended();
         drop_fixture_window(window);

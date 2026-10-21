@@ -34,7 +34,8 @@
 //! - First-keyframe gating with lazy file creation; `finish` without frames
 //!   fails. `Drop` removes only a file this recorder created (`create_new`
 //!   ownership); an empty recorder never unlinks an existing path. Any I/O
-//!   failure poisons the recorder so `finish` cannot claim a valid file.
+//!   failure poisons the recorder so `finish` cannot claim a valid file;
+//!   `io_failure` reports it so the caller stops.
 //!
 //! Limitations recorded:
 //! - Audio is video-only by design: `new`/`on_audio_config` accept audio
@@ -365,6 +366,13 @@ impl MirrorRecorder {
 
     fn end_limit(&mut self, reason: String) -> String {
         self.limit.get_or_insert(reason).clone()
+    }
+
+    /// Why the output could not be created or written, once it could not.
+    /// The caller should stop: no further sample will be recorded, and
+    /// `finish` fails and removes only output this recorder created.
+    pub fn io_failure(&self) -> Option<&str> {
+        self.poison.as_deref()
     }
 
     /// Accepts audio configuration for caller-API stability; ignored:
@@ -1094,6 +1102,7 @@ mod tests {
         rec.on_packet(false, 0, &params).unwrap();
         // Non-Annex-B bytes are refused rather than muxed as garbage.
         assert!(rec.on_packet(true, 0, &[0x65, 0x88, 0x84]).is_err());
+        assert!(rec.io_failure().is_none(), "a malformed packet is not an I/O failure");
         // Video-only: phone audio is refused, never silently dropped.
         assert!(rec.on_audio(0, &[0u8; 480]).is_err());
         assert!(rec.finish().is_err());
@@ -1116,6 +1125,7 @@ mod tests {
         std::fs::write(&collision, b"owner-bytes").unwrap();
         let mut rec = MirrorRecorder::new(collision.clone(), 32, 32, 30, None);
         assert!(rec.on_packet(false, 0, fixture).is_err(), "collision must fail, not truncate");
+        assert!(rec.io_failure().is_some(), "a file that can't be created ends the recording");
         assert_eq!(std::fs::read(&collision).unwrap(), b"owner-bytes".to_vec());
         assert!(rec.finish().is_err());
         assert_eq!(

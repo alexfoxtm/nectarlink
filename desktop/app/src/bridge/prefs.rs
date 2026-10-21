@@ -344,6 +344,10 @@ pub struct PreferencesRust {
     window_maximized: bool,
     /// What the user chose (`start_with_windows` shows the default until then).
     start_choice: Option<bool>,
+    /// Both stored "Copy received files" keys, saved back as they are
+    /// except for this platform's (`Settings::set_copy_received_files`).
+    copy_files_shared: bool,
+    copy_files_mac: Option<bool>,
     /// Custom recordings folder if chosen (`None` means default).
     custom_recordings_folder: Option<PathBuf>,
 }
@@ -408,7 +412,9 @@ impl cxx_qt::Initialize for qobject::Preferences {
         self.as_mut().set_local_api_port(i32::from(settings.local_api_port));
         let token_path = crate::local_api::token_file_path();
         self.as_mut().set_local_api_token_path(QString::from(&token_path.to_string_lossy().into_owned()));
-        self.as_mut().set_clipboard_auto_copy_received_files(settings.clipboard_auto_copy_received_files);
+        self.as_mut().set_clipboard_auto_copy_received_files(settings.copy_received_files());
+        self.as_mut().rust_mut().copy_files_shared = settings.clipboard_auto_copy_received_files;
+        self.as_mut().rust_mut().copy_files_mac = settings.clipboard_auto_copy_received_files_mac;
         self.as_mut().set_open_shared_files(settings.open_shared_files);
         self.as_mut().set_flow_follow_clipboard(settings.flow_follow_clipboard);
         self.as_mut().set_nectar_island(settings.nectar_island);
@@ -641,9 +647,14 @@ impl cxx_qt::Initialize for qobject::Preferences {
             })
             .release();
         self.as_mut()
-            .on_clipboard_auto_copy_received_files_changed(|p| {
-                crate::settings::set_clipboard_auto_copy_received_files(p.clipboard_auto_copy_received_files);
-                p.save();
+            .on_clipboard_auto_copy_received_files_changed(|mut p| {
+                let on = p.clipboard_auto_copy_received_files;
+                crate::settings::set_clipboard_auto_copy_received_files(on);
+                let mut settings = p.current_settings();
+                settings.set_copy_received_files(on);
+                p.as_mut().rust_mut().copy_files_shared = settings.clipboard_auto_copy_received_files;
+                p.as_mut().rust_mut().copy_files_mac = settings.clipboard_auto_copy_received_files_mac;
+                save_in_background(settings);
             })
             .release();
         self.as_mut()
@@ -1025,7 +1036,8 @@ impl qobject::Preferences {
                 .ok()
                 .filter(|&port| port > 0)
                 .unwrap_or(crate::settings::DEFAULT_LOCAL_API_PORT),
-            clipboard_auto_copy_received_files: p.clipboard_auto_copy_received_files,
+            clipboard_auto_copy_received_files: p.copy_files_shared,
+            clipboard_auto_copy_received_files_mac: p.copy_files_mac,
             open_shared_files: p.open_shared_files,
             flow_follow_clipboard: p.flow_follow_clipboard,
             folder_sync_rules: crate::settings::folder_sync_rules(),

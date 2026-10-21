@@ -19,7 +19,7 @@ Item {
     readonly property bool onMac: Qt.platform.os === "osx" || Qt.platform.os === "macos"
     readonly property string macGapText: qsTr("Not yet available on Mac.")
     // Device toggles that only arm a desktop capability this Mac build doesn't advertise.
-    readonly property var macGapToggleNames: ["mirroring", "pc_mirror", "webcam", "storage", "remote_input", "commands", "recordings"]
+    readonly property var macGapToggleNames: ["pc_mirror", "webcam", "storage", "remote_input", "commands", "recordings", "mic", "remote_files"]
     function macGapToggle(item) {
         return page.onMac && item !== null && page.macGapToggleNames.indexOf(item.name) >= 0
     }
@@ -178,7 +178,8 @@ Item {
         storage: qsTr("File Explorer integration"),
         remote_input: qsTr("Remote mouse, keyboard & Deck"),
         commands: qsTr("Run Deck shell commands"),
-        remote_files: qsTr("Remote PC file access")
+        remote_files: qsTr("Remote PC file access"),
+        mic: qsTr("Phone as microphone")
     })
 
     readonly property var toggleIcons: ({
@@ -199,7 +200,8 @@ Item {
         storage: Icons.folder,
         remote_input: Icons.deck,
         commands: Icons.terminal,
-        remote_files: Icons.globe
+        remote_files: Icons.globe,
+        mic: Icons.mic
     })
 
     readonly property var toggleDescriptions: ({
@@ -1235,16 +1237,14 @@ Item {
                                     ? Math.round((parent.height - height) / 2)
                                     : (copyOtpRow.implicitHeight + 1)
                                 width: copyPairRow.colWidth
-                                opacity: page.onMac ? 0.5 : 1.0
                                 iconPath: Icons.copy
                                 title: qsTr("Copy received files")
                                 description: Qt.platform.os === "osx"
-                                    ? qsTr("Copying files to the clipboard isn't available on Mac yet.")
+                                    ? qsTr("Put finished incoming files on the clipboard, ready to ⌘V in Finder.")
                                     : qsTr("Ready to Ctrl+V incoming files anywhere.")
                                 Toggle {
                                     label: qsTr("Copy received files")
-                                    enabled: Qt.platform.os !== "osx"
-                                    checked: enabled && Preferences.clipboardAutoCopyReceivedFiles
+                                    checked: Preferences.clipboardAutoCopyReceivedFiles
                                     onToggled: (on) => Preferences.clipboardAutoCopyReceivedFiles = on
                                 }
                             }

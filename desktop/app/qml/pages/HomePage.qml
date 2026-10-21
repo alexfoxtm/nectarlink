@@ -1243,8 +1243,7 @@ Item {
                     title: qsTr("Mirror screen")
                     subtitle: ""
                     iconPath: Icons.mirror
-                    // mirror.view stays off pending native peer/render acceptance.
-                    macPortGap: true
+                    // The Mac receives the phone's screen; it does not inject input.
                     feature: home.feature("mirroring.view")
                     // The phone's screen is showing (its session is 0).
                     active: {
@@ -1256,7 +1255,7 @@ Item {
                         }
                     }
                     onClicked: Mirror.start(home.deviceId)
-                    sideIcon: home.feature("mirroring.app_windows").state === "available" ? Icons.apps : ""
+                    sideIcon: !home.onMac && home.feature("mirroring.app_windows").state === "available" ? Icons.apps : ""
                     sideLabel: qsTr("Open an app")
                     onSideClicked: appsSheet.openFor(home.deviceId, home.name)
                 }
@@ -1714,7 +1713,7 @@ Item {
                                 clock: feedClock.minutes
                                 visible: deviceId === home.deviceId
                                 height: visible ? implicitHeight : 0
-                                canOpenApp: home.feature("mirroring.app_windows").state === "available" && app.length > 0
+                                canOpenApp: !home.onMac && home.feature("mirroring.app_windows").state === "available" && app.length > 0
                                 onOpenAppRequested: Mirror.startApp(deviceId, app, appName.length > 0 ? appName : app)
                                 onOptionsRequested: appSheet.openFor(app, appName)
                                 onImageClicked: (url) => imagePreviewSheet.openFor(url, title.length > 0 ? title : appName)
@@ -2229,6 +2228,8 @@ Item {
                 readonly property bool available: remoteInputFeature.state === "available"
                 readonly property bool canStart: home.online
                 readonly property bool activeHere: Mirror.keyboardDevice === home.deviceId
+                // The Mac viewer does not inject keyboard input.
+                readonly property bool macGap: home.onMac && !activeHere
                 property string lastSent: ""
 
                 onActiveHereChanged: {
@@ -2258,7 +2259,7 @@ Item {
                                     : (Theme.graphite ? "transparent" : Theme.secondaryContainer)
                                 border.width: Theme.graphite ? 1 : 0
                                 border.color: Theme.outlineVariant
-                                opacity: typeOnPhoneCard.canStart ? 1 : 0.55
+                                opacity: typeOnPhoneCard.canStart && !typeOnPhoneCard.macGap ? 1 : 0.55
                                 Behavior on color { enabled: !Theme.reduceMotion; ColorAnimation { duration: Theme.fadeFast } }
                                 Icon {
                                     anchors.centerIn: parent
@@ -2277,7 +2278,7 @@ Item {
                                     size: 13
                                     elide: Text.ElideRight
                                     text: qsTr("Type on phone")
-                                    opacity: typeOnPhoneCard.canStart ? 1 : 0.6
+                                    opacity: typeOnPhoneCard.canStart && !typeOnPhoneCard.macGap ? 1 : 0.6
                                 }
                                 Txt {
                                     visible: typeOnPhoneCard.activeHere || !typeOnPhoneCard.canStart
@@ -2298,8 +2299,7 @@ Item {
                             anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
                             visible: typeOnPhoneCard.canStart
-                            // Needs mirror.view, which this Mac build doesn't advertise.
-                            enabled: !home.onMac || typeOnPhoneCard.activeHere
+                            enabled: !typeOnPhoneCard.macGap
                             variant: typeOnPhoneCard.activeHere ? "fill" : "tonal"
                             size: "sm"
                             text: typeOnPhoneCard.activeHere ? qsTr("Stop") : qsTr("Start")
@@ -2692,7 +2692,7 @@ Item {
                             required property string app
                             width: historyColumn.width
                             visible: historySearch.matches([appName, title, text, sub])
-                            canOpenApp: (AppController.capsRevision >= 0
+                            canOpenApp: (Qt.platform.os !== "osx" && Qt.platform.os !== "macos") && (AppController.capsRevision >= 0
                                 && AppController.featureState(deviceId, "mirroring.app_windows").state === "available")
                                 && app.length > 0
                             onOpenAppRequested: {

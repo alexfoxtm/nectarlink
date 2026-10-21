@@ -139,6 +139,12 @@ impl MirrorRecorder {
         None
     }
 
+    /// Media Foundation reports a failed write per sample, so no failure
+    /// ends a recording on its own here.
+    pub fn io_failure(&self) -> Option<&str> {
+        None
+    }
+
     /// Updates audio configuration before the first keyframe initializes the writer.
     pub fn on_audio_config(&mut self, rate: u32, channels: u8) {
         if self.writer.is_none() && rate > 0 && channels > 0 {

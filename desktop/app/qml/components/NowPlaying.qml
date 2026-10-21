@@ -147,6 +147,8 @@ Card {
     readonly property int remainingSeconds: Math.floor(Math.max(0, card.duration - card.shown) / 1000)
 
     readonly property bool isLocalPc: card.deviceId === "local"
+    // pc_audio_stream.rs captures with WASAPI only, so a Mac can't route its sound to the phone.
+    readonly property bool onMac: Qt.platform.os === "osx" || Qt.platform.os === "macos"
     property int dragVolume: -1
     readonly property int currentVolume: dragVolume >= 0
         ? dragVolume
@@ -744,7 +746,7 @@ Card {
                     id: volBar
                     anchors.left: muteBtn.right
                     anchors.leftMargin: 6
-                    anchors.right: speakerRoutePill.left
+                    anchors.right: card.onMac ? speakerRouteLock.left : speakerRoutePill.left
                     anchors.rightMargin: 8
                     anchors.verticalCenter: parent.verticalCenter
                     height: 16
@@ -793,8 +795,19 @@ Card {
                     }
                 }
 
+                LockChip {
+                    id: speakerRouteLock
+                    visible: card.onMac
+                    height: implicitHeight
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    maxWidth: parent.width / 2
+                    feature: ({ state: "locked", action: "updateApp", target: "desktop" })
+                }
+
                 Rectangle {
                     id: speakerRoutePill
+                    visible: !card.onMac
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     height: 22
