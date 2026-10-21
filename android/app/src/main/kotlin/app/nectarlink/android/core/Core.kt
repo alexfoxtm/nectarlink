@@ -335,8 +335,9 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
         MirrorService.session.map { it.active }.distinctUntilChanged(),
         WebcamService.session.map { it.active || it.connecting }.distinctUntilChanged(),
         MicService.streaming.map { it != null }.distinctUntilChanged(),
-    ) { hasTransfers: Boolean, isMirroring: Boolean, isWebcam: Boolean, isMic: Boolean ->
-        hasTransfers || isMirroring || isWebcam || isMic
+        pcSpeakerPlayer.playing.map { it }.distinctUntilChanged(),
+    ) { hasTransfers: Boolean, isMirroring: Boolean, isWebcam: Boolean, isMic: Boolean, isSpeaker: Boolean ->
+        hasTransfers || isMirroring || isWebcam || isMic || isSpeaker
     }.stateIn(scope, SharingStarted.Eagerly, false)
 
     /** Short messages for the user (a command failed). */

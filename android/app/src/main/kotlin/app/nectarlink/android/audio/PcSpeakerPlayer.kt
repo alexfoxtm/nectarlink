@@ -10,6 +10,9 @@ import android.util.Log
 import java.util.concurrent.LinkedBlockingDeque
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * Plays live PCM-16LE audio frames streamed from a paired PC (`pc.audio.relay`)
@@ -18,7 +21,9 @@ import java.util.concurrent.atomic.AtomicBoolean
  * dedicated `THREAD_PRIORITY_URGENT_AUDIO` worker maintains a tight ~35–45 ms
  * jitter cushion without ever calling `pause()`/`flush()` mid-stream.
  */
-class PcSpeakerPlayer {
+class PcSpeakerPlayer(
+    private val activity: ActivityWindow = ActivityWindow(ACTIVE_WINDOW_MS),
+) {
     private class AudioChunk(
         val sampleRate: Int,
         val channels: Int,
@@ -27,12 +32,26 @@ class PcSpeakerPlayer {
 
     private val queue = LinkedBlockingDeque<AudioChunk>(MAX_QUEUE_CHUNKS)
     private val workerRunning = AtomicBoolean(false)
+    private val watchdogRunning = AtomicBoolean(false)
+    @Volatile
+    private var watchdogThread: Thread? = null
+
+    private val _playing = MutableStateFlow(false)
+
+    /** True while audio frames arrived within the trailing [ACTIVE_WINDOW_MS]. */
+    val playing: StateFlow<Boolean> = _playing.asStateFlow()
 
     @Volatile
     private var queuedBytes: Int = 0
 
     fun playFrame(sampleRate: Int, channels: Int, pcm: ByteArray) {
         if (pcm.isEmpty() || sampleRate <= 0 || channels <= 0) return
+        activity.markActive()
+        if (!_playing.value) {
+            _playing.value = true
+        }
+        ensureWatchdog()
+
         val safeRate = sampleRate.coerceIn(8_000, 96_000)
         val safeChannels = if (channels >= 2) 2 else 1
         val frameBytes = safeChannels * 2
@@ -59,11 +78,49 @@ class PcSpeakerPlayer {
     }
 
     fun stop() {
+        activity.reset()
+        _playing.value = false
+        watchdogThread?.interrupt()
         synchronized(queue) {
             queue.clear()
             queuedBytes = 0
             // Poison pill with rate = 0 signals immediate stop.
             queue.offerFirst(AudioChunk(0, 0, ByteArray(0)))
+        }
+    }
+
+    private fun ensureWatchdog() {
+        if (watchdogRunning.compareAndSet(false, true)) {
+            Thread(::runWatchdogLoop, "nectarlink-pc-speaker-watchdog").apply {
+                isDaemon = true
+                start()
+            }
+        }
+    }
+
+    private fun runWatchdogLoop() {
+        watchdogThread = Thread.currentThread()
+        try {
+            while (true) {
+                Thread.sleep(WATCHDOG_CHECK_INTERVAL_MS)
+                if (!activity.isActive()) {
+                    _playing.value = false
+                    break
+                }
+            }
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            _playing.value = false
+        } finally {
+            watchdogThread = null
+            watchdogRunning.set(false)
+            if (activity.isActive() && watchdogRunning.compareAndSet(false, true)) {
+                _playing.value = true
+                Thread(::runWatchdogLoop, "nectarlink-pc-speaker-watchdog").apply {
+                    isDaemon = true
+                    start()
+                }
+            }
         }
     }
 
@@ -226,5 +283,7 @@ class PcSpeakerPlayer {
         private const val TAG = "PcSpeakerPlayer"
         private const val INACTIVITY_TIMEOUT_MS = 30_000L
         private const val MAX_QUEUE_CHUNKS = 96
+        const val ACTIVE_WINDOW_MS = 3_000L
+        private const val WATCHDOG_CHECK_INTERVAL_MS = 1_000L
     }
 }
