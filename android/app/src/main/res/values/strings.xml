@@ -412,7 +412,7 @@
     <string name="mic_pc_toggle">Use this phone as a microphone</string>
     <string name="mic_pc_toggle_hint">On by default. This PC can ask for the microphone. It only turns on when you tap Start.</string>
     <string name="mirroring_pc_toggle">Screen sharing and typing</string>
-    <string name="mirroring_pc_toggle_hint">On by default. This PC can ask to see this phone\'s screen and type on it. After Stop typing, turn this off and on to let it type again.</string>
+    <string name="mirroring_pc_toggle_hint">Allow this computer to view this phone’s screen. Phone control is a separate setting.</string>
     <string name="recorder_notification_recording">Recording for %1$s</string>
     <string name="recorder_notification_paused">Recording paused (%1$s)</string>
     <string name="recorder_permission_title">Allow microphone access</string>
@@ -1405,6 +1405,9 @@
     <string name="device_name_in_profile">%1$s (%2$s)</string>
     <string name="profile_work">Work</string>
     <string name="profile_other">Second profile</string>
+    <string name="phone_control_pc_toggle">Allow phone control</string>
+    <string name="phone_control_pc_toggle_hint">Allow this trusted computer to tap, scroll and type only while this phone’s screen is shared. Off by default. This switch does not undo Stop.</string>
+    <string name="mirror_request_text_control">It can also tap, scroll and type on this phone. Tap to share it. You can stop anytime.</string>
 </resources>
 
 

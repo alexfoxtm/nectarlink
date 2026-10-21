@@ -396,7 +396,7 @@
     <string name="mic_pc_toggle">将此手机用作麦克风</string>
     <string name="mic_pc_toggle_hint">默认开启。此电脑可以请求使用麦克风，只有在你轻触“开始”后才会开启。</string>
     <string name="mirroring_pc_toggle">屏幕共享和输入</string>
-    <string name="mirroring_pc_toggle_hint">默认开启。此电脑可以请求查看此手机的屏幕并在上面输入。轻触“停止输入”后，先关闭再打开此开关，即可让它重新输入。</string>
+    <string name="mirroring_pc_toggle_hint">允许这台电脑查看此手机的屏幕。控制手机需另行允许。</string>
     <string name="recorder_notification_recording">正在为 %1$s 录音</string>
     <string name="recorder_notification_paused">录音已暂停（%1$s）</string>
     <string name="recorder_permission_title">允许使用麦克风</string>
@@ -1264,4 +1264,7 @@
     <string name="device_name_in_profile">%1$s（%2$s）</string>
     <string name="profile_work">工作</string>
     <string name="profile_other">第二资料</string>
+    <string name="phone_control_pc_toggle">允许控制此手机</string>
+    <string name="phone_control_pc_toggle_hint">仅在共享此手机屏幕时，允许这台受信任的电脑点击、滚动和输入文字。默认关闭。此开关不会解除“停止控制”。</string>
+    <string name="mirror_request_text_control">它还可以在这部手机上点按、滚动和输入。点按即可共享，随时可以停止。</string>
 </resources>

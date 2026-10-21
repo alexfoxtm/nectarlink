@@ -151,8 +151,10 @@ data class Device(
     val storageEnabled: Boolean = false,
     /** Whether this PC may ask for this phone's microphone (on by default). */
     val micEnabled: Boolean = true,
-    /** Whether this PC may mirror this phone's screen and type on it (on by default). */
+    /** Whether this PC may view this phone's screen (on by default). */
     val mirroringEnabled: Boolean = true,
+    /** Explicit phone-owner grant for this trusted PC, independent of viewing and Stop. */
+    val phoneControlEnabled: Boolean = false,
 ) {
     /** A paired phone or tablet rather than a PC. */
     val isAndroid: Boolean
@@ -274,6 +276,7 @@ data class CoreState(
         storageAllowed: Set<String> = emptySet(),
         micOff: Set<String> = emptySet(),
         mirroringOff: Set<String> = emptySet(),
+        phoneControlAllowed: Set<String> = emptySet(),
     ): CoreState {
         val prevById = devices.associateBy { it.id }
         return copy(
@@ -285,6 +288,7 @@ data class CoreState(
                     storageEnabled = if (p.id in storageAllowed) true else prev?.storageEnabled ?: false,
                     micEnabled = p.id !in micOff,
                     mirroringEnabled = p.id !in mirroringOff,
+                    phoneControlEnabled = p.id in phoneControlAllowed,
                 )
             }.sortedWith(deviceOrder),
         )
@@ -329,6 +333,9 @@ data class CoreState(
 
     fun withMirroringEnabled(id: String, enabled: Boolean): CoreState =
         update(id) { it.copy(mirroringEnabled = enabled) }
+
+    fun withPhoneControlEnabled(id: String, enabled: Boolean): CoreState =
+        update(id) { it.copy(phoneControlEnabled = enabled) }
 
     fun withTypingStopped(id: String, stopped: Boolean): CoreState =
         copy(typingStoppedPcIds = if (stopped) typingStoppedPcIds + id else typingStoppedPcIds - id)

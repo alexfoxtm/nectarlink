@@ -22,6 +22,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.IntentCompat
 import app.nectarlink.android.NectarlinkApplication
 import app.nectarlink.android.R
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -58,6 +59,8 @@ class MirrorService : Service() {
     private var pcId: String? = null
     /** The live capture's request generation (`null` predates correlation); stale jobs compare against it. */
     @Volatile private var activeRequest: ULong? = null
+    @Volatile private var activeConnection: ULong? = null
+    @Volatile private var controlAllowed = false
     /**
      * Service-local capture generation, incremented on every [tearDownCapture]
      * (main thread only). Fences jobs whose (pc, request) could match again
@@ -65,23 +68,45 @@ class MirrorService : Service() {
      * MediaProjection callback queued by `projection.stop()`.
      */
     private var captureEpoch = 0L
+    /**
+     * The newest start delivered (main thread only). Stopping through it, not
+     * unconditionally, keeps a start sent after it (a Mac reconnect) alive
+     * when the old capture's stream ends first.
+     */
+    private var lastStartId = 0
     private var stayAwake: Boolean = false
     private var screenOff: Boolean = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        lastStartId = startId
         if (intent?.action == ACTION_STOP) {
-            stopSharing()
+            stopByUser()
             return START_NOT_STICKY
         }
         val pc = intent?.getStringExtra(EXTRA_PC)
         val isElevated = intent?.getBooleanExtra(EXTRA_ELEVATED, false) == true
         val consent = intent?.let { IntentCompat.getParcelableExtra(it, EXTRA_CONSENT, Intent::class.java) }
         val requestToken = if (intent?.hasExtra(EXTRA_REQUEST) == true) intent.getLongExtra(EXTRA_REQUEST, 0L).toULong() else null
+        val originalConnection = if (intent?.hasExtra(EXTRA_CONNECTION) == true) intent.getLongExtra(EXTRA_CONNECTION, 0L).toULong() else null
+        val issue = intent?.getLongExtra(EXTRA_ISSUE, 0L) ?: 0L
         val busy = projection != null || elevatedSocket != null || elevatedStarting
-        if (pc == null || (!isElevated && consent == null)) {
-            if (!busy) stopSelf()
+        if (pc == null || (!isElevated && consent == null) || !MirrorSessionPolicy.admitsStart(issue, stoppedThrough)) {
+            // A start sent before a Stop on this phone: the Stop wins, and a
+            // capture started after it stays.
+            if (!busy) stopSelf(startId)
+            return START_NOT_STICKY
+        }
+        val core = (application as NectarlinkApplication).core
+        val captureOwner = requestToken?.let { core.mirrorCaptureContext(pc, it) }
+        if (!MirrorSessionPolicy.admitsCaptureOwner(
+                requestToken, originalConnection, captureOwner?.connection,
+                originalConnection?.let { core.mirrorConnectionCurrent(pc, it) } == true,
+            )) {
+            // Consent/start from a stopped, unpaired, replaced or older connection.
+            // Leave any later live capture intact.
+            if (!busy) stopSelf(startId)
             return START_NOT_STICKY
         }
         if (busy && !MirrorSessionPolicy.shouldPreempt(pcId, activeRequest, pc, requestToken)) {
@@ -95,7 +120,6 @@ class MirrorService : Service() {
             // reopen this request.
             tearDownCapture()
         }
-        val core = (application as NectarlinkApplication).core
         val name = core.state.value.nameOf(pc).orEmpty()
         createChannel(this)
         val maxSize = intent.getIntExtra(EXTRA_MAX_SIZE, 1920)
@@ -110,6 +134,8 @@ class MirrorService : Service() {
             ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(name), type)
             pcId = pc
             activeRequest = requestToken
+            activeConnection = originalConnection
+            controlAllowed = true
             val myEpoch = captureEpoch
             current = this
             _session.value = MirrorSession(
@@ -121,7 +147,7 @@ class MirrorService : Service() {
             )
             val fallbackRequest = MirrorRequest(pc, maxSize, fps, bitrate, audio, stayAwake, screenOff, requestToken)
             elevatedStarting = true
-            startElevatedStream(core, pc, name, fallbackRequest, myEpoch)
+            startElevatedStream(core, pc, name, fallbackRequest, myEpoch, originalConnection)
             return START_NOT_STICKY
         }
 
@@ -138,8 +164,17 @@ class MirrorService : Service() {
             return START_NOT_STICKY
         }
         projection = granted
+        if (!MirrorSessionPolicy.admitsCaptureOwner(
+                requestToken, originalConnection, requestToken?.let { core.mirrorCaptureContext(pc, it)?.connection },
+                originalConnection?.let { core.mirrorConnectionCurrent(pc, it) } == true,
+            )) {
+            stopSharing()
+            return START_NOT_STICKY
+        }
         pcId = pc
         activeRequest = requestToken
+        activeConnection = originalConnection
+        controlAllowed = true
         current = this
         _session.value = MirrorSession(
             active = true,
@@ -160,9 +195,12 @@ class MirrorService : Service() {
             // Fenced: tearDownCapture's projection.stop() queues the OLD
             // callback, which must not kill the replacement.
             override fun onStop() {
+                if (MirrorSessionPolicy.isLive(captureEpoch, pcId, activeRequest, myEpoch, myPc, myRequest)) {
+                    controlAllowed = false
+                }
                 main.post {
                     if (!MirrorSessionPolicy.isLive(captureEpoch, pcId, activeRequest, myEpoch, myPc, myRequest)) return@post
-                    stopSharing()
+                    stopByUser()
                 }
             }
         }, main)
@@ -198,6 +236,7 @@ class MirrorService : Service() {
         pcName: String,
         request: MirrorRequest,
         myEpoch: Long,
+        originalConnection: ULong?,
     ) = scope.launch {
         val myPc = pc
         val myRequest = request.request
@@ -224,12 +263,12 @@ class MirrorService : Service() {
             elevatedStarting = false
             if (socket == null) {
                 stopSharing()
-                MirrorRequests.show(this@MirrorService, request, pcName)
+                MirrorRequests.show(this@MirrorService, request, pcName, originalConnection)
                 return@post
             }
             elevatedSocket = socket
             watchDisplay(socket, request, initW, initH)
-            scope.launch { streamElevated(core, myPc, pcName, request, socket, codec, myEpoch) }
+            scope.launch { streamElevated(core, myPc, pcName, request, socket, codec, myEpoch, originalConnection) }
         }
     }
 
@@ -276,6 +315,7 @@ class MirrorService : Service() {
         socket: java.net.Socket,
         codec: String,
         myEpoch: Long,
+        originalConnection: ULong?,
     ) {
         val stream = runCatching { core.mirrorOpen(pc) }.getOrElse {
             Log.w(TAG, "can't stream to the PC", it)
@@ -327,7 +367,7 @@ class MirrorService : Service() {
                 if (!MirrorSessionPolicy.isLive(captureEpoch, pcId, activeRequest, myEpoch, pc, request.request)) return@post
                 stopSharing()
                 if (fallback) {
-                    MirrorRequests.show(this@MirrorService, request, pcName)
+                    MirrorRequests.show(this@MirrorService, request, pcName, originalConnection)
                 }
             }
         }
@@ -387,6 +427,7 @@ class MirrorService : Service() {
     }
 
     private fun stopSharing() {
+        controlAllowed = false
         stayAwake = false
         screenOff = false
         _session.value = MirrorSession()
@@ -394,7 +435,27 @@ class MirrorService : Service() {
         tearDownCapture()
         if (current === this) current = null
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
-        stopSelf()
+        stopSelf(lastStartId)
+    }
+
+    /**
+     * A Stop from this phone's user (notification, app, or revoking the
+     * capture): also refuses the starts already sent, so none brings the
+     * capture back. Only while sharing: a start sent then reached a
+     * foreground service, so it may be dropped without `startForeground`.
+     */
+    private fun stopByUser() {
+        controlAllowed = false
+        if (current === this) {
+            stoppedThrough = issued.get()
+            val pc = pcId
+            val request = activeRequest
+            val connection = activeConnection
+            if (pc != null && request != null && connection != null) {
+                (application as NectarlinkApplication).core.declineMirrorRequest(pc, request, connection)
+            }
+        }
+        stopSharing()
     }
 
     /**
@@ -407,6 +468,8 @@ class MirrorService : Service() {
      * check instead of killing the replacement.
      */
     private fun tearDownCapture() {
+        controlAllowed = false
+        activeConnection = null
         captureEpoch++
         elevatedDisplayListener?.let {
             getSystemService(android.hardware.display.DisplayManager::class.java)?.unregisterDisplayListener(it)
@@ -447,9 +510,17 @@ class MirrorService : Service() {
         private const val EXTRA_STAY_AWAKE = "stayAwake"
         private const val EXTRA_SCREEN_OFF = "screenOff"
         private const val EXTRA_REQUEST = "request"
+        private const val EXTRA_CONNECTION = "connection"
+        private const val EXTRA_ISSUE = "issue"
 
         /** The service sharing the screen now, if any. */
         @Volatile private var current: MirrorService? = null
+
+        /** Stamps each start sent to the service, in sending order. */
+        private val issued = AtomicLong()
+
+        /** The last start issued before the user's latest Stop; see [MirrorSessionPolicy.admitsStart]. */
+        @Volatile private var stoppedThrough = 0L
 
         private val _session = MutableStateFlow(MirrorSession())
         val session: StateFlow<MirrorSession> = _session.asStateFlow()
@@ -461,7 +532,7 @@ class MirrorService : Service() {
         }
 
         /** Starts sharing with `request`'s PC, with the user's consent (from the capture prompt). */
-        fun start(context: Context, request: MirrorRequest, result: Int, consent: Intent) {
+        fun start(context: Context, request: MirrorRequest, result: Int, consent: Intent, connection: ULong?) {
             val intent = Intent(context, MirrorService::class.java)
                 .putExtra(EXTRA_PC, request.pcId)
                 .putExtra(EXTRA_CONSENT, consent)
@@ -472,7 +543,9 @@ class MirrorService : Service() {
                 .putExtra(EXTRA_AUDIO, request.audio)
                 .putExtra(EXTRA_STAY_AWAKE, request.stayAwake)
                 .putExtra(EXTRA_SCREEN_OFF, request.screenOff)
+                .putExtra(EXTRA_ISSUE, issued.incrementAndGet())
             if (request.request != null) intent.putExtra(EXTRA_REQUEST, request.request.toLong())
+            if (connection != null) intent.putExtra(EXTRA_CONNECTION, connection.toLong())
             ContextCompat.startForegroundService(context, intent)
         }
 
@@ -480,7 +553,7 @@ class MirrorService : Service() {
          * Starts full-screen sharing with `request`'s PC immediately through
          * the Elevated shell helper, without a `MediaProjection` consent prompt.
          */
-        fun startElevated(context: Context, request: MirrorRequest): Boolean {
+        fun startElevated(context: Context, request: MirrorRequest, connection: ULong): Boolean {
             if (!app.nectarlink.android.elevated.Elevated.running) return false
             val intent = Intent(context, MirrorService::class.java)
                 .putExtra(EXTRA_PC, request.pcId)
@@ -491,23 +564,45 @@ class MirrorService : Service() {
                 .putExtra(EXTRA_AUDIO, request.audio)
                 .putExtra(EXTRA_STAY_AWAKE, request.stayAwake)
                 .putExtra(EXTRA_SCREEN_OFF, request.screenOff)
+                .putExtra(EXTRA_ISSUE, issued.incrementAndGet())
             if (request.request != null) intent.putExtra(EXTRA_REQUEST, request.request.toLong())
+            intent.putExtra(EXTRA_CONNECTION, connection.toLong())
             return runCatching {
                 ContextCompat.startForegroundService(context, intent)
                 true
             }.getOrDefault(false)
         }
 
-        /** The PC stopped watching. */
-        fun stop(pcId: String) {
+        /** The PC stopped this exact request. Keep the token through posting. */
+        fun stop(pcId: String, request: ULong? = null) {
             val service = current ?: return
-            service.main.post { if (service.pcId == pcId) service.stopSharing() }
+            val stoppedRequest = request ?: service.activeRequest
+            val stoppedEpoch = service.captureEpoch
+            if (service.pcId == pcId && service.activeRequest == stoppedRequest) {
+                service.controlAllowed = false
+            }
+            service.main.post {
+                if (service.pcId == pcId && service.activeRequest == stoppedRequest && service.captureEpoch == stoppedEpoch) service.stopSharing()
+            }
+        }
+
+        /** Only an actual live capture on the original peer/request/connection. */
+        fun isControlTarget(pcId: String, context: app.nectarlink.core.PhoneControlContext): Boolean {
+            val service = current ?: return false
+            val epoch = service.captureEpoch
+            return MirrorSessionPolicy.canControl(
+                service.controlAllowed, service.pcId, service.activeRequest, service.activeConnection,
+                pcId, context.request, context.connection,
+            ) && service.controlAllowed && epoch == service.captureEpoch && current === service
         }
 
         /** Stops any active screen mirroring session from the UI. */
         fun stopCurrent() {
             val service = current ?: return
-            service.main.post { service.stopSharing() }
+            // Deny posted input before this phone's Stop tap returns, not only
+            // when the later main-thread capture teardown executes.
+            service.controlAllowed = false
+            service.main.post { service.stopByUser() }
         }
 
         /** The PC needs a keyframe. */

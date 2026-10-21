@@ -5073,6 +5073,10 @@ fn describe_upgrade(upgrade: &Upgrade) -> String {
         UpgradeAction::EnablePath(ConnectionPath::Relay) => "turn on Away mode".into(),
         UpgradeAction::EnablePath(path) => format!("enable the {path:?} connection"),
         UpgradeAction::EnableDeviceToggle(t) => format!("allow {t} (nectarlink toggle <device> {t} on)"),
+        UpgradeAction::AllowPhoneControl => "on the phone, allow this trusted PC to control the phone".into(),
+        UpgradeAction::RearmPhoneControl => {
+            "on the phone, turn mirroring off and on to rearm control after Stop".into()
+        }
         UpgradeAction::UpdateApp(Role::Phone) => "update the app on the phone".into(),
         UpgradeAction::UpdateApp(Role::Desktop) => "update the app on the PC".into(),
     };

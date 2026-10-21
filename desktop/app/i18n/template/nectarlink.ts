@@ -4992,6 +4992,31 @@ What it needs
         <source>Recording stopped: the file couldn&apos;t be written.</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <location filename="../rust_strings.h" line="348" />
+        <source>Connect the phone and start screen mirroring to control it.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="349" />
+        <source>Phone control was stopped on the phone. To allow this computer again, turn Screen sharing and typing off and then on for this computer in Waypair Link's settings on the phone.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="354" />
+        <source>On the phone, allow this computer to control the phone in Settings.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="355" />
+        <source>On the phone, enable Control from your PC or start Elevated mode.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="356" />
+        <source>Phone control is unavailable for this connection.</source>
+        <translation type="unfinished" />
+    </message>
 </context>
 <context>
     <name>MirrorWindow</name>
@@ -5170,6 +5195,41 @@ What it needs
         <location filename="../../qml/MirrorWindow.qml" line="559"/>
         <source>Try again</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../qml/MirrorWindow.qml" line="36" />
+        <source>Phone control is on. Type or use arrow keys to control the phone. Press F6 to reach the toolbar. Escape in the toolbar returns here.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../../qml/MirrorWindow.qml" line="39" />
+        <source>Phone control needs approval. Turn on Allow phone control for this computer in Waypair Link's settings on the phone.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../../qml/MirrorWindow.qml" line="42" />
+        <source>Phone control was stopped on the phone. To allow this computer again, turn Screen sharing and typing off and then on for this computer in Waypair Link's settings on the phone.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../../qml/MirrorWindow.qml" line="48" />
+        <source>Viewing only for this connection. Remote control isn't supported on this phone connection.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../../qml/MirrorWindow.qml" line="50" />
+        <source>Phone control isn't available for this connection right now.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../../qml/MirrorWindow.qml" line="388" />
+        <source>Mirror toolbar</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../../qml/MirrorWindow.qml" line="595" />
+        <source>How to enable</source>
+        <translation type="unfinished" />
     </message>
 </context>
 <context>

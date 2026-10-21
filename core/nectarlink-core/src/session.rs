@@ -88,13 +88,15 @@ pub(crate) fn local_hello(shared: &Shared) -> Hello {
         device: local.device.clone(),
         caps: local.capabilities(),
         power: local.power,
+        input_epoch: None,
     }
 }
 
 /// [`local_hello`] with the storage caps this device actually admits to `peer`.
 pub(crate) fn local_hello_for(shared: &Shared, peer: &DeviceId) -> Hello {
     let mut hello = local_hello(shared);
-    hello.caps = crate::storage::caps_for_peer(shared, peer, &hello.caps);
+    hello.caps = shared.capabilities_for_peer(peer, &hello.caps);
+    hello.input_epoch = shared.phone_control_epoch_for(peer);
     hello
 }
 
@@ -169,6 +171,10 @@ pub(crate) struct StorageAnnounce {
 /// the connection (call [`Session::close`]).
 pub(crate) struct Session {
     pub peer: DeviceId,
+    /// Unique in this process, including retained/replaced Node instances.
+    pub(crate) mirror_control_id: u64,
+    /// This connection's latest peer-owner input epoch; never persisted/reused.
+    pub(crate) mirror_input_epoch: AtomicU64,
     /// Who opened the connection; used to resolve duplicate connections.
     pub dialer: DeviceId,
     pub conn: Connection,
@@ -209,6 +215,7 @@ impl Session {
         conn: Connection,
         dialer: DeviceId,
         (send, recv): (SendStream, RecvStream),
+        input_epoch: u64,
         on_end: impl FnOnce(Arc<Session>) + Send + 'static,
     ) -> Arc<Session> {
         let peer = crate::device_id(&conn.remote_id());
@@ -220,8 +227,14 @@ impl Session {
             .find(|p| p.is_selected())
             .map_or(0, |p| p.rtt().as_millis().min(u128::from(u32::MAX)) as u32);
         let (outbox, outbox_rx) = mpsc::channel(OUTBOX_CAPACITY);
+        static NEXT_CONTROL_ID: AtomicU64 = AtomicU64::new(1);
+        let mirror_control_id = NEXT_CONTROL_ID
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
+            .unwrap_or(0);
         let session = Arc::new(Session {
             peer,
+            mirror_control_id,
+            mirror_input_epoch: AtomicU64::new(input_epoch),
             dialer,
             conn,
             outbox,
@@ -664,6 +677,9 @@ async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: Envelope) -> 
             let caps = update.caps.map(crate::features::sanitize_capabilities);
             let power = update.power.map(PowerLevel::effective);
             let had_caps = caps.is_some();
+            if had_caps {
+                session.mirror_input_epoch.store(update.input_epoch.unwrap_or(0), Ordering::Release);
+            }
             if caps.is_some() || power.is_some() {
                 shared.store.update_capabilities(&peer, caps.as_ref(), power)?;
             }

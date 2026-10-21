@@ -5284,6 +5284,31 @@ What it needs
         <source>Recording stopped: the file couldn&apos;t be written.</source>
         <translation>录制已停止：无法写入文件。</translation>
     </message>
+    <message>
+        <location filename="rust_strings.h" line="354" />
+        <source>On the phone, allow this computer to control the phone in Settings.</source>
+        <translation>请在手机的设置中允许这台电脑控制手机。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="355" />
+        <source>On the phone, enable Control from your PC or start Elevated mode.</source>
+        <translation>请在手机上启用“从电脑控制”或启动增强模式。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="356" />
+        <source>Phone control is unavailable for this connection.</source>
+        <translation>此连接无法控制手机。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="348" />
+        <source>Connect the phone and start screen mirroring to control it.</source>
+        <translation>请连接手机并启动屏幕镜像后再控制手机。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="349" />
+        <source>Phone control was stopped on the phone. To allow this computer again, turn Screen sharing and typing off and then on for this computer in Waypair Link's settings on the phone.</source>
+        <translation>手机上的手机控制已停止。如需再次允许这台电脑，请在手机上的 Waypair Link 设置中，为这台电脑先关闭再打开“屏幕共享和输入”。</translation>
+    </message>
 </context>
 <context>
     <name>MirrorWindow</name>
@@ -5462,6 +5487,41 @@ What it needs
         <location filename="../qml/MirrorWindow.qml" line="559"/>
         <source>Try again</source>
         <translation>重试</translation>
+    </message>
+    <message>
+        <location filename="../qml/MirrorWindow.qml" line="36" />
+        <source>Phone control is on. Type or use arrow keys to control the phone. Press F6 to reach the toolbar. Escape in the toolbar returns here.</source>
+        <translation>已开启手机控制。输入文字或使用方向键来控制手机。按 F6 可进入工具栏，在工具栏中按 Escape 可返回手机画面。</translation>
+    </message>
+    <message>
+        <location filename="../qml/MirrorWindow.qml" line="39" />
+        <source>Phone control needs approval. Turn on Allow phone control for this computer in Waypair Link's settings on the phone.</source>
+        <translation>需要批准手机控制。请在手机上的 Waypair Link 设置中，为这台电脑打开“允许控制此手机”。</translation>
+    </message>
+    <message>
+        <location filename="../qml/MirrorWindow.qml" line="42" />
+        <source>Phone control was stopped on the phone. To allow this computer again, turn Screen sharing and typing off and then on for this computer in Waypair Link's settings on the phone.</source>
+        <translation>手机上的手机控制已停止。如需再次允许这台电脑，请在手机上的 Waypair Link 设置中，为这台电脑先关闭再打开“屏幕共享和输入”。</translation>
+    </message>
+    <message>
+        <location filename="../qml/MirrorWindow.qml" line="48" />
+        <source>Viewing only for this connection. Remote control isn't supported on this phone connection.</source>
+        <translation>此连接仅可查看。此手机连接不支持远程控制。</translation>
+    </message>
+    <message>
+        <location filename="../qml/MirrorWindow.qml" line="50" />
+        <source>Phone control isn't available for this connection right now.</source>
+        <translation>此连接目前无法使用手机控制。</translation>
+    </message>
+    <message>
+        <location filename="../qml/MirrorWindow.qml" line="388" />
+        <source>Mirror toolbar</source>
+        <translation>镜像工具栏</translation>
+    </message>
+    <message>
+        <location filename="../qml/MirrorWindow.qml" line="595" />
+        <source>How to enable</source>
+        <translation>如何启用</translation>
     </message>
 </context>
 <context>

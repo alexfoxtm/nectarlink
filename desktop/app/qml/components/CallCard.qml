@@ -209,11 +209,16 @@ Card {
             text: qsTr("Mute, speaker and keypad need Elevated on the phone (Android 12 or later).")
         }
 
-        // ---- Bluetooth HFP / PC call audio ----
+        // ---- Bluetooth HFP / PC call audio (status only; audio stays on the phone) ----
         Row {
+            objectName: "hfpStatus"
             width: parent.width
             spacing: 10
+            visible: PhoneCall.hfpDetail.length > 0
+            Accessible.role: Accessible.Grouping
+            Accessible.name: hfpStatusText.text
             Txt {
+                id: hfpStatusText
                 anchors.verticalCenter: parent.verticalCenter
                 width: parent.width - (hfpAction.visible ? hfpAction.width + parent.spacing : 0)
                 role: "caption"
@@ -224,6 +229,7 @@ Card {
             }
             Button {
                 id: hfpAction
+                objectName: "hfpAction"
                 anchors.verticalCenter: parent.verticalCenter
                 visible: !PhoneCall.hfpConnected
                 variant: "tonal"
@@ -251,6 +257,7 @@ Card {
             }
             FocusScope {
                 id: end
+                objectName: "endCall"
                 anchors.verticalCenter: parent.verticalCenter
                 width: 72; height: 44
                 activeFocusOnTab: true

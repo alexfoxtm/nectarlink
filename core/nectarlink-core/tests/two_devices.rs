@@ -50,6 +50,9 @@ struct RecordingPlatform {
     mms_sent: Mutex<Vec<MmsRecord>>,
     mirror_asks: Mutex<Vec<String>>,
     screen_inputs: Mutex<Vec<ScreenInput>>,
+    control_inputs: Mutex<
+        Vec<(nectarlink_core::DeviceId, nectarlink_core::MirrorInput, nectarlink_core::MirrorControlContext)>,
+    >,
     mirror_requests: Mutex<Vec<nectarlink_core::MirrorStart>>,
     mirror_reject: std::sync::atomic::AtomicBool,
     watch_offers: Mutex<Vec<String>>,
@@ -205,6 +208,16 @@ impl Platform for RecordingPlatform {
         };
         self.screen_inputs.lock().unwrap().push(ScreenInput { peer: *peer, text_bytes, generation });
         self.mirror_input(peer, nectarlink_core::MIRROR_SCREEN, input);
+    }
+    fn mirror_control_input(
+        &self,
+        peer: &nectarlink_core::DeviceId,
+        input: nectarlink_core::MirrorInput,
+        context: nectarlink_core::MirrorControlContext,
+    ) {
+        // Production callback seam: the test retains the context just as Android
+        // does before posting. No OS injector, phone or capture permission is used.
+        self.control_inputs.lock().unwrap().push((*peer, input, context));
     }
     fn mic_sink(&self, _peer: &nectarlink_core::DeviceId) -> Option<Arc<dyn nectarlink_core::MicSink>> {
         Some(self.mic.clone())
@@ -7162,6 +7175,315 @@ async fn correlated_mirror_requires_a_live_request_and_revocation_ends_it() {
     let stale = stream(&phone.node, pc_id, request).await;
     closed(&stale).await;
     assert_eq!(pc.platform.screen.got.lock().unwrap().len(), count, "revoked request must not reopen");
+    pc.node.shutdown().await;
+    phone.node.shutdown().await;
+}
+
+#[cfg(feature = "test-support")]
+async fn request_control_pair(grant: bool) -> (TestDevice, TestDevice) {
+    use nectarlink_core::{
+        MIRROR_CAPTURE, MIRROR_CORRELATION, MIRROR_INPUT, MIRROR_INPUT_REQUEST, MIRROR_VIEW,
+    };
+    // device_with uses the existing explicit loopback/portmapper-disabled fixture
+    // only under test-support. It never uses an actual platform injector.
+    let mut pc =
+        device_with("Desktop", DeviceKind::Desktop, &[MIRROR_VIEW, MIRROR_CORRELATION, MIRROR_INPUT_REQUEST])
+            .await;
+    let mut phone = device_with(
+        "Pixel",
+        DeviceKind::Phone,
+        &[MIRROR_CAPTURE, MIRROR_CORRELATION, MIRROR_INPUT, MIRROR_INPUT_REQUEST],
+    )
+    .await;
+    for addrs in [pc.node.direct_addrs().await, phone.node.direct_addrs().await] {
+        assert!(
+            !addrs.is_empty() && addrs.iter().all(|addr| addr.ip().is_loopback()),
+            "fixture must remain loopback-only"
+        );
+    }
+    assert!(!pc.node.localsend_enabled() && !phone.node.localsend_enabled());
+    pair_qr(&mut pc, &mut phone).await;
+    if grant {
+        phone.node.set_phone_control_enabled(pc.node.device_id(), true).unwrap();
+        wait_feature(&mut pc, phone.node.device_id(), "mirroring.control", |state| {
+            *state == FeatureState::Available
+        })
+        .await;
+    }
+    (pc, phone)
+}
+
+#[cfg(feature = "test-support")]
+async fn request_control_screen(
+    pc: &mut TestDevice,
+    phone: &mut TestDevice,
+) -> (Arc<nectarlink_core::MirrorStream>, u64) {
+    use nectarlink_core::{MIRROR_SCREEN, MirrorConfig, MirrorSend, MirrorStart, PacketKind};
+    let peer = phone.node.device_id();
+    pc.node
+        .mirror_start(
+            peer,
+            MirrorStart {
+                max_size: 128,
+                fps: 30,
+                bitrate: 1_000_000,
+                audio: false,
+                session: MIRROR_SCREEN,
+                app: None,
+                stay_awake: false,
+                screen_off: false,
+                watch: None,
+                request: None,
+            },
+        )
+        .await
+        .unwrap();
+    let request = phone.platform.mirror_requests.lock().unwrap().last().unwrap().request.unwrap();
+    let stream = Arc::new(phone.node.mirror_open(pc.node.device_id()).await.unwrap());
+    let sending = stream.clone();
+    tokio::task::spawn_blocking(move || {
+        let config = MirrorConfig {
+            codec: "h264".into(),
+            width: 128,
+            height: 128,
+            session: MIRROR_SCREEN,
+            request: Some(request),
+        };
+        assert_eq!(sending.send(PacketKind::Config, 0, config.to_cbor()), MirrorSend::Queued);
+    })
+    .await
+    .unwrap();
+    wait_for(pc, "request-bound showing stream", |event| {
+        matches!(event, NodeEvent::Mirroring { device, session: MIRROR_SCREEN, on: true } if *device == peer)
+            .then_some(())
+    })
+    .await;
+    (stream, request)
+}
+
+#[cfg(feature = "test-support")]
+async fn control_barrier(pc: &TestDevice, phone: &TestDevice) {
+    pc.node.ring(phone.node.device_id(), true).await.unwrap();
+}
+
+#[cfg(feature = "test-support")]
+async fn post_control(
+    pc: &TestDevice,
+    phone: &TestDevice,
+    request: u64,
+) -> (nectarlink_core::MirrorControl, nectarlink_core::MirrorControlContext) {
+    phone.platform.control_inputs.lock().unwrap().clear();
+    let lease = pc.node.mirror_control(phone.node.device_id(), request).unwrap();
+    lease.send(nectarlink_core::MirrorInput::Key { key: "back".into() }).await.unwrap();
+    control_barrier(pc, phone).await;
+    let posted = phone.platform.control_inputs.lock().unwrap().clone();
+    assert_eq!(posted.len(), 1);
+    assert!(phone.node.mirror_control_input_current(pc.node.device_id(), posted[0].2));
+    (lease, posted[0].2)
+}
+
+#[cfg(feature = "test-support")]
+#[tokio::test(flavor = "multi_thread")]
+async fn phone_control_delivers_pointer_scroll_text_and_navigation_on_the_owned_stream() {
+    use nectarlink_core::{MirrorInput, TouchAction};
+    let (mut pc, mut phone) = request_control_pair(true).await;
+    let (stream, request) = request_control_screen(&mut pc, &mut phone).await;
+    let lease = pc.node.mirror_control(phone.node.device_id(), request).unwrap();
+    let events = [
+        MirrorInput::Touch { action: TouchAction::Down, x: 0.25, y: 0.75 },
+        MirrorInput::Touch { action: TouchAction::Up, x: 0.25, y: 0.75 },
+        MirrorInput::Scroll { x: 0.5, y: 0.5, dx: 0.0, dy: 1.0 },
+        MirrorInput::Text { text: "synthetic text".into() },
+        MirrorInput::Key { key: "back".into() },
+        MirrorInput::Key { key: "home".into() },
+        MirrorInput::Key { key: "recents".into() },
+        MirrorInput::Key { key: "enter".into() },
+    ];
+    for input in &events {
+        lease.send(input.clone()).await.unwrap();
+    }
+    control_barrier(&pc, &phone).await;
+    let posted = phone.platform.control_inputs.lock().unwrap().clone();
+    assert_eq!(posted.iter().map(|(_, input, _)| input.clone()).collect::<Vec<_>>(), events);
+    for (peer, _, owner) in posted {
+        assert_eq!(peer, pc.node.device_id());
+        assert_eq!(owner.request, request);
+        assert!(phone.node.mirror_control_input_current(peer, owner));
+    }
+    // Source decline uses exact outgoing ownership and never invokes PC capture teardown.
+    assert!(
+        phone
+            .node
+            .mirror_decline_request(
+                pc.node.device_id(),
+                request,
+                phone.node.mirror_capture_context(pc.node.device_id(), request).unwrap().connection
+            )
+            .await
+            .unwrap()
+    );
+    assert!(!lease.is_current());
+    assert!(!pc.platform.mirror_asks.lock().unwrap().iter().any(|ask| ask.starts_with("stop")));
+    stream.close();
+    pc.node.shutdown().await;
+    phone.node.shutdown().await;
+}
+
+#[cfg(feature = "test-support")]
+#[tokio::test(flavor = "multi_thread")]
+async fn phone_control_revocation_stale_owners_store_failure_and_reconnect_fail_closed() {
+    use nectarlink_core::{
+        MIRROR_CAPTURE, MIRROR_CORRELATION, MIRROR_INPUT, MIRROR_INPUT_REQUEST, MIRROR_VIEW,
+        MirrorControlContext, MirrorInput,
+    };
+    let (mut pc, mut phone) = request_control_pair(false).await;
+    let (pc_id, phone_id) = (pc.node.device_id(), phone.node.device_id());
+    let (stream_a, request_a) = request_control_screen(&mut pc, &mut phone).await;
+    assert!(pc.node.mirror_control(phone_id, request_a).is_err(), "unset owner grant is default OFF");
+    assert!(
+        phone.node.set_device_toggle(pc_id, "phone_control", true).is_err(),
+        "generic setter cannot impersonate owner UI"
+    );
+    // Untagged legacy input has no authority on the new safe phone path.
+    pc.node.mirror_input(phone_id, 0, MirrorInput::Text { text: "discard".into() }).await.unwrap();
+    control_barrier(&pc, &phone).await;
+    assert!(phone.platform.control_inputs.lock().unwrap().is_empty());
+    phone.node.set_phone_control_enabled(pc_id, true).unwrap();
+    wait_feature(&mut pc, phone_id, "mirroring.control", |state| *state == FeatureState::Available).await;
+    let (lease_a, owner_a) = post_control(&pc, &phone, request_a).await;
+    assert!(!phone.node.mirror_decline_request(pc_id, request_a, owner_a.connection + 1).await.unwrap());
+    assert!(
+        phone.node.mirror_control_input_current(pc_id, owner_a),
+        "wrong-connection decline leaves current capture alone"
+    );
+    for wrong in [
+        MirrorControlContext { request: request_a + 1, ..owner_a },
+        MirrorControlContext { connection: 0, ..owner_a },
+        MirrorControlContext { generation: owner_a.generation + 1, ..owner_a },
+    ] {
+        assert!(!phone.node.mirror_control_input_current(pc_id, wrong));
+    }
+    assert!(pc.node.mirror_control(phone_id, request_a + 1).is_err());
+    phone.node.set_phone_control_enabled(pc_id, false).unwrap();
+    assert!(
+        !phone.node.mirror_control_input_current(pc_id, owner_a),
+        "already-posted input dies immediately"
+    );
+    wait_feature(&mut pc, phone_id, "mirroring.control", |state| *state != FeatureState::Available).await;
+    phone.node.set_phone_control_enabled(pc_id, true).unwrap();
+    wait_feature(&mut pc, phone_id, "mirroring.control", |state| *state == FeatureState::Available).await;
+    assert!(!lease_a.is_current(), "regrant never retargets an old queued epoch");
+    let (_, owner_b) = post_control(&pc, &phone, request_a).await;
+    phone
+        .node
+        .update_power(
+            PowerLevel::Basic,
+            vec![MIRROR_CAPTURE.into(), MIRROR_CORRELATION.into(), MIRROR_INPUT_REQUEST.into()],
+        )
+        .await;
+    assert!(!phone.node.mirror_control_input_current(pc_id, owner_b), "backend loss revokes posted input");
+    wait_feature(&mut pc, phone_id, "mirroring.control", |state| *state != FeatureState::Available).await;
+    phone
+        .node
+        .update_power(
+            PowerLevel::Assist,
+            vec![
+                MIRROR_CAPTURE.into(),
+                MIRROR_CORRELATION.into(),
+                MIRROR_INPUT_REQUEST.into(),
+                MIRROR_INPUT.into(),
+            ],
+        )
+        .await;
+    wait_feature(&mut pc, phone_id, "mirroring.control", |state| *state == FeatureState::Available).await;
+    assert!(
+        !phone.node.mirror_control_input_current(pc_id, owner_b),
+        "backend restart cannot revive an old epoch"
+    );
+    let (_, owner_c) = post_control(&pc, &phone, request_a).await;
+    let db = rusqlite::Connection::open(phone.dir.path().join("nectarlink.db")).unwrap();
+    let before: String = db
+        .query_row("SELECT value FROM meta WHERE key = 'mirror_typing_fence'", [], |row| row.get(0))
+        .unwrap();
+    db.execute_batch("CREATE TRIGGER fail_control_grant BEFORE INSERT ON peer_toggles WHEN NEW.toggle = 'phone_control' BEGIN SELECT RAISE(ABORT, 'synthetic grant write failure'); END;").unwrap();
+    assert!(phone.node.set_phone_control_enabled(pc_id, false).is_err());
+    let after: String = db
+        .query_row("SELECT value FROM meta WHERE key = 'mirror_typing_fence'", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(before, after, "grant failure rolls back the durable epoch too");
+    assert!(phone.node.mirror_typing_stopped(pc_id), "store failure retains live denial");
+    assert!(!phone.node.mirror_control_input_current(pc_id, owner_c));
+    db.execute_batch("DROP TRIGGER fail_control_grant;").unwrap();
+    phone.node.set_phone_control_enabled(pc_id, true).unwrap();
+    assert!(phone.node.mirror_typing_stopped(pc_id), "new grant cannot clear Stop");
+    let old_tap = phone.node.mirror_typing_epoch(pc_id);
+    phone.node.mirror_deny_typing(pc_id).unwrap();
+    phone.node.set_mirroring_enabled(pc_id, false, old_tap).unwrap();
+    phone.node.set_mirroring_enabled(pc_id, true, old_tap).unwrap();
+    assert!(phone.node.mirror_typing_stopped(pc_id), "newer Stop beats an older queued resume");
+    let owner_tap = phone.node.mirror_typing_epoch(pc_id);
+    phone.node.set_mirroring_enabled(pc_id, false, owner_tap).unwrap();
+    phone.node.set_mirroring_enabled(pc_id, true, owner_tap).unwrap();
+    assert!(!phone.node.mirror_typing_stopped(pc_id));
+    wait_feature(&mut pc, phone_id, "mirroring.control", |state| *state == FeatureState::Available).await;
+    stream_a.close();
+    let (stream_b, request_b) = request_control_screen(&mut pc, &mut phone).await;
+    assert_ne!(request_a, request_b);
+    assert!(
+        !phone.node.mirror_decline_request(pc_id, request_a, owner_a.connection).await.unwrap(),
+        "old consent cannot decline its replacement"
+    );
+    let (lease_b, owner_d) = post_control(&pc, &phone, request_b).await;
+    assert!(!phone.node.mirror_control_input_current(pc_id, owner_a));
+    pc.node.shutdown().await;
+    assert!(!lease_b.is_current(), "retained queue lease owns only the stopped original Node");
+    let TestDevice { dir, .. } = pc;
+    pc = start_in(dir, "Desktop", DeviceKind::Desktop).await;
+    pc.node
+        .update_power(
+            PowerLevel::NotApplicable,
+            vec![MIRROR_VIEW.into(), MIRROR_CORRELATION.into(), MIRROR_INPUT_REQUEST.into()],
+        )
+        .await;
+    let phone_addrs = phone.node.direct_addrs().await;
+    let pc_addrs = pc.node.direct_addrs().await;
+    assert!(!phone_addrs.is_empty() && phone_addrs.iter().all(|addr| addr.ip().is_loopback()));
+    assert!(!pc_addrs.is_empty() && pc_addrs.iter().all(|addr| addr.ip().is_loopback()));
+    pc.node.add_known_addrs(phone_id, &phone_addrs);
+    phone.node.add_known_addrs(pc_id, &pc_addrs);
+    if !pc
+        .node
+        .paired_devices()
+        .unwrap()
+        .iter()
+        .any(|device| device.id == phone_id && matches!(device.link, LinkState::Online { .. }))
+    {
+        wait_online(&mut pc, phone_id).await;
+    }
+    if !phone
+        .node
+        .paired_devices()
+        .unwrap()
+        .iter()
+        .any(|device| device.id == pc_id && matches!(device.link, LinkState::Online { .. }))
+    {
+        wait_online(&mut phone, pc_id).await;
+    }
+    stream_b.close();
+    let (stream_c, request_c) = request_control_screen(&mut pc, &mut phone).await;
+    assert!(request_c > request_b, "durable wire sequence does not reset on Node restart");
+    assert!(
+        !phone.node.mirror_control_input_current(pc_id, owner_d),
+        "old connection cannot become current again"
+    );
+    let (_, owner_e) = post_control(&pc, &phone, request_c).await;
+    pc.node.unpair(phone_id).await.unwrap();
+    wait_for(&mut phone, "phone unpaired", |event| {
+        matches!(event, NodeEvent::DeviceRemoved(id) if *id == pc_id).then_some(())
+    })
+    .await;
+    assert!(!phone.node.mirror_control_input_current(pc_id, owner_e));
+    stream_c.close();
     pc.node.shutdown().await;
     phone.node.shutdown().await;
 }

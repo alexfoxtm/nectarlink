@@ -946,6 +946,7 @@ private fun App(
                                     onSetStorageEnabled = core::setStorageEnabled,
                                     onSetMicEnabled = core::setMicEnabled,
                                     onSetMirroringEnabled = core::setMirroringEnabled,
+                                    onSetPhoneControlEnabled = core::setPhoneControlEnabled,
                                     onAddSafFolder = core::addSafFolder,
                                     onRemoveSafFolder = core::removeSafFolder,
                                     onSetClipboardHistoryEnabled = core::setClipboardHistoryEnabled,

@@ -241,9 +241,7 @@ pub(crate) struct Shared {
     pub(crate) mirror_outgoing: Mutex<HashMap<(DeviceId, u32), u64>>,
     /// Request tokens this device accepted in `mirror.start`, by peer and
     /// session: `mirror.stop` for an older token takes no action.
-    pub(crate) mirror_incoming: Mutex<HashMap<(DeviceId, u32), u64>>,
-    /// Next mirror request generation handed out by [`crate::mirror::start`].
-    pub(crate) mirror_next_request: std::sync::atomic::AtomicU64,
+    pub(crate) mirror_incoming: Mutex<HashMap<(DeviceId, u32), crate::mirror::IncomingMirror>>,
     /// Peers granted one-time reverse-mirror consent for the current session.
     pub(crate) pc_mirror_sessions: Mutex<std::collections::HashSet<DeviceId>>,
     /// Play on phone offers this PC made, by phone: the player and when.
@@ -1119,10 +1117,12 @@ impl Shared {
             write: record.caps.contains(crate::storage::STORAGE_WRITE),
         };
         let toggles = self.store.toggles(peer)?;
-        let local = {
+        let mut local = {
             let local = self.local.read().unwrap_or_else(|e| e.into_inner());
             DeviceFacts::new(&local.device, local.capabilities().into_iter().collect(), local.power)
         };
+        local.caps =
+            self.phone_control_caps_for(peer, local.caps.into_iter().collect()).into_iter().collect();
         let remote = DeviceFacts::new(&record.info, record.caps, record.power);
         let mut paths = vec![ConnectionPath::Lan];
         if self.usb_peer_addr(peer).is_some()
@@ -1184,10 +1184,21 @@ impl Shared {
         }
     }
 
+    pub(crate) fn capabilities_for_peer(&self, peer: &DeviceId, global: &[String]) -> Vec<String> {
+        self.phone_control_caps_for(peer, crate::storage::caps_for_peer(self, peer, global))
+    }
+
+    fn announce_phone_control(self: &Arc<Self>, peer: &DeviceId) {
+        if let Some(session) = self.session(peer) {
+            self.queue_caps(&session, false);
+        }
+        self.refresh_capabilities(peer);
+    }
+
     /// If `sent` is not what this connection admits now, queue a `hello.update`.
     /// `sent` is the caps from this handshake, not a shared note for the peer.
     fn correct_hello_caps(self: &Arc<Self>, peer: &DeviceId, sent: &[String]) {
-        let now = crate::storage::caps_for_peer(self, peer, &self.local_capabilities());
+        let now = self.capabilities_for_peer(peer, &self.local_capabilities());
         if sent == now.as_slice() {
             return;
         }
@@ -1200,9 +1211,14 @@ impl Shared {
     /// cannot replay an older allow and a dead session cannot clear the next one.
     fn queue_caps(self: &Arc<Self>, session: &Arc<Session>, with_power: bool) {
         let mut slot = lock(&session.storage_announce);
-        let caps = crate::storage::caps_for_peer(self, &session.peer, &self.local_capabilities());
+        let caps = self.capabilities_for_peer(&session.peer, &self.local_capabilities());
         let power = with_power.then(|| self.local.read().unwrap_or_else(|e| e.into_inner()).power);
-        let update = HelloUpdate { caps: Some(caps), power, device: None };
+        let update = HelloUpdate {
+            caps: Some(caps),
+            power,
+            device: None,
+            input_epoch: self.phone_control_epoch_for(&session.peer),
+        };
         let Ok(env) = Envelope::new(types::HELLO_UPDATE, &update) else { return };
         match session.try_enqueue(env) {
             Ok(()) => {
@@ -1255,9 +1271,14 @@ impl Shared {
                 return;
             }
             let with_power = slot.with_power;
-            let caps = crate::storage::caps_for_peer(&self, &session.peer, &self.local_capabilities());
+            let caps = self.capabilities_for_peer(&session.peer, &self.local_capabilities());
             let power = with_power.then(|| self.local.read().unwrap_or_else(|e| e.into_inner()).power);
-            let update = HelloUpdate { caps: Some(caps), power, device: None };
+            let update = HelloUpdate {
+                caps: Some(caps),
+                power,
+                device: None,
+                input_epoch: self.phone_control_epoch_for(&session.peer),
+            };
             let Ok(env) = Envelope::new(types::HELLO_UPDATE, &update) else {
                 slot.flushing = false;
                 drop(permit);
@@ -1439,13 +1460,14 @@ impl Shared {
         }
         let effective_device =
             self.store.get_peer(&peer).ok().flatten().map(|p| p.info).unwrap_or(remote_device);
+        let input_epoch = remote.input_epoch.unwrap_or(0);
         let caps = features::sanitize_capabilities(remote.caps);
         if let Err(e) = self.store.update_capabilities(&peer, Some(&caps), Some(remote.power.effective())) {
             tracing::warn!(error = %e, "failed to update peer capabilities");
         }
 
         let weak = Arc::downgrade(self);
-        let session = Session::spawn(self, conn, dialer, streams, move |ended| {
+        let session = Session::spawn(self, conn, dialer, streams, input_epoch, move |ended| {
             if let Some(shared) = weak.upgrade() {
                 shared.on_session_end(&ended);
             }
@@ -1915,7 +1937,6 @@ impl Node {
             mirror_stops: Mutex::new(HashMap::new()),
             mirror_outgoing: Mutex::new(HashMap::new()),
             mirror_incoming: Mutex::new(HashMap::new()),
-            mirror_next_request: std::sync::atomic::AtomicU64::new(1),
             pc_mirror_sessions: Mutex::new(std::collections::HashSet::new()),
             watch_offers: Mutex::new(HashMap::new()),
             webcam_stops: Mutex::new(HashMap::new()),
@@ -2301,6 +2322,9 @@ impl Node {
         let set = self.shared.store.toggles(&peer)?;
         Ok(features::DEVICE_TOGGLES
             .iter()
+            .filter(|(name, _)| {
+                *name != crate::mirror::PHONE_CONTROL_TOGGLE || crate::mirror::is_local_phone(&self.shared)
+            })
             .map(|(name, default)| (*name, set.get(*name).copied().unwrap_or(*default)))
             .collect())
     }
@@ -2309,6 +2333,9 @@ impl Node {
     pub fn set_device_toggle(&self, peer: DeviceId, toggle: &str, enabled: bool) -> Result<()> {
         if features::toggle_default(toggle).is_none() {
             return Err(Error::Unsupported);
+        }
+        if toggle == crate::mirror::PHONE_CONTROL_TOGGLE {
+            return Err(Error::Denied);
         }
         if !self.shared.store.is_paired(&peer)? {
             return Err(Error::NotPaired);
@@ -2357,19 +2384,46 @@ impl Node {
             });
         }
         if (toggle == crate::mirror::TOGGLE || toggle == crate::mirror::PC_MIRROR_TOGGLE) && !enabled {
+            let original_session = self.shared.session(&peer);
+            let phone = crate::mirror::is_local_phone(&self.shared);
+            let source = (phone && toggle == crate::mirror::TOGGLE)
+                || (!phone && toggle == crate::mirror::PC_MIRROR_TOGGLE);
+            let exact_source = source
+                && self.shared.mirror_correlated(&peer)
+                && self.shared.local_capabilities().iter().any(|cap| cap == crate::MIRROR_INPUT_REQUEST)
+                && self.shared.peer_supports(&peer, crate::MIRROR_INPUT_REQUEST);
+            let incoming = self.shared.incoming_mirror_request(&peer, crate::MIRROR_SCREEN);
+            let outgoing = lock(&self.shared.mirror_outgoing).get(&(peer, crate::MIRROR_SCREEN)).copied();
             if toggle == crate::mirror::PC_MIRROR_TOGGLE {
                 lock(&self.shared.pc_mirror_sessions).remove(&peer);
             }
             self.shared.clear_mirror_peer(&peer);
             let platform = self.shared.platform.clone();
-            drop(
-                self.shared
-                    .runtime
-                    .spawn_blocking(move || platform.mirror_stop_requested(&peer, crate::MIRROR_SCREEN)),
-            );
-            if let Some(session) = self.shared.session(&peer) {
+            if phone && toggle == crate::mirror::TOGGLE {
+                // Phone owner revocation snapshots the actual capture now, before
+                // a later ON/start can replace it. The platform posts only owned work.
+                platform.mirror_stop_requested(&peer, crate::MIRROR_SCREEN);
+            } else {
+                drop(
+                    self.shared
+                        .runtime
+                        .spawn_blocking(move || platform.mirror_stop_requested(&peer, crate::MIRROR_SCREEN)),
+                );
+            }
+            if let Some(session) = original_session {
                 self.shared.runtime.spawn(async move {
-                    let _ = crate::mirror::stop(&session, crate::MIRROR_SCREEN, None).await;
+                    if exact_source {
+                        if let Some(request) = incoming
+                            && let Ok(env) = nectarlink_protocol::messages::mirror_source_stop_envelope(
+                                crate::MIRROR_SCREEN,
+                                request,
+                            )
+                        {
+                            let _ = session.request(env, REQUEST_TIMEOUT).await;
+                        }
+                    } else {
+                        let _ = crate::mirror::stop(&session, crate::MIRROR_SCREEN, outgoing).await;
+                    }
                 });
             }
         }
@@ -2990,13 +3044,43 @@ impl Node {
         }
     }
 
+    /// The phone declined this exact incoming screen request. A stale prompt
+    /// cannot stop a replacement request or a reverse capture on the PC.
+    pub async fn mirror_decline_request(
+        &self,
+        peer: DeviceId,
+        request: u64,
+        connection: u64,
+    ) -> Result<bool> {
+        let session = self.connected(&peer)?;
+        if connection == 0 || session.mirror_control_id != connection {
+            return Ok(false);
+        }
+        if !crate::mirror::is_local_phone(&self.shared)
+            || !self.shared.mirror_correlated(&peer)
+            || !self.shared.peer_supports(&peer, crate::MIRROR_INPUT_REQUEST)
+        {
+            return Err(Error::Unsupported);
+        }
+        let applies =
+            self.shared.take_mirror_incoming_request(&peer, crate::MIRROR_SCREEN, request, connection);
+        if !applies {
+            return Ok(false);
+        }
+        let env = nectarlink_protocol::messages::mirror_source_stop_envelope(crate::MIRROR_SCREEN, request)?;
+        session.request(env, crate::session::REQUEST_TIMEOUT).await?.expect(types::OK)?;
+        Ok(true)
+    }
+
     /// The phone owner's Stop on `peer`'s typing here: from the moment this
     /// returns, its screen input is dropped, including input already on its
     /// way to the OS. Returns the Stop's generation. Only the owner's
     /// mirroring switch turned off and on after it
     /// ([`Self::set_mirroring_enabled`]) ends it.
     pub fn mirror_deny_typing(&self, peer: DeviceId) -> Result<u64> {
-        self.shared.stop_mirror_typing(&peer)
+        let result = self.shared.stop_mirror_typing(&peer);
+        self.shared.announce_phone_control(&peer);
+        result
     }
 
     /// The phone owner's mirroring switch for `peer` (local UI only), tapped
@@ -3013,7 +3097,49 @@ impl Node {
         } else if !was_on {
             self.shared.rearm_mirror_typing(&peer, tapped_at)?;
         }
+        self.shared.announce_phone_control(&peer);
         Ok(())
+    }
+
+    /// Local phone-owner UI only. Never changes the durable Stop's stopped bit.
+    pub fn set_phone_control_enabled(&self, peer: DeviceId, enabled: bool) -> Result<()> {
+        let result = self.shared.set_phone_control_grant(&peer, enabled);
+        self.shared.announce_phone_control(&peer);
+        result
+    }
+
+    /// Validate an original receiving connection without granting capture/input.
+    pub fn mirror_connection_current(&self, peer: DeviceId, connection: u64) -> bool {
+        !self.shared.cancel.is_cancelled()
+            && connection != 0
+            && self.shared.store.is_paired(&peer).unwrap_or(false)
+            && self.shared.session(&peer).is_some_and(|session| session.mirror_control_id == connection)
+    }
+
+    /// Capture ownership does not grant input: it only identifies the exact
+    /// accepted view request on its original live connection.
+    pub fn mirror_capture_context(
+        &self,
+        peer: DeviceId,
+        request: u64,
+    ) -> Option<crate::MirrorControlContext> {
+        self.shared.mirror_capture_context(&peer, request)
+    }
+
+    /// Exact live request/connection/owner generation for posted Android input.
+    pub fn mirror_control_input_current(&self, peer: DeviceId, context: crate::MirrorControlContext) -> bool {
+        self.shared.phone_control_current(&peer, context)
+    }
+
+    /// Capture before enqueueing, using the wire token of the showing stream.
+    pub fn mirror_control(&self, peer: DeviceId, request: u64) -> Result<crate::MirrorControl> {
+        let session = self.connected(&peer)?;
+        crate::MirrorControl::new(self.shared.clone(), session, request)
+    }
+
+    /// Machine-readable reason for the exact phone screen's input admission.
+    pub fn mirror_control_reason(&self, peer: DeviceId, request: u64) -> &'static str {
+        self.shared.mirror_control_reason(&peer, request)
     }
 
     /// `peer`'s typing epoch now, for the phone owner's mirroring switch to
@@ -3980,16 +4106,34 @@ impl Node {
     /// Updates this device's power level and the capabilities it offers
     /// beyond the built-in ones (they depend on permissions and add-ons).
     pub async fn update_power(&self, power: PowerLevel, extra_capabilities: Vec<String>) {
-        let read_lost = {
+        let (read_lost, input_changed) = {
             let mut local = self.shared.local.write().unwrap_or_else(|e| e.into_inner());
-            let offered_read = local.capabilities().iter().any(|c| c == crate::storage::STORAGE_READ);
+            let before = local.capabilities();
+            let offered_read = before.iter().any(|c| c == crate::storage::STORAGE_READ);
             local.power = power;
             local.extra_capabilities = extra_capabilities;
             let caps = local.capabilities();
-            offered_read && !caps.iter().any(|c| c == crate::storage::STORAGE_READ)
+            let input_changed = (before.iter().any(|cap| cap == crate::MIRROR_INPUT_REQUEST)
+                || caps.iter().any(|cap| cap == crate::MIRROR_INPUT_REQUEST))
+                && (before.iter().any(|cap| cap == crate::MIRROR_INPUT)
+                    != caps.iter().any(|cap| cap == crate::MIRROR_INPUT));
+            (offered_read && !caps.iter().any(|c| c == crate::storage::STORAGE_READ), input_changed)
         };
         if read_lost {
             lock(&self.shared.storage).cancel_all_reads();
+        }
+        if input_changed
+            && crate::mirror::is_local_phone(&self.shared)
+            && let Ok(peers) = self.paired_devices()
+        {
+            for peer in peers {
+                if matches!(peer.info.kind, DeviceKind::Desktop | DeviceKind::Laptop) {
+                    let granted = self.shared.phone_control_granted(&peer.id);
+                    if let Err(error) = self.shared.set_phone_control_grant(&peer.id, granted) {
+                        tracing::warn!(%error, "phone input availability invalidation failed closed");
+                    }
+                }
+            }
         }
         self.shared.announce_power(power);
         self.shared.refresh_all_capabilities();

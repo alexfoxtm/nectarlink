@@ -345,10 +345,15 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Messages", "Attachment is %1 (MMS supports up to 900 KB)"), // desktop/app/src/messages.rs
     QT_TRANSLATE_NOOP("Messages", "Group texts can't be sent from the PC yet."), // desktop/app/src/messages.rs
     QT_TRANSLATE_NOOP("Messages", "Only image or voice-note audio files can be attached."), // desktop/app/src/messages.rs
+    QT_TRANSLATE_NOOP("Mirror", "Connect the phone and start screen mirroring to control it."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Couldn't start recording."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Mirror recording"), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Mirror screenshot"), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Mirroring is turned off for this phone."), // desktop/app/src/mirror.rs
+    QT_TRANSLATE_NOOP("Mirror", "On the phone, allow this computer to control the phone in Settings."), // desktop/app/src/mirror.rs
+    QT_TRANSLATE_NOOP("Mirror", "On the phone, enable Control from your PC or start Elevated mode."), // desktop/app/src/mirror.rs
+    QT_TRANSLATE_NOOP("Mirror", "Phone control is unavailable for this connection."), // desktop/app/src/mirror.rs
+    QT_TRANSLATE_NOOP("Mirror", "Phone control was stopped on the phone. To allow this computer again, turn Screen sharing and typing off and then on for this computer in Waypair Link's settings on the phone."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Recording from %1, saved in %2"), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Recording limit reached. Saved %1"), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Recording stopped: the file couldn't be written."), // desktop/app/src/mirror.rs

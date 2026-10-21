@@ -221,8 +221,30 @@ pub trait Platform: Send + Sync + 'static {
         Err("this device doesn't share its screen".into())
     }
 
+    /// Original receiving connection supplied by core, not by the peer's body.
+    /// A platform retaining consent must carry it through every queued start.
+    fn mirror_requested_owned(
+        &self,
+        peer: &nectarlink_protocol::DeviceId,
+        options: &crate::MirrorStart,
+        _connection: u64,
+    ) -> Result<(), String> {
+        self.mirror_requested(peer, options)
+    }
+
     /// The PC stopped watching: stop sharing the screen or app window.
     fn mirror_stop_requested(&self, _peer: &nectarlink_protocol::DeviceId, _session: u32) {}
+
+    /// The remote viewer stopped this exact request. Async platform work must
+    /// retain request ownership through the actual capture teardown.
+    fn mirror_stop_requested_owned(
+        &self,
+        peer: &nectarlink_protocol::DeviceId,
+        session: u32,
+        _request: Option<u64>,
+    ) {
+        self.mirror_stop_requested(peer, session);
+    }
 
     /// The PC's mouse or keyboard on this phone's mirrored screen or app
     /// window (checked, and only while it offers `mirror.input`, or
@@ -242,6 +264,18 @@ pub trait Platform: Send + Sync + 'static {
         _generation: u64,
     ) {
         self.mirror_input(peer, crate::MIRROR_SCREEN, input);
+    }
+
+    /// Safe phone-screen input with the original request/connection and durable
+    /// owner generation. Platforms offering MIRROR_INPUT_REQUEST must recheck
+    /// Node::mirror_control_input_current immediately before OS dispatch.
+    /// Default denies; it must not fall back to an unguarded injector.
+    fn mirror_control_input(
+        &self,
+        _peer: &nectarlink_protocol::DeviceId,
+        _input: crate::MirrorInput,
+        _context: crate::MirrorControlContext,
+    ) {
     }
 
     /// The PC's decoder needs a fresh start: encode a keyframe next.

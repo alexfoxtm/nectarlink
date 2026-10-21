@@ -652,16 +652,17 @@ object Elevated {
     // ---- Input ----
 
     /** The PC's input as real events; false if Elevated isn't running. */
-    fun handle(event: MirrorInputEvent): Boolean {
+    fun handle(event: MirrorInputEvent, stillCurrent: () -> Boolean = { true }): Boolean {
         val (w, h) = screen()
-        return handleOn(null, w, h, event)
+        return handleOn(null, w, h, event, stillCurrent)
     }
 
     /**
      * The PC's input on display [display] (an app window's, [w] × [h]
      * pixels), or the screen when null.
      */
-    fun handleOn(display: Int?, w: Float, h: Float, event: MirrorInputEvent): Boolean {
+    fun handleOn(display: Int?, w: Float, h: Float, event: MirrorInputEvent, stillCurrent: () -> Boolean = { true }): Boolean {
+        if (!stillCurrent()) return true
         val writer = input ?: return false
         val to = display?.let { "@$it " }.orEmpty()
         val line = to + when (event) {
@@ -683,15 +684,15 @@ object Elevated {
             is MirrorInputEvent.Text -> return when {
                 event.text.isEmpty() -> true
                 event.text == "\n" || event.text == "\r" || event.text == "\r\n" ->
-                    send(writer, "${to}K ${KeyEvent.KEYCODE_ENTER}")
-                event.text.length == 1 && event.text[0].code in 32..126 -> send(writer, "${to}T ${event.text}")
+                    send(writer, "${to}K ${KeyEvent.KEYCODE_ENTER}", stillCurrent)
+                event.text.length == 1 && event.text[0].code in 32..126 -> send(writer, "${to}T ${event.text}", stillCurrent)
                 // The clipboard is the phone's own, whichever display the text is for.
-                else -> setClipboard(event.text, null) && send(writer, "${to}K ${KeyEvent.KEYCODE_PASTE}")
+                else -> setClipboard(event.text, null, stillCurrent) && send(writer, "${to}K ${KeyEvent.KEYCODE_PASTE}", stillCurrent)
             }
             is MirrorInputEvent.Gamepad ->
                 "G ${event.buttons} ${event.lx} ${event.ly} ${event.rx} ${event.ry} ${event.lt} ${event.rt}"
         }
-        return send(writer, line)
+        return send(writer, line, stillCurrent)
     }
 
     /** Sends a gamepad state directly through the Elevated helper. */
@@ -730,10 +731,10 @@ object Elevated {
      * doesn't pop up "copied" for a copy made on the PC. False when the
      * helper isn't running (the app writes it then).
      */
-    fun setClipboard(text: String, html: String?): Boolean {
+    fun setClipboard(text: String, html: String?, stillCurrent: () -> Boolean = { true }): Boolean {
         val writer = input ?: return false
         val b64 = { value: String -> android.util.Base64.encodeToString(value.toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP) }
-        return send(writer, "B ${b64(text)} ${html?.let(b64).orEmpty()}")
+        return send(writer, "B ${b64(text)} ${html?.let(b64).orEmpty()}", stillCurrent)
     }
 
     /** Turns the physical screen panel off or back on while mirroring. */
@@ -798,28 +799,31 @@ object Elevated {
      * the main thread (they throw, which read as the helper having gone);
      * a line sent from there goes out on [offMain], in order.
      */
-    private fun send(writer: Writer, line: String): Boolean {
+    private fun send(writer: Writer, line: String, stillCurrent: () -> Boolean = { true }): Boolean {
+        if (!stillCurrent()) return true
         if (Looper.myLooper() == Looper.getMainLooper()) {
-            offMain.execute { sendNow(writer, line) }
+            offMain.execute { sendNow(writer, line, stillCurrent) }
             return true
         }
-        return sendNow(writer, line)
+        return sendNow(writer, line, stillCurrent)
     }
 
     private val offMain = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
         Thread(r, "elevated-send").apply { isDaemon = true }
     }
 
-    private fun sendNow(writer: Writer, line: String): Boolean = try {
+    private fun sendNow(writer: Writer, line: String, stillCurrent: () -> Boolean): Boolean = try {
         require('\r' !in line && '\n' !in line)
         synchronized(writer) {
-            writer.write(line + "\n")
-            writer.flush()
+            if (input === writer && stillCurrent()) {
+                writer.write(line + "\n")
+                writer.flush()
+            }
         }
         true
     } catch (e: Exception) {
         Log.i(TAG, "the input helper went away", e)
-        input = null
+        if (input === writer) input = null
         false
     }
 

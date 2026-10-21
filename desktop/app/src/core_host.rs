@@ -179,6 +179,7 @@ pub fn compute_capabilities(
         // Tags mirror requests and streams with a generation and refuses
         // stale-token streams where the phone negotiates it too.
         caps.push(nectarlink_core::MIRROR_CORRELATION.into());
+        caps.push(nectarlink_core::MIRROR_INPUT_REQUEST.into());
         caps.push(nectarlink_core::DECK_ACTIONS.into());
         caps.push(nectarlink_core::PC_AUDIO.into());
         caps.push(nectarlink_core::RECORDER.into());
@@ -186,14 +187,14 @@ pub fn compute_capabilities(
         caps.push(nectarlink_core::MEDIA_STREAM.into());
         caps.push(nectarlink_core::MIC_LISTEN.into());
     }
-    // macOS stays view only: the phone's screen may be received and recorded
-    // video-only, so `mirror.view` is advertised, and the correlation
-    // capability keeps the request and stream generations tagged. Audio,
-    // input, capture, webcam, storage, deck, wake and the rest stay off.
+    // Receive the phone's video and send request-bound input to an explicitly
+    // consenting phone. This does not offer input injection or capture OF this
+    // Mac; audio, webcam, storage, deck and wake capabilities stay off.
     #[cfg(target_os = "macos")]
     {
         caps.push(nectarlink_core::MIRROR_VIEW.into());
         caps.push(nectarlink_core::MIRROR_CORRELATION.into());
+        caps.push(nectarlink_core::MIRROR_INPUT_REQUEST.into());
     }
     #[cfg(windows)]
     let mut pc_mirror_enabled = crate::pc_mirror::is_active();
@@ -516,9 +517,7 @@ mod tests {
     fn macos_advertises_only_supported_capabilities() {
         let caps = compute_capabilities(None);
         // Ensure unsupported features on macOS are never advertised
-        // macOS is view only: the phone's screen may be received and recorded
-        // video-only, so `mirror.view` is advertised; audio, input and the rest
-        // stay off.
+        // Outbound phone input is separate from capturing/injecting this Mac.
         assert!(
             caps.contains(&"mirror.view".into()),
             "macOS must advertise mirror.view so the phone's screen can be received"
@@ -526,6 +525,10 @@ mod tests {
         assert!(
             caps.contains(&nectarlink_core::MIRROR_CORRELATION.into()),
             "macOS must advertise mirror.correlation so the request and stream generations stay tagged"
+        );
+        assert!(
+            caps.contains(&nectarlink_core::MIRROR_INPUT_REQUEST.into()),
+            "outbound phone control negotiates request ownership"
         );
         assert!(!caps.contains(&"mirror.listen".into()), "macOS must not advertise mirror.listen");
         assert!(!caps.contains(&nectarlink_core::MIRROR_CAPTURE.into()));

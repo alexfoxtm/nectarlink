@@ -246,6 +246,8 @@ Item {
             }
             TextInput {
                 id: search
+                objectName: "callSearch"
+                activeFocusOnTab: true
                 anchors.left: searchIcon.right
                 anchors.leftMargin: 8
                 anchors.right: clearSearch.left
@@ -631,6 +633,8 @@ Item {
 
                             TextInput {
                                 id: dialInput
+                                objectName: "dialNumber"
+                                activeFocusOnTab: true
                                 width: parent.width
                                 horizontalAlignment: TextInput.AlignHCenter
                                 font.family: Theme.fontMono
@@ -812,11 +816,15 @@ Item {
             // ---- Bluetooth HFP / PC call audio status banner ----
             Card {
                 id: hfpBannerCard
+                objectName: "hfpBannerCard"
                 width: parent.width
                 visible: !PhoneCall.active && PhoneCall.hfpDetail.length > 0
                 Column {
+                    objectName: "hfpBanner"
                     width: parent.width
                     spacing: 8
+                    Accessible.role: Accessible.Grouping
+                    Accessible.name: hfpTitle.text + ". " + hfpDetailText.text
                     Row {
                         width: parent.width
                         spacing: 8
@@ -827,6 +835,8 @@ Item {
                             color: PhoneCall.hfpConnected ? Theme.primary : Theme.surfaceContentVariant
                         }
                         Txt {
+                            id: hfpTitle
+                            objectName: "hfpTitleText"
                             anchors.verticalCenter: parent.verticalCenter
                             role: "label"
                             text: PhoneCall.hfpConnected ? qsTr("PC call audio connected")
@@ -835,6 +845,7 @@ Item {
                         }
                     }
                     Txt {
+                        id: hfpDetailText
                         width: parent.width
                         role: "caption"
                         muted: true
@@ -844,6 +855,7 @@ Item {
                     // mac/bt_hfp.rs has no call audio route; hfpDetail says why.
                     Button {
                         readonly property bool macGap: Qt.platform.os === "osx" || Qt.platform.os === "macos"
+                        objectName: "hfpAction"
                         visible: !PhoneCall.hfpConnected
                         enabled: !macGap
                         variant: "tonal"

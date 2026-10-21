@@ -80,7 +80,7 @@ internal class PhonePlatform(
     /** The phone's shared storage (created after this). */
     private val storage: () -> PhoneStorage,
     /** Asks the user to share the screen with a PC: (PC's ID, request) → asked. */
-    private val onMirror: (String, MirrorRequest) -> Boolean,
+    private val onMirror: (String, MirrorRequest, ULong) -> Boolean,
     /** Asks the user to stream the camera as a webcam to a PC: (PC's ID, request) → asked. */
     private val onWebcam: (String, WebcamRequest) -> Boolean,
     /** Apps in windows of their own on PCs (Elevated). */
@@ -91,6 +91,8 @@ internal class PhonePlatform(
     private val onKeyboardFromPc: (String, Boolean) -> Unit = { _, _ -> },
     /** Whether a PC's screen input admitted under a typing generation may still reach the OS. */
     private val typingCurrent: (String, ULong) -> Boolean = { _, _ -> false },
+    /** Required real Node-bound guard retained across any posted input. */
+    private val controlCurrent: (String, app.nectarlink.core.PhoneControlContext) -> (() -> Boolean),
 ) : Platform {
     private val context = context.applicationContext
 
@@ -139,7 +141,7 @@ internal class PhonePlatform(
     override fun contacts(query: String?, offset: UInt, limit: UInt): List<Contact> =
         contacts().list(query, offset.toInt(), limit.toInt())
 
-    override fun mirrorRequested(pcId: String, options: MirrorOptions): Boolean =
+    override fun mirrorRequested(pcId: String, options: MirrorOptions, connection: ULong): Boolean =
         if (options.app != null) {
             appWindows.open(pcId, options)
         } else {
@@ -153,10 +155,10 @@ internal class PhonePlatform(
                 options.screenOff,
                 options.request,
             )
-            if (Elevated.running && MirrorService.startElevated(context, request)) {
+            if (Elevated.running && MirrorService.startElevated(context, request, connection)) {
                 true
             } else {
-                onMirror(pcId, request)
+                onMirror(pcId, request, connection)
             }
         }
 
@@ -170,6 +172,13 @@ internal class PhonePlatform(
         onKeyboardFromPc(pcId, false)
         MirrorRequests.dismiss(context, pcId)
         MirrorService.stop(pcId)
+    }
+
+    override fun mirrorStopRequestedOwned(pcId: String, session: UInt, request: ULong?) {
+        if (session != SCREEN || request == null) return mirrorStopRequested(pcId, session)
+        // Core removed the exact incoming request already. Pending consent may
+        // still finish, but the service's accepted-owner check rejects that start.
+        MirrorService.stop(pcId, request)
     }
 
     override fun mirrorKeyframeRequested(pcId: String, session: UInt) =
@@ -208,6 +217,21 @@ internal class PhonePlatform(
         }
         if (!current()) return
         if (!Elevated.handle(input)) InputService.handle(input, current)
+    }
+
+    override fun mirrorControlInput(pcId: String, input: MirrorInputEvent, context: app.nectarlink.core.PhoneControlContext) {
+        val admitted = controlCurrent(pcId, context)
+        val current = { admitted() && MirrorService.isControlTarget(pcId, context) }
+        if (!current()) return
+        // Remote keyboard mode and gamepad are outside this screen-control contract.
+        if (input is MirrorInputEvent.Gamepad) return
+        if (input is MirrorInputEvent.Key && input.key in listOf("keyboard_on", "keyboard_off")) return
+        if (input is MirrorInputEvent.Text && input.text.any { it.code > 127 } && InputService.running) {
+            InputService.handle(input, current, pcId to context)
+            return
+        }
+        if (!current()) return
+        if (!Elevated.handle(input, current)) InputService.handle(input, current, pcId to context)
     }
 
     override fun webcamRequested(pcId: String, options: WebcamOptions): Boolean {

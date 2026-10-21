@@ -54,8 +54,8 @@ const OPTIONS: MirrorStart = MirrorStart {
     // Placeholder: core `mirror::start` stamps the live generation.
     request: None,
 };
-/// A Mac shows a phone's screen only, until that is validated: no app
-/// windows, no input to the phone, no clipboard sent from a mirror window.
+/// Mac app windows, automatic clipboard/Flow and reverse host control stay
+/// unavailable. Phone-screen input has separate negotiated owner/request guards.
 pub(crate) const VIEW_ONLY: bool = cfg!(target_os = "macos");
 /// Packets waiting for the decoder, at most (about two seconds).
 const BACKLOG: usize = 120;
@@ -198,6 +198,10 @@ struct State {
     streams: HashMap<Window, u64>,
     /// Exact request owner, retained until close or the next request.
     requests: HashMap<Window, u64>,
+    /// Original Node for each local request, never reacquired on input dequeue.
+    request_nodes: HashMap<Window, nectarlink_core::Node>,
+    /// Actual core wire token echoed by the authenticated phone video stream.
+    control_requests: HashMap<Window, u64>,
     /// Closed sessions whose STOP must precede any replacement START.
     pending_stops: HashSet<Window>,
     apps: HashMap<DeviceId, Apps>,
@@ -214,6 +218,10 @@ impl State {
 
     fn set_phase(&mut self, window: Window, phase: Phase) {
         let showing = matches!(phase, Phase::Showing);
+        if matches!(phase, Phase::Ended(_)) {
+            self.request_nodes.remove(&window);
+            self.control_requests.remove(&window);
+        }
         if showing && self.active_window.is_none() {
             self.active_window = Some(window);
         } else if !showing && self.active_window == Some(window) {
@@ -285,6 +293,8 @@ impl Default for State {
             notices: HashMap::new(),
             streams: HashMap::new(),
             requests: HashMap::new(),
+            request_nodes: HashMap::new(),
+            control_requests: HashMap::new(),
             pending_stops: HashSet::new(),
             apps: HashMap::new(),
             saved: SavedWindows::load(),
@@ -906,6 +916,12 @@ pub fn keyboard_device() -> Option<DeviceId> {
 
 /// Starts or stops remote keyboard typing on `device` without screen mirroring.
 pub fn set_remote_keyboard(device: Option<DeviceId>) {
+    if let Some(device) = device
+        && control_reason(Window::screen(device)) != "available"
+    {
+        request_control(&Window::screen(device).key());
+        return;
+    }
     let prev = state(|s| {
         let prev = s.keyboard_device;
         s.keyboard_device = device;
@@ -1066,15 +1082,21 @@ pub fn resize(window: Window, width: u32, height: u32) {
 }
 
 fn request(window: Window, options: MirrorStart) {
+    let node = core_host::node();
     let request = NEXT_REQUEST.fetch_add(1, Ordering::Relaxed);
     state(|s| {
         s.requests.insert(window, request);
+        s.request_nodes.remove(&window);
+        s.control_requests.remove(&window);
+        if let Some(node) = &node {
+            s.request_nodes.insert(window, node.clone());
+        }
         s.streams.remove(&window);
         clear_window_buffers(&window);
         ffi::video_clear(&window.key());
     });
     core_host::host().hub.changed(Changes::MIRROR);
-    let Some(node) = core_host::node() else { return };
+    let Some(node) = node else { return };
     let app = options.app.is_some();
     core_host::spawn(async move {
         let started = {
@@ -1158,6 +1180,8 @@ pub fn stop(window: Window) {
         s.windows.remove(&window);
         s.notices.remove(&window);
         s.requests.remove(&window);
+        s.request_nodes.remove(&window);
+        s.control_requests.remove(&window);
         if node.is_some() {
             s.pending_stops.insert(window);
         }
@@ -1244,6 +1268,8 @@ pub fn on_event(event: &NodeEvent) {
                 s.apps.remove(id);
                 s.screen_off.remove(id);
                 s.requests.retain(|w, _| w.device != *id);
+                s.request_nodes.retain(|w, _| w.device != *id);
+                s.control_requests.retain(|w, _| w.device != *id);
                 s.pending_stops.retain(|w| w.device != *id);
                 s.streams.retain(|w, _| w.device != *id);
                 if s.keyboard_device == Some(*id) {
@@ -1426,30 +1452,97 @@ pub fn palette_apps(device: DeviceId) -> Vec<(String, String)> {
     out
 }
 
-/// The PC's mouse, keyboard, and gamepad on a mirrored screen or app window,
-/// sent in order.
-pub fn input(window: Window, input: nectarlink_core::MirrorInput) {
-    if VIEW_ONLY {
-        return;
+/// Actual admission for the exact showing phone screen. App-window control
+/// remains separately fenced; no Mac host injection/capture is enabled here.
+pub fn control_reason(window: Window) -> &'static str {
+    if window.session != MIRROR_SCREEN {
+        return "unsupported";
     }
+    let target = state(|s| {
+        if !s.windows.get(&window).is_some_and(|shown| shown.phase == Phase::Showing)
+            || !s.streams.contains_key(&window)
+            || latest_bitmap(&window).is_none()
+        {
+            return None;
+        }
+        Some((s.request_nodes.get(&window)?.clone(), *s.control_requests.get(&window)?))
+    });
+    let Some((node, wire_request)) = target else {
+        return "notShowing";
+    };
+    node.mirror_control_reason(window.device, wire_request)
+}
+
+/// Ordered queue reuses the existing MirrorInput handlers. Every phone event
+/// captures its original Node/connection/request/epoch before entering the queue.
+pub fn input(window: Window, input: nectarlink_core::MirrorInput) {
+    enum Target {
+        Phone(nectarlink_core::MirrorControl, u64, u64),
+        App(nectarlink_core::Node),
+    }
+    let target = if window.session == MIRROR_SCREEN {
+        let captured = state(|s| {
+            if !s.windows.get(&window).is_some_and(|shown| shown.phase == Phase::Showing)
+                || latest_bitmap(&window).is_none()
+            {
+                return None;
+            }
+            Some((
+                s.request_nodes.get(&window)?.clone(),
+                *s.requests.get(&window)?,
+                *s.streams.get(&window)?,
+                *s.control_requests.get(&window)?,
+            ))
+        });
+        let Some((node, local_request, stream, wire_request)) = captured else {
+            return;
+        };
+        let Ok(control) = node.mirror_control(window.device, wire_request) else {
+            return;
+        };
+        Target::Phone(control, local_request, stream)
+    } else {
+        if VIEW_ONLY {
+            return;
+        }
+        let Some(node) = core_host::node() else {
+            return;
+        };
+        Target::App(node)
+    };
     static QUEUE: std::sync::OnceLock<
-        tokio::sync::mpsc::UnboundedSender<(Window, nectarlink_core::MirrorInput)>,
+        tokio::sync::mpsc::UnboundedSender<(Window, Target, nectarlink_core::MirrorInput)>,
     > = std::sync::OnceLock::new();
     let queue = QUEUE.get_or_init(|| {
         let (queue, mut inputs) =
-            tokio::sync::mpsc::unbounded_channel::<(Window, nectarlink_core::MirrorInput)>();
+            tokio::sync::mpsc::unbounded_channel::<(Window, Target, nectarlink_core::MirrorInput)>();
         core_host::spawn(async move {
-            while let Some((window, input)) = inputs.recv().await {
-                if let Some(node) = core_host::node()
-                    && let Err(e) = node.mirror_input(window.device, window.session, input).await
-                {
-                    tracing::debug!(error = %e, "input didn't reach the phone");
+            while let Some((window, target, input)) = inputs.recv().await {
+                let result = match target {
+                    Target::Phone(control, request, stream) => {
+                        control
+                            .send_if_current(input, move || {
+                                state(|s| {
+                                    s.owns_request(&window, request)
+                                        && s.shows(&window, stream)
+                                        && latest_bitmap(&window).is_some()
+                                        && s.windows
+                                            .get(&window)
+                                            .is_some_and(|shown| shown.phase == Phase::Showing)
+                                })
+                            })
+                            .await
+                    }
+                    Target::App(node) => node.mirror_input(window.device, window.session, input).await,
+                };
+                if let Err(error) = result {
+                    tracing::debug!(%error, "input didn't reach the phone");
                 }
             }
         });
         queue
     });
-    let _ = queue.send((window, input));
+    let _ = queue.send((window, target, input));
 }
 
 /// Resolves the currently active or showing mirror window.
@@ -1523,17 +1616,26 @@ pub fn drop_files(raw_urls: &[String]) {
     crate::transfers::send(window.device, paths);
 }
 
-/// Requests remote input control from the phone for `key` and shows a guidance banner.
+/// Guidance only: a desktop cannot grant phone-owner consent or rearm Stop.
+/// Never synthesize a touch to ask for permission.
 pub fn request_control(key: &str) {
-    if VIEW_ONLY {
-        return;
-    }
     let Some(window) = Window::parse(key) else { return };
-    set_notice(window, "On your phone, tap Allow / turn on Control from your PC in Waypair Link");
-    input(
-        window,
-        nectarlink_core::MirrorInput::Touch { action: nectarlink_core::TouchAction::Up, x: 0.5, y: 0.5 },
-    );
+    let notice = match control_reason(window) {
+        "available" => return,
+        "ownerApproval" => {
+            tr!("Mirror", "On the phone, allow this computer to control the phone in Settings.")
+        }
+        "stopped" => tr!(
+            "Mirror",
+            "Phone control was stopped on the phone. To allow this computer again, turn Screen sharing and typing off and then on for this computer in Waypair Link's settings on the phone."
+        ),
+        "inputUnavailable" => {
+            tr!("Mirror", "On the phone, enable Control from your PC or start Elevated mode.")
+        }
+        "unsupported" => tr!("Mirror", "Phone control is unavailable for this connection."),
+        _ => tr!("Mirror", "Connect the phone and start screen mirroring to control it."),
+    };
+    set_notice(window, notice);
 }
 
 /// Notifies PC-to-phone cursor/keyboard Flow when the mouse enters `key`.
@@ -1883,6 +1985,15 @@ impl Sink {
 
 impl MirrorSink for Sink {
     fn config(&self, config: MirrorConfig) {
+        state(|s| {
+            if s.owns_request(&self.window, self.request) && self.window.session == MIRROR_SCREEN {
+                if let Some(request) = config.request {
+                    s.control_requests.insert(self.window, request);
+                } else {
+                    s.control_requests.remove(&self.window);
+                }
+            }
+        });
         LAST_CONFIG
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -1894,6 +2005,7 @@ impl MirrorSink for Sink {
         let video = self.video.get_or_init(|| Video::start(self.window, self.request));
         // The format matters: wait for room rather than drop it.
         let _ = video.queue.send(Item::Config(config));
+        core_host::host().hub.changed(Changes::MIRROR);
     }
 
     fn packet(&self, keyframe: bool, time_us: u64, data: Vec<u8>) {
@@ -2133,12 +2245,19 @@ fn decode(window: Window, id: u64, items: &Receiver<Item>, waiting: &AtomicUsize
                     };
                     // Keep ownership through publication: close/reopen cannot
                     // clear the window and then receive this older frame.
-                    state(|s| {
+                    let became_ready = state(|s| {
                         if s.shows(&window, id) {
+                            let first = latest_bitmap(&window).is_none();
                             ffi::video_frame(&stream, width, height, &pixels);
                             save_latest_frame(window, width, height, pixels);
+                            first
+                        } else {
+                            false
                         }
                     });
+                    if became_ready {
+                        core_host::host().hub.changed(Changes::MIRROR);
+                    }
                     stats.shown(decoded, converted.elapsed());
                 } else {
                     stats.skipped();
@@ -3815,11 +3934,11 @@ mod mac_receive_fixture {
         fixture_host();
         // The Mac receive seam is present; capture and audio stay refused.
         const {
-            assert!(super::VIEW_ONLY, "mac stays view-only until native acceptance");
+            assert!(super::VIEW_ONLY, "Mac app-window and automatic Flow fences remain enabled");
             assert!(!super::OPTIONS.audio, "mac never asks for the phone's sound");
         }
 
-        // View-only gates: no app windows, no input, no control requests.
+        // This fixture has no owner grant or control Node: no app windows or outbound input.
         let device = DeviceId([0x4D; 32]);
         super::start_app(device, "com.example.app".into(), "App".into());
         assert!(super::windows().iter().all(|(w, _)| w.session == MIRROR_SCREEN), "mac opens no app windows");
@@ -3924,7 +4043,7 @@ mod mac_receive_fixture {
         let _ = tracing_subscriber::fmt().with_max_level(tracing::Level::DEBUG).with_test_writer().try_init();
         fixture_host();
         const {
-            assert!(super::VIEW_ONLY, "mac stays view-only until native acceptance");
+            assert!(super::VIEW_ONLY, "Mac app-window and automatic Flow fences remain enabled");
             assert!(!super::OPTIONS.audio, "mac never asks for the phone's sound");
         }
 

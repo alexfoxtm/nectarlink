@@ -12,6 +12,27 @@ package app.nectarlink.android.mirror
  * state (so a stale job can neither outlive nor reopen a replacement).
  */
 internal object MirrorSessionPolicy {
+    /** Original local connection is required even for an old peer's untagged view request. */
+    fun admitsCaptureOwner(
+        request: ULong?,
+        originalConnection: ULong?,
+        acceptedConnection: ULong?,
+        connected: Boolean,
+    ): Boolean = originalConnection != null && originalConnection != 0uL && connected &&
+        (request == null || acceptedConnection == originalConnection)
+
+    /** Input has a target only while actual capture belongs to its original connection. */
+    fun canControl(
+        active: Boolean,
+        activePc: String?,
+        activeRequest: ULong?,
+        activeConnection: ULong?,
+        pc: String,
+        request: ULong,
+        connection: ULong,
+    ): Boolean = active && connection != 0uL && activePc == pc &&
+        activeRequest == request && activeConnection == connection
+
     /**
      * Whether an incoming start replaces the live capture. Only a distinct
      * generation from the same PC preempts: duplicates, other PCs, and an
@@ -54,4 +75,13 @@ internal object MirrorSessionPolicy {
         if (activePc != myPc) return false
         return activeRequest == myRequest
     }
+
+    /**
+     * Whether a queued start may begin capturing. Every start is stamped with
+     * a process-wide issue number when it is sent to the service; a Stop on
+     * this phone (notification, app, or the user revoking the capture)
+     * records the last number issued before it, so a start already on its
+     * way can't bring the capture back. Unstamped starts (`0`) never capture.
+     */
+    fun admitsStart(issue: Long, stoppedThrough: Long): Boolean = issue > 0L && issue > stoppedThrough
 }

@@ -15,7 +15,7 @@
 //! in a window of its own on the PC.
 
 use std::sync::{
-    Arc, Mutex,
+    Arc, Mutex, Weak,
     atomic::{AtomicBool, Ordering},
 };
 
@@ -36,6 +36,92 @@ use crate::{Error, Result, events::NodeEvent, node::Shared, session::Session};
 pub(crate) const TOGGLE: &str = "mirroring";
 /// The per-device toggle that allows PC-to-phone reverse mirroring (off by default).
 pub const PC_MIRROR_TOGGLE: &str = "pc_mirror";
+/// A local phone-owner grant for exactly one trusted PC; viewing stays separate.
+pub const PHONE_CONTROL_TOGGLE: &str = "phone_control";
+
+/// The existing accepted-request map also owns its live video stream.
+#[derive(Debug)]
+pub(crate) struct IncomingMirror {
+    request: u64,
+    connection: u64,
+    video: Option<Weak<AtomicBool>>,
+}
+
+/// Rechecked by the phone platform immediately before injection, after posting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MirrorControlContext {
+    pub request: u64,
+    pub generation: u64,
+    pub connection: u64,
+}
+
+/// An input queue entry owns the original Node, connection, request and grant
+/// epoch. It never reconnects or reads a replacement request when dequeued.
+#[derive(Clone)]
+pub struct MirrorControl {
+    shared: Arc<Shared>,
+    session: Arc<Session>,
+    request: u64,
+    epoch: u64,
+}
+
+impl std::fmt::Debug for MirrorControl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MirrorControl")
+            .field("peer", &self.session.peer)
+            .field("request", &self.request)
+            .finish_non_exhaustive()
+    }
+}
+
+impl MirrorControl {
+    pub(crate) fn new(shared: Arc<Shared>, session: Arc<Session>, request: u64) -> Result<Self> {
+        let control =
+            Self { shared, epoch: session.mirror_input_epoch.load(Ordering::Acquire), session, request };
+        if !control.is_current() {
+            return Err(Error::Denied);
+        }
+        Ok(control)
+    }
+
+    pub fn is_current(&self) -> bool {
+        self.epoch != 0
+            && self.session.mirror_input_epoch.load(Ordering::Acquire) == self.epoch
+            && self.shared.session(&self.session.peer).is_some_and(|live| Arc::ptr_eq(&live, &self.session))
+            && self.shared.mirror_control_reason(&self.session.peer, self.request) == "available"
+    }
+
+    /// Check again after outbox backpressure, then enqueue on that exact connection.
+    pub async fn send(&self, input: MirrorInput) -> Result<()> {
+        self.send_if_current(input, || true).await
+    }
+
+    /// The viewer rechecks its Showing window after outbox backpressure too.
+    pub async fn send_if_current(&self, input: MirrorInput, showing: impl FnOnce() -> bool) -> Result<()> {
+        if !phone_control_input_valid(&input) {
+            return Err(Error::Protocol("invalid phone control input".into()));
+        }
+        let env =
+            nectarlink_protocol::messages::mirror_control_input_envelope(&input, self.request, self.epoch)?;
+        let permit = self.session.reserve().await?;
+        if !showing() || !self.is_current() {
+            return Err(Error::Denied);
+        }
+        permit.send(env);
+        Ok(())
+    }
+}
+
+fn phone_control_input_valid(input: &MirrorInput) -> bool {
+    input.is_valid()
+        && !matches!(input, MirrorInput::Gamepad { .. })
+        && !matches!(input, MirrorInput::Key { key } if key == "keyboard_on" || key == "keyboard_off")
+}
+
+pub(crate) fn is_local_phone(shared: &Shared) -> bool {
+    let local = shared.local.read().unwrap_or_else(|e| e.into_inner());
+    matches!(local.device.kind, crate::DeviceKind::Phone | crate::DeviceKind::Tablet)
+}
 
 fn is_local_desktop(shared: &Shared) -> bool {
     let local = shared.local.read().unwrap_or_else(|e| e.into_inner());
@@ -96,7 +182,7 @@ pub(crate) async fn start(shared: &Shared, session: &Session, options: MirrorSta
     // packets (and honors it in `mirror.stop`), so a delayed stream from an
     // older request can't pass for this one. Optional on the wire: peers
     // that predate correlation ignore it.
-    let request = shared.mirror_next_request.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let request = shared.store.next_mirror_request()?;
     let options = MirrorStart { request: Some(request), ..options };
     let env = Envelope::new(types::MIRROR_START, &options)?;
     // A peer can open its media stream before the control reply arrives.
@@ -629,6 +715,9 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
     let platform = shared.platform.clone();
     match env.t.as_str() {
         types::MIRROR_START => {
+            if !shared.session(&peer).is_some_and(|live| Arc::ptr_eq(&live, session)) {
+                return Ok(true);
+            }
             let options: MirrorStart = env.body()?;
             let desktop = is_local_desktop(shared);
             let needs = if options.app.is_some() {
@@ -660,20 +749,30 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
                 // Copied out: the consent call below moves `options`.
                 let accepted_session = options.session;
                 let accepted_request = options.request;
-                match tokio::task::spawn_blocking(move || platform.mirror_requested(&peer, &options))
-                    .await
-                    .unwrap_or_else(|e| Err(e.to_string()))
+                if let Some(request) = accepted_request {
+                    shared.note_mirror_incoming(&peer, accepted_session, request, session.mirror_control_id);
+                }
+                let connection = session.mirror_control_id;
+                match tokio::task::spawn_blocking(move || {
+                    platform.mirror_requested_owned(&peer, &options, connection)
+                })
+                .await
+                .unwrap_or_else(|e| Err(e.to_string()))
                 {
                     Ok(()) => {
                         // This request's generation is live: the stream that
                         // answers must echo it, and a stop for any other one
                         // is stale.
-                        if let Some(request) = accepted_request {
-                            shared.note_mirror_incoming(&peer, accepted_session, request);
+                        if !shared.session(&peer).is_some_and(|live| Arc::ptr_eq(&live, session)) {
+                            Envelope::error(ErrorCode::Denied, "the mirror connection was replaced")
+                        } else {
+                            Envelope::empty(types::OK)
                         }
-                        Envelope::empty(types::OK)
                     }
                     Err(reason) => {
+                        if let Some(request) = accepted_request {
+                            shared.take_mirror_incoming_request(&peer, accepted_session, request, connection);
+                        }
                         tracing::warn!(reason, "can't ask to share the screen");
                         if desktop {
                             Envelope::error(ErrorCode::Denied, reason)
@@ -687,6 +786,41 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
         }
         types::MIRROR_STOP => {
             let MirrorSession { session: mirroring, request } = env.body()?;
+            let source: nectarlink_protocol::messages::MirrorSourceStop = env.body()?;
+            if source.source_stopped {
+                // A source decline applies only to our outgoing request. It must
+                // never invoke this PC's capture-stop callback or affect a newer request.
+                if shared.mirror_correlated(&peer)
+                    && shared.peer_supports(&peer, mirror::INPUT_REQUEST)
+                    && shared.session(&peer).is_some_and(|live| Arc::ptr_eq(&live, session))
+                    && let Some(request) = request
+                {
+                    let applies = {
+                        let mut outgoing = shared.mirror_outgoing.lock().unwrap_or_else(|e| e.into_inner());
+                        if outgoing.get(&(peer, mirroring)) == Some(&request) {
+                            outgoing.remove(&(peer, mirroring));
+                            true
+                        } else {
+                            false
+                        }
+                    };
+                    if applies {
+                        shared.stop_showing(&peer, mirroring);
+                        shared.emit(NodeEvent::Mirroring { device: peer, session: mirroring, on: false });
+                    }
+                }
+                session.send(Envelope::empty(types::OK).reply_to(env.id)).await?;
+                return Ok(true);
+            }
+            if is_local_phone(shared)
+                && shared.local_capabilities().iter().any(|cap| cap == mirror::INPUT_REQUEST)
+                && shared.peer_supports(&peer, mirror::INPUT_REQUEST)
+                && (request.is_none()
+                    || !shared.session(&peer).is_some_and(|live| Arc::ptr_eq(&live, session)))
+            {
+                session.send(Envelope::empty(types::OK).reply_to(env.id)).await?;
+                return Ok(true);
+            }
             // A stop for a superseded request is stale (a replacement start
             // already superseded it): ack it, change nothing.
             if shared.mirror_stop_applies(&peer, mirroring, request) {
@@ -699,7 +833,9 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
                     crate::media::renew_watch(shared, &peer);
                 }
                 shared.emit(NodeEvent::Mirroring { device: peer, session: mirroring, on: false });
-                tokio::task::spawn_blocking(move || platform.mirror_stop_requested(&peer, mirroring));
+                tokio::task::spawn_blocking(move || {
+                    platform.mirror_stop_requested_owned(&peer, mirroring, request)
+                });
             }
             session.send(Envelope::empty(types::OK).reply_to(env.id)).await?;
         }
@@ -730,6 +866,20 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
         types::MIRROR_INPUT => {
             let input: MirrorInput = env.body()?;
             let MirrorSession { session: mirroring, .. } = env.body()?;
+            if !is_local_desktop(shared)
+                && mirroring == mirror::SCREEN
+                && shared.local_capabilities().iter().any(|cap| cap == mirror::INPUT_REQUEST)
+            {
+                let owner: nectarlink_protocol::messages::MirrorInputOwner = env.body()?;
+                if let (Some(request), Some(generation)) = (owner.request, owner.input_epoch) {
+                    let context =
+                        MirrorControlContext { request, generation, connection: session.mirror_control_id };
+                    if phone_control_input_valid(&input) && shared.phone_control_current(&peer, context) {
+                        platform.mirror_control_input(&peer, input, context);
+                    }
+                }
+                return Ok(true);
+            }
             // App windows take input as they're Elevated; the screen, with mirror.input.
             let needs = if mirroring == mirror::SCREEN { mirror::INPUT } else { mirror::VIRTUAL_DISPLAY };
             let desktop = is_local_desktop(shared);
@@ -818,7 +968,6 @@ pub enum MirrorSend {
 }
 
 /// A phone's video (or sound) stream to one PC.
-#[derive(Debug)]
 pub struct MirrorStream {
     queue: mpsc::Sender<(PacketKind, u64, Vec<u8>)>,
     closed: Arc<AtomicBool>,
@@ -829,6 +978,17 @@ pub struct MirrorStream {
     resyncing: Mutex<bool>,
     /// Sound: each packet stands alone, so a dropped one needs no keyframe.
     audio: bool,
+    /// Only phone video streams can establish a control target.
+    control_owner: Option<(Arc<Shared>, DeviceId, u64)>,
+}
+
+impl std::fmt::Debug for MirrorStream {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MirrorStream")
+            .field("audio", &self.audio)
+            .field("closed", &self.is_closed())
+            .finish_non_exhaustive()
+    }
 }
 
 impl MirrorStream {
@@ -842,6 +1002,9 @@ impl MirrorStream {
         if *resyncing && kind == PacketKind::Frame && !self.audio {
             return MirrorSend::NeedKeyframe;
         }
+        let config = (kind == PacketKind::Config && !self.audio)
+            .then(|| MirrorConfig::from_cbor(&data).ok())
+            .flatten();
         let sent = if kind == PacketKind::Config {
             self.queue.blocking_send((kind, time_us, data)).map_err(|_| ())
         } else {
@@ -852,6 +1015,19 @@ impl MirrorStream {
         };
         match sent {
             Ok(()) => {
+                if let (Some(config), Some((shared, peer, connection))) = (config, &self.control_owner)
+                    && config.is_valid()
+                    && shared.session(peer).is_some_and(|live| live.mirror_control_id == *connection)
+                    && let Some(accepted) = shared
+                        .mirror_incoming
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .get_mut(&(*peer, config.session))
+                    && config.request == Some(accepted.request)
+                    && accepted.connection == *connection
+                {
+                    accepted.video = Some(Arc::downgrade(&self.closed));
+                }
                 if kind == PacketKind::Keyframe {
                     *resyncing = false;
                 }
@@ -911,7 +1087,11 @@ pub(crate) async fn open(shared: &Arc<Shared>, session: &Session, audio: bool) -
     } else {
         None
     };
-    Ok(MirrorStream::spawn_stream(send, recv, audio, on_end))
+    let mut stream = MirrorStream::spawn_stream(send, recv, audio, on_end);
+    if !audio && !is_local_desktop(shared) {
+        stream.control_owner = Some((shared.clone(), session.peer, session.mirror_control_id));
+    }
+    Ok(stream)
 }
 
 /// Send priorities: sound before video, as a gap in it is the more
@@ -964,7 +1144,7 @@ impl MirrorStream {
                 shared.finish_timeline_session(row_id, started_at.elapsed().as_secs().max(1));
             }
         });
-        MirrorStream { queue, closed, stop, resyncing: Mutex::new(false), audio }
+        MirrorStream { queue, closed, stop, resyncing: Mutex::new(false), audio, control_owner: None }
     }
 }
 
@@ -981,6 +1161,180 @@ fn mirror_token_accepted(expected: Option<u64>, seen: Option<u64>, negotiated: b
 
 impl Shared {
     /// Whether `peer` announced capability `cap`.
+    /// Only explicit local owner consent is an input grant. Store errors deny.
+    pub(crate) fn phone_control_granted(&self, peer: &DeviceId) -> bool {
+        is_local_phone(self)
+            && self.store.get_peer(peer).ok().flatten().is_some_and(|record| {
+                matches!(record.info.kind, crate::DeviceKind::Desktop | crate::DeviceKind::Laptop)
+            })
+            && self
+                .store
+                .toggles(peer)
+                .ok()
+                .is_some_and(|toggles| toggles.get(PHONE_CONTROL_TOGGLE) == Some(&true))
+    }
+
+    pub(crate) fn phone_control_epoch_for(&self, peer: &DeviceId) -> Option<u64> {
+        let caps = self.local_capabilities();
+        if !caps.iter().any(|cap| cap == mirror::INPUT_REQUEST)
+            || !caps.iter().any(|cap| cap == mirror::INPUT)
+        {
+            return None;
+        }
+        // Same lock/order as grant transition: never combine an old allow row
+        // with the newer epoch committed by an OFF action.
+        let fence = self.typing_fence();
+        if !self.toggle_on(peer, TOGGLE) || !self.phone_control_granted(peer) {
+            return None;
+        }
+        let typing = fence.current(peer);
+        (!typing.stopped).then_some(typing.generation)
+    }
+
+    pub(crate) fn phone_control_caps_for(&self, peer: &DeviceId, caps: Vec<String>) -> Vec<String> {
+        let mut caps: Vec<_> = caps
+            .into_iter()
+            .filter(|cap| cap != mirror::CONTROL_ALLOWED && cap != mirror::CONTROL_STOPPED)
+            .collect();
+        if caps.iter().any(|cap| cap == mirror::INPUT_REQUEST) && self.phone_control_granted(peer) {
+            if self.mirror_typing_stopped(peer) {
+                caps.push(mirror::CONTROL_STOPPED.into());
+            } else {
+                caps.push(mirror::CONTROL_ALLOWED.into());
+            }
+        }
+        caps
+    }
+
+    pub(crate) fn mirror_control_reason(&self, peer: &DeviceId, request: u64) -> &'static str {
+        if self.cancel.is_cancelled() || self.session(peer).is_none() {
+            return "offline";
+        }
+        let Some(record) = self.store.get_peer(peer).ok().flatten() else { return "offline" };
+        if !is_local_desktop(self)
+            || !matches!(record.info.kind, crate::DeviceKind::Phone | crate::DeviceKind::Tablet)
+            || !self.local_capabilities().iter().any(|cap| cap == mirror::INPUT_REQUEST)
+            || !self.local_capabilities().iter().any(|cap| cap == mirror::VIEW)
+            || !self.mirror_correlated(peer)
+            || !record.caps.contains(mirror::CAPTURE)
+            || !record.caps.contains(mirror::INPUT_REQUEST)
+        {
+            return "unsupported";
+        }
+        if !self.toggle_on(peer, TOGGLE) {
+            return "mirroringOff";
+        }
+        if record.caps.contains(mirror::CONTROL_STOPPED) {
+            return "stopped";
+        }
+        if !record.caps.contains(mirror::CONTROL_ALLOWED) {
+            return "ownerApproval";
+        }
+        if !record.caps.contains(mirror::INPUT) {
+            return "inputUnavailable";
+        }
+        if self.session(peer).is_none_or(|session| session.mirror_input_epoch.load(Ordering::Acquire) == 0) {
+            return "unsupported";
+        }
+        if self.mirror_outgoing.lock().unwrap_or_else(|e| e.into_inner()).get(&(*peer, mirror::SCREEN))
+            != Some(&request)
+        {
+            return "notShowing";
+        }
+        "available"
+    }
+
+    pub(crate) fn mirror_capture_context(
+        &self,
+        peer: &DeviceId,
+        request: u64,
+    ) -> Option<MirrorControlContext> {
+        if !is_local_phone(self) || !self.toggle_on(peer, TOGGLE) || !self.store.is_paired(peer).ok()? {
+            return None;
+        }
+        let session = self.session(peer)?;
+        let connection = session.mirror_control_id;
+        if !self
+            .mirror_incoming
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&(*peer, mirror::SCREEN))
+            .is_some_and(|accepted| accepted.request == request && accepted.connection == connection)
+        {
+            return None;
+        }
+        Some(MirrorControlContext { request, connection, generation: self.mirror_typing_epoch(peer) })
+    }
+
+    pub(crate) fn phone_control_current(&self, peer: &DeviceId, context: MirrorControlContext) -> bool {
+        if context.connection == 0
+            || self.cancel.is_cancelled()
+            || !self.session(peer).is_some_and(|session| session.mirror_control_id == context.connection)
+            || !self.peer_supports(peer, mirror::INPUT_REQUEST)
+            || !self.mirror_correlated(peer)
+            || self.phone_control_epoch_for(peer) != Some(context.generation)
+            || !self.mirror_typing_current(peer, context.generation)
+        {
+            return false;
+        }
+        self.mirror_incoming
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&(*peer, mirror::SCREEN))
+            .is_some_and(|accepted| {
+                accepted.request == context.request
+                    && accepted.connection == context.connection
+                    && accepted
+                        .video
+                        .as_ref()
+                        .and_then(Weak::upgrade)
+                        .is_some_and(|closed| !closed.load(Ordering::Acquire))
+            })
+    }
+
+    /// Commit grant and its invalidating epoch atomically under the existing
+    /// durable fence's CAS. A grant change never clears a prior Stop.
+    pub(crate) fn set_phone_control_grant(&self, peer: &DeviceId, enabled: bool) -> Result<()> {
+        if self.cancel.is_cancelled()
+            || !is_local_phone(self)
+            || !self.store.get_peer(peer)?.is_some_and(|record| {
+                matches!(record.info.kind, crate::DeviceKind::Desktop | crate::DeviceKind::Laptop)
+            })
+        {
+            return Err(Error::Denied);
+        }
+        let mut fence = self.typing_fence();
+        let mut changed = fence.clone();
+        let previous = changed.current(peer);
+        let generation = changed.advance();
+        changed.peers.insert(*peer, Typing { generation, stopped: previous.stopped, owner_off: None });
+        // Any serialization, transaction or CAS error retains live denial;
+        // only a successful atomic commit restores the previous stopped bit.
+        let mut denied = changed.clone();
+        denied.peers.insert(*peer, Typing { generation, stopped: true, owner_off: None });
+        *fence = denied;
+        let stored = StoredTypingFence {
+            version: 2,
+            next: changed.next,
+            floor: changed.floor,
+            peers: changed.peers.iter().map(|(id, typing)| (id.to_string(), *typing)).collect(),
+            node_running: Some(changed.node_running),
+        };
+        let value = serde_json::to_string(&stored)
+            .map_err(|error| Error::Internal(format!("can't encode mirror typing fence: {error}")))?;
+        // On error, the live denial above and existing durable running marker
+        // force recovery instead of trusting the old allow row.
+        self.store.compare_and_set_phone_control_grant(
+            changed.persisted_value.as_deref(),
+            &value,
+            peer,
+            enabled,
+        )?;
+        changed.persisted_value = Some(value);
+        *fence = changed;
+        Ok(())
+    }
+
     pub(crate) fn peer_supports(&self, peer: &DeviceId, cap: &str) -> bool {
         self.store.get_peer(peer).ok().flatten().is_some_and(|r| r.caps.contains(cap))
     }
@@ -1002,8 +1356,41 @@ impl Shared {
     }
 
     /// Records a request token this device accepted (`mirror.start`).
-    pub(crate) fn note_mirror_incoming(&self, peer: &DeviceId, session: u32, request: u64) {
-        self.mirror_incoming.lock().unwrap_or_else(|e| e.into_inner()).insert((*peer, session), request);
+    pub(crate) fn note_mirror_incoming(&self, peer: &DeviceId, session: u32, request: u64, connection: u64) {
+        self.mirror_incoming
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert((*peer, session), IncomingMirror { request, connection, video: None });
+    }
+
+    pub(crate) fn incoming_mirror_request(&self, peer: &DeviceId, session: u32) -> Option<u64> {
+        self.mirror_incoming
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&(*peer, session))
+            .map(|accepted| accepted.request)
+    }
+
+    pub(crate) fn take_mirror_incoming_request(
+        &self,
+        peer: &DeviceId,
+        session: u32,
+        request: u64,
+        connection: u64,
+    ) -> bool {
+        let mut incoming = self.mirror_incoming.lock().unwrap_or_else(|e| e.into_inner());
+        if !incoming
+            .get(&(*peer, session))
+            .is_some_and(|accepted| accepted.request == request && accepted.connection == connection)
+        {
+            return false;
+        }
+        if let Some(accepted) = incoming.remove(&(*peer, session))
+            && let Some(closed) = accepted.video.as_ref().and_then(Weak::upgrade)
+        {
+            closed.store(true, Ordering::Release);
+        }
+        true
     }
 
     /// Whether a `mirror.stop` ends the recorded request: a stop tagged for
@@ -1012,7 +1399,7 @@ impl Shared {
     /// when the stop applies.
     pub(crate) fn mirror_stop_applies(&self, peer: &DeviceId, session: u32, request: Option<u64>) -> bool {
         let mut incoming = self.mirror_incoming.lock().unwrap_or_else(|e| e.into_inner());
-        match (request, incoming.get(&(*peer, session)).copied()) {
+        match (request, incoming.get(&(*peer, session)).map(|accepted| accepted.request)) {
             (Some(stop), Some(current)) if stop != current => false,
             _ => {
                 incoming.remove(&(*peer, session));
@@ -1076,6 +1463,7 @@ mod tests {
             stop: Arc::default(),
             resyncing: Mutex::new(false),
             audio: false,
+            control_owner: None,
         };
         let send = |kind| tokio::task::block_in_place(|| stream.send(kind, 0, vec![1]));
         assert_eq!(send(PacketKind::Keyframe), MirrorSend::Queued);
@@ -1100,6 +1488,7 @@ mod tests {
             stop: Arc::default(),
             resyncing: Mutex::new(false),
             audio: true,
+            control_owner: None,
         };
         let send = |kind| tokio::task::block_in_place(|| stream.send(kind, 0, vec![1]));
         assert_eq!(send(PacketKind::Frame), MirrorSend::Queued);

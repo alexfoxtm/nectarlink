@@ -20,6 +20,35 @@ Window {
     readonly property string phase: info.phase || ""
     readonly property bool canControl: info.canControl === true
     readonly property bool viewOnly: info.viewOnly === true
+    // Negotiated control state from the backend (request-bound phone-control
+    // contract): available, ownerApproval, stopped, inputUnavailable,
+    // unsupported, offline, notShowing, mirroringOff. Missing on old peers
+    // or fixtures. The UI only reads it; grants and Stop live on the phone.
+    readonly property string controlReason: info.controlReason || ""
+    // Screen-reader description of the phone surface: the control state
+    // plus the local focus keys. It only reads existing backend data
+    // (phase/canControl/viewOnly/controlReason); the UI never grants
+    // control itself. Reasons name this connection only, never the OS.
+    readonly property string accessibleControlDescription: {
+        if (win.phase !== "showing")
+            return ""
+        if (win.canControl) {
+            return qsTr("Phone control is on. Type or use arrow keys to control the phone. Press F6 to reach the toolbar. Escape in the toolbar returns here.")
+        }
+        if (win.controlReason === "ownerApproval") {
+            return qsTr("Phone control needs approval. Turn on Allow phone control for this computer in Waypair Link's settings on the phone.")
+        }
+        if (win.controlReason === "stopped") {
+            return qsTr("Phone control was stopped on the phone. To allow this computer again, turn Screen sharing and typing off and then on for this computer in Waypair Link's settings on the phone.")
+        }
+        if (win.controlReason === "inputUnavailable") {
+            return qsTr("To control the phone, turn on Control from your PC in Waypair Link's settings on the phone.")
+        }
+        if (win.controlReason === "unsupported" || win.viewOnly) {
+            return qsTr("Viewing only for this connection. Remote control isn't supported on this phone connection.")
+        }
+        return qsTr("Phone control isn't available for this connection right now.")
+    }
     readonly property bool onMac: Qt.platform.os === "osx" || Qt.platform.os === "macos"
     readonly property bool fullScreen: visibility === Window.FullScreen
     property int visibilityBeforeFullScreen: Window.Windowed
@@ -128,6 +157,7 @@ Window {
 
     VideoView {
         id: video
+        objectName: "mirrorVideo"
         anchors.fill: parent
         stream: win.mirrorKey
         windowIcon: win.info.icon || ""
@@ -135,6 +165,12 @@ Window {
             ? "Nectarlink.App." + (win.info.device || "").slice(0, 8) + "." + win.info.pkg
             : ""
         focus: true
+        // The phone picture for screen readers: the name follows the
+        // window title (no new string), the description is the control
+        // state, so revoked control is announced without implying it.
+        Accessible.role: Accessible.Grouping
+        Accessible.name: win.phase === "showing" ? win.title : ""
+        Accessible.description: win.accessibleControlDescription
         acceptsText: win.phase === "showing" && win.canControl
         // The emoji panel (Win+.) and input methods give finished text here
         // instead of as key presses.
@@ -241,6 +277,18 @@ Window {
         Keys.onPressed: (event) => {
             if (win.phase !== "showing")
                 return
+            // Local focus key, never sent to the phone (F6 has no phone
+            // binding): Tab stays phone-bound while control is on, so it
+            // cannot be the way out of the surface. Wakes the toolbar so
+            // the keyboard focus ring is visible.
+            if (event.key === Qt.Key_F6) {
+                if (toolbar.visible) {
+                    toolbarWakeTimer.restart()
+                    copyShotBtn.forceActiveFocus(Qt.TabFocusReason)
+                    event.accepted = true
+                }
+                return
+            }
             if ((event.modifiers & Qt.ControlModifier) && (event.modifiers & Qt.ShiftModifier) && event.key === Qt.Key_C) {
                 Mirror.screenshotClipboard(win.mirrorKey)
                 event.accepted = true
@@ -323,6 +371,7 @@ Window {
     }
     Rectangle {
         id: toolbar
+        objectName: "mirrorToolbar"
         anchors.top: parent.top
         anchors.right: parent.right
         anchors.margins: 12
@@ -331,6 +380,18 @@ Window {
         radius: 20
         color: Qt.rgba(0, 0, 0, 0.68)
         visible: win.phase === "showing" && video.frameSize.width > 0
+        // Group label for screen readers; the buttons keep their own
+        // labels. Escape/F6 here return focus to the phone surface and
+        // are never sent to the phone (unaccepted keys propagate up from
+        // the focused button to this container, never sideways to video).
+        Accessible.role: Accessible.Grouping
+        Accessible.name: qsTr("Mirror toolbar")
+        Keys.onPressed: (event) => {
+            if (event.key === Qt.Key_Escape || event.key === Qt.Key_F6) {
+                video.forceActiveFocus()
+                event.accepted = true
+            }
+        }
         readonly property bool toolbarHasFocus: copyShotBtn.activeFocus || saveShotBtn.activeFocus
             || recordBtn.activeFocus || stayAwakeBtn.activeFocus || screenOffBtn.activeFocus || soundBtn.activeFocus
             || fullScreenBtn.activeFocus
@@ -347,6 +408,7 @@ Window {
 
             IconButton {
                 id: copyShotBtn
+                objectName: "mirrorCopyShot"
                 iconPath: Icons.copy
                 iconColor: "white"
                 label: qsTr("Copy screenshot (%1)").arg(win.onMac ? "⌘⇧C" : "Ctrl+Shift+C")
@@ -446,6 +508,8 @@ Window {
     // Brief confirmation pill for screenshots, recordings, file drops, and power toggles.
     Rectangle {
         id: noticePill
+        Accessible.role: Accessible.StatusBar
+        Accessible.name: noticePill.pillText
         readonly property string pillText: mirrorDropArea.containsDrag
             ? qsTr("Release to send files to %1").arg(win.deviceName.length > 0 ? win.deviceName : qsTr("phone"))
             : (win.info.notice || "")
@@ -474,9 +538,13 @@ Window {
         }
     }
 
-    // Why control is unavailable, or how to enable it on supported hosts.
+    // Why control is unavailable for this connection, and what (if anything)
+    // the phone owner can do about it. Text mirrors
+    // accessibleControlDescription so the banner and screen reader agree.
     Rectangle {
         id: hintBanner
+        Accessible.role: Accessible.StatusBar
+        Accessible.name: hint.text
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
@@ -515,9 +583,7 @@ Window {
             wrapMode: Text.WordWrap
             role: "bodySmall"
             color: "white"
-            text: win.viewOnly
-                ? qsTr("Viewing only on Mac. Phone control is not yet available.")
-                : qsTr("To control the phone, turn on Control from your PC in Waypair Link's settings on the phone.")
+            text: win.accessibleControlDescription
         }
         Button {
             id: notifyPhoneBtn
@@ -526,7 +592,7 @@ Window {
             anchors.verticalCenter: parent.verticalCenter
             variant: "tonal"
             size: "sm"
-            text: qsTr("Notify phone")
+            text: qsTr("How to enable")
             enabled: !win.viewOnly
             onClicked: Mirror.requestControl(win.mirrorKey)
         }

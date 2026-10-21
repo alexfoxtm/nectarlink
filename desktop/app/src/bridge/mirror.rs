@@ -28,7 +28,8 @@ pub mod qobject {
         #[qml_element]
         #[qml_singleton]
         /// The windows, as JSON: `[{ key, device, session, name, title,
-        /// phase ("asking", "showing", "ended"), reason, canControl, sound,
+        /// phase ("asking", "showing", "ended"), reason, canControl,
+        /// controlReason, canRequestControl, viewOnly, sound,
         /// app }]`.
         #[qproperty(QString, windows)]
         /// The user turned the phones' sound off on this PC.
@@ -194,6 +195,7 @@ impl qobject::Mirror {
         let windows: Vec<serde_json::Value> = mirror::windows()
             .into_iter()
             .map(|(window, shown)| {
+                let control_reason = mirror::control_reason(window);
                 let (control, can_screen_off, name) = hub.read(|s| {
                     // The screen needs control turned on; app windows are Elevated already.
                     let feature = if window.session == MIRROR_SCREEN {
@@ -202,8 +204,12 @@ impl qobject::Mirror {
                         "mirroring.app_windows"
                     };
                     let matrix = s.matrices.get(&window.device);
-                    let control = !mirror::VIEW_ONLY
-                        && matrix.and_then(|m| m.state(feature)) == Some(FeatureState::Available);
+                    let control = if window.session == MIRROR_SCREEN {
+                        control_reason == "available"
+                    } else {
+                        !mirror::VIEW_ONLY
+                            && matrix.and_then(|m| m.state(feature)) == Some(FeatureState::Available)
+                    };
                     let can_screen_off = !mirror::VIEW_ONLY
                         && matrix.and_then(|m| m.state("mirroring.app_windows"))
                             == Some(FeatureState::Available);
@@ -233,8 +239,10 @@ impl qobject::Mirror {
                     "app": shown.app.is_some(),
                     "phase": phase,
                     "reason": reason,
-                    "viewOnly": mirror::VIEW_ONLY,
+                    "viewOnly": window.session == MIRROR_SCREEN && control_reason == "unsupported",
                     "canControl": control,
+                    "controlReason": control_reason,
+                    "canRequestControl": false,
                     "sound": window.session == MIRROR_SCREEN && mirror::has_sound(&window.device),
                     "recording": mirror::is_recording(&window),
                     "recordingStartedMs": mirror::recording_started_ms(&window),

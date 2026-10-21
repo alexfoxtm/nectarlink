@@ -370,10 +370,16 @@ pub struct Hello {
     #[serde(default)]
     pub caps: Vec<String>,
     pub power: PowerLevel,
+    /// Phone-owner input generation, only for this trusted PC and an admitted grant.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_epoch: Option<u64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HelloUpdate {
+    /// Recomputed with caps; absent on a caps update revokes the old epoch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_epoch: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub caps: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1397,6 +1403,13 @@ pub mod mirror {
     pub const STOPPED: u32 = 11;
     /// Offered by phones that take input from the PC while mirrored.
     pub const INPUT: &str = "mirror.input";
+    /// Request-bound screen input with a per-PC owner grant and input epoch.
+    /// Unlike CORRELATION this also covers input, not only video/start/stop.
+    pub const INPUT_REQUEST: &str = "mirror.input.request";
+    /// Per-PC phone-owner grant, never a globally advertised permission.
+    pub const CONTROL_ALLOWED: &str = "mirror.control.allowed";
+    /// The phone owner's durable Stop currently blocks this PC.
+    pub const CONTROL_STOPPED: &str = "mirror.control.stopped";
     /// Typed text in one message: at most this many bytes.
     pub const MAX_TEXT_BYTES: usize = 4096;
     pub const H264: &str = "h264";
@@ -1517,6 +1530,15 @@ pub struct MirrorSession {
     pub request: Option<u64>,
 }
 
+/// On the existing mirror.stop opcode, the sharing phone declined/ended the
+/// incoming request rather than asking this peer to stop capturing its screen.
+/// Only used after INPUT_REQUEST negotiation; old peers ignore unknown fields.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MirrorSourceStop {
+    #[serde(default)]
+    pub source_stopped: bool,
+}
+
 /// Body of `mirror.resize`: resize an app window's display (`session != 0`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MirrorResize {
@@ -1631,6 +1653,47 @@ pub fn mirror_input_envelope(
         && let Some(ciborium::Value::Map(fields)) = env.b.as_mut()
     {
         fields.push((ciborium::Value::Text("session".into()), ciborium::Value::Integer(session.into())));
+    }
+    Ok(env)
+}
+
+/// Exact source decline/end, using mirror.stop after INPUT_REQUEST negotiation.
+pub fn mirror_source_stop_envelope(
+    session: u32,
+    request: u64,
+) -> Result<crate::Envelope, crate::ProtocolError> {
+    let mut env =
+        crate::Envelope::new(types::MIRROR_STOP, &MirrorSession { session, request: Some(request) })?;
+    if let Some(ciborium::Value::Map(fields)) = env.b.as_mut() {
+        fields.push((ciborium::Value::Text("source_stopped".into()), ciborium::Value::Bool(true)));
+    }
+    Ok(env)
+}
+
+/// Optional fields on the existing mirror.input opcode. New safe control
+/// requires both fields; old envelopes deserialize without granting control.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MirrorInputOwner {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_epoch: Option<u64>,
+}
+
+/// Screen input for the exact request and owner-grant generation displayed.
+/// Reuses MIRROR_INPUT; peers must explicitly negotiate INPUT_REQUEST first.
+pub fn mirror_control_input_envelope(
+    input: &MirrorInput,
+    request: u64,
+    input_epoch: u64,
+) -> Result<crate::Envelope, crate::ProtocolError> {
+    let mut env = mirror_input_envelope(input, mirror::SCREEN)?;
+    if let Some(ciborium::Value::Map(fields)) = env.b.as_mut() {
+        fields.push((ciborium::Value::Text("request".into()), ciborium::Value::Integer(request.into())));
+        fields.push((
+            ciborium::Value::Text("input_epoch".into()),
+            ciborium::Value::Integer(input_epoch.into()),
+        ));
     }
     Ok(env)
 }
@@ -4694,6 +4757,7 @@ mod tests {
             device: info(),
             caps: vec!["core.ping".into(), "device.battery".into()],
             power: PowerLevel::Elevated,
+            input_epoch: Some(42),
         };
         let env = Envelope::new(types::HELLO, &hello).unwrap();
         let back: Hello = Envelope::from_cbor(&env.to_cbor()).unwrap().expect_body(types::HELLO).unwrap();
