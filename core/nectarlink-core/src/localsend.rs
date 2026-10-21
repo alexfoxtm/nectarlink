@@ -1087,6 +1087,15 @@ async fn handle_upload(shared: &Arc<Shared>, stream: &mut ServerStream, head: &H
     let _ = out.flush().await;
     drop(out);
 
+    // Never finalize a part file that is not exactly the approved size.
+    let staged_size = tokio::fs::metadata(&part_path).await.map(|m| m.len());
+    let stream_res = match (stream_res, staged_size) {
+        (Ok(()), Ok(size)) if size == expected_size => Ok(()),
+        (Ok(()), Ok(size)) => Err(upload_size_mismatch(size, expected_size)),
+        (Ok(()), Err(e)) => Err(TransferState::Failed(TransferFailure::Other(e.to_string()))),
+        (Err(state), _) => Err(state),
+    };
+
     if let Err(err_state) = stream_res {
         shared.localsend.sessions.lock().unwrap_or_else(|e| e.into_inner()).remove(&session_id);
         shared.unregister_transfer(&transfer_id);
@@ -1696,8 +1705,14 @@ async fn read_chunked_vec<S: AsyncRead + Unpin>(
     let mut out = Vec::new();
     loop {
         while find_crlf(&buf).is_none() {
+            // The payload cap covers decoded bytes only, so the framing line needs its own
+            // bound; reuse the existing header budget for it.
+            if buf.len() >= MAX_HEADER_BYTES {
+                return Err(std::io::Error::new(ErrorKind::InvalidData, "chunk size line too large"));
+            }
             let mut tmp = [0u8; 4096];
-            let n = tokio::time::timeout(IO_TIMEOUT, stream.read(&mut tmp))
+            let want = (MAX_HEADER_BYTES - buf.len()).min(tmp.len());
+            let n = tokio::time::timeout(IO_TIMEOUT, stream.read(&mut tmp[..want]))
                 .await
                 .map_err(|_| std::io::Error::new(ErrorKind::TimedOut, "chunk header timeout"))??;
             if n == 0 {
@@ -1737,26 +1752,46 @@ async fn read_chunked_vec<S: AsyncRead + Unpin>(
     Ok(out)
 }
 
-async fn stream_body_to_file<S, F>(
+/// A received body that does not match the size the user approved.
+fn upload_size_mismatch(size: u64, approved: u64) -> TransferState {
+    let message = format!("upload size {size} does not match the approved size {approved}");
+    TransferState::Failed(TransferFailure::Other(message))
+}
+
+async fn stream_body_to_file<S, W, F>(
     stream: &mut S,
     head: &HttpHead,
-    out: &mut tokio::fs::File,
+    out: &mut W,
     expected_size: u64,
     cancel: &CancellationToken,
     mut on_progress: F,
 ) -> std::result::Result<(), TransferState>
 where
     S: AsyncRead + Unpin,
+    W: AsyncWrite + Unpin,
     F: FnMut(u64),
 {
+    // The size the user approved is the hard bound: a body that claims more
+    // is refused before anything is written, and only a body of exactly the
+    // approved size may be finalized.
+    let mut written: u64 = 0;
+
     if head.chunked {
         let mut buf = head.prefetched_body.clone();
-        loop {
+        'chunks: loop {
             while find_crlf(&buf).is_none() {
+                // The payload cap covers decoded bytes only, so the framing line needs its own
+                // bound; reuse the existing header budget for it.
+                if buf.len() >= MAX_HEADER_BYTES {
+                    return Err(TransferState::Failed(TransferFailure::Other(
+                        "chunk size line too large".into(),
+                    )));
+                }
                 let mut tmp = [0u8; 8192];
+                let want = (MAX_HEADER_BYTES - buf.len()).min(tmp.len());
                 let n = tokio::select! {
                     _ = cancel.cancelled() => return Err(TransferState::Cancelled),
-                    r = tokio::time::timeout(IO_TIMEOUT, stream.read(&mut tmp)) => {
+                    r = tokio::time::timeout(IO_TIMEOUT, stream.read(&mut tmp[..want])) => {
                         match r {
                             Ok(Ok(n)) => n,
                             _ => return Err(TransferState::Failed(TransferFailure::Other("upload read error".into()))),
@@ -1764,12 +1799,12 @@ where
                     }
                 };
                 if n == 0 {
-                    return Ok(());
+                    break 'chunks;
                 }
                 buf.extend_from_slice(&tmp[..n]);
             }
             let Some(line_end) = find_crlf(&buf) else {
-                return Ok(());
+                break 'chunks;
             };
             let size_line = String::from_utf8_lossy(&buf[..line_end]).into_owned();
             let hex_part = size_line.split(';').next().unwrap_or("").trim();
@@ -1778,7 +1813,11 @@ where
             };
             buf.drain(..line_end + 2);
             if chunk_size == 0 {
-                return Ok(());
+                break 'chunks;
+            }
+            let chunk_total = written.saturating_add(chunk_size as u64);
+            if chunk_total > expected_size {
+                return Err(upload_size_mismatch(chunk_total, expected_size));
             }
             let mut left_in_chunk = chunk_size;
             while left_in_chunk > 0 {
@@ -1789,6 +1828,7 @@ where
                         .map_err(|e| TransferState::Failed(TransferFailure::Other(e.to_string())))?;
                     buf.drain(..take);
                     left_in_chunk -= take;
+                    written += take as u64;
                     on_progress(take as u64);
                 } else {
                     let mut tmp = vec![0u8; UPLOAD_CHUNK.min(left_in_chunk)];
@@ -1808,6 +1848,7 @@ where
                         .await
                         .map_err(|e| TransferState::Failed(TransferFailure::Other(e.to_string())))?;
                     left_in_chunk -= n;
+                    written += n as u64;
                     on_progress(n as u64);
                 }
             }
@@ -1825,8 +1866,17 @@ where
             let drain_crlf = buf.len().min(2);
             buf.drain(..drain_crlf);
         }
+        if written != expected_size {
+            return Err(upload_size_mismatch(written, expected_size));
+        }
+        Ok(())
     } else {
+        // A declared length that differs from the approved size is a conflict;
+        // the approval is the only size this receiver may accept.
         let total = head.content_length.unwrap_or(expected_size);
+        if total != expected_size {
+            return Err(upload_size_mismatch(total, expected_size));
+        }
         let mut remaining = total;
         if !head.prefetched_body.is_empty() {
             let take = (head.prefetched_body.len() as u64).min(remaining) as usize;
@@ -1834,11 +1884,12 @@ where
                 .await
                 .map_err(|e| TransferState::Failed(TransferFailure::Other(e.to_string())))?;
             remaining -= take as u64;
+            written += take as u64;
             on_progress(take as u64);
         }
         let mut buf = vec![0u8; UPLOAD_CHUNK];
         while remaining > 0 {
-            let max_read = UPLOAD_CHUNK.min(remaining as usize);
+            let max_read = UPLOAD_CHUNK.min(usize::try_from(remaining).unwrap_or(usize::MAX));
             let n = tokio::select! {
                 _ = cancel.cancelled() => return Err(TransferState::Cancelled),
                 r = tokio::time::timeout(IO_TIMEOUT, stream.read(&mut buf[..max_read])) => {
@@ -1857,7 +1908,11 @@ where
                 .await
                 .map_err(|e| TransferState::Failed(TransferFailure::Other(e.to_string())))?;
             remaining -= n as u64;
+            written += n as u64;
             on_progress(n as u64);
+        }
+        if written != expected_size {
+            return Err(upload_size_mismatch(written, expected_size));
         }
         Ok(())
     }
@@ -2170,6 +2225,7 @@ impl ServerCertVerifier for LocalSendCertVerifier {
 mod tests {
     use super::*;
     use crate::identity::PlainKeyProtector;
+    use std::sync::atomic::AtomicU64;
 
     #[tokio::test]
     async fn self_signed_cert_completes_tls_handshake_and_matches_fingerprint() {
@@ -2219,6 +2275,159 @@ mod tests {
         let state2 =
             LocalSendState::open(dir.path(), Arc::new(PlainKeyProtector), LOCALSEND_DEFAULT_PORT).unwrap();
         assert_eq!(state2.identity.fingerprint, fp1);
+    }
+
+    type UploadResult = (std::result::Result<(), TransferState>, Vec<u8>);
+
+    fn upload_head(content_length: Option<u64>, chunked: bool) -> HttpHead {
+        HttpHead {
+            method: "POST".into(),
+            target: "/api/localsend/v2/upload".into(),
+            content_length,
+            chunked,
+            prefetched_body: Vec::new(),
+        }
+    }
+
+    /// Streams `body` into an in-memory sink with `approved` as the size the
+    /// user accepted, over the given request head.
+    async fn run_upload(head: &HttpHead, approved: u64, body: &[u8]) -> UploadResult {
+        let mut sink: Vec<u8> = Vec::new();
+        let mut stream: &[u8] = body;
+        let cancel = CancellationToken::new();
+        let res = stream_body_to_file(&mut stream, head, &mut sink, approved, &cancel, |_| {}).await;
+        (res, sink)
+    }
+
+    /// The approved size is the hard bound for a received body: a longer body
+    /// is refused, a shorter one never finalizes, only an exact match passes.
+    #[tokio::test]
+    async fn localsend_upload_body_is_bounded_by_the_approved_size() {
+        // Fixed length, exactly the approved size.
+        let (res, sink) = run_upload(&upload_head(Some(1), false), 1, b"A").await;
+        assert!(res.is_ok());
+        assert_eq!(sink, b"A".to_vec());
+
+        // Fixed length, the sender declares more than was approved.
+        let (res, sink) = run_upload(&upload_head(Some(2), false), 1, b"AB").await;
+        assert!(res.is_err());
+        assert!(sink.is_empty());
+
+        // Fixed length, the sender declares less than was approved.
+        let (res, sink) = run_upload(&upload_head(Some(0), false), 1, b"").await;
+        assert!(res.is_err());
+        assert!(sink.is_empty());
+
+        // Fixed length, the body ends before the approved size.
+        let (res, sink) = run_upload(&upload_head(Some(1), false), 1, b"").await;
+        assert!(res.is_err());
+        assert!(sink.is_empty());
+
+        // Chunked, exactly the approved size.
+        let (res, sink) = run_upload(&upload_head(None, true), 1, b"1\r\nA\r\n0\r\n\r\n").await;
+        assert!(res.is_ok());
+        assert_eq!(sink, b"A".to_vec());
+
+        // Chunked, the chunk carries more than was approved.
+        let (res, sink) = run_upload(&upload_head(None, true), 1, b"2\r\nAB\r\n0\r\n\r\n").await;
+        assert!(res.is_err());
+        assert!(sink.is_empty());
+
+        // Chunked, the body ends before the approved size.
+        let (res, sink) = run_upload(&upload_head(None, true), 1, b"0\r\n\r\n").await;
+        assert!(res.is_err());
+        assert!(sink.is_empty());
+
+        // An approved empty file accepts an empty body.
+        let (res, sink) = run_upload(&upload_head(Some(0), false), 0, b"").await;
+        assert!(res.is_ok());
+        assert!(sink.is_empty());
+
+        // An approved empty file refuses a 1-byte body.
+        let (res, sink) = run_upload(&upload_head(None, true), 0, b"1\r\nA\r\n0\r\n\r\n").await;
+        assert!(res.is_err());
+        assert!(sink.is_empty());
+    }
+
+    /// A body larger than the approved size must fail the transfer and must
+    /// never leave a byte behind that a finalization step could pick up.
+    #[tokio::test]
+    async fn localsend_oversized_upload_body_fails_and_writes_nothing() {
+        // Fixed length, 1 byte approved, 2 bytes offered.
+        let (res, sink) = run_upload(&upload_head(Some(2), false), 1, b"AB").await;
+        assert!(matches!(res, Err(TransferState::Failed(_))));
+        assert!(sink.is_empty());
+
+        // Chunked, 1 byte approved, 2 bytes offered in one chunk.
+        let (res, sink) = run_upload(&upload_head(None, true), 1, b"2\r\nAB\r\n0\r\n\r\n").await;
+        assert!(matches!(res, Err(TransferState::Failed(_))));
+        assert!(sink.is_empty());
+
+        // Chunked, 1 byte approved, a second chunk of 2 bytes follows the first.
+        let (res, sink) = run_upload(&upload_head(None, true), 1, b"1\r\nA\r\n2\r\nBC\r\n0\r\n\r\n").await;
+        assert!(matches!(res, Err(TransferState::Failed(_))));
+        assert!(sink.len() <= 1, "no byte beyond the approved size may be written");
+    }
+
+    /// Serves `limit` bytes of `b'A'` and then EOF, so an unbounded framing buffer shows up
+    /// as a growing byte count instead of a hang.
+    struct UnterminatedUploadSizeLine {
+        served: Arc<std::sync::atomic::AtomicU64>,
+        limit: u64,
+    }
+
+    impl AsyncRead for UnterminatedUploadSizeLine {
+        fn poll_read(
+            self: std::pin::Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+            buf: &mut tokio::io::ReadBuf<'_>,
+        ) -> std::task::Poll<std::io::Result<()>> {
+            let n =
+                buf.remaining().min(1024).min((self.limit - self.served.load(Ordering::Relaxed)) as usize);
+            if n == 0 {
+                return std::task::Poll::Ready(Ok(()));
+            }
+            buf.put_slice(&[b'A'; 1024][..n]);
+            self.served.fetch_add(n as u64, Ordering::Relaxed);
+            std::task::Poll::Ready(Ok(()))
+        }
+    }
+
+    /// A chunk-size line inside the framing budget is still accepted, with its
+    /// chunk extension and its data.
+    #[tokio::test]
+    async fn localsend_upload_chunk_size_line_within_budget_is_accepted() {
+        // A chunk extension on the size line.
+        let (res, sink) = run_upload(&upload_head(None, true), 1, b"1;ext=1\r\nA\r\n0\r\n\r\n").await;
+        assert!(res.is_ok());
+        assert_eq!(sink, b"A".to_vec());
+
+        // A long extension that stays inside the framing budget.
+        let mut body = String::from("1;");
+        body.push_str(&"e".repeat(1024));
+        body.push_str("\r\nA\r\n0\r\n\r\n");
+        let (res, sink) = run_upload(&upload_head(None, true), 1, body.as_bytes()).await;
+        assert!(res.is_ok());
+        assert_eq!(sink, b"A".to_vec());
+    }
+
+    /// An upload whose chunk-size line never ends must be refused inside the
+    /// framing budget instead of growing the buffer without bound.
+    #[tokio::test]
+    async fn localsend_upload_chunk_size_line_without_crlf_is_rejected_within_budget() {
+        let served = Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let mut stream = UnterminatedUploadSizeLine { served: served.clone(), limit: 8 * 1024 * 1024 };
+        let mut sink: Vec<u8> = Vec::new();
+        let cancel = CancellationToken::new();
+        let head = upload_head(None, true);
+        let res = stream_body_to_file(&mut stream, &head, &mut sink, 1, &cancel, |_| {}).await;
+        assert!(matches!(res, Err(TransferState::Failed(_))));
+        assert!(sink.is_empty());
+        let served = served.load(Ordering::Relaxed);
+        assert!(
+            served <= (MAX_HEADER_BYTES + 8192) as u64,
+            "chunk size line buffer grew past the framing budget: {served} bytes buffered"
+        );
     }
 
     #[tokio::test]
@@ -2299,5 +2508,53 @@ mod tests {
             let _ = guess_mime(&file_name);
             let _ = peer_device_id(&s, "192.168.1.42", 53317);
         }
+    }
+
+    /// Serves `limit` bytes of `b'A'` and then EOF, so an unbounded framing buffer shows up
+    /// as a growing byte count instead of a hang.
+    struct NeverEndingSizeLine {
+        served: Arc<AtomicU64>,
+        limit: u64,
+    }
+
+    impl AsyncRead for NeverEndingSizeLine {
+        fn poll_read(
+            self: std::pin::Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+            buf: &mut tokio::io::ReadBuf<'_>,
+        ) -> std::task::Poll<std::io::Result<()>> {
+            let n =
+                buf.remaining().min(1024).min((self.limit - self.served.load(Ordering::Relaxed)) as usize);
+            if n == 0 {
+                return std::task::Poll::Ready(Ok(()));
+            }
+            buf.put_slice(&[b'A'; 1024][..n]);
+            self.served.fetch_add(n as u64, Ordering::Relaxed);
+            std::task::Poll::Ready(Ok(()))
+        }
+    }
+
+    #[tokio::test]
+    async fn chunked_body_with_extensions_decodes_within_payload_budget() {
+        let mut stream: &[u8] = b"4;foo=bar\r\nWiki\r\n5\r\npedia\r\n0\r\n\r\n";
+        let body = read_chunked_vec(&mut stream, &[], 1024).await.unwrap();
+        assert_eq!(body.as_slice(), b"Wikipedia".as_slice());
+
+        let mut oversized: &[u8] = b"10\r\n0123456789abcdef\r\n0\r\n\r\n";
+        let err = read_chunked_vec(&mut oversized, &[], 8).await.unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::InvalidData);
+    }
+
+    #[tokio::test]
+    async fn chunked_size_line_without_crlf_is_rejected_within_framing_budget() {
+        let served = Arc::new(AtomicU64::new(0));
+        let mut stream = NeverEndingSizeLine { served: served.clone(), limit: 8 * 1024 * 1024 };
+        let err = read_chunked_vec(&mut stream, &[], 1024).await.unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::InvalidData);
+        let served = served.load(Ordering::Relaxed);
+        assert!(
+            served <= (MAX_HEADER_BYTES + 8192) as u64,
+            "size line buffer grew past the framing budget: {served} bytes buffered"
+        );
     }
 }
