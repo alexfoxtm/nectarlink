@@ -11,13 +11,13 @@ Item {
     property string deviceId
     property string deviceName
 
-    // The Mac does not run the phone's apps in windows (the desktop's start_app
-    // is view-only), whatever the phone's state.
-    readonly property bool macGap: Qt.platform.os === "osx" || Qt.platform.os === "macos"
-    readonly property var feature: macGap && deviceId.length > 0
-        ? ({ state: "locked", action: "updateApp", target: "desktop" })
-        : AppController.capsRevision >= 0 && deviceId.length > 0
+    // Keep the host qualification gate distinct from negotiated phone support.
+    // Old/no-bit phones retain the matrix's Update phone action.
+    readonly property var negotiatedFeature: AppController.capsRevision >= 0 && deviceId.length > 0
         ? AppController.featureState(deviceId, "mirroring.app_windows") : ({})
+    readonly property bool macGap: !Mirror.appWindowsSupported && negotiatedFeature.state === "available"
+    readonly property var feature: macGap
+        ? ({ state: "locked", action: "updateApp", target: "desktop" }) : negotiatedFeature
     readonly property bool available: feature.state === "available" || feature.state === "partial"
 
     readonly property var apps: {

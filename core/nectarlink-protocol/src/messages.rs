@@ -1406,6 +1406,10 @@ pub mod mirror {
     /// Request-bound screen input with a per-PC owner grant and input epoch.
     /// Unlike CORRELATION this also covers input, not only video/start/stop.
     pub const INPUT_REQUEST: &str = "mirror.input.request";
+    /// Phone app windows implement exact start/stop/capture/input ownership
+    /// and cancellation during stream writes. Compatibility only: never an
+    /// owner grant, Stop rearm or capture permission.
+    pub const APP_WINDOWS_OWNED_V1: &str = "mirror.app_windows_owned_v1";
     /// Per-PC phone-owner grant, never a globally advertised permission.
     pub const CONTROL_ALLOWED: &str = "mirror.control.allowed";
     /// The phone owner's durable Stop currently blocks this PC.
@@ -1680,14 +1684,15 @@ pub struct MirrorInputOwner {
     pub input_epoch: Option<u64>,
 }
 
-/// Screen input for the exact request and owner-grant generation displayed.
+/// Input for the exact screen/app request and owner-grant generation displayed.
 /// Reuses MIRROR_INPUT; peers must explicitly negotiate INPUT_REQUEST first.
 pub fn mirror_control_input_envelope(
     input: &MirrorInput,
+    session: u32,
     request: u64,
     input_epoch: u64,
 ) -> Result<crate::Envelope, crate::ProtocolError> {
-    let mut env = mirror_input_envelope(input, mirror::SCREEN)?;
+    let mut env = mirror_input_envelope(input, session)?;
     if let Some(ciborium::Value::Map(fields)) = env.b.as_mut() {
         fields.push((ciborium::Value::Text("request".into()), ciborium::Value::Integer(request.into())));
         fields.push((

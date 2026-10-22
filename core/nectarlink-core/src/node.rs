@@ -242,6 +242,16 @@ pub(crate) struct Shared {
     /// Request tokens this device accepted in `mirror.start`, by peer and
     /// session: `mirror.stop` for an older token takes no action.
     pub(crate) mirror_incoming: Mutex<HashMap<(DeviceId, u32), crate::mirror::IncomingMirror>>,
+    /// Close handles of live outgoing mirror streams (phone side), by peer:
+    /// revoking per-peer mirroring finishes them even when the peer keeps
+    /// reading. Mic and webcam streams never register here (see
+    /// [`crate::mirror::MirrorLiveOut`]).
+    pub(crate) mirror_live_out: Mutex<HashMap<DeviceId, Vec<crate::mirror::MirrorLiveOut>>>,
+    /// Per-peer mirroring revocation epoch, bumped by every
+    /// [`Shared::clear_mirror_peer`]: an `open` in flight
+    /// across a revocation observes the bump even if the toggle was
+    /// re-enabled since.
+    pub(crate) mirror_revoke_epoch: Mutex<HashMap<DeviceId, u64>>,
     /// Peers granted one-time reverse-mirror consent for the current session.
     pub(crate) pc_mirror_sessions: Mutex<std::collections::HashSet<DeviceId>>,
     /// Play on phone offers this PC made, by phone: the player and when.
@@ -326,6 +336,43 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 }
 
 impl Shared {
+    /// App start admission shares the existing peer-lifetime epoch with
+    /// invalidation, while connection replacement holds the sessions lock.
+    pub(crate) fn admit_mirror_app(
+        &self,
+        session: &Arc<Session>,
+        mirroring: u32,
+        request: u64,
+        epoch: u64,
+    ) -> Option<u64> {
+        let sessions = lock(&self.sessions);
+        if !sessions.get(&session.peer).is_some_and(|live| Arc::ptr_eq(live, session)) {
+            return None;
+        }
+        let epochs = lock(&self.mirror_revoke_epoch);
+        if epochs.get(&session.peer).copied().unwrap_or(0) != epoch
+            || self.cancel.is_cancelled()
+            || !self.toggle_on(&session.peer, crate::mirror::TOGGLE)
+        {
+            return None;
+        }
+        self.note_mirror_incoming(&session.peer, mirroring, request, session.mirror_control_id)
+    }
+
+    /// Call only after releasing sessions/epoch/request locks. Every callback
+    /// retains the invalidated admission, never the peer's replacement owner.
+    fn dispatch_mirror_stops(&self, peer: DeviceId, owners: Vec<(u32, Option<u64>, u64, u64)>) {
+        if owners.is_empty() {
+            return;
+        }
+        let platform = self.platform.clone();
+        drop(self.runtime.spawn_blocking(move || {
+            for (session, request, connection, capture) in owners {
+                platform.mirror_stop_requested_owned(&peer, session, request, connection, capture);
+            }
+        }));
+    }
+
     pub fn emit(&self, event: NodeEvent) {
         // No subscribers is fine; events are a UI convenience.
         let _ = self.events.send(event);
@@ -1403,7 +1450,8 @@ impl Shared {
         self.toggles.remove_peer(peer);
         self.deck.remove_peer(peer);
         self.stop_webcam(peer);
-        self.clear_mirror_peer(peer);
+        let owners = self.clear_mirror_peer(peer);
+        self.dispatch_mirror_stops(*peer, owners);
         let typing_fence_error = self.forget_mirror_typing(peer).err();
         crate::copied_link::clear(self, Some(peer));
         if !dropped_queue.is_empty() {
@@ -1453,7 +1501,7 @@ impl Shared {
         }
 
         // Replacing a connection cannot inherit its prior mirror requests.
-        self.clear_mirror_peer(&peer);
+        let mirror_owners = self.clear_mirror_peer(&peer);
         let remote_device = remote.device.sanitized();
         if let Err(e) = self.store.update_info(&peer, &remote_device) {
             tracing::warn!(error = %e, "failed to update peer info");
@@ -1474,6 +1522,7 @@ impl Shared {
         });
         sessions.insert(peer, session.clone());
         drop(sessions);
+        self.dispatch_mirror_stops(peer, mirror_owners);
         self.correct_hello_caps(&peer, &sent_caps);
         lock(&self.dial_failures).remove(&peer);
 
@@ -1538,7 +1587,7 @@ impl Shared {
         let current = sessions.get(&ended.peer).is_some_and(|current| Arc::ptr_eq(current, ended));
         if current {
             sessions.remove(&ended.peer);
-            self.clear_mirror_peer(&ended.peer);
+            let mirror_owners = self.clear_mirror_peer(&ended.peer);
             lock(&self.pc_mirror_sessions).remove(&ended.peer);
             lock(&self.watch_offers).remove(&ended.peer);
             lock(&self.storage).remove_peer(&ended.peer);
@@ -1554,6 +1603,7 @@ impl Shared {
                 self.set_link(ended.peer, LinkState::Offline { last_seen: Some(crate::now_unix()) });
             }
             drop(sessions);
+            self.dispatch_mirror_stops(ended.peer, mirror_owners);
             let _ = self.store.clear_send_queue_retry_delays(&ended.peer);
             self.queue_notify.notify_waiters();
         }
@@ -1937,6 +1987,8 @@ impl Node {
             mirror_stops: Mutex::new(HashMap::new()),
             mirror_outgoing: Mutex::new(HashMap::new()),
             mirror_incoming: Mutex::new(HashMap::new()),
+            mirror_live_out: Mutex::new(HashMap::new()),
+            mirror_revoke_epoch: Mutex::new(HashMap::new()),
             pc_mirror_sessions: Mutex::new(std::collections::HashSet::new()),
             watch_offers: Mutex::new(HashMap::new()),
             webcam_stops: Mutex::new(HashMap::new()),
@@ -2289,6 +2341,26 @@ impl Node {
         self.shared.session(peer).ok_or(Error::Offline)
     }
 
+    /// Test-only readback of the live session's QUIC dialer, to guard the
+    /// initial-credit assumption without a raw peer framework.
+    /// `test-support` only; no admission or grant effect.
+    #[cfg(feature = "test-support")]
+    pub fn test_session_dialer(&self, peer: DeviceId) -> Option<DeviceId> {
+        self.shared.session(&peer).map(|s| s.dialer)
+    }
+
+    /// Gives the isolated initial-credit fixture one additional stream
+    /// after its old open was cancelled. Never withdraws existing credit.
+    #[cfg(feature = "test-support")]
+    pub fn test_raise_peer_bi_credit(&self, peer: DeviceId) -> Result<()> {
+        if !self.shared.test_support_loopback_mirror_fixture {
+            return Err(Error::Denied);
+        }
+        let session = self.shared.session(&peer).ok_or(Error::Offline)?;
+        session.conn.set_max_concurrent_bi_streams(VarInt::from_u32(2));
+        Ok(())
+    }
+
     /// Like [`connected`](Self::connected), but waits up to [`STREAM_RECONNECT_WAIT`]
     /// for a connection that just dropped or was replaced to come back.
     async fn connected_soon(&self, peer: &DeviceId) -> Result<Arc<Session>> {
@@ -2397,18 +2469,23 @@ impl Node {
             if toggle == crate::mirror::PC_MIRROR_TOGGLE {
                 lock(&self.shared.pc_mirror_sessions).remove(&peer);
             }
-            self.shared.clear_mirror_peer(&peer);
+            // Retain exact owners before invalidation; an old teardown must
+            // never resolve a replacement window by numeric session alone.
+            let mut live = self.shared.clear_mirror_peer(&peer);
             let platform = self.shared.platform.clone();
+            if live.is_empty() {
+                live.push((crate::MIRROR_SCREEN, None, 0, 0));
+            }
             if phone && toggle == crate::mirror::TOGGLE {
-                // Phone owner revocation snapshots the actual capture now, before
-                // a later ON/start can replace it. The platform posts only owned work.
-                platform.mirror_stop_requested(&peer, crate::MIRROR_SCREEN);
+                for (session, request, connection, capture) in live {
+                    platform.mirror_stop_requested_owned(&peer, session, request, connection, capture);
+                }
             } else {
-                drop(
-                    self.shared
-                        .runtime
-                        .spawn_blocking(move || platform.mirror_stop_requested(&peer, crate::MIRROR_SCREEN)),
-                );
+                drop(self.shared.runtime.spawn_blocking(move || {
+                    for (session, request, connection, capture) in live {
+                        platform.mirror_stop_requested_owned(&peer, session, request, connection, capture);
+                    }
+                }));
             }
             if let Some(session) = original_session {
                 self.shared.runtime.spawn(async move {
@@ -3063,7 +3140,7 @@ impl Node {
             return Err(Error::Unsupported);
         }
         let applies =
-            self.shared.take_mirror_incoming_request(&peer, crate::MIRROR_SCREEN, request, connection);
+            self.shared.take_mirror_incoming_request(&peer, crate::MIRROR_SCREEN, request, connection, 0);
         if !applies {
             return Ok(false);
         }
@@ -3123,7 +3200,21 @@ impl Node {
         peer: DeviceId,
         request: u64,
     ) -> Option<crate::MirrorControlContext> {
-        self.shared.mirror_capture_context(&peer, request)
+        self.shared.mirror_capture_context(&peer, crate::MIRROR_SCREEN, request)
+    }
+
+    /// Identity of an accepted app/screen view request; never an input grant.
+    pub fn mirror_capture_context_for_session(
+        &self,
+        peer: DeviceId,
+        mirroring: u32,
+        request: u64,
+    ) -> Option<crate::MirrorControlContext> {
+        self.shared.mirror_capture_context(&peer, mirroring, request)
+    }
+
+    pub fn mirror_capture_current(&self, peer: DeviceId, context: crate::MirrorControlContext) -> bool {
+        self.shared.mirror_capture_current(&peer, context)
     }
 
     /// Exact live request/connection/owner generation for posted Android input.
@@ -3134,12 +3225,32 @@ impl Node {
     /// Capture before enqueueing, using the wire token of the showing stream.
     pub fn mirror_control(&self, peer: DeviceId, request: u64) -> Result<crate::MirrorControl> {
         let session = self.connected(&peer)?;
-        crate::MirrorControl::new(self.shared.clone(), session, request)
+        crate::MirrorControl::new(self.shared.clone(), session, crate::MIRROR_SCREEN, request)
     }
 
     /// Machine-readable reason for the exact phone screen's input admission.
     pub fn mirror_control_reason(&self, peer: DeviceId, request: u64) -> &'static str {
-        self.shared.mirror_control_reason(&peer, request)
+        self.shared.mirror_control_reason(&peer, crate::MIRROR_SCREEN, request)
+    }
+
+    /// Capture app input before queueing against this exact connection/request.
+    pub fn mirror_control_for_session(
+        &self,
+        peer: DeviceId,
+        mirroring: u32,
+        request: u64,
+    ) -> Result<crate::MirrorControl> {
+        let session = self.connected(&peer)?;
+        crate::MirrorControl::new(self.shared.clone(), session, mirroring, request)
+    }
+
+    pub fn mirror_control_reason_for_session(
+        &self,
+        peer: DeviceId,
+        mirroring: u32,
+        request: u64,
+    ) -> &'static str {
+        self.shared.mirror_control_reason(&peer, mirroring, request)
     }
 
     /// `peer`'s typing epoch now, for the phone owner's mirroring switch to
@@ -3205,6 +3316,21 @@ impl Node {
         self.open_mirror_stream(peer, false).await
     }
 
+    /// An accepted source stays on its original connection; never retry old
+    /// capture work into a replacement connection or Node.
+    pub async fn mirror_open_owned(
+        &self,
+        peer: DeviceId,
+        owner: crate::MirrorControlContext,
+    ) -> Result<crate::MirrorStream> {
+        let session = self.connected(&peer)?;
+        if session.mirror_control_id != owner.connection || !self.shared.mirror_capture_current(&peer, owner)
+        {
+            return Err(Error::Denied);
+        }
+        crate::mirror::open(&self.shared, &session, false, Some(owner)).await
+    }
+
     /// Opens this phone's sound stream to a PC that asked for the screen
     /// with its sound. Answered only while the screen request is live.
     pub async fn mirror_open_audio(&self, peer: DeviceId) -> Result<crate::MirrorStream> {
@@ -3217,13 +3343,13 @@ impl Node {
     /// back, and retries once on a new one.
     async fn open_mirror_stream(&self, peer: DeviceId, audio: bool) -> Result<crate::MirrorStream> {
         let first = self.connected_soon(&peer).await?;
-        match crate::mirror::open(&self.shared, &first, audio).await {
+        match crate::mirror::open(&self.shared, &first, audio, None).await {
             Err(err @ (Error::Offline | Error::Network(_))) => {
                 let next = self.connected_soon(&peer).await?;
                 if Arc::ptr_eq(&next, &first) {
                     return Err(err);
                 }
-                crate::mirror::open(&self.shared, &next, audio).await
+                crate::mirror::open(&self.shared, &next, audio, None).await
             }
             other => other,
         }
@@ -4535,8 +4661,14 @@ async fn bind_endpoint(
         // on Wi-Fi 6 does several times that, with bursts of delay).
         .stream_receive_window(VarInt::from_u32(STREAM_WINDOW))
         .receive_window(VarInt::from_u32(CONNECTION_WINDOW))
-        .send_window(u64::from(CONNECTION_WINDOW))
-        .build();
+        .send_window(u64::from(CONNECTION_WINDOW));
+    #[cfg(feature = "test-support")]
+    let transport = if let Some(count) = config.test_initial_max_concurrent_bi_streams {
+        transport.max_concurrent_bidi_streams(VarInt::from_u32(count))
+    } else {
+        transport
+    };
+    let transport = transport.build();
     let mut builder = Endpoint::builder(presets::Minimal)
         .secret_key(secret)
         .alpns(vec![ALPN_SESSION.to_vec(), ALPN_PAIR.to_vec()])
@@ -4878,6 +5010,10 @@ mod tests {
 
     use super::*;
     use crate::{FeatureState, NoopPlatform, PlainKeyProtector, storage};
+    #[cfg(feature = "test-support")]
+    use crate::{MirrorSend, MirrorStream};
+    #[cfg(feature = "test-support")]
+    use nectarlink_protocol::PacketKind;
 
     fn info(name: &str, kind: DeviceKind, os: &str) -> DeviceInfo {
         DeviceInfo {
@@ -5205,6 +5341,141 @@ mod tests {
             "old teardown cannot clear replacement medium"
         );
         assert_eq!(node.shared.usb_peer_addr(&phone), Some(replacement));
+        node.shutdown().await;
+    }
+
+    /// A mocked phone platform that only records encoder stops: synthetic
+    /// bytes, no capture or real input.
+    #[cfg(feature = "test-support")]
+    #[derive(Debug, Default)]
+    struct RevokeRecalls {
+        stops: std::sync::Mutex<Vec<(DeviceId, u32)>>,
+    }
+
+    #[cfg(feature = "test-support")]
+    #[derive(Debug)]
+    struct RevokePlatform {
+        recalls: Arc<RevokeRecalls>,
+    }
+
+    #[cfg(feature = "test-support")]
+    impl crate::Platform for RevokePlatform {
+        fn mirror_stop_requested(&self, peer: &DeviceId, session: u32) {
+            self.recalls.stops.lock().unwrap_or_else(|e| e.into_inner()).push((*peer, session));
+        }
+    }
+
+    #[cfg(feature = "test-support")]
+    fn revoke_info(name: &str, kind: DeviceKind, os: &str) -> DeviceInfo {
+        DeviceInfo {
+            name: name.into(),
+            kind,
+            os: os.into(),
+            os_ver: "test".into(),
+            model: None,
+            accent: None,
+            screen: None,
+            install_id: None,
+        }
+    }
+
+    #[cfg(feature = "test-support")]
+    async fn revoke_node(dir: &tempfile::TempDir, platform: Arc<dyn crate::Platform>) -> Node {
+        let mut config =
+            NodeConfig::new(dir.path(), revoke_info("Phone", DeviceKind::Phone, "android"), "0.0.1-test");
+        config.lan_discovery = false;
+        config.enable_loopback_mirror_fixture();
+        config.key_protector = Some(Arc::new(PlainKeyProtector));
+        Node::start(config, platform).await.expect("node starts")
+    }
+
+    #[cfg(feature = "test-support")]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn revoking_mirroring_closes_app_window_output_for_that_peer_only() {
+        // A phone revoking per-peer mirroring: already-open screen and
+        // nonzero app-window output to that peer finishes even though the
+        // peer keeps reading (its receivers stay open); another peer is
+        // untouched. Synthetic bytes and a mocked platform only.
+        let dir = tempfile::tempdir().unwrap();
+        let recalls = Arc::new(RevokeRecalls::default());
+        let node = revoke_node(&dir, Arc::new(RevokePlatform { recalls: recalls.clone() })).await;
+        let peer = DeviceId([0xA1; 32]);
+        let other = DeviceId([0xB2; 32]);
+        for (id, name) in [(peer, "PCA"), (other, "PCB")] {
+            node.shared
+                .store
+                .upsert_peer(&id, &revoke_info(name, DeviceKind::Desktop, "test"), crate::now_unix())
+                .unwrap();
+        }
+        // Accepted generations: the screen and app window 7 for the revoked
+        // peer, the screen only for the other. The connection id is the
+        // live session's control id shape (nonzero); revocation snapshots
+        // sessions, not connections.
+        node.shared.note_mirror_incoming(&peer, crate::MIRROR_SCREEN, 11, 0xC0FFEE).unwrap();
+        node.shared.note_mirror_incoming(&peer, 7, 12, 0xC0FFEE).unwrap();
+        node.shared.note_mirror_incoming(&other, crate::MIRROR_SCREEN, 21, 0xC0FFEE).unwrap();
+        let epoch_before = node.shared.mirror_epoch(&peer);
+        let (peer_screen, _keep_peer_screen) = MirrorStream::synthetic_for_test();
+        let (peer_app, _keep_peer_app) = MirrorStream::synthetic_for_test();
+        let (other_screen, _keep_other_screen) = MirrorStream::synthetic_for_test();
+        node.shared.track_mirror_outgoing(&peer, &peer_screen);
+        node.shared.track_mirror_outgoing(&peer, &peer_app);
+        node.shared.track_mirror_outgoing(&other, &other_screen);
+        assert_eq!(peer_app.send(PacketKind::Frame, 0, vec![1]), MirrorSend::Queued);
+
+        node.set_device_toggle(peer, crate::mirror::TOGGLE, false).unwrap();
+
+        // The revoked peer's output is done even though it keeps reading.
+        assert_eq!(peer_screen.send(PacketKind::Frame, 1, vec![2]), MirrorSend::Closed);
+        assert_eq!(peer_app.send(PacketKind::Frame, 1, vec![2]), MirrorSend::Closed);
+        // Per-peer isolation: the other peer still flows.
+        assert_eq!(other_screen.send(PacketKind::Frame, 1, vec![2]), MirrorSend::Queued);
+        // The revocation bumped the epoch, so an in-flight open across it
+        // cannot pass the re-check in `mirror::open`, even across off/on.
+        assert!(node.shared.mirror_epoch(&peer) > epoch_before);
+        // Each accepted session heard its own encoder stop (the screen and
+        // app window 7); the other peer heard nothing.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            if recalls.stops.lock().unwrap_or_else(|e| e.into_inner()).len() >= 2 {
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline, "revocation never reached the encoders");
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        let mut stops = recalls.stops.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        stops.sort_unstable();
+        assert_eq!(stops, vec![(peer, crate::MIRROR_SCREEN), (peer, 7)]);
+        node.shutdown().await;
+    }
+
+    #[cfg(feature = "test-support")]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn screen_stop_leaves_app_window_output_alone() {
+        // Ordinary screen stop stays per-session: stopping the screen never
+        // closes an independent app window's output and never counts as a
+        // revocation (peer-wide `clear_mirror_peer` is not on this
+        // path, and the epoch does not move).
+        let dir = tempfile::tempdir().unwrap();
+        let node = revoke_node(&dir, Arc::new(NoopPlatform)).await;
+        let peer = DeviceId([0xA1; 32]);
+        node.shared
+            .store
+            .upsert_peer(&peer, &revoke_info("PCA", DeviceKind::Desktop, "test"), crate::now_unix())
+            .unwrap();
+        let epoch_before = node.shared.mirror_epoch(&peer);
+        let (screen, _keep_screen) = MirrorStream::synthetic_for_test();
+        let (app, _keep_app) = MirrorStream::synthetic_for_test();
+        node.shared.track_mirror_outgoing(&peer, &screen);
+        node.shared.track_mirror_outgoing(&peer, &app);
+
+        // No session is connected: the stop still ends local screen readers
+        // without touching outgoing output.
+        node.mirror_stop(peer, crate::MIRROR_SCREEN).await;
+
+        assert_eq!(screen.send(PacketKind::Frame, 0, vec![1]), MirrorSend::Queued);
+        assert_eq!(app.send(PacketKind::Frame, 0, vec![1]), MirrorSend::Queued);
+        assert_eq!(node.shared.mirror_epoch(&peer), epoch_before);
         node.shutdown().await;
     }
 }

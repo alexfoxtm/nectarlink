@@ -436,7 +436,25 @@ pub fn compute(device: DeviceId, inputs: MatrixInputs<'_>) -> CapabilityMatrix {
                             paths: inputs.paths,
                             toggles: inputs.toggles,
                         };
-                        evaluate(def, &ctx)
+                        let result = evaluate(def, &ctx);
+                        // Mac app capture needs an explicit implementation
+                        // discriminator; INPUT_REQUEST alone also describes
+                        // old phones whose nonzero app path is unowned.
+                        // Windows retains its existing app-view matrix.
+                        if def.id == "mirroring.app_windows"
+                            && desktop.os == "macos"
+                            && result.0 == FeatureState::Available
+                            && !phone.caps.contains("mirror.app_windows_owned_v1")
+                        {
+                            (
+                                FeatureState::Locked {
+                                    upgrade: Upgrade::new(UpgradeAction::UpdateApp(Role::Phone)),
+                                },
+                                None,
+                            )
+                        } else {
+                            result
+                        }
                     }
                     None => (FeatureState::Unsupported { reason: UnsupportedReason::DeviceKinds }, None),
                 };
@@ -1652,5 +1670,55 @@ mod tests {
             facts(DeviceKind::Laptop, "windows", "10.0.26200", PowerLevel::NotApplicable, &shared_caps);
         let available = matrix_with(&phone, &shared_pc, &HashMap::new());
         assert_eq!(available.state("files.pc_browse"), Some(FeatureState::Available));
+    }
+}
+
+#[cfg(test)]
+mod owned_app_compatibility_tests {
+    use super::*;
+
+    fn app_matrix(owned: bool, desktop_os: &str) -> CapabilityMatrix {
+        let caps: &[&str] = if owned {
+            &["mirror.virtual_display", "mirror.app_windows_owned_v1"]
+        } else {
+            &["mirror.virtual_display"]
+        };
+        let phone = DeviceFacts {
+            kind: DeviceKind::Phone,
+            os: "android".into(),
+            os_ver: "16".into(),
+            power: PowerLevel::Elevated,
+            caps: caps.iter().map(|s| (*s).to_owned()).collect(),
+        };
+        let desktop = DeviceFacts {
+            kind: DeviceKind::Desktop,
+            os: desktop_os.into(),
+            os_ver: "test".into(),
+            power: PowerLevel::NotApplicable,
+            caps: ["mirror.view".to_owned()].into_iter().collect(),
+        };
+        let paths = Vec::new();
+        let toggles = HashMap::new();
+        compute(
+            DeviceId([7; 32]),
+            MatrixInputs { local: &desktop, peer: &phone, paths: &paths, toggles: &toggles },
+        )
+    }
+
+    #[test]
+    fn mac_app_windows_require_an_explicit_owned_contract() {
+        assert_eq!(app_matrix(true, "macos").state("mirroring.app_windows"), Some(FeatureState::Available));
+    }
+
+    #[test]
+    fn old_phone_needs_update_on_mac_but_keeps_windows_app_view_compatibility() {
+        assert_eq!(
+            app_matrix(false, "macos").state("mirroring.app_windows"),
+            Some(FeatureState::Locked { upgrade: Upgrade::new(UpgradeAction::UpdateApp(Role::Phone)) })
+        );
+        assert_eq!(
+            app_matrix(false, "windows").state("mirroring.app_windows"),
+            Some(FeatureState::Available)
+        );
     }
 }

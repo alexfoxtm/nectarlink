@@ -758,15 +758,25 @@ object Elevated {
         bitrate: Int,
         fps: Int,
         codec: String = "h264",
+        stillCurrent: () -> Boolean,
+        register: (java.net.Socket) -> Boolean,
     ): java.net.Socket? {
-        if (!PACKAGE.matches(pkg)) return null
+        if (!PACKAGE.matches(pkg) || !stillCurrent()) return null
         val (port, token) = helper ?: return null
         return runCatching {
             java.net.Socket(java.net.InetAddress.getLoopbackAddress(), port).apply {
                 tcpNoDelay = true
                 val out = OutputStreamWriter(getOutputStream(), Charsets.UTF_8)
+                if (!stillCurrent() || !register(this) || !stillCurrent()) {
+                    close()
+                    return null
+                }
                 out.write("$token\nV $width $height $dpi $bitrate $fps $pkg $codec\n")
                 out.flush()
+                if (!stillCurrent()) {
+                    close()
+                    return null
+                }
             }
         }.onFailure { Log.w(TAG, "can't open an app window", it) }.getOrNull()
     }

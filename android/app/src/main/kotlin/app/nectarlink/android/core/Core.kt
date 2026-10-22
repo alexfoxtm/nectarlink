@@ -152,7 +152,18 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
                 true
             }
         },
-        appWindows = AppWindows(this.context, scope, open = { pc -> mirrorOpen(pc) }, nameOf = { pc -> _state.value.nameOf(pc).orEmpty() }),
+        appWindows = AppWindows(
+            this.context, scope,
+            owner = { pc, session, request, connection, capture ->
+                val receivingNode = node
+                val accepted = runCatching { receivingNode?.mirrorCaptureContextForSession(pc, session, request) }.getOrNull()
+                if (receivingNode != null && node === receivingNode && accepted != null && accepted.connection == connection && accepted.capture == capture) {
+                    receivingNode to accepted
+                } else null
+            },
+            currentNode = { original -> node === original },
+            nameOf = { pc -> _state.value.nameOf(pc).orEmpty() },
+        ),
         nameOf = { pc -> _state.value.nameOf(pc).orEmpty() },
         onKeyboardFromPc = { pc, on -> setKeyboardFromPc(pc, on) },
         typingCurrent = { pc, generation -> node?.mirrorTypingCurrent(pc, generation) == true },
@@ -2003,7 +2014,10 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
                 emptyList()
             }) +
             // Apps in windows of their own run on displays the Elevated helper makes.
-            (if (Elevated.running && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) listOf("mirror.virtual_display") else emptyList()) +
+            (if (Elevated.running && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                listOf("mirror.virtual_display") +
+                    if (OWNED_APP_WINDOWS_QUALIFIED) listOf("mirror.app_windows_owned_v1") else emptyList()
+            } else emptyList()) +
             // Asked for when a PC wants the sound, or streamed via Elevated helper.
             (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q || Elevated.running) listOf("mirror.audio.playback") else emptyList())
 
@@ -2705,6 +2719,9 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
     private companion object {
         const val TAG = "Nectarlink"
         /** The core's per-PC view toggle and the existing phone-owner Stop rearm. */
+        // Root flips this build gate only after the paired native/helper contract
+        // and ABI are qualified; this is never a permission or a runtime setting.
+        private const val OWNED_APP_WINDOWS_QUALIFIED = false
         const val MIRRORING_TOGGLE = "mirroring"
         const val PHONE_CONTROL_TOGGLE = "phone_control"
         /** Offered while notification access is granted (docs/protocol/capabilities.md). */

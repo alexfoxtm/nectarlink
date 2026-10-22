@@ -57,6 +57,10 @@ const OPTIONS: MirrorStart = MirrorStart {
 /// Mac app windows, automatic clipboard/Flow and reverse host control stay
 /// unavailable. Phone-screen input has separate negotiated owner/request guards.
 pub(crate) const VIEW_ONLY: bool = cfg!(target_os = "macos");
+/// Keep Mac app windows unavailable until Root qualifies the Android115
+/// native successor and this host. The owned-app compatibility discriminator
+/// is separate from the phone owner's grant and durable Stop.
+pub(crate) const APP_WINDOWS: bool = !cfg!(target_os = "macos");
 /// Packets waiting for the decoder, at most (about two seconds).
 const BACKLOG: usize = 120;
 /// Packets in a row that may fail to decode, each retried from a fresh
@@ -987,7 +991,7 @@ pub fn keyboard_paste(device: DeviceId) {
 /// Opens one of the phone's apps in a window of its own (or does nothing
 /// when it's already open; reuses an ended window for that app).
 pub fn start_app(device: DeviceId, pkg: String, label: String) {
-    if VIEW_ONLY {
+    if !APP_WINDOWS {
         return;
     }
     let window = state(|s| {
@@ -1032,7 +1036,7 @@ pub fn reopen(window: Window) {
         start(window.device);
         return;
     }
-    if VIEW_ONLY {
+    if !APP_WINDOWS {
         return;
     }
     let pkg = state(|s| {
@@ -1455,7 +1459,7 @@ pub fn palette_apps(device: DeviceId) -> Vec<(String, String)> {
 /// Actual admission for the exact showing phone screen. App-window control
 /// remains separately fenced; no Mac host injection/capture is enabled here.
 pub fn control_reason(window: Window) -> &'static str {
-    if window.session != MIRROR_SCREEN {
+    if window.session != MIRROR_SCREEN && !APP_WINDOWS {
         return "unsupported";
     }
     let target = state(|s| {
@@ -1470,71 +1474,49 @@ pub fn control_reason(window: Window) -> &'static str {
     let Some((node, wire_request)) = target else {
         return "notShowing";
     };
-    node.mirror_control_reason(window.device, wire_request)
+    node.mirror_control_reason_for_session(window.device, window.session, wire_request)
 }
 
 /// Ordered queue reuses the existing MirrorInput handlers. Every phone event
 /// captures its original Node/connection/request/epoch before entering the queue.
 pub fn input(window: Window, input: nectarlink_core::MirrorInput) {
-    enum Target {
-        Phone(nectarlink_core::MirrorControl, u64, u64),
-        App(nectarlink_core::Node),
+    if window.session != MIRROR_SCREEN && !APP_WINDOWS {
+        return;
     }
-    let target = if window.session == MIRROR_SCREEN {
-        let captured = state(|s| {
-            if !s.windows.get(&window).is_some_and(|shown| shown.phase == Phase::Showing)
-                || latest_bitmap(&window).is_none()
-            {
-                return None;
-            }
-            Some((
-                s.request_nodes.get(&window)?.clone(),
-                *s.requests.get(&window)?,
-                *s.streams.get(&window)?,
-                *s.control_requests.get(&window)?,
-            ))
-        });
-        let Some((node, local_request, stream, wire_request)) = captured else {
-            return;
-        };
-        let Ok(control) = node.mirror_control(window.device, wire_request) else {
-            return;
-        };
-        Target::Phone(control, local_request, stream)
-    } else {
-        if VIEW_ONLY {
-            return;
+    let captured = state(|s| {
+        if !s.windows.get(&window).is_some_and(|shown| shown.phase == Phase::Showing)
+            || latest_bitmap(&window).is_none()
+        {
+            return None;
         }
-        let Some(node) = core_host::node() else {
-            return;
-        };
-        Target::App(node)
+        Some((
+            s.request_nodes.get(&window)?.clone(),
+            *s.requests.get(&window)?,
+            *s.streams.get(&window)?,
+            *s.control_requests.get(&window)?,
+        ))
+    });
+    let Some((node, local_request, stream, wire_request)) = captured else { return };
+    let Ok(control) = node.mirror_control_for_session(window.device, window.session, wire_request) else {
+        return;
     };
-    static QUEUE: std::sync::OnceLock<
-        tokio::sync::mpsc::UnboundedSender<(Window, Target, nectarlink_core::MirrorInput)>,
-    > = std::sync::OnceLock::new();
+    type QueuedMirrorInput = (Window, nectarlink_core::MirrorControl, u64, u64, nectarlink_core::MirrorInput);
+    static QUEUE: std::sync::OnceLock<tokio::sync::mpsc::UnboundedSender<QueuedMirrorInput>> =
+        std::sync::OnceLock::new();
     let queue = QUEUE.get_or_init(|| {
-        let (queue, mut inputs) =
-            tokio::sync::mpsc::unbounded_channel::<(Window, Target, nectarlink_core::MirrorInput)>();
+        let (queue, mut inputs) = tokio::sync::mpsc::unbounded_channel::<QueuedMirrorInput>();
         core_host::spawn(async move {
-            while let Some((window, target, input)) = inputs.recv().await {
-                let result = match target {
-                    Target::Phone(control, request, stream) => {
-                        control
-                            .send_if_current(input, move || {
-                                state(|s| {
-                                    s.owns_request(&window, request)
-                                        && s.shows(&window, stream)
-                                        && latest_bitmap(&window).is_some()
-                                        && s.windows
-                                            .get(&window)
-                                            .is_some_and(|shown| shown.phase == Phase::Showing)
-                                })
-                            })
-                            .await
-                    }
-                    Target::App(node) => node.mirror_input(window.device, window.session, input).await,
-                };
+            while let Some((window, control, request, stream, input)) = inputs.recv().await {
+                let result = control
+                    .send_if_current(input, move || {
+                        state(|s| {
+                            s.owns_request(&window, request)
+                                && s.shows(&window, stream)
+                                && latest_bitmap(&window).is_some()
+                                && s.windows.get(&window).is_some_and(|shown| shown.phase == Phase::Showing)
+                        })
+                    })
+                    .await;
                 if let Err(error) = result {
                     tracing::debug!(%error, "input didn't reach the phone");
                 }
@@ -1542,7 +1524,7 @@ pub fn input(window: Window, input: nectarlink_core::MirrorInput) {
         });
         queue
     });
-    let _ = queue.send((window, target, input));
+    let _ = queue.send((window, control, local_request, stream, input));
 }
 
 /// Resolves the currently active or showing mirror window.
@@ -1899,7 +1881,7 @@ fn ensure_gamepad_loop() {
 /// stream of its own): only for mirrorings this PC asked for.
 pub fn sink(device: &DeviceId, session: u32) -> Option<Arc<dyn MirrorSink>> {
     let window = Window { device: *device, session };
-    let wanted = !VIEW_ONLY || session == MIRROR_SCREEN;
+    let wanted = APP_WINDOWS || session == MIRROR_SCREEN;
     state(|s| {
         let request = *s.requests.get(&window)?;
         let live = s.windows.get(&window).is_some_and(|w| matches!(w.phase, Phase::Asking | Phase::Showing));
@@ -1986,7 +1968,7 @@ impl Sink {
 impl MirrorSink for Sink {
     fn config(&self, config: MirrorConfig) {
         state(|s| {
-            if s.owns_request(&self.window, self.request) && self.window.session == MIRROR_SCREEN {
+            if s.owns_request(&self.window, self.request) {
                 if let Some(request) = config.request {
                     s.control_requests.insert(self.window, request);
                 } else {

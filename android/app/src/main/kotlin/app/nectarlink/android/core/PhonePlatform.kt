@@ -141,9 +141,9 @@ internal class PhonePlatform(
     override fun contacts(query: String?, offset: UInt, limit: UInt): List<Contact> =
         contacts().list(query, offset.toInt(), limit.toInt())
 
-    override fun mirrorRequested(pcId: String, options: MirrorOptions, connection: ULong): Boolean =
+    override fun mirrorRequested(pcId: String, options: MirrorOptions, connection: ULong, capture: ULong): Boolean =
         if (options.app != null) {
-            appWindows.open(pcId, options)
+            appWindows.open(pcId, options, connection, capture)
         } else {
             val request = MirrorRequest(
                 pcId,
@@ -168,17 +168,22 @@ internal class PhonePlatform(
     }
 
     override fun mirrorStopRequested(pcId: String, session: UInt) {
-        if (session != SCREEN) return appWindows.close(pcId, session)
+        // App captures can only be stopped by their exact owned callback.
+        if (session != SCREEN) return
         onKeyboardFromPc(pcId, false)
         MirrorRequests.dismiss(context, pcId)
         MirrorService.stop(pcId)
     }
 
-    override fun mirrorStopRequestedOwned(pcId: String, session: UInt, request: ULong?) {
-        if (session != SCREEN || request == null) return mirrorStopRequested(pcId, session)
+    override fun mirrorStopRequestedOwned(pcId: String, session: UInt, request: ULong?, connection: ULong, capture: ULong) {
+        if (session != SCREEN) {
+            if (request != null) appWindows.close(pcId, session, request, connection, capture)
+            return
+        }
+        if (request == null) return mirrorStopRequested(pcId, session)
         // Core removed the exact incoming request already. Pending consent may
         // still finish, but the service's accepted-owner check rejects that start.
-        MirrorService.stop(pcId, request)
+        MirrorService.stop(pcId, request, connection)
     }
 
     override fun mirrorKeyframeRequested(pcId: String, session: UInt) =
@@ -190,7 +195,8 @@ internal class PhonePlatform(
 
     // The screen's input comes through mirrorScreenInput, with its typing generation.
     override fun mirrorInput(pcId: String, session: UInt, input: MirrorInputEvent) {
-        if (session != SCREEN) return appWindows.input(pcId, session, input)
+        // Nonzero app input requires mirrorControlInput and its owner context.
+        if (session != SCREEN) return
     }
 
     // Real events when Elevated runs; gestures through the accessibility service otherwise.
@@ -221,6 +227,10 @@ internal class PhonePlatform(
 
     override fun mirrorControlInput(pcId: String, input: MirrorInputEvent, context: app.nectarlink.core.PhoneControlContext) {
         val admitted = controlCurrent(pcId, context)
+        if (context.session != SCREEN) {
+            appWindows.input(pcId, context, input, admitted)
+            return
+        }
         val current = { admitted() && MirrorService.isControlTarget(pcId, context) }
         if (!current()) return
         // Remote keyboard mode and gamepad are outside this screen-control contract.

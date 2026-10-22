@@ -574,15 +574,17 @@ class MirrorService : Service() {
         }
 
         /** The PC stopped this exact request. Keep the token through posting. */
-        fun stop(pcId: String, request: ULong? = null) {
+        fun stop(pcId: String, request: ULong? = null, connection: ULong? = null) {
             val service = current ?: return
+            if (connection != null && service.activeConnection != connection) return
             val stoppedRequest = request ?: service.activeRequest
+            val stoppedConnection = connection ?: service.activeConnection
             val stoppedEpoch = service.captureEpoch
-            if (service.pcId == pcId && service.activeRequest == stoppedRequest) {
+            if (service.pcId == pcId && service.activeRequest == stoppedRequest && service.activeConnection == stoppedConnection) {
                 service.controlAllowed = false
             }
             service.main.post {
-                if (service.pcId == pcId && service.activeRequest == stoppedRequest && service.captureEpoch == stoppedEpoch) service.stopSharing()
+                if (service.pcId == pcId && service.activeRequest == stoppedRequest && service.activeConnection == stoppedConnection && service.captureEpoch == stoppedEpoch) service.stopSharing()
             }
         }
 

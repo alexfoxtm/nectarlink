@@ -47,6 +47,11 @@ pub struct NodeConfig {
     /// Restricts the opt-in composed mirror fixture to loopback networking.
     #[cfg(feature = "test-support")]
     pub(crate) test_support_loopback_mirror_fixture: bool,
+    /// Initial bidirectional-stream credit this endpoint advertises before
+    /// any handshake, test-support only. `None` keeps the production
+    /// transport default. Set only on the loopback fixture endpoint.
+    #[cfg(feature = "test-support")]
+    pub(crate) test_initial_max_concurrent_bi_streams: Option<u32>,
 }
 
 impl NodeConfig {
@@ -71,6 +76,8 @@ impl NodeConfig {
             adb_server: None,
             #[cfg(feature = "test-support")]
             test_support_loopback_mirror_fixture: false,
+            #[cfg(feature = "test-support")]
+            test_initial_max_concurrent_bi_streams: None,
         }
     }
 
@@ -78,6 +85,22 @@ impl NodeConfig {
     #[cfg(feature = "test-support")]
     pub fn enable_loopback_mirror_fixture(&mut self) {
         self.test_support_loopback_mirror_fixture = true;
+    }
+
+    /// Sets the initial bidirectional-stream credit this endpoint advertises
+    /// before any handshake, test-support only. Refuses unless the isolated
+    /// loopback fixture is enabled. `None` (default) keeps the production transport default;
+    /// no production default, admission, or grant changes.
+    #[cfg(feature = "test-support")]
+    pub fn set_test_initial_max_concurrent_bi_streams(&mut self, count: u32) -> Result<(), String> {
+        if !self.test_support_loopback_mirror_fixture {
+            return Err("initial stream credit is loopback-fixture only".into());
+        }
+        if count == 0 || count > 100 {
+            return Err("initial stream credit must be 1..=100".into());
+        }
+        self.test_initial_max_concurrent_bi_streams = Some(count);
+        Ok(())
     }
 }
 
@@ -228,6 +251,7 @@ pub trait Platform: Send + Sync + 'static {
         peer: &nectarlink_protocol::DeviceId,
         options: &crate::MirrorStart,
         _connection: u64,
+        _capture: u64,
     ) -> Result<(), String> {
         self.mirror_requested(peer, options)
     }
@@ -242,6 +266,8 @@ pub trait Platform: Send + Sync + 'static {
         peer: &nectarlink_protocol::DeviceId,
         session: u32,
         _request: Option<u64>,
+        _connection: u64,
+        _capture: u64,
     ) {
         self.mirror_stop_requested(peer, session);
     }

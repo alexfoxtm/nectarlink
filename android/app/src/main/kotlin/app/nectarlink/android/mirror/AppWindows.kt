@@ -20,6 +20,8 @@ import app.nectarlink.core.MirrorInputEvent
 import app.nectarlink.core.MirrorOptions
 import app.nectarlink.core.MirrorSendResult
 import app.nectarlink.core.MirrorStream
+import app.nectarlink.core.NectarlinkNode
+import app.nectarlink.core.PhoneControlContext
 import app.nectarlink.core.PhoneApp
 import app.nectarlink.core.VideoPacketKind
 import app.nectarlink.core.mirrorConfig
@@ -42,8 +44,9 @@ import kotlin.math.roundToInt
 class AppWindows(
     context: Context,
     private val scope: CoroutineScope,
-    /** Opens a video stream to a PC. */
-    private val open: suspend (String) -> MirrorStream,
+    /** Captures the actual receiving Node and accepted request, never a later Node. */
+    private val owner: (String, UInt, ULong, ULong, ULong) -> Pair<NectarlinkNode, PhoneControlContext>?,
+    private val currentNode: (NectarlinkNode) -> Boolean,
     /** A PC's name. */
     private val nameOf: (String) -> String,
 ) {
@@ -57,8 +60,9 @@ class AppWindows(
         @Volatile var height: Int,
         val dpi: Int,
         val maxSize: Int,
-        /** The answered request's generation, echoed in the stream's config (`null` predates correlation). */
-        val request: ULong?,
+        val node: NectarlinkNode,
+        val owner: PhoneControlContext,
+        val current: () -> Boolean,
     ) {
         @Volatile var display: Int = -1
     }
@@ -73,19 +77,56 @@ class AppWindows(
     }
 
     /** Runs the PC's app on a display of its own and streams it; false if it can't. */
-    fun open(pc: String, options: MirrorOptions): Boolean {
+    fun open(pc: String, options: MirrorOptions, connection: ULong, capture: ULong): Boolean {
         val pkg = options.app ?: return false
-        if (pkg == context.packageName) return false
+        val request = options.request ?: return false
+        if (pkg == context.packageName || options.session == 0u) return false
+        val (node, accepted) = owner(pc, options.session, request, connection, capture) ?: return false
+        val current = { runCatching { currentNode(node) && node.mirrorCaptureCurrent(pc, accepted) }.getOrDefault(false) }
+        if (!current()) return false
         val maxSize = options.maxSize.toInt().coerceIn(320, 1920)
         val (width, height, dpi) = size(maxSize)
-        val socket = Elevated.openApp(pkg, width, height, dpi, options.bitrate.toInt(), options.fps.toInt()) ?: return false
-        val window = Window(pc, options.session, socket, width, height, dpi, maxSize, options.request)
+        var registered: Window? = null
+        val socket = Elevated.openApp(
+            pkg, width, height, dpi, options.bitrate.toInt(), options.fps.toInt(),
+            stillCurrent = current,
+            register = { socket ->
+                val window = Window(pc, options.session, socket, width, height, dpi, maxSize, node, accepted, current)
+                val previous = synchronized(windows) {
+                    val previous = windows[pc to options.session]
+                    // Register before sending V: revocation can close even a
+                    // helper start whose socket write has not returned yet.
+                    if (previous?.current?.invoke() == true || !current()) return@openApp false
+                    registered = window
+                    windows.put(pc to options.session, window)
+                }
+                previous?.let { runCatching { it.socket.close() } }
+                true
+            },
+        )
+        if (socket == null) {
+            registered?.let(::close)
+            return false
+        }
+        val window = registered ?: run { socket.close(); return false }
+        if (!owns(window)) {
+            close(window)
+            return false
+        }
         power[pc] = options.stayAwake to options.screenOff
-        windows.put(pc to options.session, window)?.let { runCatching { it.socket.close() } }
         changed()
         scope.launch(Dispatchers.IO) {
-            val stream = runCatching { open(pc) }.getOrElse {
+            if (!owns(window)) {
+                close(window)
+                return@launch
+            }
+            val stream = runCatching { window.node.mirrorOpenOwned(pc, window.owner) }.getOrElse {
                 Log.w(TAG, "can't stream an app window", it)
+                close(window)
+                return@launch
+            }
+            if (!owns(window)) {
+                stream.end()
                 close(window)
                 return@launch
             }
@@ -94,16 +135,20 @@ class AppWindows(
         return true
     }
 
+    private fun owns(window: Window): Boolean =
+        windows[window.pc to window.session] === window && window.current()
+
     /** The helper's packets to the PC, until either side closes. */
     private fun forward(window: Window, stream: MirrorStream) {
         try {
             val input = DataInputStream(window.socket.getInputStream().buffered(1 shl 16))
-            while (true) {
+            while (owns(window)) {
                 val length = input.readInt()
                 if (length < 9 || length > MAX_PACKET) return
                 val kind = input.readUnsignedByte()
                 val time = input.readLong().toULong()
                 val data = ByteArray(length - 9).also { input.readFully(it) }
+                if (!owns(window)) return
                 val result = when (kind) {
                     AppDisplay.KIND_CONFIG -> {
                         val fields = java.nio.ByteBuffer.wrap(data)
@@ -111,7 +156,7 @@ class AppWindows(
                         window.width = w
                         window.height = h
                         window.display = fields.int
-                        stream.send(VideoPacketKind.CONFIG, 0u, mirrorConfig(w.toUInt(), h.toUInt(), window.session, window.request))
+                        stream.send(VideoPacketKind.CONFIG, 0u, mirrorConfig(w.toUInt(), h.toUInt(), window.session, window.owner.request))
                     }
                     AppDisplay.KIND_KEYFRAME -> stream.send(VideoPacketKind.KEYFRAME, time, data)
                     else -> stream.send(VideoPacketKind.FRAME, time, data)
@@ -132,8 +177,9 @@ class AppWindows(
     }
 
     /** The PC closed a window. */
-    fun close(pc: String, session: UInt) {
-        windows[pc to session]?.let(::close)
+    fun close(pc: String, session: UInt, request: ULong, connection: ULong, capture: ULong) {
+        val window = windows[pc to session] ?: return
+        if (window.owner.request == request && window.owner.connection == connection && window.owner.capture == capture) close(window)
     }
 
     private fun close(window: Window) {
@@ -179,10 +225,15 @@ class AppWindows(
     }
 
     /** The PC's mouse and keyboard on a window. */
-    fun input(pc: String, session: UInt, event: MirrorInputEvent) {
-        val window = windows[pc to session] ?: return
-        if (window.display < 0) return
-        Elevated.handleOn(window.display, window.width.toFloat(), window.height.toFloat(), event)
+    fun input(pc: String, owner: PhoneControlContext, event: MirrorInputEvent, admitted: () -> Boolean) {
+        val window = windows[pc to owner.session] ?: return
+        if (window.owner.request != owner.request || window.owner.connection != owner.connection || window.owner.capture != owner.capture) return
+        // Display-scoped app input cannot navigate the physical phone or use gamepad.
+        if (event is MirrorInputEvent.Gamepad) return
+        if (event is MirrorInputEvent.Key && event.key in listOf("home", "recents", "notifications", "keyboard_on", "keyboard_off")) return
+        val current = { admitted() && owns(window) && window.display > 0 }
+        if (!current()) return
+        Elevated.handleOn(window.display, window.width.toFloat(), window.height.toFloat(), event, current)
     }
 
     /** The phone's screen, in pixels. */
