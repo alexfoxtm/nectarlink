@@ -378,6 +378,8 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Messages", "Only image or voice-note audio files can be attached."), // desktop/app/src/messages.rs
     QT_TRANSLATE_NOOP("Mirror", "Connect the phone and start screen mirroring to control it."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Couldn't start recording."), // desktop/app/src/mirror.rs
+    QT_TRANSLATE_NOOP("Mirror", "Keep-awake request cleared"), // desktop/app/src/mirror.rs
+    QT_TRANSLATE_NOOP("Mirror", "Keep-awake requested"), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Mirror recording"), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Mirror screenshot"), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Mirroring is turned off for this phone."), // desktop/app/src/mirror.rs
@@ -390,6 +392,8 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Mirror", "Recording stopped: the file couldn't be written."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Saved %1"), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Saved %1 to %2."), // desktop/app/src/mirror.rs
+    QT_TRANSLATE_NOOP("Mirror", "Screen-off requested"), // desktop/app/src/mirror.rs
+    QT_TRANSLATE_NOOP("Mirror", "Screen-on requested"), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Screenshot copied to clipboard."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Screenshot from %1, saved in %2"), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Sending %1 files…"), // desktop/app/src/mirror.rs

@@ -5529,6 +5529,22 @@ What it needs
         <source>Phone control was stopped on the phone. To allow this computer again, turn Screen sharing and typing off and then on for this computer in Waypair Link's settings on the phone.</source>
         <translation>手机上的手机控制已停止。如需再次允许这台电脑，请在手机上的 Waypair Link 设置中，为这台电脑先关闭再打开“屏幕共享和输入”。</translation>
     </message>
+    <message>
+        <source>Keep-awake requested</source>
+        <translation>已请求保持唤醒</translation>
+    </message>
+    <message>
+        <source>Keep-awake request cleared</source>
+        <translation>已清除保持唤醒请求</translation>
+    </message>
+    <message>
+        <source>Screen-off requested</source>
+        <translation>已请求关闭屏幕</translation>
+    </message>
+    <message>
+        <source>Screen-on requested</source>
+        <translation>已请求恢复屏幕</translation>
+    </message>
 </context>
 <context>
     <name>MirrorWindow</name>

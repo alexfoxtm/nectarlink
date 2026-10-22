@@ -353,12 +353,15 @@ pub fn stay_awake(device: &DeviceId) -> bool {
     state(|s| s.stay_awake.contains(device))
 }
 
-/// Whether `device`'s physical screen is turned off while mirroring.
+/// Whether a screen-off request is on for `device` while mirroring (this
+/// computer's setting; the phone doesn't acknowledge it).
 pub fn screen_off(device: &DeviceId) -> bool {
     state(|s| s.screen_off.contains(device))
 }
 
-/// Toggles keeping the phone awake while mirroring (its screen or app windows).
+/// Requests keeping the phone awake while mirroring (its screen or app
+/// windows). The notice says the request was made, not that the phone did it:
+/// the send below is fire-and-forget with no remote acknowledgement.
 pub fn set_stay_awake(window: Window, on: bool) {
     let screen_off = state(|s| {
         if on {
@@ -370,7 +373,7 @@ pub fn set_stay_awake(window: Window, on: bool) {
     });
     set_notice(
         window,
-        if on { "Keeping phone awake while mirroring" } else { "Phone sleep timeout restored" },
+        if on { tr!("Mirror", "Keep-awake requested") } else { tr!("Mirror", "Keep-awake request cleared") },
     );
     core_host::host().hub.changed(Changes::MIRROR);
     let Some(node) = core_host::node() else { return };
@@ -381,8 +384,9 @@ pub fn set_stay_awake(window: Window, on: bool) {
     });
 }
 
-/// Toggles turning the phone's physical screen off while mirroring (its
-/// screen or app windows).
+/// Requests turning the phone's physical screen off while mirroring (its
+/// screen or app windows). The notice says the request was made; whether the
+/// phone's panel changed is not known here (no remote acknowledgement).
 pub fn set_screen_off(window: Window, on: bool) {
     let stay_awake = state(|s| {
         if on {
@@ -392,7 +396,10 @@ pub fn set_screen_off(window: Window, on: bool) {
         }
         s.stay_awake.contains(&window.device)
     });
-    set_notice(window, if on { "Phone screen turned off" } else { "Phone screen turned back on" });
+    set_notice(
+        window,
+        if on { tr!("Mirror", "Screen-off requested") } else { tr!("Mirror", "Screen-on requested") },
+    );
     core_host::host().hub.changed(Changes::MIRROR);
     let Some(node) = core_host::node() else { return };
     core_host::spawn(async move {

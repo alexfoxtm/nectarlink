@@ -5237,6 +5237,22 @@ What it needs
         <source>Phone control is unavailable for this connection.</source>
         <translation type="unfinished" />
     </message>
+    <message>
+        <source>Keep-awake requested</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Keep-awake request cleared</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Screen-off requested</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Screen-on requested</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>MirrorWindow</name>
