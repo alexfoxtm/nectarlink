@@ -93,6 +93,15 @@ pub mod ffi {
         fn mac_hfp_prerequisites() -> String;
         /// Main thread, explicit user action only.
         fn mac_hfp_paired_gateways(ok: &mut bool) -> String;
+        /// Already-paired phones with cached SDP/AG facts; side-effect free,
+        /// ok is false when they can't be listed.
+        fn mac_hfp_paired_phone_candidates(ok: &mut bool) -> String;
+        /// Main thread, explicit user action only. Starts one SDP query for
+        /// the exact already-paired phone: 1 started, 2 busy (an earlier
+        /// query is still outstanding; nothing started), 0 refused. `event`
+        /// runs once on Main with the request and result JSON when that
+        /// query's OS completion actually arrives, wanted or not.
+        fn mac_hfp_refresh_phone_sdp(address: &str, request: u64, event: fn(u64, &[u8])) -> i32;
         fn mac_hfp_default_endpoints(ok: &mut bool) -> String;
         /// Main thread, explicit user action only; macOS asks while undecided.
         /// Both requests retain the same process-lifetime fn item. It runs on

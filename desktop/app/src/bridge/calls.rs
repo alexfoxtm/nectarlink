@@ -150,6 +150,10 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "chooseBluetoothPhone"]
         fn choose_bluetooth_phone(self: Pin<&mut PhoneCall>, address: &QString);
+        /// Checks this listed phone's call audio support; never chooses it.
+        #[qinvokable]
+        #[cxx_name = "checkBluetoothPhone"]
+        fn check_bluetooth_phone(self: Pin<&mut PhoneCall>, address: &QString);
         #[qinvokable]
         #[cxx_name = "forgetBluetoothPhone"]
         fn forget_bluetooth_phone(self: Pin<&mut PhoneCall>);
@@ -297,6 +301,19 @@ impl qobject::PhoneCall {
         if let Some(device) = self.pc_audio_device() {
             calls::bind_bluetooth_phone(device, &String::from(address));
         }
+        self.refresh_state();
+    }
+
+    pub fn check_bluetooth_phone(self: Pin<&mut Self>, address: &QString) {
+        #[cfg(target_os = "macos")]
+        if let Some(device) = self.pc_audio_device()
+            && let Err(message) = crate::win::bt_hfp::check_phone(device, &String::from(address))
+            && !message.is_empty()
+        {
+            super::app::show_message(message);
+        }
+        #[cfg(not(target_os = "macos"))]
+        let _ = address;
         self.refresh_state();
     }
 

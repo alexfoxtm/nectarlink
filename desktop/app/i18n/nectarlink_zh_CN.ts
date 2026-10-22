@@ -934,6 +934,41 @@
         <source>No paired phone that offers call audio was listed. Pair the phone with this Mac in Bluetooth settings, then choose again.</source>
         <translation>未列出可提供通话音频的已配对手机。请先在蓝牙设置中将手机与这台 Mac 配对，然后重新选择。</translation>
     </message>
+    <message>
+        <location filename="../qml/pages/CallsPage.qml" line="988" />
+        <source>Checking asks macOS to read the phone's Bluetooth services once. Waypair Link doesn't start a call or route call audio to do it.</source>
+        <translation>检查会请求 macOS 读取该手机的蓝牙服务一次。Waypair Link 不会为此发起通话或切换通话音频。</translation>
+    </message>
+    <message>
+        <location filename="../qml/pages/CallsPage.qml" line="1018" />
+        <source>Unknown call audio</source>
+        <translation>通话音频未知</translation>
+    </message>
+    <message>
+        <location filename="../qml/pages/CallsPage.qml" line="1015" />
+        <source>Checking call audio support…</source>
+        <translation>正在检查通话音频支持…</translation>
+    </message>
+    <message>
+        <location filename="../qml/pages/CallsPage.qml" line="1017" />
+        <source>Couldn't check call audio support.</source>
+        <translation>无法检查通话音频支持。</translation>
+    </message>
+    <message>
+        <location filename="../qml/pages/CallsPage.qml" line="1016" />
+        <source>The chosen Bluetooth device doesn't offer call audio.</source>
+        <translation>所选蓝牙设备不提供通话音频。</translation>
+    </message>
+    <message>
+        <location filename="../qml/pages/CallsPage.qml" line="1037" />
+        <source>A call audio check is still waiting for macOS.</source>
+        <translation>通话音频检查仍在等待 macOS。</translation>
+    </message>
+    <message>
+        <location filename="../qml/pages/CallsPage.qml" line="1045" />
+        <source>Check call audio support</source>
+        <translation>检查通话音频支持</translation>
+    </message>
 </context>
 <context>
     <name>CaptionButtons</name>

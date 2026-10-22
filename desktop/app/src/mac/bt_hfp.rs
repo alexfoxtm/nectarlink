@@ -12,6 +12,14 @@
 //! check reads all of that again; anything else stopping the attempt hands
 //! the audio back. Native snapshots never claim the route is available,
 //! connected or heard both ways: SLC and SCO are observations, not proof.
+//!
+//! The picker lists cached SDP facts only: a paired phone whose hands-free
+//! audio-gateway record is not cached yet shows as UNKNOWN, never as granted,
+//! connected or qualified. The separate Check action (`check_phone`) may ask
+//! the OS for a fresh SDP query of exactly that phone, at most one query
+//! outstanding process-wide; it never binds. Errors and unsupported results
+//! stay distinct from unknown, and binding/starting still require the strict
+//! cached qualification.
 
 use std::{
     sync::{
@@ -125,6 +133,8 @@ static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
 static LAST: Mutex<Option<(DeviceId, String, Snapshot)>> = Mutex::new(None);
 static PREREQUISITES: Mutex<Option<Prerequisites>> = Mutex::new(None);
 static LISTED: Mutex<Option<Listed>> = Mutex::new(None);
+static SDP_CHECK: Mutex<Option<SdpCheck>> = Mutex::new(None);
+static SDP_CLOCK: AtomicU64 = AtomicU64::new(1);
 
 fn session<T>(f: impl FnOnce(&mut Option<Session>) -> T) -> T {
     f(&mut SESSION.lock().unwrap_or_else(|e| e.into_inner()))
@@ -170,12 +180,91 @@ struct Listed {
     device: DeviceId,
     at: Instant,
     gateways: Vec<Gateway>,
+    candidates: Vec<Candidate>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct Gateway {
     address: String,
     name: String,
+}
+
+/// Call-audio support as known for one already-paired phone. Never a grant:
+/// `Unknown` (cached record cold or never checked) must not bind, start, or
+/// claim availability; only `Supported` (cached AG flag set) may.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum SdpSupport {
+    Unknown,
+    Supported,
+    Unsupported,
+    Checking,
+    CheckFailed,
+}
+
+/// One already-OS-paired phone with its cached SDP/AG facts. `address` is the
+/// identity; `name` and the class numbers are display hints only. `support`
+/// is `Supported` exactly when either cached read reports audio gateway.
+#[derive(Debug, Clone)]
+struct Candidate {
+    address: String,
+    name: String,
+    device_class_major: u32,
+    device_class_minor: u32,
+    services_known: bool,
+    support: SdpSupport,
+}
+
+#[derive(Debug, Deserialize)]
+struct CandidateJson {
+    address: String,
+    #[serde(default)]
+    name: String,
+    #[serde(default, rename = "agCached")]
+    ag_cached: bool,
+    #[serde(default, rename = "servicesKnown")]
+    services_known: bool,
+    #[serde(default, rename = "deviceClassMajor")]
+    device_class_major: u32,
+    #[serde(default, rename = "deviceClassMinor")]
+    device_class_minor: u32,
+}
+
+/// The one OS SDP query outstanding process-wide, from its start until its
+/// actual completion (or an immediate refusal); nothing else frees it. A
+/// cancel only clears `owned`, so the query keeps the slot busy and its
+/// result is dropped. Its result may update only the exact list (`listed_at`)
+/// of the phone (`device`) it was started from.
+#[derive(Debug, Clone)]
+struct SdpCheck {
+    request: u64,
+    device: DeviceId,
+    address: String,
+    listed_at: Instant,
+    owned: bool,
+}
+
+/// One native SDP completion (`WPHfpSupportRefreshPhoneSDP`).
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+struct CheckResult {
+    address: String,
+    ok: bool,
+    ag_supported: bool,
+    services_known: bool,
+}
+
+/// What a Check press may do.
+#[derive(Debug, PartialEq, Eq)]
+enum CheckStep {
+    /// The slot is now reserved for this exact address.
+    Start(String),
+    /// A query is still outstanding (wanted or cancelled): nothing starts.
+    Busy,
+    /// The cache already reports audio gateway, or the row isn't checkable.
+    Nothing,
+    /// Not on the owner's current list.
+    Stale,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -421,6 +510,7 @@ pub fn hand_back_then(quit: impl FnOnce() + Send + 'static) {
         return;
     }
     SHUTTING_DOWN.store(true, Ordering::SeqCst);
+    cancel_sdp_check();
     hand_back();
     let quit = Arc::new(Mutex::new(Some(quit)));
     let waiter = Arc::clone(&quit);
@@ -450,6 +540,7 @@ fn run_once<F: FnOnce()>(work: &Mutex<Option<F>>) {
 /// main run loop briefly to see it happen. Main thread.
 pub fn shutdown() {
     SHUTTING_DOWN.store(true, Ordering::SeqCst);
+    cancel_sdp_check();
     let Some(token) = session(|s| {
         s.as_mut().map(|s| {
             s.stopped = true;
@@ -496,15 +587,283 @@ pub fn find_phones(device: DeviceId) -> Result<(), String> {
     if setup != "choose-phone" {
         return Err(setup_detail(setup, ""));
     }
+    // A new list replaces the old one: an outstanding check belonged to it.
+    // Its query keeps the slot busy until the OS completes it; the result is
+    // dropped.
+    cancel_sdp_check();
+    if !relist(device) {
+        return Err(tr!("BtHfp", "Couldn't list this Mac's Bluetooth devices."));
+    }
+    changed();
+    Ok(())
+}
+
+/// Re-reads the strict gateway list and the side-effect-free candidate list.
+/// The strict list still gates binding/starting; candidates only display
+/// cached facts. Keeps the old list on a transient read failure. Main thread.
+fn relist(device: DeviceId) -> bool {
     let mut ok = false;
     let json = ffi::mac_hfp_paired_gateways(&mut ok);
     if !ok {
-        return Err(tr!("BtHfp", "Couldn't list this Mac's Bluetooth devices."));
+        return false;
     }
     let gateways: Vec<Gateway> = serde_json::from_str(&json).unwrap_or_default();
-    *LISTED.lock().unwrap_or_else(|e| e.into_inner()) = Some(Listed { device, at: Instant::now(), gateways });
+    let mut candidates_ok = false;
+    let candidates_json = ffi::mac_hfp_paired_phone_candidates(&mut candidates_ok);
+    let fresh: Vec<CandidateJson> =
+        if candidates_ok { serde_json::from_str(&candidates_json).unwrap_or_default() } else { Vec::new() };
+    let previous: std::collections::HashMap<String, SdpSupport> = LISTED
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .filter(|l| l.device == device)
+        .map(|l| l.candidates.iter().map(|c| (c.address.clone(), c.support)).collect())
+        .unwrap_or_default();
+    let candidates: Vec<Candidate> = fresh
+        .into_iter()
+        .filter_map(|c| {
+            let address = normalize_address(&c.address)?;
+            let support = listed_support(c.ag_cached, &address, &gateways, previous.get(&address).copied());
+            Some(Candidate {
+                address,
+                name: c.name,
+                device_class_major: c.device_class_major,
+                device_class_minor: c.device_class_minor,
+                services_known: c.services_known,
+                support,
+            })
+        })
+        .collect();
+    // Degraded but not regressed: when the new candidate facts are unreadable,
+    // the strict list still shows exactly what it showed before.
+    let candidates = if candidates.is_empty() && !candidates_ok && !gateways.is_empty() {
+        gateways
+            .iter()
+            .map(|g| Candidate {
+                address: g.address.clone(),
+                name: g.name.clone(),
+                device_class_major: 0,
+                device_class_minor: 0,
+                services_known: false,
+                support: SdpSupport::Supported,
+            })
+            .collect()
+    } else {
+        candidates
+    };
+    *LISTED.lock().unwrap_or_else(|e| e.into_inner()) =
+        Some(Listed { device, at: Instant::now(), gateways, candidates });
+    true
+}
+
+/// A re-read row's support. Either cached read reporting audio gateway (the
+/// candidate's flag, or the same address on the strict list read just before)
+/// makes it `Supported`. Binding still revalidates the strict list, so a
+/// changed cache may require choosing again. Otherwise an explicit result
+/// survives; anything else falls back to unknown rather than unsupported.
+fn listed_support(
+    ag_cached: bool,
+    address: &str,
+    gateways: &[Gateway],
+    previous: Option<SdpSupport>,
+) -> SdpSupport {
+    if ag_cached || gateways.iter().any(|g| g.address == address) {
+        return SdpSupport::Supported;
+    }
+    match previous {
+        Some(kept @ (SdpSupport::Unsupported | SdpSupport::CheckFailed)) => kept,
+        _ => SdpSupport::Unknown,
+    }
+}
+
+/// Normalizes a native dash/colon address to canonical `XX-XX-...` form.
+fn normalize_address(raw: &str) -> Option<String> {
+    let upper = raw.replace(':', "-").to_uppercase();
+    let parts: Vec<&str> = upper.split('-').collect();
+    if parts.len() != 6 || parts.iter().any(|p| p.len() != 2 || !p.bytes().all(|b| b.is_ascii_hexdigit())) {
+        return None;
+    }
+    Some(upper)
+}
+
+/// What a Check press may do, from the owner's current list and the one
+/// process-wide query slot; reserves the slot only for `Start`. Never binds:
+/// a phone on the strict cached list, or shown as supported, is `Nothing`, so
+/// a cache that turns audio gateway between render, press and completion
+/// can't make Check bind. An unsupported row may be checked again.
+fn plan_check(
+    listed: Option<&Listed>,
+    slot: &mut Option<SdpCheck>,
+    device: DeviceId,
+    address: &str,
+    request: u64,
+) -> CheckStep {
+    let Some(listed) = listed.filter(|l| l.device == device && l.at.elapsed() < LIST_FRESH) else {
+        return CheckStep::Stale;
+    };
+    let Some(candidate) =
+        normalize_address(address).and_then(|a| listed.candidates.iter().find(|c| c.address == a))
+    else {
+        return CheckStep::Stale;
+    };
+    if listed.gateways.iter().any(|g| g.address == candidate.address)
+        || !matches!(
+            candidate.support,
+            SdpSupport::Unknown | SdpSupport::CheckFailed | SdpSupport::Unsupported
+        )
+    {
+        return CheckStep::Nothing;
+    }
+    if slot.is_some() {
+        return CheckStep::Busy;
+    }
+    *slot = Some(SdpCheck {
+        request,
+        device,
+        address: candidate.address.clone(),
+        listed_at: listed.at,
+        owned: true,
+    });
+    CheckStep::Start(candidate.address.clone())
+}
+
+/// Frees the slot for exactly `request`, once; any other request leaves it.
+fn finish_check(slot: &mut Option<SdpCheck>, request: u64) -> Option<SdpCheck> {
+    slot.take_if(|c| c.request == request)
+}
+
+/// The owner no longer wants the outstanding result; the slot stays held.
+fn disown(slot: &mut Option<SdpCheck>) {
+    if let Some(check) = slot.as_mut() {
+        check.owned = false;
+    }
+}
+
+/// Only a successful query of this same phone that refreshed its services
+/// record may say unsupported; anything else is a failed check, never a claim.
+fn checked_support(result: &CheckResult, address: &str) -> SdpSupport {
+    if result.ok && result.address == address && result.services_known && !result.ag_supported {
+        SdpSupport::Unsupported
+    } else {
+        SdpSupport::CheckFailed
+    }
+}
+
+/// Records an owned check's result on its row of the re-read list. A phone
+/// the cache now reports as audio gateway keeps `Supported`, so only the
+/// explicit bind button, never Check, can use it.
+fn apply_result(listed: &mut Listed, check: &SdpCheck, result: &CheckResult) {
+    if listed.device != check.device || listed.gateways.iter().any(|g| g.address == check.address) {
+        return;
+    }
+    if let Some(candidate) = listed
+        .candidates
+        .iter_mut()
+        .find(|c| c.address == check.address && c.support != SdpSupport::Supported)
+    {
+        candidate.support = checked_support(result, &check.address);
+    }
+}
+
+/// What a row shows: `Checking` only while this list's owner still wants the
+/// outstanding query of that phone; a cancelled one shows the row's own state.
+/// Trust isn't consulted: an unpaired phone's row keeps `Checking` until the
+/// completion, which the callback's trust gate then drops.
+fn shown_support(listed: &Listed, candidate: &Candidate, slot: Option<&SdpCheck>) -> SdpSupport {
+    if slot.is_some_and(|s| {
+        s.owned && s.device == listed.device && s.listed_at == listed.at && s.address == candidate.address
+    }) {
+        SdpSupport::Checking
+    } else {
+        candidate.support
+    }
+}
+
+/// Logically cancels the outstanding check, if any. There is no public API
+/// that cancels an SDP query, so its slot stays busy until the OS completes it.
+fn cancel_sdp_check() {
+    disown(&mut SDP_CHECK.lock().unwrap_or_else(|e| e.into_inner()));
+}
+
+/// Checks one listed phone's call-audio support with one SDP query of that
+/// phone only. Never binds, saves settings or grants anything: the result
+/// only changes what the list shows. Only while Bluetooth is already allowed,
+/// the Waypair phone is trusted and the list is current. User action only.
+pub fn check_phone(device: DeviceId, address: &str) -> Result<(), String> {
+    if MainThreadMarker::new().is_none() {
+        return Err(not_main());
+    }
+    if SHUTTING_DOWN.load(Ordering::SeqCst) {
+        return Err(String::new());
+    }
+    if !trusted(device) {
+        return Err(tr!("BtHfp", "Pair the phone with Waypair Link first."));
+    }
+    refresh_prerequisites();
+    let setup = setup_state(prerequisites().as_ref(), false);
+    if setup != "choose-phone" {
+        return Err(setup_detail(setup, ""));
+    }
+    let request = SDP_CLOCK.fetch_add(1, Ordering::SeqCst);
+    let step = {
+        let listed = LISTED.lock().unwrap_or_else(|e| e.into_inner());
+        let mut slot = SDP_CHECK.lock().unwrap_or_else(|e| e.into_inner());
+        plan_check(listed.as_ref(), &mut slot, device, address, request)
+    };
+    let address = match step {
+        CheckStep::Start(address) => address,
+        CheckStep::Stale => return Err(tr!("BtHfp", "Choose the phone from the list again.")),
+        // The list already says why: busy, or the phone's own state.
+        CheckStep::Busy | CheckStep::Nothing => {
+            changed();
+            return Err(String::new());
+        }
+    };
     changed();
-    Ok(())
+    let started = ffi::mac_hfp_refresh_phone_sdp(&address, request, sdp_event_callback);
+    if started == 1 {
+        return Ok(());
+    }
+    // Refused (0), or natively busy (2): nothing of this request is outstanding.
+    finish_check(&mut SDP_CHECK.lock().unwrap_or_else(|e| e.into_inner()), request);
+    if started == 0
+        && let Some(listed) = LISTED.lock().unwrap_or_else(|e| e.into_inner()).as_mut()
+        && listed.device == device
+        && let Some(candidate) =
+            listed.candidates.iter_mut().find(|c| c.address == address && c.support != SdpSupport::Supported)
+    {
+        candidate.support = SdpSupport::CheckFailed;
+    }
+    changed();
+    Err(String::new())
+}
+
+/// Native completion of the outstanding query, once, on Main. Frees the slot
+/// for its exact request; the result updates the list only while that owner
+/// still wants it, isn't shutting down, the phone is still trusted and the
+/// list it was started from is still current. Then re-reads both lists, so a
+/// fresh audio gateway is strictly qualified before any explicit bind.
+fn sdp_event_callback(request: u64, result_json: &[u8]) {
+    if MainThreadMarker::new().is_none() {
+        return;
+    }
+    let Some(check) = finish_check(&mut SDP_CHECK.lock().unwrap_or_else(|e| e.into_inner()), request) else {
+        return;
+    };
+    let wanted = check.owned
+        && !SHUTTING_DOWN.load(Ordering::SeqCst)
+        && trusted(check.device)
+        && LISTED.lock().unwrap_or_else(|e| e.into_inner()).as_ref().is_some_and(|l| {
+            l.device == check.device && l.at == check.listed_at && l.at.elapsed() < LIST_FRESH
+        });
+    if wanted {
+        let result: CheckResult = serde_json::from_slice(result_json).unwrap_or_default();
+        relist(check.device);
+        if let Some(listed) = LISTED.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+            apply_result(listed, &check, &result);
+        }
+    }
+    changed();
 }
 
 /// Records the user's pick from the last list as `device`'s Bluetooth
@@ -545,6 +904,7 @@ pub fn bind(device: DeviceId, address: &str) -> Result<(), String> {
         output_uid: output.uid,
     };
     calls::put_pc_audio_binding(binding)?;
+    cancel_sdp_check();
     *LISTED.lock().unwrap_or_else(|e| e.into_inner()) = None;
     changed();
     Ok(())
@@ -555,6 +915,7 @@ pub fn forget(device: DeviceId) {
     if session(|s| s.as_ref().is_some_and(|s| s.device == device)) {
         hand_back();
     }
+    cancel_sdp_check();
     calls::remove_pc_audio_binding(device);
     changed();
 }
@@ -664,12 +1025,37 @@ pub fn view(device: DeviceId, call: Option<&str>) -> PcAudioView {
     let mut view = PcAudioView {
         setup: setup.to_owned(),
         bluetooth_name: name.clone(),
+        // Every listed phone with its cached support: `supported` only when
+        // the cached SDP record says audio gateway, `unknown` otherwise (never
+        // granted, connected or qualified). `checkBusy` is whether any query
+        // is still outstanding, wanted or not; it never means one started.
+        // The address is the identity; the name and class numbers are display
+        // hints only.
         gateways: LISTED
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .as_ref()
             .filter(|l| l.device == device && l.at.elapsed() < LIST_FRESH)
-            .map(|l| serde_json::to_value(&l.gateways).unwrap_or_default())
+            .map(|l| {
+                let slot = SDP_CHECK.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                serde_json::to_value(
+                    l.candidates
+                        .iter()
+                        .map(|c| {
+                            serde_json::json!({
+                                "address": c.address,
+                                "name": c.name,
+                                "support": shown_support(l, c, slot.as_ref()),
+                                "checkBusy": slot.is_some(),
+                                "deviceClassMajor": c.device_class_major,
+                                "deviceClassMinor": c.device_class_minor,
+                                "servicesKnown": c.services_known,
+                            })
+                        })
+                        .collect::<Vec<_>>(),
+                )
+                .unwrap_or_default()
+            })
             .unwrap_or_else(|| serde_json::json!([])),
         ..PcAudioView::default()
     };
@@ -797,5 +1183,88 @@ mod tests {
         let mut replaced = live;
         replaced.call.as_mut().unwrap().0 = DeviceId([8; 32]);
         assert!(refused(&session, &replaced, &json));
+    }
+
+    const PHONE_A: &str = "AA-BB-CC-DD-EE-01";
+    const PHONE_B: &str = "AA-BB-CC-DD-EE-02";
+
+    fn picker(device: DeviceId) -> Listed {
+        let row = |address: &str| Candidate {
+            address: address.into(),
+            name: String::new(),
+            device_class_major: 2,
+            device_class_minor: 0,
+            services_known: false,
+            support: SdpSupport::Unknown,
+        };
+        Listed {
+            device,
+            at: Instant::now(),
+            gateways: Vec::new(),
+            candidates: vec![row(PHONE_A), row(PHONE_B)],
+        }
+    }
+
+    #[test]
+    fn a_cancelled_sdp_query_keeps_the_one_slot_until_its_own_completion() {
+        let device = DeviceId([7; 32]);
+        let mut listed = picker(device);
+        let mut slot = None;
+        assert_eq!(
+            plan_check(Some(&listed), &mut slot, device, PHONE_A, 1),
+            CheckStep::Start(PHONE_A.into())
+        );
+        assert_eq!(shown_support(&listed, &listed.candidates[0], slot.as_ref()), SdpSupport::Checking);
+        disown(&mut slot);
+        assert_eq!(shown_support(&listed, &listed.candidates[0], slot.as_ref()), SdpSupport::Unknown);
+        assert_eq!(plan_check(Some(&listed), &mut slot, device, PHONE_B, 2), CheckStep::Busy);
+        assert_eq!(plan_check(Some(&listed), &mut slot, device, PHONE_A, 3), CheckStep::Busy);
+        assert!(finish_check(&mut slot, 2).is_none());
+        let late = finish_check(&mut slot, 1).expect("A's own completion frees the slot");
+        assert!(!late.owned);
+        assert_eq!(
+            plan_check(Some(&listed), &mut slot, device, PHONE_B, 4),
+            CheckStep::Start(PHONE_B.into())
+        );
+        assert!(finish_check(&mut slot, 1).is_none());
+        assert!(slot.as_ref().is_some_and(|c| c.request == 4 && c.address == PHONE_B && c.owned));
+        let check = finish_check(&mut slot, 4).expect("B's own completion");
+        let proven =
+            CheckResult { address: PHONE_B.into(), ok: true, services_known: true, ..CheckResult::default() };
+        apply_result(&mut listed, &check, &proven);
+        assert_eq!(listed.candidates[1].support, SdpSupport::Unsupported);
+        assert_eq!(
+            plan_check(Some(&listed), &mut slot, device, PHONE_B, 5),
+            CheckStep::Start(PHONE_B.into())
+        );
+    }
+
+    #[test]
+    fn a_failed_sdp_query_never_lets_check_bind_or_claim_unsupported() {
+        let device = DeviceId([7; 32]);
+        let mut listed = picker(device);
+        let mut slot = None;
+        assert_eq!(
+            plan_check(Some(&listed), &mut slot, device, PHONE_A, 1),
+            CheckStep::Start(PHONE_A.into())
+        );
+        let check = finish_check(&mut slot, 1).expect("the current completion");
+        listed.gateways.push(Gateway { address: PHONE_A.into(), name: String::new() });
+        listed.candidates[0].support =
+            listed_support(false, PHONE_A, &listed.gateways, Some(listed.candidates[0].support));
+        assert_eq!(listed.candidates[0].support, SdpSupport::Supported);
+        apply_result(&mut listed, &check, &CheckResult { address: PHONE_A.into(), ..CheckResult::default() });
+        assert_eq!(listed.candidates[0].support, SdpSupport::Supported);
+        listed.candidates[0].support = SdpSupport::CheckFailed;
+        assert_eq!(plan_check(Some(&listed), &mut slot, device, PHONE_A, 2), CheckStep::Nothing);
+        assert!(slot.is_none());
+        assert_eq!(
+            plan_check(Some(&listed), &mut slot, device, PHONE_B, 3),
+            CheckStep::Start(PHONE_B.into())
+        );
+        let check = finish_check(&mut slot, 3).expect("the current completion");
+        let unproved = CheckResult { address: PHONE_B.into(), ok: true, ..CheckResult::default() };
+        apply_result(&mut listed, &check, &unproved);
+        assert_eq!(listed.candidates[1].support, SdpSupport::CheckFailed);
     }
 }

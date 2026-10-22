@@ -968,6 +968,10 @@ Item {
                         }
                     }
                     // The address picks the device; the name is only shown.
+                    // Cached call-audio facts only: "unknown" never means
+                    // granted or connected. Check asks macOS to read one phone's
+                    // services and never chooses it, starts a call or routes
+                    // audio; macOS and the phone may still act on the link.
                     Txt {
                         width: parent.width
                         visible: page.pcAudioGateways.length > 0
@@ -975,22 +979,71 @@ Item {
                         wrapMode: Text.WordWrap
                         text: qsTr("Which of these is this phone?")
                     }
-                    Flow {
+                    Txt {
                         width: parent.width
-                        spacing: 8
+                        visible: page.pcAudioGateways.length > 0
+                        role: "caption"
+                        muted: true
+                        wrapMode: Text.WordWrap
+                        text: qsTr("Checking asks macOS to read the phone's Bluetooth services once. Waypair Link doesn't start a call or route call audio to do it.")
+                    }
+                    Column {
+                        width: parent.width
+                        spacing: 6
                         visible: page.pcAudioGateways.length > 0
                         Repeater {
                             model: page.pcAudioGateways
-                            delegate: Button {
+                            delegate: Column {
                                 required property var modelData
-                                objectName: "pcAudioGateway"
-                                variant: "tonal"
-                                size: "sm"
-                                text: ((modelData.name || "").length > 0 ? modelData.name : qsTr("Unnamed device"))
+                                readonly property string sup: modelData.support || "unknown"
+                                readonly property string label: ((modelData.name || "").length > 0 ? modelData.name : qsTr("Unnamed device"))
                                     + " · " + modelData.address
-                                onClicked: {
-                                    page.pcAudioListed = false
-                                    PhoneCall.chooseBluetoothPhone(modelData.address)
+                                width: parent.width
+                                spacing: 2
+                                Txt {
+                                    width: parent.width
+                                    role: "caption"
+                                    elide: Text.ElideRight
+                                    text: label
+                                }
+                                Txt {
+                                    width: parent.width
+                                    role: "caption"
+                                    muted: true
+                                    wrapMode: Text.WordWrap
+                                    visible: sup !== "supported"
+                                    text: sup === "checking" ? qsTr("Checking call audio support…")
+                                        : sup === "unsupported" ? qsTr("The chosen Bluetooth device doesn't offer call audio.")
+                                        : sup === "check-failed" ? qsTr("Couldn't check call audio support.")
+                                        : qsTr("Unknown call audio")
+                                }
+                                Button {
+                                    objectName: "pcAudioGateway"
+                                    visible: sup === "supported"
+                                    variant: "tonal"
+                                    size: "sm"
+                                    text: label
+                                    onClicked: {
+                                        page.pcAudioListed = false
+                                        PhoneCall.chooseBluetoothPhone(modelData.address)
+                                    }
+                                }
+                                Txt {
+                                    width: parent.width
+                                    role: "caption"
+                                    muted: true
+                                    wrapMode: Text.WordWrap
+                                    visible: modelData.checkBusy === true && (sup === "unknown" || sup === "check-failed" || sup === "unsupported")
+                                    text: qsTr("A call audio check is still waiting for macOS.")
+                                }
+                                Button {
+                                    objectName: "pcAudioCheck"
+                                    visible: sup === "unknown" || sup === "check-failed" || sup === "unsupported"
+                                    enabled: modelData.checkBusy !== true
+                                    variant: "tonal"
+                                    size: "sm"
+                                    text: qsTr("Check call audio support")
+                                    onClicked: PhoneCall.checkBluetoothPhone(modelData.address)
                                 }
                             }
                         }

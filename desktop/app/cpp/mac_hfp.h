@@ -24,6 +24,15 @@ bool mac_hfp_release(uint64_t handle);
 rust::String mac_hfp_prerequisites();
 // Already-paired hands-free gateways; ok is false when they can't be listed.
 rust::String mac_hfp_paired_gateways(bool &ok);
+// Already-paired phones (and cached gateways) with cached SDP/AG facts;
+// side-effect free, ok is false when they can't be listed.
+rust::String mac_hfp_paired_phone_candidates(bool &ok);
+// Starts one SDP query for the exact already-paired phone: 1 started, 2 busy
+// (an earlier query is still outstanding; nothing started), 0 refused.
+// `request` is handed back to the callback unchanged, once, on the main
+// thread, when that query's OS completion actually arrives.
+int32_t mac_hfp_refresh_phone_sdp(rust::Str address, uint64_t request,
+                                  rust::Fn<void(uint64_t, rust::Slice<const uint8_t>)> event);
 rust::String mac_hfp_default_endpoints(bool &ok);
 // Main thread, explicit user action only. Retains a plain Rust fn item for
 // the process lifetime; changed runs on Main and must only refresh status.

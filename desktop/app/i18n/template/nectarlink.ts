@@ -934,6 +934,41 @@
         <source>No paired phone that offers call audio was listed. Pair the phone with this Mac in Bluetooth settings, then choose again.</source>
         <translation type="unfinished" />
     </message>
+    <message>
+        <location filename="../../qml/pages/CallsPage.qml" line="988" />
+        <source>Checking asks macOS to read the phone&apos;s Bluetooth services once. Waypair Link doesn&apos;t start a call or route call audio to do it.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../../qml/pages/CallsPage.qml" line="1018" />
+        <source>Unknown call audio</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../../qml/pages/CallsPage.qml" line="1015" />
+        <source>Checking call audio support…</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../../qml/pages/CallsPage.qml" line="1017" />
+        <source>Couldn&apos;t check call audio support.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../../qml/pages/CallsPage.qml" line="1016" />
+        <source>The chosen Bluetooth device doesn&apos;t offer call audio.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../../qml/pages/CallsPage.qml" line="1037" />
+        <source>A call audio check is still waiting for macOS.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../../qml/pages/CallsPage.qml" line="1045" />
+        <source>Check call audio support</source>
+        <translation type="unfinished" />
+    </message>
 </context>
 <context>
     <name>CaptionButtons</name>
