@@ -120,7 +120,7 @@ static NSDictionary *WPEndpoint(AudioDeviceID device, AudioObjectPropertyScope s
         !WPScalar(device, kAudioDevicePropertyDeviceIsRunning, &running) ||
         !WPScalar(device, kAudioDevicePropertyTransportType, &transport) || !WPLocalTransport(transport)) return nil;
     return @{@"deviceId": @(device), @"uid": uid, @"alive": @YES,
-             @"running": @(running == 1), @"transport": @(transport), @"streams": streams};
+             @"running": running == 1 ? @YES : @NO, @"transport": @(transport), @"streams": streams};
 }
 
 static NSDictionary *WPAudioObservation(NSDictionary *binding) {
@@ -227,7 +227,8 @@ static BOOL WPRetirementReady(WPHfpRetirement state, BOOL stopRequested,
 
 - (NSDictionary *)snapshot {
     return @{@"phase": _phase, @"reason": _reason, @"nativeStatus": @(_nativeStatus),
-             @"slcObserved": @(_hf && _hf.isConnected), @"scoObserved": @(_hf && _hf.isSCOConnected),
+             @"slcObserved": (_hf && _hf.isConnected) ? @YES : @NO,
+             @"scoObserved": (_hf && _hf.isSCOConnected) ? @YES : @NO,
              @"stopLatched": @(_stopRequested), @"retired": @(_retired),
              @"available": @NO, @"connected": @NO, @"duplexQualified": @NO,
              @"handsetAudibleVerified": @NO, @"audioObservation": _audio ?: NSNull.null};

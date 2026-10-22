@@ -228,7 +228,7 @@ char *WPHfpSupportCopyPairedPhoneCandidatesJSON(void) {
             if (!WPSDPEligible(device) || address.length != 17) continue;
             [phones addObject:@{@"address": address, @"name": device.name ?: @"",
                                 @"agCached": @(device.isHandsFreeAudioGateway),
-                                @"servicesKnown": @([device getLastServicesUpdate] != nil),
+                                @"servicesKnown": [device getLastServicesUpdate] != nil ? @YES : @NO,
                                 @"deviceClassMajor": @(device.deviceClassMajor),
                                 @"deviceClassMinor": @(device.deviceClassMinor)}];
         }

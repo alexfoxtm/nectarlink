@@ -1,0 +1,115 @@
+{
+  "schema": 1,
+  "status": "SOURCE_CLOSURE_RECIPE_FOR_ROOT_REVIEW",
+  "candidate": {
+    "build": 51,
+    "channel": "0.1.4-local.23",
+    "bundleId": "com.waypair.mac",
+    "minimumSystemVersion": "27.0",
+    "sourceCommit": "EXTERNAL_ROOT_COMMIT",
+    "sourceTree": "EXTERNAL_ROOT_TREE",
+    "parentCommit": "EXTERNAL_ROOT_PARENT",
+    "parentTree": "EXTERNAL_ROOT_PARENT_TREE"
+  },
+  "artifactHashes": {
+    "unsignedBinarySha256": null,
+    "signedBundleManifestSha256": null,
+    "sourceArchiveSha256": null,
+    "dmgSha256": null
+  },
+  "sourceBinding": {
+    "finalCommitAndTree": "Root passes from an external sealed input after all product and recipe files are committed.",
+    "sourceArchive": "Deterministic gzip mtime=0 of git archive for the external commit, with prefix waypair-link-source/.",
+    "sourceOffer": "Generated during notices preparation from that commit, archive URL, and actual archive SHA-256.",
+    "selfReference": "No final source/tree/archive hash is stored in this in-tree inventory or operator."
+  },
+  "sourceClosureFiles": [
+    {
+      "path": "scripts/macos/release/mac51/build-mac51-candidate.py",
+      "role": "Root build, notices, package and normal signing orchestration"
+    },
+    {
+      "path": "scripts/macos/release/mac51/mac51_guard.py",
+      "role": "External source seal and frozen per-file/input guards"
+    },
+    {
+      "path": "scripts/macos/release/mac51/package-app.sh",
+      "role": "Source-relative app assembly and license/notices inclusion"
+    },
+    {
+      "path": "scripts/macos/release/mac51/record-minimum-os.py",
+      "role": "Derive actual minimum macOS from bundled Mach-O slices"
+    },
+    {
+      "path": "scripts/macos/release/mac51/macho_probe.py",
+      "role": "Checked Mach-O inspection calls"
+    },
+    {
+      "path": "scripts/macos/release/mac51/dmg-mac51.py",
+      "role": "UDZO DMG creation and existing-key signature binding"
+    },
+    {
+      "path": "scripts/macos/release/mac51/BUILD-RECIPE-ADDENDUM.md",
+      "role": "Build and evidence recipe"
+    },
+    {
+      "path": "scripts/macos/release/mac51/INVENTORY.json",
+      "role": "This logical inventory; final source identifiers remain external"
+    }
+  ],
+  "retainedIdentity": {
+    "teamId": "5H4D7574Z4",
+    "signingLeafSha1": "80f731ee19e02914c4634d57e8f7b1adddd63fd2",
+    "updatePublicKey": "uMzztqVF0M7BMYkWsL48ZJDvSxrqoVNSvqBKxYdu8ss=",
+    "minimumSystemVersion": "27.0",
+    "rule": "Use existing Root-held identities and public-key pins only; do not create, rotate, export, or embed secret key material."
+  },
+  "frozenMac50Baseline": {
+    "sourceCommit": "79d6d051ec0f7b5437fed25980bbb0a55de9395c",
+    "sourceTree": "6909e6532dd23c2bfe7beca2b2f71981d53449e5",
+    "build": 50,
+    "channel": "0.1.4-local.22",
+    "signedBundleManifestSha256": "a7fa5c2a447c0811300a3a9d4d024984de92519d43e7f3be4fd04087a49813be",
+    "sourceArchiveSha256": "ab0b2b5a4378c2ee3651ddc4f45effb61480423cdb8d73e43656abcbad73ec18",
+    "dmgSha256": "9a69424d5d99cfa5a849db469ead6cdbc411e4f1b412ee1e343f5c11141299e4",
+    "minimumSystemVersion": "27.0",
+    "preservation": "Mac50/local.22 and its installed app, source commit/archive, signed manifest, and DMG are frozen and never overwritten or repinned."
+  },
+  "pinnedPublicInputs": {
+    "qmake6Sha256": "5c3e3d4fe382a1c59da1195e79a38d40d0e5eb4e17773733c42d4e145c97d324",
+    "macdeployqtSha256": "6800af02332114de4c555123cddf4fea0737b99961956b134eba980487d65f69",
+    "lreleaseSha256": "c6f8da8e078165dc0e7deb5d7d02c6718712b863b06f6362f38e403c547d79a0",
+    "qtbaseZhCnCatalogSha256": "0481a9b92a6f0578400e960a7d5ee70217a6a450eaf7f98b7d32b8dbd0d58616",
+    "qtTranslationsSourceSha256": "85929c0c30d6f273f23bd879bb69803ea17b010ab73cab2f8abf95357f6f6bbb",
+    "adbSha256": "caf0bb75eba3b9afb5bf2f130d71c121a4ba7debdc411b93c190617028f29c72",
+    "adbSealSha256": "bc3918ee974b536d12a838c949634519eb8c786a8655267dcd4fa85feced776a",
+    "adbNoticeSha256": "356cc66516060e4da6bdc53e6f0bbb8e8101673f326b73c68d535eddd04dd7b1",
+    "updaterHelperSha256": "ef594359626b0202535c555846423933382c0c8d3f13aec2bd114606e220e438"
+  },
+  "rootOnlyInputs": {
+    "storage": "External Root configuration and scratch, excluded from repository and archive.",
+    "pathPolicy": "Root command-line selections are resolved and byte-checked against immutable V3 input pins before seal/output creation; the public guard repeats selected executable/helper checks. Staged updater, ADB, and provenance copies use retained pins; Sparkle, license, and Qt Homebrew inputs are compared with the frozen Mac50 manifest; Qt source/catalog bytes use retained hashes. No personal absolute path is embedded in public source.",
+    "credentials": "No credentials or private keys are carried in this source closure."
+  },
+  "publication": {
+    "existingPublisher": "scripts/releases/publish-r2.py",
+    "supportedAssets": [
+      "DMG",
+      "source archive",
+      "optional CHANGELOG.txt",
+      "signed appcast"
+    ],
+    "recipePlacement": "Included in the exact source archive; no extra publisher asset or new publisher endpoint is needed.",
+    "releasePrefix": "waypair/nectar/macos/releases/v0.1.4-local.23/",
+    "publicationGo": false
+  },
+  "acceptance": {
+    "sourceReview": "Fresh independent review must bind the final integrated source commit/tree and exact Root driver/template hashes.",
+    "legalGo": false,
+    "qualified": false,
+    "distributable": false,
+    "installGo": false,
+    "otaGo": false,
+    "releaseGo": false
+  }
+}
