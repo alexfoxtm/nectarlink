@@ -5447,6 +5447,11 @@ What it needs
         <translation type="unfinished" />
     </message>
     <message>
+        <location filename="../../qml/MirrorWindow.qml" line="468" />
+        <source>More toolbar buttons</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
         <location filename="../../qml/MirrorWindow.qml" line="595" />
         <source>How to enable</source>
         <translation type="unfinished" />

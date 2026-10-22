@@ -284,7 +284,10 @@ Window {
             if (event.key === Qt.Key_F6) {
                 if (toolbar.visible) {
                     toolbarWakeTimer.restart()
-                    copyShotBtn.forceActiveFocus(Qt.TabFocusReason)
+                    if (toolbar.overflowMode)
+                        overflowBtn.forceActiveFocus(Qt.TabFocusReason)
+                    else
+                        copyShotBtn.forceActiveFocus(Qt.TabFocusReason)
                     event.accepted = true
                 }
                 return
@@ -390,6 +393,7 @@ Window {
         radius: 20
         color: Qt.rgba(0, 0, 0, 0.68)
         visible: win.phase === "showing" && video.frameSize.width > 0
+        onVisibleChanged: if (!visible && overflowSheet && overflowSheet.opened) overflowSheet.close()
         // Group label for screen readers; the buttons keep their own
         // labels. Escape/F6 here return focus to the phone surface and
         // are never sent to the phone (unaccepted keys propagate up from
@@ -405,6 +409,9 @@ Window {
         readonly property bool toolbarHasFocus: copyShotBtn.activeFocus || saveShotBtn.activeFocus
             || recordBtn.activeFocus || stayAwakeBtn.activeFocus || screenOffBtn.activeFocus || soundBtn.activeFocus
             || fullScreenBtn.activeFocus || navBackBtn.activeFocus || navHomeBtn.activeFocus || navRecentsBtn.activeFocus
+            || overflowBtn.activeFocus || overflowSheet.opened
+        // Secondary actions move to More when the phone window is narrow.
+        readonly property bool overflowMode: win.width < 460
         opacity: topZoneHover.hovered || toolbarHover.hovered || toolbarWakeTimer.running
             || win.info.recording === true || win.info.screenOff === true || toolbarHasFocus ? 1 : 0
         Behavior on opacity { enabled: !Theme.reduceMotion; NumberAnimation { duration: Theme.fadeFast } }
@@ -415,11 +422,14 @@ Window {
         // buttons wrap onto more rows at full size instead of running off
         // the window's left edge. The width is the widest row, worked out
         // from the same conditions that show each button rather than from
-        // the Flow's own size or children, so it cannot loop.
+        // the Flow's own size or children, so it cannot loop. Overflow
+        // replaces the screenshot pair with the one menu button; the
+        // recording time stays its own conditional item, as its label and
+        // width change with the clock.
         readonly property real flowWidth: {
             const b = copyShotBtn.implicitWidth
             const s = toolbarFlow.spacing
-            const items = [b, b, b]
+            const items = toolbar.overflowMode ? [b, b] : [b, b, b]
             if (win.info.recording === true)
                 items.push(recordingTime.implicitWidth)
             items.push(b)
@@ -450,7 +460,17 @@ Window {
             spacing: 2
 
             IconButton {
+                id: overflowBtn
+                visible: toolbar.overflowMode
+                objectName: "mirrorOverflow"
+                iconPath: Icons.more
+                iconColor: "white"
+                label: qsTr("More toolbar buttons")
+                onClicked: overflowSheet.open()
+            }
+            IconButton {
                 id: copyShotBtn
+                visible: !toolbar.overflowMode
                 objectName: "mirrorCopyShot"
                 iconPath: Icons.copy
                 iconColor: "white"
@@ -459,6 +479,8 @@ Window {
             }
             IconButton {
                 id: saveShotBtn
+                objectName: "mirrorSaveShot"
+                visible: !toolbar.overflowMode
                 iconPath: Icons.camera
                 iconColor: "white"
                 label: qsTr("Save screenshot (%1)").arg(win.onMac ? "⌘S" : "Ctrl+S")
@@ -564,6 +586,59 @@ Window {
                     label: qsTr("Recent apps")
                     Accessible.description: win.canControl ? "" : win.accessibleControlDescription
                     onClicked: win.pressNav("recents")
+                }
+            }
+        }
+    }
+
+    // Dismissing the modal menu must not operate the phone underneath it.
+    MouseArea {
+        anchors.fill: parent
+        z: 99
+        visible: overflowSheet.opened
+        acceptedButtons: Qt.AllButtons
+        onWheel: (wheel) => { wheel.accepted = true }
+    }
+
+    // Secondary screenshot actions keep their existing bridge handlers.
+    Sheet {
+        id: overflowSheet
+        objectName: "mirrorOverflowSheet"
+        cardWidth: 300
+        onOpenedChanged: {
+            if (!opened && win.visible && win.phase === "showing")
+                video.forceActiveFocus()
+        }
+
+        Column {
+            id: screenshotMenuColumn
+            width: parent.width
+            spacing: 8
+            Repeater {
+                model: [
+                    {
+                        key: "copy",
+                        icon: Icons.copy,
+                        label: qsTr("Copy screenshot (%1)").arg(win.onMac ? "⌘⇧C" : "Ctrl+Shift+C"),
+                        action: () => Mirror.screenshotClipboard(win.mirrorKey)
+                    },
+                    {
+                        key: "save",
+                        icon: Icons.camera,
+                        label: qsTr("Save screenshot (%1)").arg(win.onMac ? "⌘S" : "Ctrl+S"),
+                        action: () => Mirror.screenshotFile(win.mirrorKey)
+                    }
+                ]
+                delegate: Button {
+                    width: parent.width
+                    objectName: "mirrorOverflow" + modelData.key
+                    variant: "tonal"
+                    text: modelData.label
+                    iconPath: modelData.icon
+                    onClicked: {
+                        modelData.action()
+                        overflowSheet.close()
+                    }
                 }
             }
         }

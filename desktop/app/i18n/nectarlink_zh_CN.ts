@@ -5739,6 +5739,11 @@ What it needs
         <translation>镜像工具栏</translation>
     </message>
     <message>
+        <location filename="../qml/MirrorWindow.qml" line="468" />
+        <source>More toolbar buttons</source>
+        <translation>更多工具栏按钮</translation>
+    </message>
+    <message>
         <location filename="../qml/MirrorWindow.qml" line="595" />
         <source>How to enable</source>
         <translation>如何启用</translation>
