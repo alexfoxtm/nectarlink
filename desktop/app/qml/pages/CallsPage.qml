@@ -496,6 +496,7 @@ Item {
             CallCard {
                 width: parent.width
                 visible: PhoneCall.active && PhoneCall.device === page.deviceId
+                pcAudioSetupShown: page.pcAudioSetupAvailable
             }
 
             // Selected contact details (when a contact with one or more numbers is clicked).

@@ -19,6 +19,11 @@ Card {
     property bool keypad: false
     // Keys pressed on this call, as the phone's keypad would show them.
     property string pressed: ""
+    // The page around the card shows Mac call audio set-up for this phone.
+    property bool pcAudioSetupShown: false
+    // Starting, returning or closing this call's audio on this Mac.
+    readonly property bool pcAudioShown: PhoneCall.pcAudioCanStart || PhoneCall.pcAudioCanStop
+        || PhoneCall.pcAudioPhase.length > 0
     Connections {
         target: PhoneCall
         function onActiveChanged() {
@@ -210,11 +215,12 @@ Card {
         }
 
         // ---- Bluetooth HFP / PC call audio (status only; audio stays on the phone) ----
+        // Mac call audio status, where shown, says where things stand instead.
         Row {
             objectName: "hfpStatus"
             width: parent.width
             spacing: 10
-            visible: PhoneCall.hfpDetail.length > 0
+            visible: PhoneCall.hfpDetail.length > 0 && !card.pcAudioShown && !card.pcAudioSetupShown
             Accessible.role: Accessible.Grouping
             Accessible.name: hfpStatusText.text
             Txt {
@@ -251,7 +257,7 @@ Card {
             objectName: "pcAudioRow"
             width: parent.width
             spacing: 8
-            visible: PhoneCall.pcAudioCanStart || PhoneCall.pcAudioCanStop || PhoneCall.pcAudioPhase.length > 0
+            visible: card.pcAudioShown
             Accessible.role: Accessible.Grouping
             Accessible.name: pcAudioRowText.text
             Txt {
