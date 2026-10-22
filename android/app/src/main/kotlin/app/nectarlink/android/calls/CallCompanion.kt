@@ -19,6 +19,8 @@ import app.nectarlink.core.CallControls
  * MANAGE_ONGOING_CALLS (Android 12+), an app-op Elevated's shell grants.
  */
 class CallCompanion : InCallService() {
+    @Volatile private var lastNonSpeakerRoute: Int? = null
+
     /**
      * The call being controlled: the active one, else the held one, else the
      * latest. A second call waiting to be answered doesn't take over the one
@@ -53,7 +55,10 @@ class CallCompanion : InCallService() {
     }
 
     @Deprecated("Deprecated in Java")
-    override fun onCallAudioStateChanged(audioState: CallAudioState?) = changed()
+    override fun onCallAudioStateChanged(audioState: CallAudioState?) {
+        audioState?.let { rememberNonSpeakerRoute(it) }
+        changed()
+    }
 
     /** Only a call in progress has controls; ringing and ending report themselves. */
     private fun changed() {
@@ -100,8 +105,41 @@ class CallCompanion : InCallService() {
 
     @Suppress("DEPRECATION") // setAudioRoute: still how a companion picks the speaker.
     private fun speaker(on: Boolean) {
-        setAudioRoute(if (on) CallAudioState.ROUTE_SPEAKER else CallAudioState.ROUTE_WIRED_OR_EARPIECE)
+        @Suppress("DEPRECATION")
+        val audio = callAudioState ?: return
+        if (on) {
+            if (audio.route == CallAudioState.ROUTE_SPEAKER) return
+            rememberNonSpeakerRoute(audio)
+            if ((audio.supportedRouteMask and CallAudioState.ROUTE_SPEAKER) != 0) {
+                setAudioRoute(CallAudioState.ROUTE_SPEAKER)
+            }
+            return
+        }
+
+        if (isSupportedNonSpeakerRoute(audio, audio.route)) {
+            lastNonSpeakerRoute = audio.route
+            return
+        }
+        val route = lastNonSpeakerRoute?.takeIf { isSupportedNonSpeakerRoute(audio, it) }
+            ?: listOf(
+                CallAudioState.ROUTE_EARPIECE,
+                CallAudioState.ROUTE_WIRED_HEADSET,
+                CallAudioState.ROUTE_BLUETOOTH,
+            ).firstOrNull { isSupportedNonSpeakerRoute(audio, it) }
+        if (route != null && route != audio.route) setAudioRoute(route)
     }
+
+    @Suppress("DEPRECATION")
+    private fun rememberNonSpeakerRoute(audio: CallAudioState) {
+        if (isSupportedNonSpeakerRoute(audio, audio.route)) lastNonSpeakerRoute = audio.route
+    }
+
+    @Suppress("DEPRECATION")
+    private fun isSupportedNonSpeakerRoute(audio: CallAudioState, route: Int): Boolean =
+        (route == CallAudioState.ROUTE_EARPIECE ||
+            route == CallAudioState.ROUTE_WIRED_HEADSET ||
+            route == CallAudioState.ROUTE_BLUETOOTH) &&
+            (audio.supportedRouteMask and route) == route
 
     private fun hold(on: Boolean): Boolean {
         val call = call ?: return false

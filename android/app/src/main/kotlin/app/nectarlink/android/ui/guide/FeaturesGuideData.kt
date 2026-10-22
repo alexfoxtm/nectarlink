@@ -185,6 +185,8 @@ object FeaturesGuideCatalog {
             stepByStepPcResIds = listOf(
                 R.string.guide_calls_pc_1,
                 R.string.guide_calls_pc_2,
+                R.string.guide_calls_pc_3,
+                R.string.guide_calls_pc_4,
             ),
             optionsExplainedResIds = listOf(
                 R.string.guide_calls_opt_1,

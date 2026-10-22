@@ -19,6 +19,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import app.nectarlink.android.NectarlinkApplication
 import app.nectarlink.core.MirrorInputEvent
 import app.nectarlink.core.TouchPhase
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.abs
 import kotlin.math.hypot
 
@@ -39,6 +40,7 @@ class InputService : AccessibilityService() {
     private var inputOwner: Any? = null
     private var inputCurrent: () -> Boolean = { false }
     private var inputGeneration = 0L
+    private val interruptFence = InputInterruptFence()
 
     private val longPressRunnable = Runnable {
         if (!inputCurrent()) { clearPendingInput(); return@Runnable }
@@ -85,7 +87,10 @@ class InputService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
 
-    override fun onInterrupt() {}
+    override fun onInterrupt() {
+        interruptFence.interrupt()
+        clearPendingInput()
+    }
 
     private fun handle(input: MirrorInputEvent) {
         if (!inputCurrent()) { clearPendingInput(); return }
@@ -409,7 +414,9 @@ class InputService : AccessibilityService() {
          */
         fun handle(input: MirrorInputEvent, stillCurrent: () -> Boolean, owner: Any? = null) {
             val service = instance ?: return
+            val interruptGeneration = service.interruptFence.snapshot()
             service.main.post {
+                if (!service.interruptFence.isCurrent(interruptGeneration)) return@post
                 if (instance !== service || !stillCurrent()) return@post
                 if (service.inputOwner != owner || !service.inputCurrent()) service.clearPendingInput()
                 service.inputOwner = owner
@@ -466,3 +473,16 @@ internal fun filterDragPoints(
 internal fun swipeDurationMs(heldMs: Long): Long =
     heldMs.coerceIn(InputService.SWIPE_MIN_MS, InputService.SWIPE_MAX_MS)
 
+
+/** Reject handler work queued before Accessibility interrupted this service. */
+internal class InputInterruptFence {
+    private val generation = AtomicLong(0L)
+
+    fun snapshot(): Long = generation.get()
+
+    fun interrupt() {
+        generation.incrementAndGet()
+    }
+
+    fun isCurrent(snapshot: Long): Boolean = generation.get() == snapshot
+}

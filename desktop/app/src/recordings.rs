@@ -264,6 +264,7 @@ pub fn save_received_recording(
                     fallback
                 }
                 Err(e) => {
+                    #[cfg(not(target_os = "macos"))]
                     let _ = fs::remove_file(&dest);
                     tracing::warn!(error = %e, format = %format.as_str(), "audio conversion failed; keeping original .m4a");
                     let fallback = unique_recording_path(dest_dir, stem, "m4a");
@@ -276,7 +277,15 @@ pub fn save_received_recording(
 
     if !markers.is_empty() {
         let markers_file = markers_path_for(&final_path);
-        if let Err(e) = fs::write(&markers_file, format_markers(markers)) {
+        #[cfg(target_os = "macos")]
+        let marker_result =
+            fs::OpenOptions::new().write(true).create_new(true).open(&markers_file).and_then(|mut file| {
+                use std::io::Write;
+                file.write_all(format_markers(markers).as_bytes())
+            });
+        #[cfg(not(target_os = "macos"))]
+        let marker_result = fs::write(&markers_file, format_markers(markers));
+        if let Err(e) = marker_result {
             tracing::warn!(error = %e, "can't write recording markers file");
         }
     }
@@ -285,12 +294,33 @@ pub fn save_received_recording(
 }
 
 fn move_file(src: &Path, dest: &Path) -> std::io::Result<()> {
-    if fs::rename(src, dest).is_ok() {
-        return Ok(());
+    #[cfg(target_os = "macos")]
+    {
+        match fs::hard_link(src, dest) {
+            Ok(()) => {
+                let _ = fs::remove_file(src);
+                return Ok(());
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => return Err(error),
+            Err(_) => {}
+        }
+        // Cross-volume moves cannot be hard-linked. Claim the destination with
+        // create_new before copying so a concurrent file is never replaced.
+        let mut input = fs::File::open(src)?;
+        let mut output = fs::OpenOptions::new().write(true).create_new(true).open(dest)?;
+        std::io::copy(&mut input, &mut output)?;
+        let _ = fs::remove_file(src);
+        Ok(())
     }
-    fs::copy(src, dest)?;
-    let _ = fs::remove_file(src);
-    Ok(())
+    #[cfg(not(target_os = "macos"))]
+    {
+        if fs::rename(src, dest).is_ok() {
+            return Ok(());
+        }
+        fs::copy(src, dest)?;
+        let _ = fs::remove_file(src);
+        Ok(())
+    }
 }
 
 #[cfg(not(windows))]
@@ -806,6 +836,39 @@ mod tests {
         fs::write(dir.path().join("Recording 2026-10-07 14.32 (3).markers.txt"), b"m").unwrap();
         let p4 = unique_recording_path(dir.path(), &stem, "m4a");
         assert_eq!(p4, dir.path().join("Recording 2026-10-07 14.32 (4).m4a"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn move_file_collision_preserves_both_existing_target_and_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("incoming.m4a");
+        let dest = dir.path().join("Recording.m4a");
+        fs::write(&src, b"incoming").unwrap();
+        fs::write(&dest, b"existing").unwrap();
+
+        let error = move_file(&src, &dest).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(fs::read(&src).unwrap(), b"incoming");
+        assert_eq!(fs::read(&dest).unwrap(), b"existing");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn move_file_failure_keeps_original_and_does_not_create_destination() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("incoming.m4a");
+        let dest = dir.path().join("missing/Recording.m4a");
+        fs::write(&src, b"incoming").unwrap();
+
+        assert!(move_file(&src, &dest).is_err());
+        assert_eq!(fs::read(&src).unwrap(), b"incoming");
+        assert!(!dest.exists());
+
+        let missing_src = dir.path().join("missing.m4a");
+        let unclaimed_dest = dir.path().join("must-not-exist.m4a");
+        assert!(move_file(&missing_src, &unclaimed_dest).is_err());
+        assert!(!unclaimed_dest.exists());
     }
 
     #[test]

@@ -36,7 +36,7 @@ use nectarlink_core::{
     ConnectionPath, DeviceId, Error, LinkState, Node, NodeEvent,
     storage::{StorageEntry, is_valid_storage_dir_path, is_valid_storage_name, is_valid_storage_path},
 };
-use tokio::sync::mpsc;
+use tokio::sync::{Notify, mpsc};
 
 /// Root sets this true only after native acceptance. While false, every
 /// network and UI entry point is a no-op.
@@ -206,6 +206,7 @@ struct SaveJob {
     remote: String,
     dest: PathBuf,
     temp: PathBuf,
+    cancel: Arc<Notify>,
 }
 
 /// What the stream hands the file writer.
@@ -310,6 +311,7 @@ struct State {
     inflight: Option<u64>,
     queued: Option<ListCommand>,
     save_epoch: u64,
+    save_cancel: Option<Arc<Notify>>,
     saving: bool,
     save_notice: Option<bool>,
 }
@@ -321,6 +323,7 @@ impl State {
             inflight: None,
             queued: None,
             save_epoch: 0,
+            save_cancel: None,
             saving: false,
             save_notice: None,
         }
@@ -330,6 +333,9 @@ impl State {
     /// its own temporary file. With `report`, the page hears it failed.
     fn cancel_save(&mut self, report: bool) {
         self.save_epoch = self.save_epoch.saturating_add(1);
+        if let Some(cancel) = self.save_cancel.take() {
+            cancel.notify_one();
+        }
         if self.saving && report {
             self.save_notice = Some(false);
         }
@@ -362,9 +368,11 @@ impl State {
         self.cancel_save(false);
         let epoch = self.save_epoch;
         let temp = temp_in_folder(folder, epoch, TEMP_SEQ.fetch_add(1, Ordering::Relaxed));
+        let cancel = Arc::new(Notify::new());
+        self.save_cancel = Some(cancel.clone());
         self.saving = true;
         self.save_notice = None;
-        Ok(SaveJob { epoch, device, remote: path.to_owned(), dest, temp })
+        Ok(SaveJob { epoch, device, remote: path.to_owned(), dest, temp, cancel })
     }
 
     /// The last step of a save as one decision: still wanted, then linked into
@@ -381,6 +389,7 @@ impl State {
         match link() {
             Ok(()) => {
                 self.saving = false;
+                self.save_cancel = None;
                 self.save_notice = Some(true);
                 Ok(())
             }
@@ -393,6 +402,7 @@ impl State {
     fn fail_save(&mut self, epoch: u64) {
         if self.saving && self.save_epoch == epoch {
             self.saving = false;
+            self.save_cancel = None;
             self.save_notice = Some(false);
         }
     }
@@ -786,8 +796,9 @@ async fn stream(job: &SaveJob, tx: &mpsc::Sender<Feed>) -> Result<(), SaveError>
     send(job, tx, Feed::End(expected)).await
 }
 
-/// Awaits `future`, checking every [`SAVE_POLL`] that the save is still wanted
-/// and its writer still there; fails after [`SAVE_IDLE`] without an answer.
+/// Awaits `future`, checking every [`SAVE_POLL`], and at once when the save
+/// is cancelled, that it is still wanted and its writer still there; fails
+/// after [`SAVE_IDLE`] without an answer.
 /// The future itself is kept across checks, never dropped half-way.
 async fn wait<F: Future>(job: &SaveJob, tx: &mpsc::Sender<Feed>, future: F) -> Result<F::Output, SaveError> {
     let mut future = std::pin::pin!(future);
@@ -799,14 +810,17 @@ async fn wait<F: Future>(job: &SaveJob, tx: &mpsc::Sender<Feed>, future: F) -> R
         if tx.is_closed() {
             return Err(SaveError::Failed);
         }
-        match tokio::time::timeout(SAVE_POLL, future.as_mut()).await {
-            Ok(output) => return Ok(output),
-            Err(_) => {
-                idle += SAVE_POLL;
-                if idle >= SAVE_IDLE {
-                    return Err(SaveError::Stalled);
+        tokio::select! {
+            output = tokio::time::timeout(SAVE_POLL, future.as_mut()) => match output {
+                Ok(output) => return Ok(output),
+                Err(_) => {
+                    idle += SAVE_POLL;
+                    if idle >= SAVE_IDLE {
+                        return Err(SaveError::Stalled);
+                    }
                 }
-            }
+            },
+            _ = job.cancel.notified() => {}
         }
     }
 }
@@ -1097,6 +1111,28 @@ mod tests {
         assert_eq!(state.session.status, BrowseStatus::Unsupported);
         assert!(state.relist(refresh).is_none());
         assert_eq!(state.publish(&job, || panic!("linked after access ended")), Err(SaveError::Cancelled));
+    }
+
+    #[test]
+    fn cancelling_a_save_wakes_its_waits_at_once() {
+        let dev = device(9);
+        let folder = Path::new("/tmp/phone-browser");
+        let mut state = State::empty();
+        let first = state.open(dev, None).unwrap();
+        state.session.accept_list(&first, vec![entry("a.txt", false, 3)]);
+        let replaced = state.begin_save("a.txt", Some(folder)).unwrap();
+        let closed = state.begin_save("a.txt", Some(folder)).unwrap();
+        state.close();
+        assert!(state.save_cancel.is_none());
+        // `notify_one` keeps a permit, so a save that wasn't waiting yet still wakes.
+        let rt = tokio::runtime::Builder::new_current_thread().enable_time().build().expect("test runtime");
+        rt.block_on(async {
+            for job in [&replaced, &closed] {
+                tokio::time::timeout(Duration::from_millis(100), job.cancel.notified())
+                    .await
+                    .expect("a cancelled save wakes before its next poll");
+            }
+        });
     }
 
     #[test]

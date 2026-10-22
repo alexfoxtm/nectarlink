@@ -156,6 +156,33 @@ fn macos_update_helper() -> Option<PathBuf> {
 /// Set while the helper this app started runs; its waiter clears it.
 #[cfg(target_os = "macos")]
 static MAC_HELPER_RUNNING: AtomicBool = AtomicBool::new(false);
+/// A helper whose waiter stopped before reaping it; retain its handle and
+/// check it before allowing another helper to start.
+#[cfg(target_os = "macos")]
+static MAC_HELPER_UNTRACKED: Mutex<Option<std::process::Child>> = Mutex::new(None);
+
+#[cfg(target_os = "macos")]
+fn reap_untracked_helper() -> bool {
+    let mut slot = MAC_HELPER_UNTRACKED.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(mut child) = slot.take() else {
+        return false;
+    };
+    match child.try_wait() {
+        Ok(Some(_)) => {
+            MAC_HELPER_RUNNING.store(false, Ordering::Release);
+            true
+        }
+        Ok(None) => {
+            *slot = Some(child);
+            false
+        }
+        Err(error) => {
+            tracing::warn!(error = %error, "couldn't check whether the macOS update helper is still running");
+            *slot = Some(child);
+            false
+        }
+    }
+}
 
 /// Launches the Sparkle helper for a user-initiated check: `Ok(true)` when
 /// started, `Ok(false)` when the one this app started is still open.
@@ -166,29 +193,47 @@ static MAC_HELPER_RUNNING: AtomicBool = AtomicBool::new(false);
 fn macos_user_check() -> Result<bool, String> {
     let helper =
         macos_update_helper().ok_or_else(|| tr!("Updater", "This build can't check for updates yet."))?;
-    if MAC_HELPER_RUNNING.swap(true, Ordering::AcqRel) {
+    if MAC_HELPER_RUNNING.swap(true, Ordering::AcqRel)
+        && (!reap_untracked_helper() || MAC_HELPER_RUNNING.swap(true, Ordering::AcqRel))
+    {
         return Ok(false);
     }
-    let mut child =
+    let (wait_tx, wait_rx) = std::sync::mpsc::sync_channel::<Option<std::process::Child>>(1);
+    let waiter = std::thread::Builder::new().name("update-helper".into()).spawn(move || {
+        let Ok(Some(mut child)) = wait_rx.recv() else {
+            return;
+        };
+        match child.wait() {
+            Ok(status) if status.success() => {}
+            Ok(status) => tracing::warn!(%status, "the macOS update helper reported a failure"),
+            Err(error) => {
+                tracing::warn!(error = %error, "couldn't wait for the macOS update helper");
+                *MAC_HELPER_UNTRACKED.lock().unwrap_or_else(|e| e.into_inner()) = Some(child);
+                return;
+            }
+        }
+        MAC_HELPER_RUNNING.store(false, Ordering::Release);
+    });
+    if let Err(error) = waiter {
+        MAC_HELPER_RUNNING.store(false, Ordering::Release);
+        tracing::warn!(error = %error, "couldn't prepare to wait for the macOS update helper");
+        return Err(tr!("Updater", "Couldn't open the update window."));
+    }
+    let child =
         match std::process::Command::new(&helper).arg("--check").stdin(std::process::Stdio::null()).spawn() {
             Ok(child) => child,
             Err(e) => {
+                let _ = wait_tx.send(None);
                 MAC_HELPER_RUNNING.store(false, Ordering::Release);
                 tracing::warn!(error = %e, "couldn't start the macOS update helper");
                 return Err(tr!("Updater", "Couldn't open the update window."));
             }
         };
-    let waiter = std::thread::Builder::new().name("update-helper".into()).spawn(move || {
-        match child.wait() {
-            Ok(status) if status.success() => {}
-            Ok(status) => tracing::warn!(%status, "the macOS update helper reported a failure"),
-            Err(e) => tracing::warn!(error = %e, "couldn't wait for the macOS update helper"),
+    if let Err(error) = wait_tx.send(Some(child)) {
+        if let Some(child) = error.0 {
+            *MAC_HELPER_UNTRACKED.lock().unwrap_or_else(|e| e.into_inner()) = Some(child);
         }
-        MAC_HELPER_RUNNING.store(false, Ordering::Release);
-    });
-    if let Err(e) = waiter {
-        MAC_HELPER_RUNNING.store(false, Ordering::Release);
-        tracing::warn!(error = %e, "won't reap the macOS update helper");
+        tracing::warn!("the macOS update waiter stopped; retaining the helper process handle");
     }
     Ok(true)
 }

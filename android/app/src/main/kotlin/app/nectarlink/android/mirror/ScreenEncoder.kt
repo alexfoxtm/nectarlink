@@ -19,6 +19,7 @@ import app.nectarlink.core.MirrorSendResult
 import app.nectarlink.core.MirrorStream
 import app.nectarlink.core.VideoPacketKind
 import app.nectarlink.core.mirrorConfigCodec
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.max
 import kotlin.math.min
 
@@ -48,16 +49,14 @@ internal class ScreenEncoder(
 
     @Volatile private var running = true
     @Volatile private var keyframeWanted = false
-    @Volatile private var resizeWanted = false
-    @Volatile private var size: Size = screenSize()
+    /** Bumped on every default-display change; the encoder rechecks the size whenever it moves. */
+    private val displayChanges = AtomicLong()
 
     private data class Size(val width: Int, val height: Int, val dpi: Int)
 
     private val rotation = object : DisplayManager.DisplayListener {
         override fun onDisplayChanged(displayId: Int) {
-            if (displayId != Display.DEFAULT_DISPLAY) return
-            val now = screenSize()
-            if (now.width != size.width || now.height != size.height) resizeWanted = true
+            if (displayId == Display.DEFAULT_DISPLAY) displayChanges.incrementAndGet()
         }
         override fun onDisplayAdded(displayId: Int) {}
         override fun onDisplayRemoved(displayId: Int) {}
@@ -82,8 +81,9 @@ internal class ScreenEncoder(
         var display: VirtualDisplay? = null
         try {
             while (running) {
-                size = screenSize()
-                resizeWanted = false
+                // Read before the size, so a change landing after the read is seen by drain.
+                val seen = displayChanges.get()
+                val size = screenSize()
                 val (activeCodecName, codec) = encoder(size)
                 val surface = codec.createInputSurface()
                 codec.start()
@@ -101,7 +101,7 @@ internal class ScreenEncoder(
                     VideoPacketKind.CONFIG,
                     0u,
                     mirrorConfigCodec(activeCodecName, size.width.toUInt(), size.height.toUInt(), 0u, request),
-                ) == MirrorSendResult.CLOSED || drain(codec)
+                ) == MirrorSendResult.CLOSED || drain(codec, size, seen)
                 runCatching { codec.stop() }
                 codec.release()
                 surface.release()
@@ -119,12 +119,19 @@ internal class ScreenEncoder(
     }
 
     /** Sends what the encoder makes until the size changes (false) or it's over (true). */
-    private fun drain(codec: MediaCodec): Boolean {
+    private fun drain(codec: MediaCodec, size: Size, seen: Long): Boolean {
         val info = MediaCodec.BufferInfo()
         // The parameter sets, sent again with each keyframe so the PC can
         // start from any of them.
         var parameters = ByteArray(0)
-        while (running && !resizeWanted) {
+        var checked = seen
+        while (running) {
+            val changes = displayChanges.get()
+            if (changes != checked) {
+                checked = changes
+                val now = screenSize()
+                if (now.width != size.width || now.height != size.height) return false
+            }
             if (keyframeWanted) {
                 keyframeWanted = false
                 codec.setParameters(Bundle().apply { putInt(MediaCodec.PARAMETER_KEY_REQUEST_SYNC_FRAME, 0) })

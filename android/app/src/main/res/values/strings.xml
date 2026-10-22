@@ -979,10 +979,12 @@
     <string name="guide_calls_phone_2">Use the active call notification for Mute, Speaker, and Hang up controls.</string>
     <string name="guide_calls_pc_1">Answer, reject, or reply with SMS from the incoming call banner on your PC.</string>
     <string name="guide_calls_pc_2">Open Calls on your PC to browse call history or dial a number.</string>
+    <string name="guide_calls_pc_3">Pairing in Waypair Link (QR code or discovery) is separate from Bluetooth pairing in Windows or macOS settings.</string>
+    <string name="guide_calls_pc_4">Windows: pair or select the phone in Bluetooth settings. Mac: on the Calls page in Waypair Link, choose this phone from the devices already paired in macOS Bluetooth settings. Only if it is not paired yet, pair it in Bluetooth settings and privately check that the code matches on both devices before accepting. Never unpair an existing phone just to test.</string>
     <string name="guide_calls_opt_1">Answer / Reject: Accepts or declines the incoming call on your phone.</string>
     <string name="guide_calls_opt_2">Mute / Speaker: Toggles phone mic mute or speakerphone during a call.</string>
     <string name="guide_calls_privacy">Call history is read from Android when your PC connects and never leaves your paired devices.</string>
-    <string name="guide_calls_limits">Call audio stays on your phone or headset. In-call mute and hold from PC require Elevated on Android 12+.</string>
+    <string name="guide_calls_limits">Calls ring on your PC, where you can answer or reject them. Call audio stays on your phone or headset unless you start PC audio on a Mac, which is still experimental. In-call mute and hold from PC require Elevated on Android 12+.</string>
 
     <!-- 3. Now playing -->
     <string name="guide_media_title">Now playing</string>
