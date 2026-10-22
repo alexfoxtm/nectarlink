@@ -98,11 +98,152 @@ const QUIT_HANDBACK_WAIT: Duration = Duration::from_secs(3);
 struct Snapshot {
     phase: String,
     reason: String,
+    #[serde(default, deserialize_with = "diagnostic_field")]
+    native_status: Option<i64>,
     slc_observed: bool,
     sco_observed: bool,
+    #[serde(default, deserialize_with = "diagnostic_field")]
+    stop_latched: Option<bool>,
     duplex_qualified: bool,
     handset_audible_verified: bool,
     retired: bool,
+    #[serde(default, deserialize_with = "diagnostic_field")]
+    audio_observation: Option<AudioObservation>,
+}
+
+// A malformed optional diagnostic must not hide the existing retirement fields.
+fn diagnostic_field<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::de::DeserializeOwned,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).ok())
+}
+
+// Parse only booleans from the last successful endpoint observation. Native
+// WPAudioObservation returns both endpoints only after their exact UID checks.
+// This sample can predate a Stop; it is never proof of a current audio route.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+struct AudioObservation {
+    input: Option<EndpointStatus>,
+    output: Option<EndpointStatus>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(default)]
+struct EndpointStatus {
+    alive: bool,
+    running: bool,
+}
+
+const DIAGNOSTIC_LIMIT: u8 = 64;
+
+fn diagnostic_label(value: &str) -> &'static str {
+    const LABELS: &[&str] = &[
+        "",
+        "created",
+        "starting",
+        "unreadable",
+        "rejected",
+        "connecting-service",
+        "checking-exact-call",
+        "connecting-audio",
+        "sco-observed-unqualified",
+        "returning-to-handset",
+        "handback-unconfirmed",
+        "service-and-sco-disconnected",
+        "operator-prototype-only",
+        "permission-or-current-lease-required",
+        "selected-current-mic-speaker-not-observed",
+        "exact-already-paired-phone-required",
+        "phone-audio-gateway-service-not-in-cached-sdp",
+        "new-exclusive-hf-owner-required",
+        "lease-or-permission-revoked",
+        "selected-current-audio-endpoints-changed",
+        "native-phase-timeout",
+        "service-or-sco-no-longer-connected",
+        "service-connect-failed",
+        "lease-revoked-before-call-check",
+        "hfp-call-does-not-match-current-bound-call",
+        "route-or-lease-changed-before-transfer",
+        "sco-failed-or-arrived-without-bound-transfer",
+        "audio-endpoints-changed-at-sco-open",
+        "physical-duplex-and-handset-return-not-qualified",
+        "service-disconnected",
+        "sco-closed",
+        "phone-call-no-longer-active",
+        "phone-call-setup-changed",
+        "phone-held-call-present",
+        "operator-or-root-stop",
+        "native-start-refused",
+    ];
+    LABELS.iter().copied().find(|label| *label == value).unwrap_or("unknown")
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DiagnosticMetadata {
+    phase: &'static str,
+    reason: &'static str,
+    native_status: Option<i64>,
+    slc: bool,
+    sco: bool,
+    stopped: Option<bool>,
+    retired: bool,
+    last_input: Option<EndpointStatus>,
+    last_output: Option<EndpointStatus>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct Diagnostics {
+    last: Option<DiagnosticMetadata>,
+    emitted: u8,
+}
+
+fn record_snapshot(
+    slot: &mut Option<Session>,
+    token: u64,
+    snapshot: Snapshot,
+) -> (bool, Option<(u8, DiagnosticMetadata)>) {
+    let Some(s) = slot.as_mut().filter(|s| s.token == token) else { return (false, None) };
+    let metadata = DiagnosticMetadata {
+        phase: diagnostic_label(&snapshot.phase),
+        reason: diagnostic_label(&snapshot.reason),
+        native_status: snapshot.native_status,
+        slc: snapshot.slc_observed,
+        sco: snapshot.sco_observed,
+        stopped: snapshot.stop_latched,
+        retired: snapshot.retired,
+        last_input: snapshot.audio_observation.as_ref().and_then(|a| a.input.clone()),
+        last_output: snapshot.audio_observation.as_ref().and_then(|a| a.output.clone()),
+    };
+    s.snapshot = snapshot;
+    if s.diagnostics.last.as_ref() == Some(&metadata) || s.diagnostics.emitted == DIAGNOSTIC_LIMIT {
+        return (true, None);
+    }
+    s.diagnostics.last = Some(metadata.clone());
+    s.diagnostics.emitted += 1;
+    (true, Some((s.diagnostics.emitted, metadata)))
+}
+
+fn log_transition(token: u64, transition: Option<(u8, DiagnosticMetadata)>) {
+    if let Some((sequence, m)) = transition {
+        tracing::info!(
+            target: "waypair_call_audio",
+            session = token, sequence, limit_reached = sequence == DIAGNOSTIC_LIMIT,
+            phase = m.phase, reason = m.reason, native_status = ?m.native_status,
+            slc_observed = m.slc, sco_observed = m.sco,
+            stop_latched = ?m.stopped, retired = m.retired,
+            last_selected_input_matched = m.last_input.is_some(),
+            last_selected_output_matched = m.last_output.is_some(),
+            last_input_alive = ?m.last_input.as_ref().map(|e| e.alive),
+            last_input_running = ?m.last_input.as_ref().map(|e| e.running),
+            last_output_alive = ?m.last_output.as_ref().map(|e| e.alive),
+            last_output_running = ?m.last_output.as_ref().map(|e| e.running),
+            "owned Mac call audio transition"
+        );
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -122,6 +263,7 @@ struct Session {
     /// The lease is refused from here on; set before any native handback.
     stopped: bool,
     snapshot: Snapshot,
+    diagnostics: Diagnostics,
 }
 
 /// One attempt at a time, kept until the provider frees its handle,
@@ -444,13 +586,8 @@ fn event_callback(token: u64, snapshot_json: &[u8]) {
     let snapshot: Snapshot = serde_json::from_slice(snapshot_json)
         .unwrap_or_else(|_| Snapshot { phase: "unreadable".into(), ..Snapshot::default() });
     let retired = snapshot.retired;
-    let ours = session(|s| match s {
-        Some(s) if s.token == token => {
-            s.snapshot = snapshot;
-            true
-        }
-        _ => false,
-    });
+    let (ours, transition) = session(|s| record_snapshot(s, token, snapshot));
+    log_transition(token, transition);
     if ours {
         if retired {
             // Not from inside the callback: the provider refuses that.
@@ -987,14 +1124,32 @@ pub fn start(device: DeviceId) -> Result<(), String> {
         binding_json: json.clone(),
         stopped: false,
         snapshot: Snapshot { phase: "starting".into(), ..Snapshot::default() },
+        diagnostics: Diagnostics::default(),
     };
     if !lease_holds(&attempt, json.as_bytes(), &live(device)) {
         return Err(tr!("BtHfp", "The phone or its call changed; try again."));
     }
     session(|s| *s = Some(attempt));
     *LAST.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    let (_, transition) =
+        session(|s| record_snapshot(s, token, Snapshot { phase: "starting".into(), ..Snapshot::default() }));
+    log_transition(token, transition);
     // No lock is held: the provider calls back synchronously from here.
     let handle = ffi::mac_hfp_start(&json, token, lease_callback, event_callback);
+    if handle == 0 {
+        let (_, transition) = session(|s| {
+            record_snapshot(
+                s,
+                token,
+                Snapshot {
+                    phase: "rejected".into(),
+                    reason: "native-start-refused".into(),
+                    ..Snapshot::default()
+                },
+            )
+        });
+        log_transition(token, transition);
+    }
     let started = session(|s| {
         if !s.as_ref().is_some_and(|s| s.token == token) {
             return false;
@@ -1142,6 +1297,7 @@ mod tests {
             binding_json: json,
             stopped: false,
             snapshot: Snapshot::default(),
+            diagnostics: Diagnostics::default(),
         };
         let live = Live {
             node_ready: true,
@@ -1152,6 +1308,77 @@ mod tests {
             call: Some((device, call)),
         };
         (session, live)
+    }
+
+    #[test]
+    fn diagnostics_preserve_ordered_owned_changes_and_status_only_endpoints() {
+        let (owned, _) = fixture();
+        let mut slot = Some(owned);
+        let snapshot: Snapshot = serde_json::from_str(
+            r#"{
+            "phase":"connecting-service","reason":"operator-prototype-only",
+            "nativeStatus":0,"slcObserved":false,"scoObserved":false,
+            "audioObservation":{"input":{"uid":"PRIVATE_INPUT","alive":true,"running":false},
+                                "output":{"uid":"PRIVATE_OUTPUT","alive":true,"running":true}}
+        }"#,
+        )
+        .unwrap();
+        let (ours, first) = record_snapshot(&mut slot, 1, snapshot.clone());
+        assert!(ours);
+        let (sequence, metadata) = first.unwrap();
+        assert_eq!(sequence, 1);
+        assert_eq!(metadata.native_status, Some(0));
+        assert_eq!(metadata.last_input, Some(EndpointStatus { alive: true, running: false }));
+        assert_eq!(metadata.last_output, Some(EndpointStatus { alive: true, running: true }));
+        assert!(!format!("{metadata:?}").contains("PRIVATE_"));
+        assert!(record_snapshot(&mut slot, 1, snapshot.clone()).1.is_none());
+        let next = Snapshot { phase: "checking-exact-call".into(), slc_observed: true, ..snapshot };
+        let (_, second) = record_snapshot(&mut slot, 1, next);
+        let (sequence, metadata) = second.unwrap();
+        assert_eq!(sequence, 2);
+        assert_eq!(metadata.phase, "checking-exact-call");
+        assert!(metadata.slc);
+        assert_eq!(slot.unwrap().diagnostics.emitted, 2);
+    }
+
+    #[test]
+    fn diagnostics_reject_stale_owner_scrub_unknown_labels_and_bound_events() {
+        let (owned, _) = fixture();
+        let mut slot = Some(owned);
+        let untrusted: Snapshot = serde_json::from_str(
+            r#"{
+            "phase":"PRIVATE_PHONE_NUMBER","reason":"PRIVATE_BLUETOOTH_ADDRESS",
+            "nativeStatus":-1,"audioObservation":null
+        }"#,
+        )
+        .unwrap();
+        assert_eq!(record_snapshot(&mut slot, 2, untrusted.clone()), (false, None));
+        assert_eq!(slot.as_ref().unwrap().snapshot, Snapshot::default());
+        let (_, event) = record_snapshot(&mut slot, 1, untrusted);
+        let (_, metadata) = event.unwrap();
+        assert_eq!(metadata.phase, "unknown");
+        assert_eq!(metadata.reason, "unknown");
+        assert!(!format!("{metadata:?}").contains("PRIVATE_"));
+        let malformed: Snapshot = serde_json::from_str(
+            r#"{
+            "phase":"service-and-sco-disconnected","retired":true,
+            "nativeStatus":"PRIVATE_STATUS","stopLatched":"PRIVATE_STOP",
+            "audioObservation":{"input":{"alive":"PRIVATE_UID"}}
+        }"#,
+        )
+        .unwrap();
+        assert!(malformed.retired);
+        assert!(malformed.native_status.is_none());
+        assert!(malformed.stop_latched.is_none());
+        assert!(malformed.audio_observation.is_none());
+        for n in 1..=DIAGNOSTIC_LIMIT {
+            let sample = Snapshot { native_status: Some(i64::from(n)), ..Snapshot::default() };
+            let (_, event) = record_snapshot(&mut slot, 1, sample);
+            assert_eq!(event.is_some(), n < DIAGNOSTIC_LIMIT);
+        }
+        let owned = slot.unwrap();
+        assert_eq!(owned.diagnostics.emitted, DIAGNOSTIC_LIMIT);
+        assert_eq!(owned.snapshot.native_status, Some(i64::from(DIAGNOSTIC_LIMIT)));
     }
 
     #[test]
