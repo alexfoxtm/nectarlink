@@ -969,6 +969,38 @@
         <source>Check call audio support</source>
         <translation type="unfinished" />
     </message>
+    <message>
+        <source>Waypair pairing and Bluetooth pairing are separate.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Hide Bluetooth pairing steps</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Phone not listed? Show Bluetooth pairing steps</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>1. Open Bluetooth settings on both devices and pair this phone with this Mac.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>2. Compare the pairing code on both devices yourself. Keep it private.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>3. Return here, choose your phone, and check call audio support if needed.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>No paired phones were listed. If this phone isn't paired with this Mac yet, pair it in Bluetooth settings, then choose again.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Open Mac Bluetooth settings</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>CaptionButtons</name>

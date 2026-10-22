@@ -969,6 +969,38 @@
         <source>Check call audio support</source>
         <translation>检查通话音频支持</translation>
     </message>
+    <message>
+        <source>Waypair pairing and Bluetooth pairing are separate.</source>
+        <translation>Waypair 配对与蓝牙配对是两回事。</translation>
+    </message>
+    <message>
+        <source>Hide Bluetooth pairing steps</source>
+        <translation>隐藏蓝牙配对步骤</translation>
+    </message>
+    <message>
+        <source>Phone not listed? Show Bluetooth pairing steps</source>
+        <translation>未列出手机？显示蓝牙配对步骤</translation>
+    </message>
+    <message>
+        <source>1. Open Bluetooth settings on both devices and pair this phone with this Mac.</source>
+        <translation>1. 在两台设备上打开蓝牙设置，将这部手机与此 Mac 配对。</translation>
+    </message>
+    <message>
+        <source>2. Compare the pairing code on both devices yourself. Keep it private.</source>
+        <translation>2. 请亲自核对两台设备上的配对码，不要对外分享。</translation>
+    </message>
+    <message>
+        <source>3. Return here, choose your phone, and check call audio support if needed.</source>
+        <translation>3. 返回此处选择手机，并在需要时检查通话音频支持。</translation>
+    </message>
+    <message>
+        <source>No paired phones were listed. If this phone isn't paired with this Mac yet, pair it in Bluetooth settings, then choose again.</source>
+        <translation>未列出已配对的手机。如果这部手机尚未与此 Mac 配对，请在蓝牙设置中配对后重新选择。</translation>
+    </message>
+    <message>
+        <source>Open Mac Bluetooth settings</source>
+        <translation>打开 Mac 蓝牙设置</translation>
+    </message>
 </context>
 <context>
     <name>CaptionButtons</name>

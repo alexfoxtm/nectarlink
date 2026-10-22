@@ -25,6 +25,9 @@ Item {
     // devices the user just listed, and whether a listing found none.
     readonly property var pcAudioGateways: { try { return JSON.parse(PhoneCall.pcAudioGateways) } catch (e) { return [] } }
     property bool pcAudioListed: false
+    property bool pcAudioPairingHelpOpen: false
+    readonly property bool pcAudioSetupAvailable: PhoneCall.pcAudioSetup.length > 0
+        && PhoneCall.pcAudioSetup !== "unsupported" && PhoneCall.pcAudioSetup !== "unknown"
     readonly property bool pcAudioBound: PhoneCall.pcAudioBluetoothName.length > 0
         || PhoneCall.pcAudioSetup === "ready" || PhoneCall.pcAudioSetup === "microphone-undecided"
     // The call card shows starting, returning or closing for this phone's call.
@@ -836,7 +839,7 @@ Item {
                 id: hfpBannerCard
                 objectName: "hfpBannerCard"
                 width: parent.width
-                visible: !PhoneCall.active && PhoneCall.hfpDetail.length > 0
+                visible: !PhoneCall.active && PhoneCall.hfpDetail.length > 0 && !page.pcAudioSetupAvailable
                 Column {
                     objectName: "hfpBanner"
                     width: parent.width
@@ -896,8 +899,7 @@ Item {
                 id: pcAudioCard
                 objectName: "pcAudioCard"
                 width: parent.width
-                visible: PhoneCall.pcAudioSetup.length > 0 && PhoneCall.pcAudioSetup !== "unsupported"
-                    && PhoneCall.pcAudioSetup !== "unknown" && !page.pcAudioOnCallCard
+                visible: page.pcAudioSetupAvailable && !page.pcAudioOnCallCard
                 Column {
                     width: parent.width
                     spacing: 8
@@ -965,6 +967,50 @@ Item {
                             size: "sm"
                             text: qsTr("Return audio to phone")
                             onClicked: PhoneCall.stopPcAudio()
+                        }
+                    }
+                    Column {
+                        width: parent.width
+                        spacing: 6
+                        visible: PhoneCall.pcAudioSetup === "choose-phone" && !page.pcAudioBound
+                        Txt {
+                            width: parent.width
+                            role: "caption"
+                            muted: true
+                            wrapMode: Text.WordWrap
+                            text: qsTr("Waypair pairing and Bluetooth pairing are separate.")
+                        }
+                        Button {
+                            objectName: "pcAudioPairingGuideToggle"
+                            variant: "text"
+                            size: "sm"
+                            text: page.pcAudioPairingHelpOpen ? qsTr("Hide Bluetooth pairing steps")
+                                : qsTr("Phone not listed? Show Bluetooth pairing steps")
+                            onClicked: page.pcAudioPairingHelpOpen = !page.pcAudioPairingHelpOpen
+                        }
+                        Column {
+                            objectName: "pcAudioPairingSteps"
+                            width: parent.width
+                            spacing: 4
+                            visible: page.pcAudioPairingHelpOpen
+                            Txt {
+                                width: parent.width
+                                role: "caption"
+                                wrapMode: Text.WordWrap
+                                text: qsTr("1. Open Bluetooth settings on both devices and pair this phone with this Mac.")
+                            }
+                            Txt {
+                                width: parent.width
+                                role: "caption"
+                                wrapMode: Text.WordWrap
+                                text: qsTr("2. Compare the pairing code on both devices yourself. Keep it private.")
+                            }
+                            Txt {
+                                width: parent.width
+                                role: "caption"
+                                wrapMode: Text.WordWrap
+                                text: qsTr("3. Return here, choose your phone, and check call audio support if needed.")
+                            }
                         }
                     }
                     // The address picks the device; the name is only shown.
@@ -1054,14 +1100,15 @@ Item {
                         role: "caption"
                         muted: true
                         wrapMode: Text.WordWrap
-                        text: qsTr("No paired phone that offers call audio was listed. Pair the phone with this Mac in Bluetooth settings, then choose again.")
+                        text: qsTr("No paired phones were listed. If this phone isn't paired with this Mac yet, pair it in Bluetooth settings, then choose again.")
                     }
                     Button {
                         objectName: "pcAudioPairHelp"
-                        visible: page.pcAudioListed && page.pcAudioGateways.length === 0
+                        visible: (page.pcAudioListed && page.pcAudioGateways.length === 0)
+                            || (page.pcAudioPairingHelpOpen && PhoneCall.pcAudioSetup === "choose-phone" && !page.pcAudioBound)
                         variant: "text"
                         size: "sm"
-                        text: qsTr("Open Bluetooth settings")
+                        text: qsTr("Open Mac Bluetooth settings")
                         onClicked: PhoneCall.openBluetoothSettings()
                     }
                 }
