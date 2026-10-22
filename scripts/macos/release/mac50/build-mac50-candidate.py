@@ -53,7 +53,7 @@ old_unsigned_46 = '3484f6c3df73daa564763c148ae5f20b368d2e812d8812d404715290efebe
 old_unsigned_47_informational = '7c1d916c4f00fa7e192f3ac344b774ea65ca81e877e200ea07ac7518f263e6cd'
 env = os.environ.copy()
 env['PYTHONDONTWRITEBYTECODE'] = '1'
-env.update(CARGO_TARGET_DIR=str(tmp / 'cargo-target'), CARGO_BUILD_JOBS='4', CARGO_NET_OFFLINE='true', QMAKE=qmake)
+env.update(CARGO_TARGET_DIR=str((tmp / 'cargo-target').resolve()), CARGO_BUILD_JOBS='4', CARGO_NET_OFFLINE='true', QMAKE=qmake)
 record = {'at': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'source': source, 'tree': TREE, 'parentSource': pins['parentSource'], 'base47': base47, 'branch': 'codex/feature-wave32', 'build': 50, 'channel': '0.1.4-local.22', 'scope': 'Root-only normal candidate build/package/sign; no registration, launch, install, publication, device or permission action; codesign timestamp may use Apple network', 'flags': 'Both app-window qualification flags OFF; no feature enable', 'signingOrder': 'standalone leaves then inside-out bundles then outer; bundle executables via Info.plist; no premature parent verification; no --deep sign; --timestamp always', 'steps': []}
 
 def digest(path):
