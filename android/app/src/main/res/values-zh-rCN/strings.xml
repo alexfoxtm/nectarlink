@@ -899,6 +899,9 @@
     <string name="guide_calls_opt_2">静音 / 扬声器：通话中切换手机麦克风静音或免提。</string>
     <string name="guide_calls_privacy">通话记录仅在电脑连接时从 Android 读取，绝不会离开你的已配对设备。</string>
     <string name="guide_calls_limits">来电会在电脑上响铃，你可以接听或拒接。通话音频保留在手机或耳机上，除非你在 Mac 上启动电脑音频；此功能仍处于实验阶段。在 Android 12 及以上，从电脑进行通话静音和保持需要高级权限。</string>
+    <string name="guide_calls_open_bluetooth">打开蓝牙设置</string>
+    <string name="guide_calls_bluetooth_hint">打开 Android 蓝牙设置，由你自行检查或配对电脑。如果电脑已显示为已配对，请保持不变。</string>
+    <string name="guide_calls_bluetooth_unavailable">此手机无法打开蓝牙设置。如果手机支持蓝牙，请打开设置，查找“蓝牙”或“已连接的设备”。</string>
     <string name="guide_media_title">正在播放</string>
     <string name="guide_media_summary">控制手机和电脑的媒体播放，调节电脑音量，或将电脑音频串流到手机扬声器。</string>
     <string name="guide_media_where">首页 › 已配对电脑卡片 › 电脑音频</string>

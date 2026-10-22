@@ -3,6 +3,7 @@ package app.nectarlink.android.ui.guide
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -664,6 +665,10 @@ private fun FeatureLearnMoreSheetContent(
             },
         )
 
+        if (entry.id == CALLS_ENTRY_ID) {
+            CallsBluetoothSettingsAction()
+        }
+
         GuideSectionBlock(
             heading = stringResource(R.string.guide_sheet_options),
             items = entry.optionsExplainedResIds.map { stringResource(it) },
@@ -701,6 +706,42 @@ private fun FeatureLearnMoreSheetContent(
                 Text(stringResource(R.string.guide_action_done))
             }
         }
+    }
+}
+
+private const val CALLS_ENTRY_ID = "incoming_calls"
+
+/**
+ * Opens Android's Bluetooth settings on tap only. Pairing stays with the user;
+ * nothing here scans, pairs, reads bonds, or unpairs.
+ */
+@Composable
+private fun CallsBluetoothSettingsAction() {
+    val context = LocalContext.current
+    val hasBluetooth = remember(context) {
+        context.packageManager.hasSystemFeature(PackageManager.FEATURE_BLUETOOTH)
+    }
+    var openFailed by rememberSaveable { mutableStateOf(false) }
+    val available = hasBluetooth && !openFailed
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        OutlinedButton(
+            onClick = {
+                val intent = Intent(Settings.ACTION_BLUETOOTH_SETTINGS)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                openFailed = runCatching { context.startActivity(intent) }.isFailure
+            },
+            enabled = available,
+        ) {
+            Text(stringResource(R.string.guide_calls_open_bluetooth))
+        }
+        Text(
+            text = stringResource(
+                if (available) R.string.guide_calls_bluetooth_hint else R.string.guide_calls_bluetooth_unavailable,
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

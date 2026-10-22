@@ -985,6 +985,9 @@
     <string name="guide_calls_opt_2">Mute / Speaker: Toggles phone mic mute or speakerphone during a call.</string>
     <string name="guide_calls_privacy">Call history is read from Android when your PC connects and never leaves your paired devices.</string>
     <string name="guide_calls_limits">Calls ring on your PC, where you can answer or reject them. Call audio stays on your phone or headset unless you start PC audio on a Mac, which is still experimental. In-call mute and hold from PC require Elevated on Android 12+.</string>
+    <string name="guide_calls_open_bluetooth">Open Bluetooth settings</string>
+    <string name="guide_calls_bluetooth_hint">Opens Android Bluetooth settings so you can check or pair your computer yourself. If your computer is already listed as paired, leave it as is.</string>
+    <string name="guide_calls_bluetooth_unavailable">Bluetooth settings could not be opened on this phone. If it has Bluetooth, open Settings and look for Bluetooth or Connected devices.</string>
 
     <!-- 3. Now playing -->
     <string name="guide_media_title">Now playing</string>
