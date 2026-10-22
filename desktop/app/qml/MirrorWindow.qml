@@ -807,6 +807,7 @@ Window {
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.WordWrap
                 role: "title"
+                objectName: "mirrorPreFrameTitle"
                 text: win.phase === "asking" ? (win.info.app ? qsTr("Opening %1").arg(win.info.title) : qsTr("Allow it on your phone"))
                     : win.phase === "ended" ? (win.info.app ? qsTr("%1 closed").arg(win.info.title) : qsTr("Mirroring stopped"))
                     : qsTr("Starting…")
@@ -817,12 +818,23 @@ Window {
                 wrapMode: Text.WordWrap
                 role: "body"
                 muted: true
+                objectName: "mirrorPreFrameDetail"
                 text: win.phase === "asking" && !win.info.app
-                      ? qsTr("Tap the notification on %1, then choose to share the entire screen.").arg(win.deviceName)
+                      ? qsTr("Open Waypair Link on %1 and approve sharing the entire screen.").arg(win.deviceName)
+                      : win.phase === "showing" && video.frameSize.width <= 0 && !win.info.app
+                      ? qsTr("No phone picture has arrived. Check that %1 is unlocked and still sharing.").arg(win.deviceName)
                       : win.phase === "ended" ? ((win.info.reason || "").length > 0 ? win.info.reason
                                                 : win.info.app ? qsTr("The app closed on %1.").arg(win.deviceName)
                                                 : qsTr("The phone stopped sharing its screen."))
                       : ""
+            }
+            Button {
+                objectName: "mirrorPreFrameStop"
+                anchors.horizontalCenter: parent.horizontalCenter
+                visible: win.phase === "asking" || win.phase === "showing"
+                variant: "tonal"
+                text: qsTr("Stop")
+                onClicked: win.close()
             }
             Button {
                 anchors.horizontalCenter: parent.horizontalCenter

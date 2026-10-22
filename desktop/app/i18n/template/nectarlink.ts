@@ -5471,6 +5471,21 @@ What it needs
         <source>Recent apps</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <location filename="../../qml/MirrorWindow.qml" line="823" />
+        <source>Open Waypair Link on %1 and approve sharing the entire screen.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../../qml/MirrorWindow.qml" line="825" />
+        <source>No phone picture has arrived. Check that %1 is unlocked and still sharing.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../../qml/MirrorWindow.qml" line="836" />
+        <source>Stop</source>
+        <translation type="unfinished" />
+    </message>
 </context>
 <context>
     <name>Mp4</name>

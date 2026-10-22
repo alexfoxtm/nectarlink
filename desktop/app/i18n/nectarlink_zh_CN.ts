@@ -5763,6 +5763,21 @@ What it needs
         <source>Recent apps</source>
         <translation>最近使用的应用</translation>
     </message>
+    <message>
+        <location filename="../qml/MirrorWindow.qml" line="823" />
+        <source>Open Waypair Link on %1 and approve sharing the entire screen.</source>
+        <translation>请在 %1 上打开 Waypair Link，并批准共享整个屏幕。</translation>
+    </message>
+    <message>
+        <location filename="../qml/MirrorWindow.qml" line="825" />
+        <source>No phone picture has arrived. Check that %1 is unlocked and still sharing.</source>
+        <translation>尚未收到手机画面。请检查 %1 是否已解锁并仍在共享。</translation>
+    </message>
+    <message>
+        <location filename="../qml/MirrorWindow.qml" line="836" />
+        <source>Stop</source>
+        <translation>停止</translation>
+    </message>
 </context>
 <context>
     <name>Mp4</name>
