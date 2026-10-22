@@ -7,7 +7,8 @@
   Puts the app's shared components and its Theme, Tokens and Icons
   singletons in a QML module named app.nectarlink under target/qml-tests,
   with the stubs in desktop/app/tests/qml/stubs standing in for the Rust
-  singletons they read, and runs qmltestrunner over the tests, off screen.
+  singletons they read, and test-only component adapters in
+  desktop/app/tests/qml/components. Runs qmltestrunner over the tests, off screen.
   Needs Qt (qmake on PATH, or QT_ROOT_DIR / -QtRoot).
 #>
 param(
@@ -37,6 +38,8 @@ $singletons = @('Theme', 'Tokens', 'Icons')
 foreach ($name in $singletons) { Copy-Item (Join-Path $qml "$name.qml") $module }
 $components = Get-ChildItem (Join-Path $qml 'components') -Filter *.qml
 $components | Copy-Item -Destination $module
+$testComponents = Get-ChildItem (Join-Path $tests 'components') -Filter *.qml
+$testComponents | Copy-Item -Destination $module
 $stubs = Get-ChildItem (Join-Path $tests 'stubs') -Filter *.qml
 $stubs | Copy-Item -Destination $module
 
@@ -44,7 +47,7 @@ $lines = @('module app.nectarlink')
 foreach ($name in $singletons + @($stubs | ForEach-Object BaseName)) {
     $lines += "singleton $name 1.0 $name.qml"
 }
-foreach ($component in $components) {
+foreach ($component in (@($components) + @($testComponents))) {
     $lines += "$($component.BaseName) 1.0 $($component.Name)"
 }
 [System.IO.File]::WriteAllLines((Join-Path $module 'qmldir'), $lines)

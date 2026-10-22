@@ -8,6 +8,12 @@ import app.nectarlink
 Window {
     id: win
     required property string mirrorKey
+    readonly property var availableArea: screenGeometry.availableGeometry
+
+    WindowScreenGeometry {
+        id: screenGeometry
+        window: win
+    }
     // This window's mirroring (see Mirror.windows).
     readonly property var info: {
         try {
@@ -84,6 +90,23 @@ Window {
     property bool sized: false
     property bool readyForResize: false
 
+    function clampedPosition(x, y, width, height) {
+        const area = win.availableArea
+        return {
+            x: Math.max(area.x, Math.min(area.x + area.width - width, x)),
+            y: Math.max(area.y, Math.min(area.y + area.height - height, y))
+        }
+    }
+
+    function centerOnScreen() {
+        const area = win.availableArea
+        const p = clampedPosition(
+            area.x + Math.round((area.width - width) / 2),
+            area.y + Math.round((area.height - height) / 2), width, height)
+        x = p.x
+        y = p.y
+    }
+
     Timer {
         id: resizeTimer
         interval: 300
@@ -112,26 +135,39 @@ Window {
     onHeightChanged: if (info.app && sized && readyForResize) resizeTimer.restart()
     onXChanged: if (info.app && sized && readyForResize) moveTimer.restart()
     onYChanged: if (info.app && sized && readyForResize) moveTimer.restart()
-    onPhaseChanged: if (phase === "showing" && info.app && sized) resizeTimer.restart()
+    onPhaseChanged: {
+        if (phase !== "showing")
+            video.resetLocalGesture()
+        if (phase === "showing" && info.app && sized)
+            resizeTimer.restart()
+    }
+    onCanControlChanged: {
+        if (!canControl)
+            video.resetLocalGesture()
+    }
     onActiveChanged: if (win.active) Mirror.syncClipboardOnFocus(win.mirrorKey)
-
-    onFrameChanged: {
+    function fitFrameToAvailableArea() {
         if (frame.width <= 0)
             return
-        const availW = Screen.desktopAvailableWidth > 0 ? Screen.desktopAvailableWidth : 1920
-        const availH = Screen.desktopAvailableHeight > 0 ? Screen.desktopAvailableHeight : 1080
+        const area = availableArea
+        const availW = area.width
+        const availH = area.height
+        if (availW <= 0 || availH <= 0)
+            return
         if (!sized && info.app && (info.savedWidth || 0) >= 240 && (info.savedHeight || 0) >= 240) {
             readyForResize = false
-            const w = Math.max(240, Math.min(Math.round(availW * 0.95), info.savedWidth))
-            const h = Math.max(240, Math.min(Math.round(availH * 0.95), info.savedHeight))
-            width = w
-            height = h
+            const savedScale = Math.min(1, availW * 0.95 / info.savedWidth, availH * 0.95 / info.savedHeight)
+            width = Math.round(info.savedWidth * savedScale)
+            height = Math.round(info.savedHeight * savedScale)
             if (info.savedX !== null && info.savedX !== undefined && info.savedY !== null && info.savedY !== undefined) {
-                x = Math.max(0, Math.min(availW - w, info.savedX))
-                y = Math.max(0, Math.min(availH - h, info.savedY))
+                const p = clampedPosition(info.savedX, info.savedY, width, height)
+                x = p.x
+                y = p.y
+            } else {
+                centerOnScreen()
             }
             sized = true
-            Qt.callLater(() => { win.readyForResize = true })
+            Qt.callLater(() => { win.readyForResize = true; resizeTimer.restart() })
             return
         }
         const maxH = availH * 0.85
@@ -139,14 +175,49 @@ Window {
         const scale = Math.min(maxH / frame.height, maxW / frame.width, 1)
         if (!sized || (!info.app && !fullScreen && Math.abs(width / height - frame.width / frame.height) > 0.05)) {
             readyForResize = false
+            const oldCenterX = x + width / 2
+            const oldCenterY = y + height / 2
             width = Math.round(frame.width * scale)
             height = Math.round(frame.height * scale)
+            if (sized) {
+                const p = clampedPosition(oldCenterX - width / 2, oldCenterY - height / 2, width, height)
+                x = p.x
+                y = p.y
+            } else {
+                centerOnScreen()
+            }
             sized = true
             if (info.app)
                 Mirror.saveGeometry(mirrorKey, x, y, width, height)
             Qt.callLater(() => { win.readyForResize = true })
         }
     }
+
+    onAvailableAreaChanged: {
+        const area = win.availableArea
+        if (!sized) {
+            fitFrameToAvailableArea()
+            return
+        }
+        if (fullScreen || area.width <= 0 || area.height <= 0)
+            return
+        const scale = Math.min(1, area.width * 0.95 / width, area.height * 0.95 / height)
+        if (scale < 1) {
+            const oldCenterX = x + width / 2
+            const oldCenterY = y + height / 2
+            width = Math.round(width * scale)
+            height = Math.round(height * scale)
+            const p = clampedPosition(oldCenterX - width / 2, oldCenterY - height / 2, width, height)
+            x = p.x
+            y = p.y
+        } else {
+            const p = clampedPosition(x, y, width, height)
+            x = p.x
+            y = p.y
+        }
+    }
+
+    onFrameChanged: fitFrameToAvailableArea()
     width: 420
     height: 860
     onClosing: {
@@ -177,6 +248,11 @@ Window {
         onTextCommitted: (text) => Mirror.text(win.mirrorKey, text)
 
         // Where on the phone's screen a point in the window is (0 to 1).
+        function resetLocalGesture() {
+            mirrorMouse.down = false
+            mirrorMouse.lastMove = 0
+        }
+
         function at(x, y) {
             const r = pictureRect()
             return { x: (x - r.x) / Math.max(1, r.width), y: (y - r.y) / Math.max(1, r.height),
@@ -220,6 +296,8 @@ Window {
 
         // The mouse: left is a finger, right is Back, middle is Home.
         MouseArea {
+            id: mirrorMouse
+            objectName: "mirrorGestureMouse"
             anchors.fill: parent
             enabled: win.phase === "showing"
             acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
@@ -257,6 +335,7 @@ Window {
                 const p = video.at(mouse.x, mouse.y)
                 Mirror.touch(win.mirrorKey, "up", p.x, p.y)
             }
+            onCanceled: video.resetLocalGesture()
             onWheel: (wheel) => {
                 if (!win.canControl) {
                     hintClose.closed = false

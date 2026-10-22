@@ -145,6 +145,26 @@ Item {
                 onClicked: TransferList.showInFolder(item.transferId)
             }
             IconButton {
+                id: receivedDragAction
+                property bool invokedForActiveGesture: false
+                visible: Qt.platform.os === "osx" && item.status === "done" && item.incoming && item.savedPath.length > 0
+                iconPath: Icons.download
+                label: qsTr("Drag to Finder")
+                DragHandler {
+                    target: null
+                    onActiveChanged: {
+                        if (!active) {
+                            receivedDragAction.invokedForActiveGesture = false
+                            return
+                        }
+                        if (receivedDragAction.invokedForActiveGesture)
+                            return
+                        receivedDragAction.invokedForActiveGesture = true
+                        TransferList.startReceivedDrag(item.transferId)
+                    }
+                }
+            }
+            IconButton {
                 visible: item.status === "waiting" || item.status === "running"
                 iconPath: Icons.pause
                 label: qsTr("Pause")

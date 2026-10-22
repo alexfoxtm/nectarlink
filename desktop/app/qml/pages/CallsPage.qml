@@ -998,7 +998,7 @@ Item {
                                 width: parent.width
                                 role: "caption"
                                 wrapMode: Text.WordWrap
-                                text: qsTr("1. Open Bluetooth settings on both devices and pair this phone with this Mac.")
+                                text: qsTr("1. If this phone isn't already paired in macOS Bluetooth settings, pair it there. If it is already paired, leave the pairing intact and return to Waypair to choose or check the existing device.")
                             }
                             Txt {
                                 width: parent.width

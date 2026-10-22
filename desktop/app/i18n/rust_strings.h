@@ -383,6 +383,7 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Mirror", "Mirror recording"), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Mirror screenshot"), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Mirroring is turned off for this phone."), // desktop/app/src/mirror.rs
+    QT_TRANSLATE_NOOP("Mirror", "No picture arrived from the phone. Keep the phone unlocked while it shares its screen, then try again."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "On the phone, allow this computer to control the phone in Settings."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "On the phone, enable Control from your PC or start Elevated mode."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Phone control is unavailable for this connection."), // desktop/app/src/mirror.rs

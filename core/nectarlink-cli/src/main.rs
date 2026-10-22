@@ -2239,21 +2239,27 @@ impl Platform for TerminalPlatform {
         println!("The PC dismissed {key}");
         Ok(())
     }
-    fn run_notification_action(
+    fn run_notification_action_owned(
         &self,
+        context: nectarlink_core::NotificationActionContext,
         key: &str,
         action: &str,
         reply: Option<&str>,
     ) -> Result<(), NotificationError> {
+        if !context.is_current() {
+            return Err(NotificationError::NotFound);
+        }
         match reply {
             Some(text) => {
-                println!("The PC replied to {key}: {text}");
                 let now = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .map_or(0, |d| d.as_millis() as i64);
                 let mut updated = None;
                 {
                     let mut notes = CHAT_NOTES.lock().unwrap();
+                    if !context.is_current() {
+                        return Err(NotificationError::NotFound);
+                    }
                     if let Some(n) = notes.iter_mut().find(|n| n.key == key) {
                         n.text = Some(text.to_owned());
                         n.when = now;
@@ -2269,6 +2275,7 @@ impl Platform for TerminalPlatform {
                         updated = Some(n.clone());
                     }
                 }
+                println!("The PC replied to a notification");
                 if let (Some(node), Some(note)) = (TEXTS_NODE.get().cloned(), updated) {
                     tokio::runtime::Handle::current().spawn(async move {
                         node.notification_posted(note).await;

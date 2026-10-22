@@ -65,6 +65,7 @@ class AppWindows(
         val current: () -> Boolean,
     ) {
         @Volatile var display: Int = -1
+        var resizeRevision: Long = 0
     }
 
     private val windows = ConcurrentHashMap<Pair<String, UInt>, Window>()
@@ -92,15 +93,38 @@ class AppWindows(
             stillCurrent = current,
             register = { socket ->
                 val window = Window(pc, options.session, socket, width, height, dpi, maxSize, node, accepted, current)
-                val previous = synchronized(windows) {
-                    val previous = windows[pc to options.session]
-                    // Register before sending V: revocation can close even a
-                    // helper start whose socket write has not returned yet.
-                    if (previous?.current?.invoke() == true || !current()) return@openApp false
-                    registered = window
-                    windows.put(pc to options.session, window)
+                val key = pc to options.session
+                var installed = false
+                var rejected = false
+                // Never hold a shared map monitor while waiting for a window:
+                // resize and close serialize through the window monitor, while
+                // ConcurrentHashMap compare/replace preserves exact ownership.
+                while (!installed && !rejected) {
+                    val previous = windows[key]
+                    if (previous == null) {
+                        if (!current()) {
+                            rejected = true
+                        } else if (windows.putIfAbsent(key, window) == null) {
+                            registered = window
+                            installed = true
+                        }
+                    } else {
+                        synchronized(previous) {
+                            if (windows[key] === previous) {
+                                if (previous.current.invoke() || !current()) {
+                                    rejected = true
+                                } else if (windows.replace(key, previous, window)) {
+                                    registered = window
+                                    installed = true
+                                    // Revocation and socket close are ordered
+                                    // against the old window's final resize write.
+                                    runCatching { previous.socket.close() }
+                                }
+                            }
+                        }
+                    }
                 }
-                previous?.let { runCatching { it.socket.close() } }
+                if (!installed) return@openApp false
                 true
             },
         )
@@ -183,8 +207,14 @@ class AppWindows(
     }
 
     private fun close(window: Window) {
-        runCatching { window.socket.close() }
-        if (windows.remove(window.pc to window.session, window)) changed()
+        val removed = synchronized(window) {
+            // Exact-owner revocation and socket closure share the monitor used
+            // by resize's final ownership check and command write.
+            val removed = windows.remove(window.pc to window.session, window)
+            runCatching { window.socket.close() }
+            removed
+        }
+        if (removed) changed()
     }
 
     fun closeAll() {
@@ -207,15 +237,23 @@ class AppWindows(
     }
 
     /** The PC resized an app window: fit to encoder limits and tell the helper. */
-    fun resize(pc: String, session: UInt, width: Int, height: Int) {
-        val window = windows[pc to session] ?: return
+    fun resize(pc: String, owner: PhoneControlContext, width: Int, height: Int) {
+        val window = windows[pc to owner.session] ?: return
+        if (window.owner.request != owner.request || window.owner.connection != owner.connection || window.owner.capture != owner.capture) return
         val (phoneW, phoneH) = screen()
         val (newW, newH) = WindowShape.fit(width, height, window.maxSize, phoneW, phoneH)
-        if (newW == window.width && newH == window.height) return
-        window.width = newW
-        window.height = newH
+        val revision = synchronized(window) {
+            if (!owns(window) || (newW == window.width && newH == window.height)) return
+            window.width = newW
+            window.height = newH
+            ++window.resizeRevision
+        }
         runCatching {
             synchronized(window) {
+                // A newer resize may have arrived while this one waited for the
+                // socket lock. Only the latest dimensions for this exact window
+                // may be emitted, and replacement/close revokes ownership first.
+                if (window.resizeRevision != revision || !owns(window) || window.socket.isClosed) return@synchronized
                 window.socket.getOutputStream().apply {
                     write("R $newW $newH ${window.dpi}\n".toByteArray())
                     flush()

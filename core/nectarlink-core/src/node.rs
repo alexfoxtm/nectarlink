@@ -217,6 +217,8 @@ pub(crate) struct Shared {
     pub(crate) away_mode: std::sync::atomic::AtomicBool,
     #[cfg(feature = "test-support")]
     test_support_loopback_mirror_fixture: bool,
+    #[cfg(feature = "test-support")]
+    mirror_retire_barrier: Mutex<Option<Arc<std::sync::Barrier>>>,
     memory: MemoryLookup,
     /// This device's notifications, when it mirrors them (phones).
     pub notifications: Feed,
@@ -698,6 +700,50 @@ impl Shared {
 
     pub fn session(&self, peer: &DeviceId) -> Option<Arc<Session>> {
         lock(&self.sessions).get(peer).filter(|s| s.is_alive()).cloned()
+    }
+
+    /// Session -> outgoing -> reader lock order matches on_session_end.
+    /// A conditional close cannot retire a replacement Node/request/connection.
+    pub(crate) fn retire_mirror_view(&self, original: &Arc<Session>, mirroring: u32, request: u64) -> bool {
+        let sessions = lock(&self.sessions);
+        if !sessions.get(&original.peer).is_some_and(|live| live.is_alive() && Arc::ptr_eq(live, original)) {
+            return false;
+        }
+        let mut outgoing = lock(&self.mirror_outgoing);
+        if outgoing.get(&(original.peer, mirroring)) != Some(&request) {
+            return false;
+        }
+        outgoing.remove(&(original.peer, mirroring));
+        #[cfg(feature = "test-support")]
+        {
+            let barrier = lock(&self.mirror_retire_barrier).take();
+            if let Some(barrier) = barrier {
+                barrier.wait();
+                barrier.wait();
+            }
+        }
+        self.stop_showing(&original.peer, mirroring);
+        true
+    }
+
+    /// Register the reader while its actual Session and outgoing request are
+    /// still current, serialized with original-view close and session retirement.
+    pub(crate) fn register_mirror_view_reader(
+        &self,
+        original: &Arc<Session>,
+        mirroring: u32,
+        request: Option<u64>,
+        correlated: bool,
+    ) -> Option<Arc<Notify>> {
+        let sessions = lock(&self.sessions);
+        if !sessions.get(&original.peer).is_some_and(|live| live.is_alive() && Arc::ptr_eq(live, original)) {
+            return None;
+        }
+        let outgoing = lock(&self.mirror_outgoing);
+        if correlated && outgoing.get(&(original.peer, mirroring)).copied() != request {
+            return None;
+        }
+        Some(self.new_mirror_stop(&original.peer, mirroring, nectarlink_protocol::messages::mirror::OP_VIDEO))
     }
 
     fn set_link(&self, peer: DeviceId, link: LinkState) -> bool {
@@ -1431,13 +1477,18 @@ impl Shared {
             transfer::cleanup_staging_id(self, id);
         }
 
-        let existed = self.store.remove_peer(peer)?;
-        if let Some(sup) = lock(&self.supervisors).remove(peer) {
-            sup.cancel.cancel();
-        }
-        if let Some(session) = lock(&self.sessions).remove(peer) {
-            session.close(CLOSE_NORMAL, b"unpaired");
-        }
+        let existed = {
+            let mut actions = self.notifications.action_authority();
+            actions.revoke_peer(peer);
+            let existed = self.store.remove_peer(peer)?;
+            if let Some(sup) = lock(&self.supervisors).remove(peer) {
+                sup.cancel.cancel();
+            }
+            if let Some(session) = lock(&self.sessions).remove(peer) {
+                session.close(CLOSE_NORMAL, b"unpaired");
+            }
+            existed
+        };
         lock(&self.links).remove(peer);
         lock(&self.published_mediums).remove(peer);
         lock(&self.published_display).remove(peer);
@@ -1975,6 +2026,8 @@ impl Node {
             away_mode: std::sync::atomic::AtomicBool::new(config.away_mode),
             #[cfg(feature = "test-support")]
             test_support_loopback_mirror_fixture: config.test_support_loopback_mirror_fixture,
+            #[cfg(feature = "test-support")]
+            mirror_retire_barrier: Mutex::new(None),
             memory,
             notifications: Feed::default(),
             notification_history: Mutex::new(Vec::new()),
@@ -2361,6 +2414,29 @@ impl Node {
         Ok(())
     }
 
+    /// Isolated fixture interlock inside actual Session/request/reader retirement.
+    #[cfg(feature = "test-support")]
+    pub fn test_hold_next_mirror_retire(&self) -> Result<Arc<std::sync::Barrier>> {
+        if !self.shared.test_support_loopback_mirror_fixture {
+            return Err(Error::Denied);
+        }
+        let barrier = Arc::new(std::sync::Barrier::new(2));
+        *lock(&self.shared.mirror_retire_barrier) = Some(barrier.clone());
+        Ok(barrier)
+    }
+
+    /// Send a real source-stop packet from an explicitly isolated local Node.
+    #[cfg(feature = "test-support")]
+    pub async fn test_mirror_source_stop(&self, peer: DeviceId, mirroring: u32, request: u64) -> Result<()> {
+        if !self.shared.test_support_loopback_mirror_fixture {
+            return Err(Error::Denied);
+        }
+        let session = self.connected(&peer)?;
+        let env = nectarlink_protocol::messages::mirror_source_stop_envelope(mirroring, request)?;
+        session.request(env, crate::session::REQUEST_TIMEOUT).await?.expect(types::OK)?;
+        Ok(())
+    }
+
     /// Like [`connected`](Self::connected), but waits up to [`STREAM_RECONNECT_WAIT`]
     /// for a connection that just dropped or was replaced to come back.
     async fn connected_soon(&self, peer: &DeviceId) -> Result<Arc<Session>> {
@@ -2416,7 +2492,15 @@ impl Node {
             toggle == crate::storage::TOGGLE || toggle == crate::storage::REMOTE_FILES_TOGGLE;
         let storage_changed =
             storage_toggle && self.shared.store.toggles(&peer)?.get(toggle).copied() != Some(enabled);
-        self.shared.store.set_toggle(&peer, toggle, enabled)?;
+        if toggle == notifications::TOGGLE {
+            let mut actions = self.shared.notifications.action_authority();
+            if !enabled {
+                actions.revoke_peer(&peer);
+            }
+            self.shared.store.set_toggle(&peer, toggle, enabled)?;
+        } else {
+            self.shared.store.set_toggle(&peer, toggle, enabled)?;
+        }
         if storage_toggle {
             // Reads already admitted end before anyone hears access changed.
             let mut st = lock(&self.shared.storage);
@@ -3109,11 +3193,31 @@ impl Node {
         crate::mirror::start(&self.shared, &session, options).await
     }
 
-    /// Stops showing a phone's screen or app window (`mirroring`), and
-    /// tells the phone. The stop carries this request's generation, so a
-    /// delayed stop can't end a replacement mirroring the phone already
-    /// accepted.
+    /// App start publishes its exact sender view before awaiting the peer reply.
+    /// Returning false from `ready` retires the allocation without sending start.
+    pub async fn mirror_start_owned(
+        &self,
+        peer: DeviceId,
+        options: crate::MirrorStart,
+        ready: impl FnOnce(crate::MirrorView) -> bool,
+    ) -> Result<()> {
+        // This owned app seam never accepts reverse-watch/screen work.
+        if options.watch.is_some() || options.app.is_none() || options.session == crate::MIRROR_SCREEN {
+            return Err(Error::Unsupported);
+        }
+        let session = self.connected(&peer)?;
+        crate::mirror::start_owned(&self.shared, &session, options, ready).await
+    }
+
+    /// Legacy screen Stop. Nonzero app sessions require their retained
+    /// MirrorView::stop_if_current; unowned app Stop is ignored.
+    /// The screen stop carries its current request generation.
     pub async fn mirror_stop(&self, peer: DeviceId, mirroring: u32) {
+        // A legacy app close has no original owner. It cannot take whichever
+        // outgoing request replaced it; app callers retain MirrorView instead.
+        if mirroring != crate::MIRROR_SCREEN {
+            return;
+        }
         self.shared.stop_showing(&peer, mirroring);
         let request = self.shared.take_mirror_outgoing(&peer, mirroring);
         if let Ok(session) = self.connected(&peer) {
@@ -3278,10 +3382,23 @@ impl Node {
         }
     }
 
-    /// Resizes an app window's display (`mirroring` != 0) on a phone.
+    /// Legacy resize entry. Invalid dimensions remain Protocol; valid app
+    /// resize is Denied because this API has no retained original view.
+    /// Use mirror_resize_target / the view published by mirror_start_owned.
     pub async fn mirror_resize(&self, peer: DeviceId, mirroring: u32, width: u32, height: u32) -> Result<()> {
         let session = self.connected(&peer)?;
         crate::mirror::resize(&self.shared, &session, mirroring, width, height).await
+    }
+
+    /// Capture the original app view before enqueueing a resize. No input grant.
+    pub fn mirror_resize_target(
+        &self,
+        peer: DeviceId,
+        mirroring: u32,
+        request: u64,
+    ) -> Result<crate::MirrorView> {
+        let session = self.connected(&peer)?;
+        crate::MirrorView::new(self.shared.clone(), session, mirroring, request)
     }
 
     /// Updates `stay_awake` and `screen_off` while mirroring a phone's screen (`session == 0`).
@@ -4233,12 +4350,18 @@ impl Node {
     /// beyond the built-in ones (they depend on permissions and add-ons).
     pub async fn update_power(&self, power: PowerLevel, extra_capabilities: Vec<String>) {
         let (read_lost, input_changed) = {
+            // Same authority-before-local order as notification action admission.
+            let mut actions = self.shared.notifications.action_authority();
             let mut local = self.shared.local.write().unwrap_or_else(|e| e.into_inner());
             let before = local.capabilities();
             let offered_read = before.iter().any(|c| c == crate::storage::STORAGE_READ);
             local.power = power;
             local.extra_capabilities = extra_capabilities;
             let caps = local.capabilities();
+            if before.iter().any(|cap| cap == "notify.reply") && !caps.iter().any(|cap| cap == "notify.reply")
+            {
+                actions.revoke_all();
+            }
             let input_changed = (before.iter().any(|cap| cap == crate::MIRROR_INPUT_REQUEST)
                 || caps.iter().any(|cap| cap == crate::MIRROR_INPUT_REQUEST))
                 && (before.iter().any(|cap| cap == crate::MIRROR_INPUT)

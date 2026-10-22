@@ -1001,6 +1001,10 @@
         <source>Open Mac Bluetooth settings</source>
         <translation>打开 Mac 蓝牙设置</translation>
     </message>
+    <message>
+        <source>1. If this phone isn't already paired in macOS Bluetooth settings, pair it there. If it is already paired, leave the pairing intact and return to Waypair to choose or check the existing device.</source>
+        <translation>1. 如果这部手机尚未在 macOS 蓝牙设置中配对，请先在那里配对。如果已经配对，请保留现有配对，然后返回 Waypair 选择或检查现有设备。</translation>
+    </message>
 </context>
 <context>
     <name>CaptionButtons</name>
@@ -5611,6 +5615,10 @@ What it needs
     <message>
         <source>Screen-on requested</source>
         <translation>已请求恢复屏幕</translation>
+    </message>
+    <message>
+        <source>No picture arrived from the phone. Keep the phone unlocked while it shares its screen, then try again.</source>
+        <translation>未收到手机画面。请在共享屏幕时保持手机解锁，然后重试。</translation>
     </message>
 </context>
 <context>

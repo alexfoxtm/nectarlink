@@ -1036,6 +1036,18 @@ pub enum VideoPacketKind {
     Keyframe,
 }
 
+/// Original Core notification authority; the app cannot mint or retarget it.
+#[derive(Debug, uniffi::Object)]
+pub struct NotificationActionContext(core::NotificationActionContext);
+
+#[uniffi::export]
+impl NotificationActionContext {
+    /// Check immediately before sending the OS action, after any platform queue.
+    pub fn is_current(&self) -> bool {
+        self.0.is_current()
+    }
+}
+
 /// Exact original phone input admission, retained through Android posting.
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct PhoneControlContext {
@@ -2684,6 +2696,14 @@ pub trait Platform: Send + Sync {
         action: String,
         reply: Option<String>,
     ) -> Result<(), NotificationFailure>;
+    /// Retains the original Core owner through OS dispatch. Recheck it at execution.
+    fn run_notification_action_owned(
+        &self,
+        context: Arc<NotificationActionContext>,
+        key: String,
+        action: String,
+        reply: Option<String>,
+    ) -> Result<(), NotificationFailure>;
     /// A PC sent this text: put it on the clipboard. False if that failed.
     fn set_clipboard(&self, text: String) -> bool;
     /// A PC sent this text (with optional HTML and RTF rich text): put it on
@@ -2770,6 +2790,14 @@ pub trait Platform: Send + Sync {
     fn mirror_keyframe_requested(&self, pc_id: String, session: u32);
     /// The PC resized an app window (`session` != 0) to `width × height`.
     fn mirror_resize_requested(&self, pc_id: String, session: u32, width: u32, height: u32);
+    /// Exact receiver-local capture; no input grant is implied.
+    fn mirror_resize_requested_owned(
+        &self,
+        pc_id: String,
+        width: u32,
+        height: u32,
+        context: PhoneControlContext,
+    );
     /// The PC updated `stay_awake` or `screen_off` while mirroring the screen (`session == 0`).
     fn mirror_power_requested(&self, pc_id: String, stay_awake: bool, screen_off: bool);
     /// The PC's mouse or keyboard on the mirrored screen (only while this
@@ -2914,6 +2942,20 @@ impl core::Platform for PlatformAdapter {
     ) -> Result<(), core::NotificationError> {
         Ok(self.0.run_notification_action(key.to_owned(), action.to_owned(), reply.map(str::to_owned))?)
     }
+    fn run_notification_action_owned(
+        &self,
+        context: core::NotificationActionContext,
+        key: &str,
+        action: &str,
+        reply: Option<&str>,
+    ) -> Result<(), core::NotificationError> {
+        Ok(self.0.run_notification_action_owned(
+            Arc::new(NotificationActionContext(context)),
+            key.to_owned(),
+            action.to_owned(),
+            reply.map(str::to_owned),
+        )?)
+    }
     fn set_clipboard(&self, text: &str) -> Result<(), String> {
         if self.0.set_clipboard(text.to_owned()) { Ok(()) } else { Err("the clipboard rejected it".into()) }
     }
@@ -2996,6 +3038,15 @@ impl core::Platform for PlatformAdapter {
     }
     fn mirror_resize_requested(&self, peer: &DeviceId, session: u32, width: u32, height: u32) {
         self.0.mirror_resize_requested(peer.to_string(), session, width, height);
+    }
+    fn mirror_resize_requested_owned(
+        &self,
+        peer: &DeviceId,
+        width: u32,
+        height: u32,
+        context: core::MirrorControlContext,
+    ) {
+        self.0.mirror_resize_requested_owned(peer.to_string(), width, height, context.into());
     }
     fn mirror_power_requested(&self, peer: &DeviceId, stay_awake: bool, screen_off: bool) {
         self.0.mirror_power_requested(peer.to_string(), stay_awake, screen_off);

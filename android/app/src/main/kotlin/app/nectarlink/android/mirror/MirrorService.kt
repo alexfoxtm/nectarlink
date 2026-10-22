@@ -190,7 +190,19 @@ class MirrorService : Service() {
         val myPc = pc
         val myRequest = requestToken
         val myEpoch = captureEpoch
+        // A resize may arrive before the async stream opens; retain it for
+        // this projection only and hand it to this capture's encoder on main.
+        var capturedSize: Pair<Int, Int>? = null
         granted.registerCallback(object : MediaProjection.Callback() {
+            override fun onCapturedContentResize(width: Int, height: Int) {
+                if (projection !== granted ||
+                    !MirrorSessionPolicy.isLive(captureEpoch, pcId, activeRequest, myEpoch, myPc, myRequest) ||
+                    width <= 0 || height <= 0
+                ) return
+                capturedSize = width to height
+                encoder?.capturedContentResized(width, height)
+            }
+
             // The user stopped it (from the status bar, or by locking).
             // Fenced: tearDownCapture's projection.stop() queues the OLD
             // callback, which must not kill the replacement.
@@ -222,7 +234,10 @@ class MirrorService : Service() {
                 }
                 encoder = ScreenEncoder(this@MirrorService, running, stream, maxSize, fps, bitrate, request = myRequest) {
                     main.post { if (MirrorSessionPolicy.isLive(captureEpoch, pcId, activeRequest, myEpoch, myPc, myRequest)) stopSharing() }
-                }.also { it.start() }
+                }.also { started ->
+                    capturedSize?.let { (width, height) -> started.capturedContentResized(width, height) }
+                    started.start()
+                }
                 applyPower()
             }
             if (audio && SoundCapture.canCapture(this@MirrorService)) startSound(core, myPc, myRequest, myEpoch)

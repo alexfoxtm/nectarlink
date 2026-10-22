@@ -2,6 +2,7 @@
 package app.nectarlink.android.files
 
 import android.Manifest
+import android.app.Activity
 import android.app.DownloadManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -10,9 +11,12 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Bundle
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.IntentCompat
 import app.nectarlink.android.NectarlinkApplication
 import app.nectarlink.android.R
 import app.nectarlink.core.Transfer
@@ -42,7 +46,18 @@ internal object TransferNotifications {
 
     private val lastPosted = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, Int>>()
 
-    private fun idOf(transfer: Transfer) = transfer.id.hashCode()
+    /**
+     * A transfer's notification is tagged with its exact id, and its
+     * PendingIntents carry the id in data or identifier: different ids can
+     * share a hash code, and extras don't tell PendingIntents apart.
+     */
+    private const val NOTIFICATION_ID = 0x58464552 // "XFER"
+
+    private fun tagOf(transfer: Transfer) = "transfer:${transfer.id}"
+
+    private fun transferUri(id: String): Uri = Uri.fromParts("nectarlink-transfer", id, null)
+
+    private const val EXTRA_OPEN = "open"
 
     private fun title(context: Context, transfer: Transfer): String = transferTitle(context.resources, transfer)
 
@@ -53,7 +68,7 @@ internal object TransferNotifications {
         val status = transfer.status
         if (status !is TransferStatus.Running && status !is TransferStatus.Waiting && status !is TransferStatus.Paused) {
             lastPosted.remove(transfer.id)
-            manager.cancel(idOf(transfer))
+            manager.cancel(tagOf(transfer), NOTIFICATION_ID)
             if (status is TransferStatus.Failed) failed(context, transfer, pcName)
             if (status is TransferStatus.Done && transfer.direction == TransferDirection.OUTGOING && !transfer.recording) {
                 sent(context, transfer, pcName)
@@ -93,14 +108,17 @@ internal object TransferNotifications {
         }
         val openApp = PendingIntent.getActivity(
             context,
-            idOf(transfer),
+            transfer.id.hashCode(),
             Intent(context, app.nectarlink.android.ui.MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val cancel = PendingIntent.getBroadcast(
             context,
-            idOf(transfer),
-            Intent(context, CancelReceiver::class.java).setAction(ACTION_CANCEL).putExtra(EXTRA_ID, transfer.id),
+            0,
+            Intent(context, CancelReceiver::class.java)
+                .setAction(ACTION_CANCEL)
+                .setData(transferUri(transfer.id))
+                .putExtra(EXTRA_ID, transfer.id),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val builder = NotificationCompat.Builder(context, CHANNEL_PROGRESS)
@@ -119,7 +137,7 @@ internal object TransferNotifications {
         if (status is TransferStatus.Running && transfer.total > 0uL) {
             builder.setShortCriticalText("$percent%")
         }
-        post(context, idOf(transfer), builder.build())
+        post(context, transfer, builder.build())
     }
 
     /**
@@ -149,10 +167,27 @@ internal object TransferNotifications {
         } else {
             Intent(DownloadManager.ACTION_VIEW_DOWNLOADS)
         }
-        val tap = PendingIntent.getActivity(
-            context, idOf(transfer), open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
+        open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        // Data would change which app opens these, so the id goes in the
+        // identifier (Android 10+), or before that in the data of an
+        // in-app activity that forwards them.
+        val tap = if (android.os.Build.VERSION.SDK_INT >= 29) {
+            PendingIntent.getActivity(
+                context, 0, open.setIdentifier(tagOf(transfer)),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
+        } else {
+            PendingIntent.getActivity(
+                context,
+                0,
+                Intent(context, OpenReceivedActivity::class.java)
+                    .setData(transferUri(transfer.id))
+                    .putExtra(EXTRA_ID, transfer.id)
+                    .putExtra(EXTRA_OPEN, open)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
+        }
         val from = pcName.ifEmpty { context.getString(R.string.your_pc) }
         val text = if (isHandoffDoc) {
             context.getString(R.string.handoff_doc_received_from, from)
@@ -168,7 +203,7 @@ internal object TransferNotifications {
         if (isHandoffDoc) {
             builder.addAction(0, context.getString(R.string.clip_action_open), tap)
         }
-        post(context, idOf(transfer), builder.build())
+        post(context, transfer, builder.build())
     }
 
     /** A send from the phone arrived: a quiet confirmation that clears itself. */
@@ -182,7 +217,7 @@ internal object TransferNotifications {
             .setAutoCancel(true)
             .setTimeoutAfter(SENT_TIMEOUT_MS)
             .build()
-        post(context, idOf(transfer), notification)
+        post(context, transfer, notification)
     }
 
     private fun failed(context: Context, transfer: Transfer, pcName: String) {
@@ -200,20 +235,20 @@ internal object TransferNotifications {
             .setContentText(text)
             .setAutoCancel(true)
             .build()
-        post(context, idOf(transfer), notification)
+        post(context, transfer, notification)
     }
 
     private fun allowed(context: Context) =
         android.os.Build.VERSION.SDK_INT < 33 ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
 
-    private fun post(context: Context, id: Int, notification: android.app.Notification) {
+    private fun post(context: Context, transfer: Transfer, notification: android.app.Notification) {
         if (android.os.Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
             return
         }
-        NotificationManagerCompat.from(context).notify(id, notification)
+        NotificationManagerCompat.from(context).notify(tagOf(transfer), NOTIFICATION_ID, notification)
     }
 
     /** "Cancel" on a progress notification. */
@@ -221,6 +256,22 @@ internal object TransferNotifications {
         override fun onReceive(context: Context, intent: Intent) {
             val id = intent.getStringExtra(EXTRA_ID) ?: return
             (context.applicationContext as NectarlinkApplication).core.cancelTransfer(id)
+        }
+    }
+
+    /**
+     * A "Received" tap before Android 10: opens what that transfer's tap
+     * carries, and nothing for a tap whose data names another transfer.
+     */
+    class OpenReceivedActivity : Activity() {
+        override fun onCreate(savedInstanceState: Bundle?) {
+            super.onCreate(savedInstanceState)
+            val id = intent.getStringExtra(EXTRA_ID)
+            val open = IntentCompat.getParcelableExtra(intent, EXTRA_OPEN, Intent::class.java)
+            if (id != null && open != null && intent.data == transferUri(id)) {
+                runCatching { startActivity(open) }
+            }
+            finish()
         }
     }
 }

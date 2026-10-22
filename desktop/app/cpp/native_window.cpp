@@ -2,6 +2,7 @@
 #include "native_window.h"
 #include "app_helpers.h"
 
+#include <QtGui/QGuiApplication>
 #include <QtGui/QPlatformSurfaceEvent>
 #include <QtQml/QtQml>
 #include <QtQuick/QSGRendererInterface>
@@ -69,6 +70,44 @@ NativeWindow::NativeWindow(QWindow *parent)
     // closed to the tray instead of keeping GPU buffers in private commit.
     setPersistentSceneGraph(false);
     setPersistentGraphics(false);
+}
+
+void WindowScreenGeometry::setWindow(QQuickWindow *window)
+{
+    if (m_window == window)
+        return;
+    QObject::disconnect(m_windowScreenConnection);
+    QObject::disconnect(m_availableGeometryConnection);
+    m_window = window;
+    emit windowChanged();
+    if (m_window) {
+        m_windowScreenConnection = connect(m_window, &QWindow::screenChanged,
+                                           this, &WindowScreenGeometry::watchScreen);
+        watchScreen(m_window->screen());
+    } else {
+        watchScreen(nullptr);
+    }
+}
+
+QRect WindowScreenGeometry::availableGeometry() const
+{
+    QScreen *owningScreen = m_window ? m_window->screen() : m_screen.data();
+    if (!owningScreen)
+        owningScreen = QGuiApplication::primaryScreen();
+    return owningScreen ? owningScreen->availableGeometry() : QRect();
+}
+
+void WindowScreenGeometry::watchScreen(QScreen *screen)
+{
+    QObject::disconnect(m_availableGeometryConnection);
+    m_screen = screen;
+    if (screen) {
+        m_availableGeometryConnection = connect(screen, &QScreen::availableGeometryChanged, this,
+                                                [this](const QRect &) {
+                                                    emit availableGeometryChanged();
+                                                });
+    }
+    emit availableGeometryChanged();
 }
 
 void NativeWindow::setBackdrop(bool on)

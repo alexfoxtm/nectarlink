@@ -285,7 +285,11 @@ pub fn apply(event: &NodeEvent) {
 /// Shows, updates or removes toasts after an event.
 pub fn update_toasts(event: &NodeEvent) {
     match event {
-        NodeEvent::NotificationPosted { device, notification } => show(*device, notification),
+        NodeEvent::NotificationPosted { device, notification } => {
+            #[cfg(target_os = "macos")]
+            toast::invalidate_copy_code_actions(&device.to_string(), &notification.key);
+            show(*device, notification);
+        }
         NodeEvent::NotificationRemoved { device, key } => {
             toasted(|t| t.get_mut(device).map(|keys| keys.remove(key)));
             live_toasts(|l| l.remove(&(*device, key.clone())));
@@ -386,8 +390,14 @@ fn show(device: DeviceId, n: &Notification) {
         live_toasts(|l| l.remove(&id));
     }
     let mut actions: Vec<(String, String)> = Vec::new();
-    if otp.is_some() {
-        actions.push((ACTION_COPY_OTP.to_owned(), tr!("Notifications", "Copy code")));
+    if let Some(code) = otp.as_deref() {
+        #[cfg(target_os = "macos")]
+        let copy_action = toast::register_copy_code_action(&device.to_string(), &n.key, code);
+        #[cfg(not(target_os = "macos"))]
+        let copy_action = Some(ACTION_COPY_OTP.to_owned());
+        if let Some(copy_action) = copy_action {
+            actions.push((copy_action, tr!("Notifications", "Copy code")));
+        }
     }
     actions.extend(n.actions.iter().filter(|a| !a.reply).map(|a| (a.id.clone(), a.title.clone())));
     let reply = n.actions.iter().find(|a| a.reply);
@@ -508,6 +518,15 @@ pub fn on_toast(event: ToastEvent) {
             }
             crate::bridge::app::request_activation();
         }
+        #[cfg(target_os = "macos")]
+        ToastEvent::Action { device, key, action } if action.starts_with(toast::LOCAL_COPY_CODE_PREFIX) => {
+            if let Some(code) = toast::take_copy_code_action(&device, &key, &action) {
+                copy_otp(&code);
+            }
+        }
+        #[cfg(target_os = "macos")]
+        ToastEvent::Action { action, .. } if action == ACTION_COPY_OTP => (),
+        #[cfg(not(target_os = "macos"))]
         ToastEvent::Action { device, key, action } if action == ACTION_COPY_OTP => {
             if let Ok(dev) = device.parse::<DeviceId>() {
                 let code = otp_codes(|c| c.get(&(dev, key.clone())).cloned()).or_else(|| {

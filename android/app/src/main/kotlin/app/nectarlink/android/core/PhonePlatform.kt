@@ -190,7 +190,11 @@ internal class PhonePlatform(
         if (session == SCREEN) MirrorService.keyframe(pcId) else appWindows.keyframe(pcId, session)
 
     override fun mirrorResizeRequested(pcId: String, session: UInt, width: UInt, height: UInt) {
-        if (session != SCREEN) appWindows.resize(pcId, session, width.toInt(), height.toInt())
+        // App resize requires the accepted receiver-local capture context below.
+    }
+
+    override fun mirrorResizeRequestedOwned(pcId: String, width: UInt, height: UInt, context: app.nectarlink.core.PhoneControlContext) {
+        if (context.session != SCREEN) appWindows.resize(pcId, context, width.toInt(), height.toInt())
     }
 
     // The screen's input comes through mirrorScreenInput, with its typing generation.
@@ -314,28 +318,40 @@ internal class PhonePlatform(
     }
 
     override fun runNotificationAction(key: String, action: String, reply: String?) {
-        val listener = NotificationListener.instance ?: throw NotificationFailure.Unsupported()
-        val sbn = listener.find(key) ?: throw NotificationFailure.NotFound()
-        val target = action.toIntOrNull()?.let { sbn.notification.actions?.getOrNull(it) }
-            ?: throw NotificationFailure.NotFound()
-        val intent = target.actionIntent ?: throw NotificationFailure.NotFound()
+        throw NotificationFailure.Unsupported()
+    }
 
-        // A reply goes to the app the way the notification shade sends it:
-        // the text as the result of the action's free-form input.
-        val fillIn = Intent()
-        if (reply != null) {
-            val inputs = target.remoteInputs.orEmpty().filter { it.allowFreeFormInput }
-            if (inputs.isEmpty()) throw NotificationFailure.NotFound()
-            val results = Bundle().apply { inputs.forEach { putCharSequence(it.resultKey, reply) } }
-            RemoteInput.addResultsToIntent(inputs.toTypedArray(), fillIn, results)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                RemoteInput.setResultsSource(fillIn, RemoteInput.SOURCE_FREE_FORM_INPUT)
+    override fun runNotificationActionOwned(
+        context: app.nectarlink.core.NotificationActionContext,
+        key: String,
+        action: String,
+        reply: String?,
+    ) {
+        if (!context.isCurrent()) throw NotificationFailure.NotFound()
+        val listener = NotificationListener.instance ?: throw NotificationFailure.Unsupported()
+        listener.withCurrentAction(key, action) { target ->
+            val intent = target.actionIntent ?: throw NotificationFailure.NotFound()
+
+            // A reply goes to the app the way the notification shade sends it:
+            // the text as the result of the action's free-form input.
+            val fillIn = Intent()
+            if (reply != null) {
+                val inputs = target.remoteInputs.orEmpty().filter { it.allowFreeFormInput }
+                if (inputs.isEmpty()) throw NotificationFailure.NotFound()
+                val results = Bundle().apply { inputs.forEach { putCharSequence(it.resultKey, reply) } }
+                RemoteInput.addResultsToIntent(inputs.toTypedArray(), fillIn, results)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    RemoteInput.setResultsSource(fillIn, RemoteInput.SOURCE_FREE_FORM_INPUT)
+                }
             }
-        }
-        try {
-            intent.send(context, 0, fillIn, null, null, null, sendOptions())
-        } catch (e: PendingIntent.CanceledException) {
-            throw NotificationFailure.NotFound()
+            val options = sendOptions()
+            try {
+                // withCurrentAction holds the revision monitor through this check and send.
+                if (!context.isCurrent()) throw NotificationFailure.NotFound()
+                intent.send(this.context, 0, fillIn, null, null, null, options)
+            } catch (e: PendingIntent.CanceledException) {
+                throw NotificationFailure.NotFound()
+            }
         }
     }
 

@@ -1001,6 +1001,10 @@
         <source>Open Mac Bluetooth settings</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>1. If this phone isn't already paired in macOS Bluetooth settings, pair it there. If it is already paired, leave the pairing intact and return to Waypair to choose or check the existing device.</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>CaptionButtons</name>
@@ -5318,6 +5322,10 @@ What it needs
     </message>
     <message>
         <source>Screen-on requested</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>No picture arrived from the phone. Keep the phone unlocked while it shares its screen, then try again.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

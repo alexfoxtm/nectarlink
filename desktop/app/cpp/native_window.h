@@ -1,13 +1,43 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
+#include <QtCore/QMetaObject>
+#include <QtCore/QObject>
 #include <QtCore/QPointer>
+#include <QtCore/QRect>
 #include <QtGui/QScreen>
 #include <QtQml/qqmlregistration.h>
 #include <QtQuick/QQuickItem>
 #include <QtQuick/QQuickWindow>
 
 #include <vector>
+
+// Exposes the owning QQuickWindow's current work area with live screen and
+// available-geometry updates. The existing Qt Quick Window remains the owner.
+class WindowScreenGeometry : public QObject
+{
+    Q_OBJECT
+    QML_ELEMENT
+    Q_PROPERTY(QQuickWindow *window READ window WRITE setWindow NOTIFY windowChanged)
+    Q_PROPERTY(QRect availableGeometry READ availableGeometry NOTIFY availableGeometryChanged)
+
+public:
+    QQuickWindow *window() const { return m_window; }
+    void setWindow(QQuickWindow *window);
+    QRect availableGeometry() const;
+
+signals:
+    void windowChanged();
+    void availableGeometryChanged();
+
+private:
+    void watchScreen(QScreen *screen);
+
+    QPointer<QQuickWindow> m_window;
+    QPointer<QScreen> m_screen;
+    QMetaObject::Connection m_windowScreenConnection;
+    QMetaObject::Connection m_availableGeometryConnection;
+};
 
 // A top-level window drawn edge to edge: the app draws its own title bar and
 // caption buttons, while Windows keeps the native behaviors (dragging,

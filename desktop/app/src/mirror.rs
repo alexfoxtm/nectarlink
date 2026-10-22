@@ -173,6 +173,22 @@ impl SavedWindows {
     }
 }
 
+#[derive(Debug, Clone)]
+struct RequestNode {
+    node: nectarlink_core::Node,
+    app_view: Option<nectarlink_core::MirrorView>,
+}
+
+impl RequestNode {
+    async fn stop(self, window: Window) {
+        if window.session == MIRROR_SCREEN {
+            self.node.mirror_stop(window.device, window.session).await;
+        } else if let Some(view) = self.app_view {
+            let _ = view.stop_if_current().await;
+        }
+    }
+}
+
 #[derive(Debug)]
 struct State {
     windows: HashMap<Window, Shown>,
@@ -203,11 +219,14 @@ struct State {
     /// Exact request owner, retained until close or the next request.
     requests: HashMap<Window, u64>,
     /// Original Node for each local request, never reacquired on input dequeue.
-    request_nodes: HashMap<Window, nectarlink_core::Node>,
+    request_nodes: HashMap<Window, RequestNode>,
     /// Actual core wire token echoed by the authenticated phone video stream.
     control_requests: HashMap<Window, u64>,
     /// Closed sessions whose STOP must precede any replacement START.
-    pending_stops: HashSet<Window>,
+    pending_stops: HashMap<Window, RequestNode>,
+    /// The first-frame deadline each opened screen stream is held to; a
+    /// stream that opens again replaces it.
+    first_frames: HashMap<Window, u64>,
     apps: HashMap<DeviceId, Apps>,
     saved: SavedWindows,
 }
@@ -242,6 +261,32 @@ impl State {
 
     fn owns_request(&self, window: &Window, request: u64) -> bool {
         self.requests.get(window) == Some(&request)
+    }
+
+    /// Ends `window` with a reason when `deadline` of `request` runs out
+    /// while it shows no picture yet; nothing after a frame, a close, a newer
+    /// request or a stream that opened again. Its stream is let go in the
+    /// same step, so a picture still on its way can't show in the ended window.
+    fn end_without_first_frame(&mut self, window: Window, request: u64, deadline: u64) -> bool {
+        if self.first_frames.get(&window) != Some(&deadline) {
+            return false;
+        }
+        self.first_frames.remove(&window);
+        if !self.owns_request(&window, request)
+            || !self.windows.get(&window).is_some_and(|w| w.phase == Phase::Showing)
+            || latest_bitmap(&window).is_some()
+        {
+            return false;
+        }
+        self.streams.remove(&window);
+        self.set_phase(
+            window,
+            Phase::Ended(Some(tr!(
+                "Mirror",
+                "No picture arrived from the phone. Keep the phone unlocked while it shares its screen, then try again."
+            ))),
+        );
+        true
     }
 
     /// Whether `stream` is still the one `window` shows.
@@ -299,7 +344,8 @@ impl Default for State {
             requests: HashMap::new(),
             request_nodes: HashMap::new(),
             control_requests: HashMap::new(),
-            pending_stops: HashSet::new(),
+            pending_stops: HashMap::new(),
+            first_frames: HashMap::new(),
             apps: HashMap::new(),
             saved: SavedWindows::load(),
         }
@@ -316,6 +362,8 @@ static NOTICE_SEQ: AtomicU64 = AtomicU64::new(1);
 static NEXT_STREAM: AtomicU64 = AtomicU64::new(1);
 /// The next request owner, distinct even when a window closes and reopens.
 static NEXT_REQUEST: AtomicU64 = AtomicU64::new(1);
+/// The next first-frame deadline (see `State::first_frames`).
+static NEXT_DEADLINE: AtomicU64 = AtomicU64::new(1);
 // Keep stops ordered with requests reaching the phone.
 static TURN: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
@@ -1084,9 +1132,28 @@ pub fn resize(window: Window, width: u32, height: u32) {
     }
     let w = (w & !1).clamp(240, 4096);
     let h = (h & !1).clamp(240, 4096);
-    let Some(node) = core_host::node() else { return };
+    let captured = state(|s| {
+        if !s.windows.get(&window).is_some_and(|shown| shown.phase == Phase::Showing) {
+            return None;
+        }
+        Some((
+            s.request_nodes.get(&window)?.app_view.clone()?,
+            *s.requests.get(&window)?,
+            *s.streams.get(&window)?,
+        ))
+    });
+    let Some((target, local_request, stream)) = captured else { return };
     core_host::spawn(async move {
-        if let Err(e) = node.mirror_resize(window.device, window.session, w, h).await {
+        let result = target
+            .send_if_current(w, h, move || {
+                state(|s| {
+                    s.owns_request(&window, local_request)
+                        && s.shows(&window, stream)
+                        && s.windows.get(&window).is_some_and(|shown| shown.phase == Phase::Showing)
+                })
+            })
+            .await;
+        if let Err(e) = result {
             tracing::debug!(error = %e, "resize didn't reach the phone");
         }
     });
@@ -1100,7 +1167,7 @@ fn request(window: Window, options: MirrorStart) {
         s.request_nodes.remove(&window);
         s.control_requests.remove(&window);
         if let Some(node) = &node {
-            s.request_nodes.insert(window, node.clone());
+            s.request_nodes.insert(window, RequestNode { node: node.clone(), app_view: None });
         }
         s.streams.remove(&window);
         clear_window_buffers(&window);
@@ -1115,13 +1182,27 @@ fn request(window: Window, options: MirrorStart) {
             if !state(|s| s.owns_request(&window, request)) {
                 return;
             }
-            if state(|s| s.pending_stops.remove(&window)) {
-                node.mirror_stop(window.device, window.session).await;
+            if let Some(owner) = state(|s| s.pending_stops.remove(&window)) {
+                owner.stop(window).await;
             }
             if !state(|s| s.owns_request(&window, request)) {
                 return;
             }
-            node.mirror_start(window.device, options).await
+            if app {
+                node.mirror_start_owned(window.device, options, move |view| {
+                    state(|s| {
+                        if !s.owns_request(&window, request) {
+                            return false;
+                        }
+                        let Some(owner) = s.request_nodes.get_mut(&window) else { return false };
+                        owner.app_view = Some(view);
+                        true
+                    })
+                })
+                .await
+            } else {
+                node.mirror_start(window.device, options).await
+            }
         };
         if let Err(e) = started {
             let reason = match e {
@@ -1160,8 +1241,9 @@ fn request(window: Window, options: MirrorStart) {
                 if !s.owns_request(&window, request)
                     || !s.windows.get(&window).is_some_and(|w| w.phase == Phase::Asking)
                 {
-                    return false;
+                    return None;
                 }
+                let owner = s.request_nodes.get(&window)?.clone();
                 s.set_phase(
                     window,
                     Phase::Ended(Some(tr!(
@@ -1169,12 +1251,12 @@ fn request(window: Window, options: MirrorStart) {
                         "The app didn't open on the phone. Try again, or open Waypair Link on the phone to check Wireless debugging."
                     ))),
                 );
-                true
+                Some(owner)
             });
-            if stuck {
+            if let Some(owner) = stuck {
                 tracing::warn!(session = window.session, "an app window never started on the phone");
                 core_host::host().hub.changed(Changes::MIRROR);
-                node.mirror_stop(window.device, window.session).await;
+                owner.stop(window).await;
             }
         }
     });
@@ -1182,20 +1264,46 @@ fn request(window: Window, options: MirrorStart) {
 
 /// How long an app window may take to show its first frame.
 const APP_START_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+/// How long the phone's screen may take to show its first frame once its
+/// stream is open.
+const SCREEN_FIRST_FRAME_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// Holds the screen's newly opened stream to a first frame: when none
+/// arrives in time, the request still showing ends with a reason and its
+/// stream stops, leaving Try again.
+fn expect_first_frame(window: Window) {
+    let deadline = NEXT_DEADLINE.fetch_add(1, Ordering::Relaxed);
+    let armed = state(|s| {
+        let request = *s.requests.get(&window)?;
+        let node = s.request_nodes.get(&window)?.node.clone();
+        s.first_frames.insert(window, deadline);
+        Some((request, node))
+    });
+    let Some((request, node)) = armed else { return };
+    core_host::spawn(async move {
+        tokio::time::sleep(SCREEN_FIRST_FRAME_TIMEOUT).await;
+        let _turn = TURN.lock().await;
+        if !state(|s| s.end_without_first_frame(window, request, deadline)) {
+            return;
+        }
+        tracing::warn!("the phone's screen never sent a picture");
+        core_host::host().hub.changed(Changes::MIRROR);
+        node.mirror_stop(window.device, window.session).await;
+    });
+}
 
 /// Stops a mirroring (its window closed).
 pub fn stop(window: Window) {
     stop_recording(window);
-    let node = core_host::node();
     state(|s| {
+        if let Some(owner) = s.request_nodes.remove(&window) {
+            s.pending_stops.insert(window, owner);
+        }
         s.windows.remove(&window);
         s.notices.remove(&window);
         s.requests.remove(&window);
-        s.request_nodes.remove(&window);
         s.control_requests.remove(&window);
-        if node.is_some() {
-            s.pending_stops.insert(window);
-        }
+        s.first_frames.remove(&window);
         s.streams.remove(&window);
         clear_window_buffers(&window);
         ffi::video_clear(&window.key());
@@ -1204,13 +1312,11 @@ pub fn stop(window: Window) {
         }
     });
     core_host::host().hub.changed(Changes::MIRROR);
-    let Some(node) = node else { return };
     core_host::spawn(async move {
         let _turn = TURN.lock().await;
-        // A replacement request may already have sent this STOP before
-        // its START. Never send the same close after the replacement.
-        if state(|s| s.pending_stops.remove(&window)) {
-            node.mirror_stop(window.device, window.session).await;
+        // A replacement request may already have flushed this exact close.
+        if let Some(owner) = state(|s| s.pending_stops.remove(&window)) {
+            owner.stop(window).await;
         }
     });
 }
@@ -1218,21 +1324,39 @@ pub fn stop(window: Window) {
 pub fn on_event(event: &NodeEvent) {
     match event {
         NodeEvent::Mirroring { device, session, on: true } => {
+            if *session != MIRROR_SCREEN {
+                return;
+            }
             let window = Window { device: *device, session: *session };
             set_phase(window, Phase::Showing);
-            if *session != MIRROR_SCREEN {
-                let saved = state(|s| {
-                    let pkg = s.windows.get(&window).and_then(|w| w.pkg.as_deref())?;
-                    s.saved.geometry.get(&format!("{device}/{pkg}")).copied()
-                });
-                if let Some(geom) = saved {
-                    resize(window, geom.width, geom.height);
-                }
-            }
+            expect_first_frame(window);
         }
         // Closed here: nothing to say. Stopped on the phone: say so.
         NodeEvent::Mirroring { device, session, on: false } => {
             let window = Window { device: *device, session: *session };
+            if *session != MIRROR_SCREEN {
+                // Source decline/retirement may have no sink yet. A queued old
+                // peer/session event cannot retire a replacement live target.
+                let ended = state(|s| {
+                    let Some(view) = s.request_nodes.get(&window).and_then(|owner| owner.app_view.as_ref())
+                    else {
+                        return false;
+                    };
+                    if view.is_current() {
+                        return false;
+                    }
+                    stop_recording(window);
+                    s.streams.remove(&window);
+                    clear_window_buffers(&window);
+                    ffi::video_clear(&window.key());
+                    s.set_phase(window, Phase::Ended(None));
+                    true
+                });
+                if ended {
+                    core_host::host().hub.changed(Changes::MIRROR);
+                }
+                return;
+            }
             stop_recording(window);
             clear_window_buffers(&window);
             if *session == MIRROR_SCREEN {
@@ -1281,7 +1405,7 @@ pub fn on_event(event: &NodeEvent) {
                 s.requests.retain(|w, _| w.device != *id);
                 s.request_nodes.retain(|w, _| w.device != *id);
                 s.control_requests.retain(|w, _| w.device != *id);
-                s.pending_stops.retain(|w| w.device != *id);
+                s.pending_stops.retain(|w, _| w.device != *id);
                 s.streams.retain(|w, _| w.device != *id);
                 if s.keyboard_device == Some(*id) {
                     s.keyboard_device = None;
@@ -1476,7 +1600,7 @@ pub fn control_reason(window: Window) -> &'static str {
         {
             return None;
         }
-        Some((s.request_nodes.get(&window)?.clone(), *s.control_requests.get(&window)?))
+        Some((s.request_nodes.get(&window)?.node.clone(), *s.control_requests.get(&window)?))
     });
     let Some((node, wire_request)) = target else {
         return "notShowing";
@@ -1497,7 +1621,7 @@ pub fn input(window: Window, input: nectarlink_core::MirrorInput) {
             return None;
         }
         Some((
-            s.request_nodes.get(&window)?.clone(),
+            s.request_nodes.get(&window)?.node.clone(),
             *s.requests.get(&window)?,
             *s.streams.get(&window)?,
             *s.control_requests.get(&window)?,
@@ -1922,6 +2046,7 @@ struct Sink {
 
 /// The decoder thread's end of a sink.
 struct Video {
+    stream: u64,
     queue: SyncSender<Item>,
     /// Packets waiting for the decoder.
     waiting: Arc<AtomicUsize>,
@@ -1959,7 +2084,7 @@ impl Video {
         if let Err(e) = started {
             tracing::error!(error = %e, "can't start the video decoder");
         }
-        Video { queue, waiting, skipping: AtomicBool::new(false) }
+        Video { stream, queue, waiting, skipping: AtomicBool::new(false) }
     }
 }
 
@@ -1974,45 +2099,84 @@ impl Sink {
 
 impl MirrorSink for Sink {
     fn config(&self, config: MirrorConfig) {
-        state(|s| {
-            if s.owns_request(&self.window, self.request) {
-                if let Some(request) = config.request {
-                    s.control_requests.insert(self.window, request);
-                } else {
-                    s.control_requests.remove(&self.window);
+        if !state(|s| {
+            if !s.owns_request(&self.window, self.request) {
+                return false;
+            }
+            if self.window.session != MIRROR_SCREEN {
+                let Some(view) = s.request_nodes.get(&self.window).and_then(|owner| owner.app_view.as_ref())
+                else {
+                    return false;
+                };
+                if config.request != Some(view.request())
+                    || !view.is_current()
+                    || self.video.get().is_some_and(|video| !s.shows(&self.window, video.stream))
+                {
+                    return false;
                 }
             }
-        });
-        LAST_CONFIG
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .get_or_insert_with(HashMap::new)
-            .insert(self.window, (config.width, config.height));
-        if let Some(ended) = feed_recorder(self.window, |rec| rec.on_config(config.width, config.height)) {
-            finish_recording(self.window, ended);
+            true
+        }) {
+            return;
         }
         let video = self.video.get_or_init(|| Video::start(self.window, self.request));
-        // The format matters: wait for room rather than drop it.
+        let accepted = state(|s| {
+            if !s.owns_request(&self.window, self.request) || !s.shows(&self.window, video.stream) {
+                return None;
+            }
+            if self.window.session != MIRROR_SCREEN {
+                let view = s.request_nodes.get(&self.window)?.app_view.as_ref()?;
+                if config.request != Some(view.request()) || !view.is_current() {
+                    return None;
+                }
+                s.set_phase(self.window, Phase::Showing);
+            }
+            if let Some(request) = config.request {
+                s.control_requests.insert(self.window, request);
+            } else {
+                s.control_requests.remove(&self.window);
+            }
+            LAST_CONFIG
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .get_or_insert_with(HashMap::new)
+                .insert(self.window, (config.width, config.height));
+            Some(feed_recorder(self.window, |rec| rec.on_config(config.width, config.height)))
+        });
+        let Some(ended) = accepted else { return };
+        if let Some(ended) = ended {
+            finish_recording(self.window, ended);
+        }
+        // The decoder repeats its exact stream check after this queue wait.
         let _ = video.queue.send(Item::Config(config));
         core_host::host().hub.changed(Changes::MIRROR);
     }
 
     fn packet(&self, keyframe: bool, time_us: u64, data: Vec<u8>) {
-        if keyframe {
-            let mut sps_map = LAST_SPS_PPS.lock().unwrap_or_else(|e| e.into_inner());
-            let entry = sps_map.get_or_insert_with(HashMap::new).entry(self.window).or_default();
-            merge_sps_pps(entry, &data);
-        }
-        if ACTIVE_RECORDERS.load(Ordering::Relaxed) > 0
-            && let Some(ended) = feed_recorder(self.window, |rec| {
-                if let Err(e) = rec.on_packet(keyframe, time_us, &data) {
-                    tracing::warn!(error = %e, "mirror recording packet failed");
-                }
+        let Some(video) = self.video.get() else { return };
+        let accepted = state(|s| {
+            if !s.owns_request(&self.window, self.request) || !s.shows(&self.window, video.stream) {
+                return None;
+            }
+            if keyframe {
+                let mut sps_map = LAST_SPS_PPS.lock().unwrap_or_else(|e| e.into_inner());
+                let entry = sps_map.get_or_insert_with(HashMap::new).entry(self.window).or_default();
+                merge_sps_pps(entry, &data);
+            }
+            Some(if ACTIVE_RECORDERS.load(Ordering::Relaxed) > 0 {
+                feed_recorder(self.window, |rec| {
+                    if let Err(e) = rec.on_packet(keyframe, time_us, &data) {
+                        tracing::warn!(error = %e, "mirror recording packet failed");
+                    }
+                })
+            } else {
+                None
             })
-        {
+        });
+        let Some(ended) = accepted else { return };
+        if let Some(ended) = ended {
             finish_recording(self.window, ended);
         }
-        let Some(video) = self.video.get() else { return };
         if !keyframe && video.skipping.load(Ordering::Acquire) {
             return;
         }
@@ -2031,9 +2195,23 @@ impl MirrorSink for Sink {
     }
 
     fn ended(&self) {
-        stop_recording(self.window);
-        if let Some(video) = self.video.get() {
-            let _ = video.queue.send(Item::Ended);
+        let Some(video) = self.video.get() else { return };
+        let current = state(|s| {
+            if !s.owns_request(&self.window, self.request) || !s.shows(&self.window, video.stream) {
+                return false;
+            }
+            stop_recording(self.window);
+            if self.window.session != MIRROR_SCREEN {
+                s.streams.remove(&self.window);
+                clear_window_buffers(&self.window);
+                ffi::video_clear(&self.window.key());
+                s.set_phase(self.window, Phase::Ended(None));
+            }
+            true
+        });
+        let _ = video.queue.send(Item::Ended);
+        if current {
+            core_host::host().hub.changed(Changes::MIRROR);
         }
     }
 
@@ -2113,23 +2291,20 @@ impl MirrorSink for Sink {
 /// Ends a mirroring this PC can't show, and stops the phone sending it;
 /// nothing once `window` has closed or asked again (`id` is then old).
 fn give_up(window: Window, id: u64, reason: String) {
-    let current = state(|s| {
-        let current = s.shows(&window, id);
-        if current {
-            s.set_phase(window, Phase::Ended(Some(reason)));
+    let owner = state(|s| {
+        if !s.shows(&window, id) {
+            return None;
         }
-        current
+        let owner = s.request_nodes.get(&window)?.clone();
+        s.set_phase(window, Phase::Ended(Some(reason)));
+        Some(owner)
     });
-    if !current {
-        tracing::debug!(session = window.session, "a replaced video stream failed; ignored");
-        return;
-    }
+    let Some(owner) = owner else { return };
     core_host::host().hub.changed(Changes::MIRROR);
-    let Some(node) = core_host::node() else { return };
     core_host::spawn(async move {
         let _turn = TURN.lock().await;
         if state(|s| s.shows(&window, id)) {
-            node.mirror_stop(window.device, window.session).await;
+            owner.stop(window).await;
         }
     });
 }
@@ -3725,6 +3900,8 @@ mod mac_receive_fixture {
         super::state(|s| {
             s.windows.remove(&window);
             s.requests.remove(&window);
+            s.request_nodes.remove(&window);
+            s.first_frames.remove(&window);
             s.streams.remove(&window);
             s.pending_stops.remove(&window);
         });
@@ -3736,13 +3913,17 @@ mod mac_receive_fixture {
     #[derive(Debug, Default)]
     struct NativeReceiverPlatform {
         sink_requests: Mutex<Vec<(DeviceId, u32)>>,
+        /// The production sinks handed to core, kept to feed a late packet.
+        sinks: Mutex<Vec<Arc<dyn nectarlink_core::MirrorSink>>>,
     }
 
     #[cfg(feature = "test-support")]
     impl Platform for NativeReceiverPlatform {
         fn mirror_sink(&self, peer: &DeviceId, session: u32) -> Option<Arc<dyn nectarlink_core::MirrorSink>> {
             self.sink_requests.lock().unwrap_or_else(|e| e.into_inner()).push((*peer, session));
-            super::sink(peer, session)
+            let sink = super::sink(peer, session)?;
+            self.sinks.lock().unwrap_or_else(|e| e.into_inner()).push(sink.clone());
+            Some(sink)
         }
     }
 
@@ -3750,6 +3931,8 @@ mod mac_receive_fixture {
     #[derive(Debug)]
     struct SyntheticPhonePlatform {
         requests: tokio::sync::mpsc::UnboundedSender<(DeviceId, MirrorStart)>,
+        /// Each STOP the phone's core applied: `(viewer, session, request)`.
+        stops: tokio::sync::mpsc::UnboundedSender<(DeviceId, u32, Option<u64>)>,
     }
 
     #[cfg(feature = "test-support")]
@@ -3758,6 +3941,17 @@ mod mac_receive_fixture {
             // Synthetic approval only: no capture, microphone, or OS prompt.
             self.requests.send((*peer, options.clone())).map_err(|_| "fixture receiver ended".into())
         }
+
+        fn mirror_stop_requested_owned(
+            &self,
+            peer: &DeviceId,
+            session: u32,
+            request: Option<u64>,
+            _connection: u64,
+            _capture: u64,
+        ) {
+            let _ = self.stops.send((*peer, session, request));
+        }
     }
 
     #[cfg(feature = "test-support")]
@@ -3765,14 +3959,14 @@ mod mac_receive_fixture {
         events: &mut tokio::sync::broadcast::Receiver<NodeEvent>,
         phone: DeviceId,
         on: bool,
-    ) -> Result<(), String> {
+    ) -> Result<NodeEvent, String> {
         tokio::time::timeout(Duration::from_secs(5), async {
             loop {
                 let event = events.recv().await.map_err(|error| error.to_string())?;
                 if matches!(event, NodeEvent::Mirroring { device, session: MIRROR_SCREEN, on: event_on }
                     if device == phone && event_on == on)
                 {
-                    return Ok::<(), String>(());
+                    return Ok::<NodeEvent, String>(event);
                 }
             }
         })
@@ -3916,6 +4110,158 @@ mod mac_receive_fixture {
         wait_for_frame_clear(window).await
     }
 
+    /// The deadline's real arm path: the request state production `request()`
+    /// records, core's `Mirroring { on: true }` for the phone's accepted config
+    /// fed to `on_event`, and the actual timer. No picture arrives, so the
+    /// window ends with its reason, the phone hears STOP for this exact
+    /// request, and a packet after the deadline can't publish.
+    #[cfg(feature = "test-support")]
+    async fn exercise_first_frame_deadline(
+        receiver: &Node,
+        phone: &Node,
+        receiver_platform: &NativeReceiverPlatform,
+        mut requests: tokio::sync::mpsc::UnboundedReceiver<(DeviceId, MirrorStart)>,
+        mut stops: tokio::sync::mpsc::UnboundedReceiver<(DeviceId, u32, Option<u64>)>,
+    ) -> Result<(), String> {
+        let receiver_id = receiver.device_id();
+        let phone_id = phone.device_id();
+        wait_for_link(receiver, phone_id).await?;
+
+        let mut events = receiver.events();
+        tokio::time::timeout(Duration::from_secs(10), receiver.mirror_start(phone_id, super::OPTIONS))
+            .await
+            .map_err(|_| "real Node::mirror_start exceeded 10 seconds".to_owned())?
+            .map_err(|error| format!("real Node::mirror_start failed: {error}"))?;
+        let (_, options) = tokio::time::timeout(Duration::from_secs(5), requests.recv())
+            .await
+            .map_err(|_| "phone platform did not receive the real mirror.start".to_owned())?
+            .ok_or_else(|| "synthetic phone platform closed before mirror.start".to_owned())?;
+        let core_request = options.request.ok_or_else(|| "core did not stamp mirror.start".to_owned())?;
+
+        // What production `request()` records before `Node::mirror_start`,
+        // including the Node that must carry this request's STOP.
+        let window = Window::screen(phone_id);
+        let app_request = core_request ^ 0x9E37_79B9_7F4A_7C15;
+        super::state(|state| {
+            state.windows.insert(window, Shown { phase: Phase::Asking, app: None, pkg: None });
+            state.requests.insert(window, app_request);
+            state.request_nodes.insert(window, super::RequestNode { node: receiver.clone(), app_view: None });
+        });
+
+        let stream = Arc::new(
+            tokio::time::timeout(Duration::from_secs(10), phone.mirror_open(receiver_id))
+                .await
+                .map_err(|_| "real sender Node::mirror_open exceeded 10 seconds".to_owned())?
+                .map_err(|error| format!("real sender Node::mirror_open failed: {error}"))?,
+        );
+        let result = async {
+            let config = fixture_config(128, 128, core_request);
+            let config_stream = stream.clone();
+            let config_sent = tokio::time::timeout(
+                Duration::from_secs(5),
+                tokio::task::spawn_blocking(move || {
+                    config_stream.send(PacketKind::Config, 0, config.to_cbor())
+                }),
+            )
+            .await
+            .map_err(|_| "sending mirror config exceeded 5 seconds".to_owned())?
+            .map_err(|error| format!("sending mirror config panicked: {error}"))?;
+            if config_sent != MirrorSend::Queued {
+                return Err(format!("real mirror config was not queued: {config_sent:?}"));
+            }
+
+            let shown = wait_for_mirroring_event(&mut events, phone_id, true).await?;
+            let armed = Instant::now();
+            super::on_event(&shown);
+            if super::phase(&window) != Some(Phase::Showing)
+                || !super::state(|s| s.first_frames.contains_key(&window))
+            {
+                return Err("core's on: true did not show the screen and arm its deadline".into());
+            }
+            let owner = tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    if let Some(owner) = super::state(|s| s.streams.get(&window).copied()) {
+                        return owner;
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .map_err(|_| "the accepted config did not start the production decoder".to_owned())?;
+
+            let deadline = super::SCREEN_FIRST_FRAME_TIMEOUT + Duration::from_secs(10);
+            let reason = tokio::time::timeout(deadline, async {
+                loop {
+                    if let Some(Phase::Ended(reason)) = super::phase(&window) {
+                        return reason;
+                    }
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+            })
+            .await
+            .map_err(|_| "the first-frame deadline did not end the pictureless window".to_owned())?;
+            if armed.elapsed() < super::SCREEN_FIRST_FRAME_TIMEOUT {
+                return Err("the window ended before its first-frame deadline".into());
+            }
+            if reason.as_deref().is_none_or(str::is_empty) {
+                return Err("the deadline's ending gives no reason".into());
+            }
+            let fenced = super::state(|s| {
+                !s.shows(&window, owner)
+                    && !s.streams.contains_key(&window)
+                    && s.owns_request(&window, app_request)
+                    && !s.request_nodes.contains_key(&window)
+                    && !s.first_frames.contains_key(&window)
+            });
+            if !fenced {
+                return Err("the deadline must drop the stream and keep the request for Try again".into());
+            }
+
+            let stop = tokio::time::timeout(Duration::from_secs(10), stops.recv())
+                .await
+                .map_err(|_| "the phone did not hear STOP within 10 seconds".to_owned())?
+                .ok_or_else(|| "synthetic phone platform closed before STOP".to_owned())?;
+            if stop != (receiver_id, MIRROR_SCREEN, Some(core_request)) {
+                return Err(format!("the phone heard a STOP for another request: {stop:?}"));
+            }
+
+            let gone = wait_for_mirroring_event(&mut events, phone_id, false).await?;
+            super::on_event(&gone);
+            if super::phase(&window) != Some(Phase::Ended(reason)) {
+                return Err("the stream's end replaced the deadline's reason".into());
+            }
+
+            let sinks = receiver_platform.sinks.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            if sinks.is_empty() {
+                return Err("core never took the production sink".into());
+            }
+            for sink in &sinks {
+                sink.packet(true, 33_333, fixture_idr());
+            }
+            let finished = || {
+                super::FINISHED_DECODERS
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .as_ref()
+                    .is_some_and(|ids| ids.contains(&owner))
+            };
+            tokio::time::timeout(Duration::from_secs(10), async {
+                while !finished() {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .map_err(|_| "the let-go decoder did not exit".to_owned())?;
+            if super::latest_bitmap(&window).is_some() {
+                return Err("a packet after the deadline published a picture".into());
+            }
+            Ok::<(), String>(())
+        }
+        .await;
+        stream.close();
+        result
+    }
+
     #[test]
     fn mac_view_only_receive_shows_decoded_frame_and_cancels() {
         let _fixture = FIXTURE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -4021,6 +4367,57 @@ mod mac_receive_fixture {
         assert_eq!(kept.bgra, successor.bgra, "successor pixels survive the stale stream");
         next.ended();
         drop_fixture_window(window_b);
+    }
+
+    /// The deadline's inert side; its firing path runs in
+    /// `first_frame_deadline_ends_a_pictureless_stream_with_its_exact_stop`.
+    #[test]
+    fn screen_first_frame_deadline_is_inert_when_superseded_or_shown() {
+        let _fixture = FIXTURE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        fixture_host();
+        let arm = |window: Window, deadline: u64| {
+            super::state(|s| {
+                s.first_frames.insert(window, deadline);
+            });
+        };
+        let ends = |window: Window, request: u64, deadline: u64| {
+            super::state(|s| s.end_without_first_frame(window, request, deadline))
+        };
+
+        // No picture yet, but a reopened stream or a newer request owns the window.
+        let device = DeviceId([0x53; 32]);
+        let generation = 0x9E37_79B9_7F4A_7C17u64;
+        let window = live_screen_request(device, generation);
+        arm(window, 1);
+        arm(window, 2);
+        assert!(!ends(window, generation, 1), "a stream that opened again supersedes the older deadline");
+        assert_eq!(super::phase(&window), Some(Phase::Showing));
+        super::state(|s| {
+            s.requests.insert(window, generation + 1);
+        });
+        assert!(!ends(window, generation, 2), "a newer request makes the older deadline inert");
+        assert_eq!(super::phase(&window), Some(Phase::Showing));
+        drop_fixture_window(window);
+
+        // A frame before the deadline keeps the screen showing.
+        let device = DeviceId([0x54; 32]);
+        let generation = 0x9E37_79B9_7F4A_7C18u64;
+        let window = live_screen_request(device, generation);
+        let sink = super::sink(&device, MIRROR_SCREEN).expect("live screen request owns a sink");
+        sink.config(fixture_config(128, 128, generation));
+        sink.packet(true, 0, fixture_idr());
+        await_bitmap(window, 128, 128, Duration::from_secs(10)).expect("decoder publishes the fixture frame");
+        let stream = super::state(|s| s.streams[&window]);
+        arm(window, 3);
+        assert!(!ends(window, generation, 3), "a shown frame makes the deadline inert");
+        assert_eq!(super::phase(&window), Some(Phase::Showing));
+        assert!(super::state(|s| s.shows(&window, stream)), "an inert deadline keeps the stream's owner");
+        sink.ended();
+        let cleared = Instant::now();
+        while super::latest_bitmap(&window).is_some() && cleared.elapsed() < Duration::from_secs(10) {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        drop_fixture_window(window);
     }
 
     #[test]
@@ -4376,8 +4773,27 @@ mod mac_receive_fixture {
     }
 
     #[cfg(feature = "test-support")]
+    #[derive(Clone, Copy)]
+    enum TwoNodeScenario {
+        Frame,
+        FirstFrameDeadline,
+    }
+
+    #[cfg(feature = "test-support")]
     #[test]
     fn transport_to_video_frame_uses_two_authenticated_nodes() {
+        run_two_node_fixture(TwoNodeScenario::Frame);
+    }
+
+    /// Waits out the real first-frame deadline (15 s).
+    #[cfg(feature = "test-support")]
+    #[test]
+    fn first_frame_deadline_ends_a_pictureless_stream_with_its_exact_stop() {
+        run_two_node_fixture(TwoNodeScenario::FirstFrameDeadline);
+    }
+
+    #[cfg(feature = "test-support")]
+    fn run_two_node_fixture(scenario: TwoNodeScenario) {
         let _fixture = FIXTURE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _ = tracing_subscriber::fmt().with_max_level(tracing::Level::DEBUG).with_test_writer().try_init();
         fixture_host();
@@ -4395,8 +4811,9 @@ mod mac_receive_fixture {
             .expect("fixture Tokio runtime");
         runtime.block_on(async {
             let (request_tx, request_rx) = tokio::sync::mpsc::unbounded_channel();
+            let (stop_tx, stop_rx) = tokio::sync::mpsc::unbounded_channel();
             let receiver_platform = Arc::new(NativeReceiverPlatform::default());
-            let phone_platform = Arc::new(SyntheticPhonePlatform { requests: request_tx });
+            let phone_platform = Arc::new(SyntheticPhonePlatform { requests: request_tx, stops: stop_tx });
             let receiver_config = fixture_node_config(
                 receiver_dir.path(),
                 "Synthetic Mac",
@@ -4448,7 +4865,21 @@ mod mac_receive_fixture {
                     .await
                     .map_err(|_| "synthetic loopback pairing exceeded 10 seconds".to_owned())?
                     .map_err(|error| format!("synthetic loopback pairing failed: {error}"))?;
-                exercise_authenticated_stream(&receiver, &phone, &receiver_platform, request_rx).await
+                match scenario {
+                    TwoNodeScenario::Frame => {
+                        exercise_authenticated_stream(&receiver, &phone, &receiver_platform, request_rx).await
+                    }
+                    TwoNodeScenario::FirstFrameDeadline => {
+                        exercise_first_frame_deadline(
+                            &receiver,
+                            &phone,
+                            &receiver_platform,
+                            request_rx,
+                            stop_rx,
+                        )
+                        .await
+                    }
+                }
             }
             .await;
 

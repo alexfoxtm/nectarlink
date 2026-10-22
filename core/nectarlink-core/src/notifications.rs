@@ -9,7 +9,10 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use nectarlink_protocol::{
@@ -44,11 +47,81 @@ pub enum NotificationError {
     Failed(String),
 }
 
+/// Original notification action authority, retained until the platform executes it.
+/// Contains no notification content, reply text, or wire-visible identifier.
+#[derive(Clone)]
+pub struct NotificationActionContext {
+    shared: Arc<Shared>,
+    session: Arc<Session>,
+    active: Arc<AtomicBool>,
+}
+
+impl std::fmt::Debug for NotificationActionContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("NotificationActionContext")
+    }
+}
+
+impl NotificationActionContext {
+    fn new(shared: &Arc<Shared>, session: &Arc<Session>) -> Option<Self> {
+        // Admission and the actual permission writes use the same short lock.
+        // A queued action cannot capture a fresh token during an OFF/ON update.
+        let mut authority = shared.notifications.action_authority();
+        if !Self::owner_current(shared, session) {
+            return None;
+        }
+        let active = authority.for_peer(session.peer);
+        Some(Self { shared: shared.clone(), session: session.clone(), active })
+    }
+
+    /// Check immediately before the OS action, including after any platform queue.
+    /// A replacement Node or connection can never acquire this action's authority.
+    pub fn is_current(&self) -> bool {
+        Self::owner_current(&self.shared, &self.session)
+            // Read last: removal followed by regrant still retires the captured token.
+            && self.active.load(Ordering::Acquire)
+    }
+
+    fn owner_current(shared: &Shared, session: &Arc<Session>) -> bool {
+        !shared.cancel.is_cancelled()
+            && !session.cancel.is_cancelled()
+            && shared.store.is_paired(&session.peer).unwrap_or(false)
+            && shared.session(&session.peer).is_some_and(|live| Arc::ptr_eq(&live, session))
+            && allowed(shared, &session.peer).is_ok()
+    }
+}
+
+/// One current token per peer with an admitted action. Revocation removes it;
+/// retained contexts keep the retired token, and a later admission gets a new one.
+#[derive(Default)]
+pub(crate) struct ActionAuthority {
+    peers: HashMap<DeviceId, Arc<AtomicBool>>,
+}
+
+impl ActionAuthority {
+    fn for_peer(&mut self, peer: DeviceId) -> Arc<AtomicBool> {
+        self.peers.entry(peer).or_insert_with(|| Arc::new(AtomicBool::new(true))).clone()
+    }
+
+    pub(crate) fn revoke_peer(&mut self, peer: &DeviceId) {
+        if let Some(active) = self.peers.remove(peer) {
+            active.store(false, Ordering::Release);
+        }
+    }
+
+    pub(crate) fn revoke_all(&mut self) {
+        for (_, active) in self.peers.drain() {
+            active.store(false, Ordering::Release);
+        }
+    }
+}
+
 /// The phone's current notifications, plus app icons for sending once per
 /// session.
 #[derive(Default)]
 pub(crate) struct Feed {
     inner: Mutex<FeedState>,
+    action_authority: Mutex<ActionAuthority>,
 }
 
 #[derive(Default)]
@@ -62,6 +135,10 @@ struct FeedState {
 }
 
 impl Feed {
+    pub(crate) fn action_authority(&self) -> std::sync::MutexGuard<'_, ActionAuthority> {
+        self.action_authority.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, FeedState> {
         self.inner.lock().unwrap_or_else(|e| e.into_inner())
     }
@@ -353,17 +430,25 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
             });
             let answer = match allowed(shared, &peer) {
                 Err(answer) => answer,
-                Ok(()) => {
-                    let platform = shared.platform.clone();
-                    match run_blocking(move || {
-                        platform.run_notification_action(&key, &action, reply.as_deref())
-                    })
-                    .await
-                    {
-                        Ok(()) => Envelope::empty(types::OK),
-                        Err(e) => error_reply(e),
+                Ok(()) => match NotificationActionContext::new(shared, session) {
+                    None => {
+                        Envelope::error(ErrorCode::Denied, "notification action owner is no longer current")
                     }
-                }
+                    Some(context) => {
+                        let platform = shared.platform.clone();
+                        match run_blocking(move || {
+                            if !context.is_current() {
+                                return Err(NotificationError::NotFound);
+                            }
+                            platform.run_notification_action_owned(context, &key, &action, reply.as_deref())
+                        })
+                        .await
+                        {
+                            Ok(()) => Envelope::empty(types::OK),
+                            Err(e) => error_reply(e),
+                        }
+                    }
+                },
             };
             session.send(answer.reply_to(env.id)).await?;
         }

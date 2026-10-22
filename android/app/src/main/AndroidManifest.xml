@@ -194,6 +194,15 @@
             android:name=".files.TransferNotifications$CancelReceiver"
             android:exported="false" />
 
+        <!-- Opens a received transfer's files from its notification before Android 10. -->
+        <activity
+            android:name=".files.TransferNotifications$OpenReceivedActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <receiver
             android:name=".notifications.PcNotificationPoster$DismissReceiver"
             android:exported="false" />

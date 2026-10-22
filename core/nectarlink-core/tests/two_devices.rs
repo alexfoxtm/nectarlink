@@ -38,6 +38,8 @@ struct RecordingPlatform {
     rings: Mutex<Vec<bool>>,
     dismissed: Mutex<Vec<String>>,
     actions: Mutex<Vec<(String, String, Option<String>)>>,
+    notification_action_context: Mutex<Option<nectarlink_core::NotificationActionContext>>,
+    notification_action_barrier: Mutex<Option<Arc<std::sync::Barrier>>>,
     clipboard: Mutex<Vec<String>>,
     clipboard_rich: Mutex<Vec<RichClipboardRecord>>,
     images: Mutex<Vec<(String, Vec<u8>)>>,
@@ -55,6 +57,9 @@ struct RecordingPlatform {
     >,
     mirror_requests: Mutex<Vec<nectarlink_core::MirrorStart>>,
     owned_mirror_stops: Mutex<Vec<(nectarlink_core::DeviceId, nectarlink_core::MirrorControlContext)>>,
+    owned_mirror_resizes:
+        Mutex<Vec<(nectarlink_core::DeviceId, u32, u32, nectarlink_core::MirrorControlContext)>>,
+    mirror_start_barrier: Mutex<Option<Arc<std::sync::Barrier>>>,
     mirror_reject: std::sync::atomic::AtomicBool,
     watch_offers: Mutex<Vec<String>>,
     mic_asks: Mutex<Vec<String>>,
@@ -104,6 +109,24 @@ impl Platform for RecordingPlatform {
         self.actions.lock().unwrap().push((key.to_owned(), action.to_owned(), reply.map(str::to_owned)));
         Ok(())
     }
+    fn run_notification_action_owned(
+        &self,
+        context: nectarlink_core::NotificationActionContext,
+        key: &str,
+        action: &str,
+        reply: Option<&str>,
+    ) -> Result<(), NotificationError> {
+        let barrier = self.notification_action_barrier.lock().unwrap().clone();
+        if let Some(barrier) = barrier {
+            barrier.wait();
+            barrier.wait();
+        }
+        if !context.is_current() {
+            return Err(NotificationError::NotFound);
+        }
+        *self.notification_action_context.lock().unwrap() = Some(context);
+        self.run_notification_action(key, action, reply)
+    }
     fn set_clipboard(&self, text: &str) -> Result<(), String> {
         self.clipboard.lock().unwrap().push(text.to_owned());
         Ok(())
@@ -152,6 +175,11 @@ impl Platform for RecordingPlatform {
     ) -> Result<(), String> {
         if self.mirror_reject.load(std::sync::atomic::Ordering::SeqCst) {
             return Err("consent declined".into());
+        }
+        let barrier = self.mirror_start_barrier.lock().unwrap().clone();
+        if let Some(barrier) = barrier {
+            barrier.wait();
+            barrier.wait();
         }
         self.mirror_requests.lock().unwrap().push(options.clone());
         let sound = if options.audio { " with sound" } else { "" };
@@ -207,6 +235,16 @@ impl Platform for RecordingPlatform {
         height: u32,
     ) {
         self.mirror_asks.lock().unwrap().push(format!("resize {session} {width}x{height}"));
+    }
+    fn mirror_resize_requested_owned(
+        &self,
+        peer: &nectarlink_core::DeviceId,
+        width: u32,
+        height: u32,
+        context: nectarlink_core::MirrorControlContext,
+    ) {
+        self.owned_mirror_resizes.lock().unwrap().push((*peer, width, height, context));
+        self.mirror_resize_requested(peer, context.session, width, height);
     }
     fn mirror_power_requested(&self, _peer: &nectarlink_core::DeviceId, stay_awake: bool, screen_off: bool) {
         self.mirror_asks.lock().unwrap().push(format!("power awake={stay_awake} off={screen_off}"));
@@ -641,6 +679,7 @@ impl Platform for RecordingPlatform {
 #[derive(Debug, Default)]
 struct ScreenSink {
     got: Mutex<Vec<String>>,
+    ended_barrier: Mutex<Option<Arc<std::sync::Barrier>>>,
 }
 
 impl nectarlink_core::MirrorSink for ScreenSink {
@@ -655,6 +694,11 @@ impl nectarlink_core::MirrorSink for ScreenSink {
         ));
     }
     fn ended(&self) {
+        let barrier = self.ended_barrier.lock().unwrap().take();
+        if let Some(barrier) = barrier {
+            barrier.wait();
+            barrier.wait();
+        }
         self.got.lock().unwrap().push("ended".into());
     }
     fn audio_config(&self, config: nectarlink_core::MirrorAudioConfig) {
@@ -1340,6 +1384,10 @@ async fn notifications_mirror_to_the_pc_and_actions_reach_the_phone() {
         with_timeout("gone", pc.node.run_notification_action(phone_id, "gone".into(), "1".into(), None))
             .await;
     assert!(matches!(gone, Err(Error::NotFound)), "{gone:?}");
+    let owner = phone.platform.notification_action_context.lock().unwrap().take().expect("owned action");
+    assert!(owner.is_current());
+    phone.node.shutdown().await;
+    assert!(!owner.is_current(), "a retained callback cannot outlive its original Node/session");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1379,6 +1427,44 @@ async fn notification_toggles_are_honored_on_both_devices() {
     wait_for(&mut pc, "hidden on the PC", snapshot(0)).await;
     pc.node.set_device_toggle(phone_id, "notifications", true).unwrap();
     wait_for(&mut pc, "synced again", snapshot(1)).await;
+
+    // The real Core admits the action, then the platform pauses before its OS send.
+    // Remove and restore each permission before releasing the callback: current
+    // permission alone must never revive the action's original retired token.
+    for revoke_capability in [false, true] {
+        let barrier = Arc::new(std::sync::Barrier::new(2));
+        *phone.platform.notification_action_barrier.lock().unwrap() = Some(barrier.clone());
+        let pc_node = pc.node.clone();
+        let action = tokio::spawn(async move {
+            pc_node.run_notification_action(phone_id, "a".into(), "1".into(), None).await
+        });
+        tokio::task::spawn_blocking({
+            let barrier = barrier.clone();
+            move || barrier.wait()
+        })
+        .await
+        .unwrap();
+        if revoke_capability {
+            phone.node.update_power(PowerLevel::Basic, vec!["notify.mirror".into()]).await;
+            grant_notification_access(&phone).await;
+        } else {
+            phone.node.set_device_toggle(pc_id, "notifications", false).unwrap();
+            phone.node.set_device_toggle(pc_id, "notifications", true).unwrap();
+        }
+        tokio::task::spawn_blocking(move || barrier.wait()).await.unwrap();
+        let denied = with_timeout("revoked owned notification action", action).await.unwrap();
+        assert!(matches!(denied, Err(Error::NotFound)), "{denied:?}");
+        assert!(phone.platform.actions.lock().unwrap().is_empty(), "revoked action reached the OS seam");
+        *phone.platform.notification_action_barrier.lock().unwrap() = None;
+    }
+    with_timeout(
+        "fresh action after regrant",
+        pc.node.run_notification_action(phone_id, "a".into(), "1".into(), None),
+    )
+    .await
+    .expect("new admission has fresh authority");
+    assert_eq!(phone.platform.actions.lock().unwrap().len(), 1);
+    phone.platform.notification_action_context.lock().unwrap().take();
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -2429,7 +2515,11 @@ async fn phone_apps_open_in_windows_of_their_own() {
         width: 720,
         height: 1280,
         session: 7,
-        request: None,
+        request: if cfg!(target_os = "macos") {
+            phone.platform.mirror_requests.lock().unwrap().last().unwrap().request
+        } else {
+            None
+        },
     };
     let sender = stream.clone();
     let sent = tokio::task::spawn_blocking(move || {
@@ -2449,7 +2539,10 @@ async fn phone_apps_open_in_windows_of_their_own() {
     assert_eq!(session, 7);
     assert!(matches!(pc.node.mirror_resize(phone_id, 0, 800, 600).await, Err(Error::Protocol(_))));
     assert!(matches!(pc.node.mirror_resize(phone_id, 7, 10, 600).await, Err(Error::Protocol(_))));
-    pc.node.mirror_resize(phone_id, 7, 1024, 768).await.unwrap();
+    assert!(
+        matches!(pc.node.mirror_resize(phone_id, 7, 1024, 768).await, Err(Error::Denied)),
+        "legacy app resize cannot select the current replacement request"
+    );
     pc.node.mirror_input(phone_id, 7, MirrorInput::Key { key: "back".into() }).await.unwrap();
     typing_control_barrier(&pc, &phone).await;
     assert!(
@@ -2458,6 +2551,8 @@ async fn phone_apps_open_in_windows_of_their_own() {
     );
     pc.node.mirror_keyframe(phone_id, 7).await;
     pc.node.mirror_stop(phone_id, 7).await;
+    assert!(!stream.is_closed(), "unowned app close cannot select the current capture");
+    stream.close();
     let ended = wait_for(&mut pc, "stopped", |e| match e {
         NodeEvent::Mirroring { session, on: false, .. } => Some(*session),
         _ => None,
@@ -2466,7 +2561,7 @@ async fn phone_apps_open_in_windows_of_their_own() {
     assert_eq!(ended, 7);
     // The phone handles some of these off the control stream, so give it a
     // moment to get to all of them.
-    for wanted in ["start 1280 com.example.chat as 7", "resize 7 1024x768", "keyframe 7", "stop 7"] {
+    for wanted in ["start 1280 com.example.chat as 7", "keyframe 7"] {
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         while !phone.platform.mirror_asks.lock().unwrap().iter().any(|a| a == wanted) {
             let asks = phone.platform.mirror_asks.lock().unwrap().clone();
@@ -2485,7 +2580,11 @@ async fn phone_apps_open_in_windows_of_their_own() {
         width: 720,
         height: 1280,
         session: 8,
-        request: None,
+        request: if cfg!(target_os = "macos") {
+            phone.platform.mirror_requests.lock().unwrap().last().unwrap().request
+        } else {
+            None
+        },
     };
     let sender = stream.clone();
     tokio::task::spawn_blocking(move || sender.send(PacketKind::Config, 0, config.to_cbor())).await.unwrap();
@@ -7194,6 +7293,38 @@ async fn correlated_mirror_requires_a_live_request_and_revocation_ends_it() {
     phone.node.shutdown().await;
 }
 
+/// Created only after the first rendezvous. Dropping a failed fixture still
+/// releases its callback's second wait without depending on the Tokio runtime.
+#[cfg(feature = "test-support")]
+struct EnteredBarrier(Option<Arc<std::sync::Barrier>>);
+
+#[cfg(feature = "test-support")]
+impl EnteredBarrier {
+    fn new(barrier: Arc<std::sync::Barrier>) -> Self {
+        Self(Some(barrier))
+    }
+
+    async fn release(mut self) {
+        let barrier = self.0.take().expect("entered barrier is armed");
+        tokio::task::spawn_blocking(move || {
+            barrier.wait();
+        })
+        .await
+        .unwrap();
+    }
+}
+
+#[cfg(feature = "test-support")]
+impl Drop for EnteredBarrier {
+    fn drop(&mut self) {
+        if let Some(barrier) = self.0.take() {
+            let _ = std::thread::spawn(move || {
+                barrier.wait();
+            });
+        }
+    }
+}
+
 #[cfg(feature = "test-support")]
 async fn request_control_pair(grant: bool) -> (TestDevice, TestDevice) {
     use nectarlink_core::{
@@ -7234,27 +7365,45 @@ async fn request_control_session(
     phone: &mut TestDevice,
     mirroring: u32,
 ) -> (Arc<nectarlink_core::MirrorStream>, u64) {
-    use nectarlink_core::{MirrorConfig, MirrorSend, MirrorStart, PacketKind};
+    use nectarlink_core::MirrorStart;
     let peer = phone.node.device_id();
-    pc.node
-        .mirror_start(
-            peer,
-            MirrorStart {
-                max_size: 128,
-                fps: 30,
-                bitrate: 1_000_000,
-                audio: false,
-                session: mirroring,
-                app: (mirroring != 0).then(|| "com.example.chat".into()),
-                stay_awake: false,
-                screen_off: false,
-                watch: None,
-                request: None,
-            },
-        )
-        .await
-        .unwrap();
+    let options = MirrorStart {
+        max_size: 128,
+        fps: 30,
+        bitrate: 1_000_000,
+        audio: false,
+        session: mirroring,
+        app: (mirroring != 0).then(|| "com.example.chat".into()),
+        stay_awake: false,
+        screen_off: false,
+        watch: None,
+        request: None,
+    };
+    if mirroring == 0 {
+        pc.node.mirror_start(peer, options).await.unwrap();
+    } else {
+        pc.node
+            .mirror_start_owned(peer, options, |view| {
+                assert!(view.is_current(), "exact owner is published before the reply wait");
+                true
+            })
+            .await
+            .unwrap();
+    }
     let request = phone.platform.mirror_requests.lock().unwrap().last().unwrap().request.unwrap();
+    let stream = show_control_request(pc, phone, mirroring, request).await;
+    (stream, request)
+}
+
+#[cfg(feature = "test-support")]
+async fn show_control_request(
+    pc: &mut TestDevice,
+    phone: &TestDevice,
+    mirroring: u32,
+    request: u64,
+) -> Arc<nectarlink_core::MirrorStream> {
+    use nectarlink_core::{MirrorConfig, MirrorSend, PacketKind};
+    let peer = phone.node.device_id();
     let owner =
         phone.node.mirror_capture_context_for_session(pc.node.device_id(), mirroring, request).unwrap();
     let stream = Arc::new(phone.node.mirror_open_owned(pc.node.device_id(), owner).await.unwrap());
@@ -7276,7 +7425,7 @@ async fn request_control_session(
             .then_some(())
     })
     .await;
-    (stream, request)
+    stream
 }
 
 #[cfg(feature = "test-support")]
@@ -7507,6 +7656,16 @@ async fn phone_control_revocation_stale_owners_store_failure_and_reconnect_fail_
 }
 
 #[cfg(feature = "test-support")]
+async fn wait_owned_app_resize(phone: &TestDevice, count: usize) {
+    with_timeout("owned app resize", async {
+        while phone.platform.owned_mirror_resizes.lock().unwrap().len() < count {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await;
+}
+
+#[cfg(feature = "test-support")]
 async fn wait_owned_app_stop(
     phone: &TestDevice,
     peer: nectarlink_core::DeviceId,
@@ -7556,6 +7715,13 @@ async fn app_control_uses_the_owned_stream_and_screen_stop_stays_independent() {
     let (app, request) = request_control_session(&mut pc, &mut phone, 7).await;
     let capture = phone.node.mirror_capture_context_for_session(pc.node.device_id(), 7, request).unwrap();
     assert_ne!(capture.capture, 0);
+    let resize = pc.node.mirror_resize_target(phone.node.device_id(), 7, request).unwrap();
+    resize.send_if_current(1024, 768, || true).await.unwrap();
+    wait_owned_app_resize(&phone, 1).await;
+    let posted_resize = phone.platform.owned_mirror_resizes.lock().unwrap()[0];
+    assert_eq!((posted_resize.0, posted_resize.1, posted_resize.2), (pc.node.device_id(), 1024, 768));
+    assert_eq!(posted_resize.3, capture, "resize authority is minted from the receiver's accepted capture");
+    assert!(phone.node.mirror_capture_current(pc.node.device_id(), posted_resize.3));
     let lease = pc.node.mirror_control_for_session(phone.node.device_id(), 7, request).unwrap();
     phone.platform.control_inputs.lock().unwrap().clear();
     lease.send(MirrorInput::Text { text: "app-owned synthetic input".into() }).await.unwrap();
@@ -7571,7 +7737,8 @@ async fn app_control_uses_the_owned_stream_and_screen_stop_stays_independent() {
     assert!(phone.node.mirror_control_input_current(pc.node.device_id(), inputs[0].2));
     assert!(!app.is_closed());
     assert!(lease.send(MirrorInput::Key { key: "home".into() }).await.is_err());
-    pc.node.mirror_stop(phone.node.device_id(), 7).await;
+    assert!(resize.stop_if_current().await.unwrap());
+    assert!(!resize.stop_if_current().await.unwrap(), "conditional release is idempotent");
     wait_owned_app_stop(&phone, pc.node.device_id(), capture).await;
     assert!(!phone.node.mirror_capture_current(pc.node.device_id(), capture));
     assert!(!lease.is_current());
@@ -7582,7 +7749,7 @@ async fn app_control_uses_the_owned_stream_and_screen_stop_stays_independent() {
 }
 
 #[cfg(feature = "test-support")]
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn app_control_denies_legacy_grant_off_stop_and_reused_capture_owners() {
     use nectarlink_core::{
         MIRROR_APP_WINDOWS_OWNED_V1, MIRROR_CAPTURE, MIRROR_CORRELATION, MIRROR_INPUT, MIRROR_INPUT_REQUEST,
@@ -7610,6 +7777,25 @@ async fn app_control_denies_legacy_grant_off_stop_and_reused_capture_owners() {
     let (app, request) = request_control_session(&mut pc, &mut phone, 7).await;
     let capture = phone.node.mirror_capture_context_for_session(pc_id, 7, request).unwrap();
     assert!(pc.node.mirror_control_for_session(phone_id, 7, request).is_err(), "default OFF owner grant");
+    let resize = pc.node.mirror_resize_target(phone_id, 7, request).unwrap();
+    assert!(matches!(resize.send_if_current(10, 768, || true).await, Err(Error::Protocol(_))));
+    assert!(
+        matches!(resize.send_if_current(1024, 768, || false).await, Err(Error::Denied)),
+        "viewer disposal is rechecked after reserving the original outbox"
+    );
+    resize.send_if_current(1024, 768, || true).await.unwrap();
+    wait_owned_app_resize(&phone, 1).await;
+    let old_resize = phone.platform.owned_mirror_resizes.lock().unwrap()[0].3;
+    assert_eq!(old_resize, capture);
+    assert!(phone.node.mirror_capture_current(pc_id, old_resize), "capture resize needs no input grant");
+    // Valid legacy resize must deny even the live app session. It cannot
+    // synthesize a current request when an old future is first polled late.
+    assert!(matches!(pc.node.mirror_resize(phone_id, 7, 1024, 768).await, Err(Error::Denied)));
+    pc.node.mirror_stop(phone_id, 7).await;
+    assert!(resize.is_current(), "legacy close cannot take the current app owner either");
+    assert!(phone.node.mirror_capture_current(pc_id, capture));
+    control_barrier(&pc, &phone).await;
+    assert_eq!(phone.platform.owned_mirror_resizes.lock().unwrap().len(), 1);
     pc.node.mirror_input(phone_id, 7, MirrorInput::Key { key: "enter".into() }).await.unwrap();
     control_barrier(&pc, &phone).await;
     assert!(phone.platform.control_inputs.lock().unwrap().is_empty(), "unstamped legacy app input is denied");
@@ -7626,11 +7812,81 @@ async fn app_control_denies_legacy_grant_off_stop_and_reused_capture_owners() {
     );
     phone.node.set_phone_control_enabled(pc_id, true).unwrap();
     assert!(phone.node.mirror_typing_stopped(pc_id), "grant does not rearm Stop");
+    let old_end = Arc::new(std::sync::Barrier::new(2));
+    *pc.platform.screen.ended_barrier.lock().unwrap() = Some(old_end.clone());
     let owner_tap = phone.node.mirror_typing_epoch(pc_id);
     phone.node.set_mirroring_enabled(pc_id, false, owner_tap).unwrap();
     phone.node.set_mirroring_enabled(pc_id, true, owner_tap).unwrap();
+    let waiting_end = old_end.clone();
+    tokio::task::spawn_blocking(move || {
+        waiting_end.wait();
+    })
+    .await
+    .unwrap();
+    let old_end_release = EnteredBarrier::new(old_end);
     assert!(!phone.node.mirror_capture_current(pc_id, capture), "OFF/ON cannot re-admit delayed old capture");
     assert!(phone.node.mirror_open_owned(pc_id, capture).await.is_err());
+    let published = Arc::new(tokio::sync::Notify::new());
+    let ready = published.clone();
+    let fresh_view = Arc::new(Mutex::new(None));
+    let capture_view = fresh_view.clone();
+    let starting_node = pc.node.clone();
+    let runtime = tokio::runtime::Handle::current();
+    let replacement_start = tokio::task::spawn_blocking(move || {
+        runtime.block_on(async move {
+            starting_node
+                .mirror_start_owned(
+                    phone_id,
+                    nectarlink_core::MirrorStart {
+                        max_size: 128,
+                        fps: 30,
+                        bitrate: 1_000_000,
+                        audio: false,
+                        session: 7,
+                        app: Some("com.example.chat".into()),
+                        stay_awake: false,
+                        screen_off: false,
+                        watch: None,
+                        request: None,
+                    },
+                    move |view| {
+                        *capture_view.lock().unwrap() = Some(view);
+                        ready.notify_one();
+                        true
+                    },
+                )
+                .await
+        })
+    });
+    with_timeout("replacement owner published before old sink release", published.notified()).await;
+    let fresh_view = fresh_view.lock().unwrap().clone().unwrap();
+    let fresh_request = fresh_view.request();
+    assert_ne!(request, fresh_request);
+    assert!(!resize.is_current(), "a fresh view retires the original sender target");
+    assert!(resize.send_if_current(800, 600, || true).await.is_err());
+    assert!(!resize.stop_if_current().await.unwrap(), "old close cannot retire the replacement");
+    assert_eq!(phone.platform.owned_mirror_resizes.lock().unwrap().len(), 1);
+    let mut late_events = pc.node.events();
+    // The old reader sees the replacement request before its final off check,
+    // but its synchronous sink callback must return before awaiting transport.
+    old_end_release.release().await;
+    with_timeout("replacement Start reply after old sink release", replacement_start).await.unwrap().unwrap();
+    let intermediate = show_control_request(&mut pc, &phone, 7, fresh_request).await;
+    assert!(fresh_view.is_current());
+    assert!(!intermediate.is_closed());
+    let late_off = tokio::time::timeout(Duration::from_millis(100), async {
+        loop {
+            if let Ok(NodeEvent::Mirroring { device, session: 7, on: false }) = late_events.recv().await
+                && device == phone_id
+            {
+                break;
+            }
+        }
+    })
+    .await;
+    assert!(late_off.is_err(), "old reader finishing after a live replacement cannot emit its off event");
+    assert!(phone.node.mirror_capture_context_for_session(pc_id, 7, fresh_request).is_some());
+    intermediate.close();
     // Only this fresh synthetic sender store is rewound to model a peer
     // replaying the full wire tuple; the receiving Node/connection stay live.
     let db = rusqlite::Connection::open(pc.dir.path().join("nectarlink.db")).unwrap();
@@ -7651,15 +7907,146 @@ async fn app_control_denies_legacy_grant_off_stop_and_reused_capture_owners() {
     wait_owned_app_stop(&phone, pc_id, capture).await;
     assert!(!phone.node.mirror_control_input_current(pc_id, posted));
     assert!(!lease.is_current());
+    // Even deliberate wire tuple reuse cannot revive receiver-local capture ownership.
+    assert!(!phone.node.mirror_capture_current(pc_id, old_resize));
     app.close();
     assert!(
         phone.node.mirror_capture_current(pc_id, replacement),
         "old stream close cannot end the successor"
     );
+    // Owned start publishes before the real platform callback/reply finishes.
+    // Close retires that original view locally while the platform is held.
+    let barrier = Arc::new(std::sync::Barrier::new(2));
+    *phone.platform.mirror_start_barrier.lock().unwrap() = Some(barrier.clone());
+    let published = Arc::new(Mutex::new(None));
+    let publish = published.clone();
+    let starting_node = pc.node.clone();
+    let starting = tokio::spawn(async move {
+        starting_node
+            .mirror_start_owned(
+                phone_id,
+                nectarlink_core::MirrorStart {
+                    max_size: 128,
+                    fps: 30,
+                    bitrate: 1_000_000,
+                    audio: false,
+                    session: 9,
+                    app: Some("com.example.chat".into()),
+                    stay_awake: false,
+                    screen_off: false,
+                    watch: None,
+                    request: None,
+                },
+                move |view| {
+                    *publish.lock().unwrap() = Some(view);
+                    true
+                },
+            )
+            .await
+    });
+    let waiting = barrier.clone();
+    tokio::task::spawn_blocking(move || {
+        waiting.wait();
+    })
+    .await
+    .unwrap();
+    let barrier_release = EnteredBarrier::new(barrier);
+    let early = published.lock().unwrap().clone().expect("owner precedes platform reply");
+    let early_capture = phone.node.mirror_capture_context_for_session(pc_id, 9, early.request()).unwrap();
+    let closing_view = early.clone();
+    let closing = tokio::spawn(async move { closing_view.stop_if_current().await });
+    with_timeout("early view retired before start reply", async {
+        while early.is_current() {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await;
+    *phone.platform.mirror_start_barrier.lock().unwrap() = None;
+    barrier_release.release().await;
+    assert!(matches!(starting.await.unwrap(), Err(Error::Denied)), "late OK cannot republish a closed view");
+    assert!(closing.await.unwrap().unwrap());
+    wait_owned_app_stop(&phone, pc_id, early_capture).await;
+    assert!(!phone.node.mirror_capture_current(pc_id, early_capture));
+    assert!(phone.node.mirror_capture_current(pc_id, replacement), "another app session is untouched");
+
+    // Hold ready itself: Stop must finish before any Start can be enqueued.
+    let before_start = Arc::new(std::sync::Barrier::new(2));
+    let ready_gate = before_start.clone();
+    let published = Arc::new(Mutex::new(None));
+    let publish = published.clone();
+    let starting_node = pc.node.clone();
+    let runtime = tokio::runtime::Handle::current();
+    let starting = tokio::task::spawn_blocking(move || {
+        runtime.block_on(async move {
+            starting_node
+                .mirror_start_owned(
+                    phone_id,
+                    nectarlink_core::MirrorStart {
+                        max_size: 128,
+                        fps: 30,
+                        bitrate: 1_000_000,
+                        audio: false,
+                        session: 10,
+                        app: Some("com.example.chat".into()),
+                        stay_awake: false,
+                        screen_off: false,
+                        watch: None,
+                        request: None,
+                    },
+                    move |view| {
+                        *publish.lock().unwrap() = Some(view);
+                        ready_gate.wait();
+                        ready_gate.wait();
+                        true
+                    },
+                )
+                .await
+        })
+    });
+    let waiting = before_start.clone();
+    tokio::task::spawn_blocking(move || {
+        waiting.wait();
+    })
+    .await
+    .unwrap();
+    let before_start_release = EnteredBarrier::new(before_start);
+    let closed_before_start = published.lock().unwrap().clone().unwrap();
+    assert!(closed_before_start.stop_if_current().await.unwrap());
+    assert!(
+        phone.node.mirror_capture_context_for_session(pc_id, 10, closed_before_start.request()).is_none(),
+        "the first Stop reached the source before an incoming Start existed"
+    );
+    before_start_release.release().await;
+    assert!(matches!(starting.await.unwrap(), Err(Error::Denied)));
+    let compensated = with_timeout("compensating exact Stop after late Start OK", async {
+        loop {
+            if let Some((_, owner)) = phone
+                .platform
+                .owned_mirror_stops
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|(peer, owner)| {
+                    *peer == pc_id && owner.session == 10 && owner.request == closed_before_start.request()
+                })
+                .copied()
+            {
+                break owner;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await;
+    assert_ne!(compensated.capture, 0);
+    assert!(!phone.node.mirror_capture_current(pc_id, compensated));
+    assert!(phone.node.mirror_capture_current(pc_id, replacement), "compensation cannot stop another app");
+
     // Restart only the PC on the existing isolated transport. The phone
     // must deliver the old connection's exact app teardown, then admit a
     // fresh owner without that queued teardown taking its authority.
     pc.node.shutdown().await;
+    assert!(!resize.is_current(), "queued resize cannot acquire a replacement Node/connection");
+    assert!(resize.send_if_current(800, 600, || true).await.is_err());
     wait_owned_app_stop(&phone, pc_id, replacement).await;
     assert!(!phone.node.mirror_capture_current(pc_id, replacement));
     let TestDevice { dir, .. } = pc;
@@ -7702,6 +8089,73 @@ async fn app_control_denies_legacy_grant_off_stop_and_reused_capture_owners() {
     assert!(phone.node.mirror_open_owned(pc_id, replacement).await.is_err());
     successor.close();
     assert!(phone.node.mirror_capture_current(pc_id, final_owner));
+    // A matched old source-stop holds Session -> request -> reader guards
+    // through cancellation, so a same-session replacement cannot register in
+    // the former unlock-before-stop_showing gap.
+    let retire_gate = pc.node.test_hold_next_mirror_retire().unwrap();
+    let source_node = phone.node.clone();
+    let source_stop =
+        tokio::spawn(async move { source_node.test_mirror_source_stop(pc_id, 7, final_request).await });
+    let entered = retire_gate.clone();
+    tokio::task::spawn_blocking(move || {
+        entered.wait();
+    })
+    .await
+    .unwrap();
+    let retire_release = EnteredBarrier::new(retire_gate);
+    let published = Arc::new(tokio::sync::Notify::new());
+    let ready = published.clone();
+    let next_view = Arc::new(Mutex::new(None));
+    let capture_view = next_view.clone();
+    let next_node = pc.node.clone();
+    let attempting = Arc::new(tokio::sync::Notify::new());
+    let attempt = attempting.clone();
+    let runtime = tokio::runtime::Handle::current();
+    let next_start = tokio::task::spawn_blocking(move || {
+        runtime.block_on(async move {
+            attempt.notify_one();
+            next_node
+                .mirror_start_owned(
+                    phone_id,
+                    nectarlink_core::MirrorStart {
+                        max_size: 128,
+                        fps: 30,
+                        bitrate: 1_000_000,
+                        audio: false,
+                        session: 7,
+                        app: Some("com.example.chat".into()),
+                        stay_awake: false,
+                        screen_off: false,
+                        watch: None,
+                        request: None,
+                    },
+                    move |view| {
+                        *capture_view.lock().unwrap() = Some(view);
+                        ready.notify_one();
+                        true
+                    },
+                )
+                .await
+        })
+    });
+    with_timeout("replacement start task scheduled", attempting.notified()).await;
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), published.notified()).await.is_err(),
+        "replacement cannot publish while old retirement still owns the reader guard"
+    );
+    retire_release.release().await;
+    source_stop.await.unwrap().unwrap();
+    next_start.await.unwrap().unwrap();
+    let next_view = next_view.lock().unwrap().clone().unwrap();
+    let next_stream = show_control_request(&mut pc, &phone, 7, next_view.request()).await;
+    assert!(next_view.is_current());
+    assert!(!next_stream.is_closed(), "replacement reader survives the old source-stop");
+    let next_owner = phone.node.mirror_capture_context_for_session(pc_id, 7, next_view.request()).unwrap();
+    assert!(phone.node.mirror_capture_current(pc_id, next_owner));
+    assert!(!phone.node.mirror_capture_current(pc_id, final_owner));
+    assert!(next_view.stop_if_current().await.unwrap());
+    wait_owned_app_stop(&phone, pc_id, next_owner).await;
+    next_stream.close();
     reconnected.close();
     pc.node.shutdown().await;
     phone.node.shutdown().await;
@@ -7832,7 +8286,8 @@ async fn pending_app_open_holds_no_credit_on_exact_stop_while_credit_withheld() 
             "app open must pend on exhausted QUIC credit after a ready connection"
         );
     }
-    pc.node.mirror_stop(phone_id, 7).await;
+    let viewer = pc.node.mirror_resize_target(phone_id, 7, request).unwrap();
+    assert!(viewer.stop_if_current().await.unwrap());
     let outcome = with_timeout("pending app open cancelled on exact stop", pending_open).await;
     assert!(matches!(outcome, Err(Error::Denied)), "revoked pending open exits Denied, got {outcome:?}");
     wait_owned_app_stop(&phone, pc_id, owner).await;

@@ -3,7 +3,8 @@
 //!
 //! The banner uses the host app's own name and icon. Title, subtitle, and
 //! body stay the phone title, the desktop attribution, and the phone text.
-//! Actions, reply, icon override, image, and progress are not represented.
+//! Phone actions and supported free-form replies use native notification
+//! actions; icon override, image, and progress are not represented.
 
 use std::{
     path::{Path, PathBuf},
@@ -21,6 +22,23 @@ pub const AUMID: &str = "com.waypair.mac";
 pub const CALL_ANSWER: &str = "answer";
 pub const CALL_DECLINE: &str = "decline";
 pub const CALL_END: &str = "end";
+pub const LOCAL_COPY_CODE_PREFIX: &str = user_notifications::LOCAL_COPY_CODE_PREFIX;
+
+/// Keeps an eligible notification's OTP only in process memory and returns
+/// the opaque action ID bound to that observed notification revision.
+pub fn register_copy_code_action(device: &str, key: &str, code: &str) -> Option<String> {
+    user_notifications::register_copy_code_action(device, key, code)
+}
+
+/// Invalidates local OTP actions as soon as a notification revision is replaced.
+pub fn invalidate_copy_code_actions(device: &str, key: &str) {
+    user_notifications::invalidate_copy_code_actions(device, key);
+}
+
+/// Consumes the code bound to this exact native action once.
+pub fn take_copy_code_action(device: &str, key: &str, action: &str) -> Option<String> {
+    user_notifications::take_copy_code_action(device, key, action)
+}
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -143,6 +161,12 @@ pub struct BannerText {
     pub device: String,
     pub key: String,
     pub identifier: String,
+    /// Actions supplied by the phone, plus the desktop's explicit OTP copy action.
+    pub actions: Vec<(String, String)>,
+    /// Present only when the phone supplied a free-form RemoteInput action.
+    pub reply: Option<(String, String)>,
+    /// Calls keep their existing dedicated banner handling.
+    pub call: bool,
     /// Goes to the list without a banner, like Windows `SetSuppressPopup`.
     pub quiet: bool,
 }
@@ -159,6 +183,9 @@ pub fn banner_text(toast: &Toast) -> BannerText {
         device: toast.device.clone(),
         key: toast.key.clone(),
         identifier: notification_identifier(&toast.device, &toast.key),
+        actions: toast.actions.clone(),
+        reply: toast.reply.clone(),
+        call: toast.call,
         quiet: toast.silent && !toast.call && !toast.actions.iter().any(|(id, _)| id == CALL_END),
     }
 }
@@ -366,8 +393,8 @@ pub fn start(_icon: PathBuf, on_event: impl Fn(ToastEvent) + Send + Sync + 'stat
 }
 
 pub fn show(toast: Toast) {
-    if !toast.actions.is_empty() || toast.reply.is_some() || toast.call || toast.progress.is_some() {
-        tracing::debug!("notification actions, reply, and progress are not shown; banner only");
+    if toast.progress.is_some() {
+        tracing::debug!("notification progress is not shown in the native banner");
     }
     user_notifications::post(toast);
 }

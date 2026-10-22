@@ -78,7 +78,7 @@ pub use localsend::{
 pub use media::{MediaAction, MediaError};
 pub use mic::{MicSink, TOGGLE as MIC_TOGGLE};
 pub use mirror::{
-    MirrorControl, MirrorControlContext, MirrorSend, MirrorSink, MirrorStream, PC_MIRROR_TOGGLE,
+    MirrorControl, MirrorControlContext, MirrorSend, MirrorSink, MirrorStream, MirrorView, PC_MIRROR_TOGGLE,
     PHONE_CONTROL_TOGGLE,
 };
 pub use nectarlink_protocol::messages::clip::{
@@ -147,7 +147,7 @@ pub use nectarlink_protocol::{
     pairing::PairingUri,
 };
 pub use node::{DataRetentionCounts, NetworkRouteInfo, Node, PeerDiagnostics};
-pub use notifications::{NotificationError, SHOW as NOTIFY_SHOW};
+pub use notifications::{NotificationActionContext, NotificationError, SHOW as NOTIFY_SHOW};
 pub use palette::{
     ACHROMATIC_SEED_RGB, MAX_SAMPLE_SIDE, Palette as ThemePaletteMap, RolePalette, ThemeScheme,
     achromatic_scheme, downsample_rgb, downsample_rgba, extract_artwork_scheme_rgb,

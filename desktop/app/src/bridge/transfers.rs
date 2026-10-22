@@ -2,7 +2,10 @@
 //! `TransferList`: file transfers (newest first) as a Qt list model, plus
 //! the commands QML runs on them.
 
-use std::{path::PathBuf, pin::Pin};
+use std::{
+    path::{Path, PathBuf},
+    pin::Pin,
+};
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{
@@ -129,6 +132,10 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "showInFolder"]
         fn show_in_folder(self: &TransferList, id: &QString);
+        /// Starts an OS drag for an existing completed incoming file.
+        #[qinvokable]
+        #[cxx_name = "startReceivedDrag"]
+        fn start_received_drag(self: &TransferList, id: &QString) -> bool;
         #[qinvokable]
         #[cxx_name = "clearFinished"]
         fn clear_finished(self: &TransferList);
@@ -233,6 +240,15 @@ fn saved_path(row: &Row) -> Option<PathBuf> {
         TransferState::Done { saved } => saved.first().cloned(),
         _ => None,
     }
+}
+
+fn existing_received_path(row: &Row) -> Option<&Path> {
+    if row.view.transfer.direction != Direction::Incoming {
+        return None;
+    }
+    let TransferState::Done { saved } = &row.view.transfer.state else { return None };
+    let path = saved.first()?;
+    path.exists().then_some(path.as_path())
 }
 
 impl cxx_qt::Initialize for qobject::TransferList {
@@ -382,6 +398,12 @@ impl qobject::TransferList {
         }
     }
 
+    pub fn start_received_drag(&self, id: &QString) -> bool {
+        let Some(path) = self.row(id).and_then(existing_received_path) else { return false };
+        let path = path.to_string_lossy();
+        crate::bridge::native::ffi::start_external_drag(&path, "")
+    }
+
     pub fn clear_finished(&self) {
         core_host::host().hub.update(|s| s.clear_finished_transfers());
     }
@@ -410,6 +432,46 @@ mod tests {
     use nectarlink_core::{DeviceId, Transfer};
 
     use super::*;
+
+    #[test]
+    fn received_drag_requires_an_existing_completed_incoming_file() {
+        let mut row = Row {
+            view: TransferView {
+                transfer: Transfer {
+                    id: "drag".into(),
+                    device: DeviceId([3; 32]),
+                    direction: Direction::Incoming,
+                    names: vec!["received.txt".into()],
+                    files: 1,
+                    total: 1,
+                    done: 1,
+                    state: TransferState::Done { saved: Vec::new() },
+                    recording: false,
+                    markers: Vec::new(),
+                    open_on_arrival: false,
+                },
+                rate: 0.0,
+                sampled: Instant::now(),
+            },
+            device_name: "Pixel".into(),
+        };
+        assert_eq!(existing_received_path(&row), None);
+        let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let path =
+            std::env::temp_dir().join(format!("waypair-transfer-drag-{}-{nonce}.txt", std::process::id()));
+        std::fs::write(&path, b"received").unwrap();
+        row.view.transfer.state = TransferState::Done { saved: vec![path.clone()] };
+        assert_eq!(existing_received_path(&row), Some(path.as_path()));
+
+        row.view.transfer.direction = Direction::Outgoing;
+        assert_eq!(existing_received_path(&row), None);
+        row.view.transfer.direction = Direction::Incoming;
+        row.view.transfer.state = TransferState::Running;
+        assert_eq!(existing_received_path(&row), None);
+        row.view.transfer.state = TransferState::Done { saved: vec![path.clone()] };
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(existing_received_path(&row), None);
+    }
 
     #[test]
     fn roles_describe_the_transfer() {
