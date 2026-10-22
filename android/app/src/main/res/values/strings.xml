@@ -744,6 +744,9 @@
     <string name="mirror_banner_subtitle_control_on">Tap, swipe and type from your PC</string>
     <string name="mirror_banner_subtitle_audio">Screen and audio · tap Stop anytime</string>
     <string name="mirror_banner_subtitle">Live screen stream · tap Stop anytime</string>
+    <string name="mirror_banner_subtitle_accessibility">To control this phone, turn on “%1$s” in Accessibility</string>
+    <string name="mirror_banner_subtitle_owner_grant">To control this phone, open “%1$s” › “%2$s”, then turn on “%3$s” for %4$s</string>
+    <string name="mirror_banner_subtitle_stopped">Phone control is stopped. Re-enable it under “%1$s” › “%2$s”</string>
     <string name="mirror_allow_pc_control">Allow PC mouse control</string>
     <string name="action_open_controls">Controls</string>
     <string name="remote_input_requested_title">Your PC tried to control this phone</string>

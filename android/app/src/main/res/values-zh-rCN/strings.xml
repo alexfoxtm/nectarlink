@@ -686,6 +686,9 @@
     <string name="mirror_banner_subtitle_control_on">用电脑点按、滑动和输入</string>
     <string name="mirror_banner_subtitle_audio">屏幕和声音 · 随时点按停止</string>
     <string name="mirror_banner_subtitle">实时屏幕串流 · 随时点按停止</string>
+    <string name="mirror_banner_subtitle_accessibility">如需控制此手机，请在无障碍中开启“%1$s”</string>
+    <string name="mirror_banner_subtitle_owner_grant">如需控制此手机，请打开“%1$s”›“%2$s”，为 %4$s 开启“%3$s”</string>
+    <string name="mirror_banner_subtitle_stopped">手机控制已停止。可在“%1$s”›“%2$s”中重新开启</string>
     <string name="mirror_allow_pc_control">允许电脑鼠标控制</string>
     <string name="action_open_controls">控制</string>
     <string name="remote_input_requested_title">你的电脑尝试控制此手机</string>

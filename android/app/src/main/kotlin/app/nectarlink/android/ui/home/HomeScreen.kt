@@ -151,6 +151,7 @@ import app.nectarlink.core.AudioOutputDevice
 import app.nectarlink.core.ClipboardHistoryEntry
 import app.nectarlink.core.ClipboardItemKind
 import app.nectarlink.core.DeckState
+import app.nectarlink.core.DeviceKind
 import app.nectarlink.core.FfiQueueKind
 import app.nectarlink.core.FfiQueueStatus
 import app.nectarlink.core.Link
@@ -371,8 +372,30 @@ fun HomeScreen(
                 val context = LocalContext.current
                 val pcName = mirrorSession.pcId?.let { state.nameOf(it) }
                     ?: stringResource(R.string.your_pc)
-                val controlReady = state.inputAccess || state.elevated
+                val mirroredPc = mirrorSession.pcId?.let { pid -> state.devices.firstOrNull { it.id == pid } }
+                val knownPc = mirroredPc?.kind == DeviceKind.DESKTOP || mirroredPc?.kind == DeviceKind.LAPTOP
+                val accessReady = state.inputAccess || state.elevated
+                // Durable Stop is keyed on the session id even when the device cache is missing.
+                val stopped = mirrorSession.pcId in state.typingStoppedPcIds
+                val controlReady = knownPc && mirroredPc?.phoneControlEnabled == true && accessReady && !stopped
+                val grantNeeded = knownPc && accessReady && mirroredPc?.phoneControlEnabled == false && !stopped
+                val accessNeeded = knownPc && !accessReady && !stopped
+                // Accessibility banner opens Android's a11y settings, so name the service label there.
+                val accessibilityLabel = stringResource(R.string.input_service_label)
                 val subtitle = when {
+                    stopped -> stringResource(
+                        R.string.mirror_banner_subtitle_stopped,
+                        stringResource(R.string.settings_title),
+                        stringResource(R.string.settings_devices),
+                    )
+                    accessNeeded -> stringResource(R.string.mirror_banner_subtitle_accessibility, accessibilityLabel)
+                    grantNeeded -> stringResource(
+                        R.string.mirror_banner_subtitle_owner_grant,
+                        stringResource(R.string.settings_title),
+                        stringResource(R.string.settings_devices),
+                        stringResource(R.string.phone_control_pc_toggle),
+                        pcName,
+                    )
                     controlReady -> stringResource(R.string.mirror_banner_subtitle_control_on)
                     mirrorSession.audio -> stringResource(R.string.mirror_banner_subtitle_audio)
                     else -> stringResource(R.string.mirror_banner_subtitle)
@@ -382,12 +405,12 @@ fun HomeScreen(
                     subtitle = subtitle,
                     primaryActionLabel = stringResource(R.string.action_stop),
                     onPrimaryAction = onStopMirror,
-                    secondaryActionLabel = if (!controlReady) {
+                    secondaryActionLabel = if (accessNeeded) {
                         stringResource(R.string.mirror_allow_pc_control)
                     } else {
                         null
                     },
-                    onSecondaryAction = if (!controlReady) {
+                    onSecondaryAction = if (accessNeeded) {
                         { runCatching { context.startActivity(InputService.settingsIntent()) } }
                     } else {
                         null
