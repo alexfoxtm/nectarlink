@@ -350,13 +350,23 @@ Window {
         onTriggered: win.updateRecordingElapsed()
     }
 
+    // Back, Home and Recents are global actions on the phone, not routed to
+    // an app's own display, so they are offered for the whole phone only.
+    readonly property bool canNavigate: win.phase === "showing" && win.canControl
+        && !win.info.app && win.mirrorKey.length > 0
+    function pressNav(name) {
+        if (win.canNavigate)
+            Mirror.press(win.mirrorKey, name)
+    }
+
     function formatDuration(secs) {
         const m = Math.floor(secs / 60)
         const s = secs % 60
         return (m < 10 ? "0" + m : "" + m) + ":" + (s < 10 ? "0" + s : "" + s)
     }
 
-    // Floating mirror toolbar: screenshots, MP4 recording, stay awake, screen off, and audio mute.
+    // Floating mirror toolbar: screenshots, MP4 recording, stay awake, screen off, audio mute,
+    // full screen, and the phone's Back/Home/Recents.
     Timer {
         id: toolbarWakeTimer
         interval: 1800
@@ -375,8 +385,8 @@ Window {
         anchors.top: parent.top
         anchors.right: parent.right
         anchors.margins: 12
-        width: toolbarRow.implicitWidth + 8
-        height: 40
+        width: toolbarFlow.width + 8
+        height: toolbarFlow.height + 6
         radius: 20
         color: Qt.rgba(0, 0, 0, 0.68)
         visible: win.phase === "showing" && video.frameSize.width > 0
@@ -394,16 +404,49 @@ Window {
         }
         readonly property bool toolbarHasFocus: copyShotBtn.activeFocus || saveShotBtn.activeFocus
             || recordBtn.activeFocus || stayAwakeBtn.activeFocus || screenOffBtn.activeFocus || soundBtn.activeFocus
-            || fullScreenBtn.activeFocus
+            || fullScreenBtn.activeFocus || navBackBtn.activeFocus || navHomeBtn.activeFocus || navRecentsBtn.activeFocus
         opacity: topZoneHover.hovered || toolbarHover.hovered || toolbarWakeTimer.running
             || win.info.recording === true || win.info.screenOff === true || toolbarHasFocus ? 1 : 0
         Behavior on opacity { enabled: !Theme.reduceMotion; NumberAnimation { duration: Theme.fadeFast } }
 
         HoverHandler { id: toolbarHover }
 
-        Row {
-            id: toolbarRow
+        // Too narrow for one row (down to the 240 px minimum window), the
+        // buttons wrap onto more rows at full size instead of running off
+        // the window's left edge. The width is the widest row, worked out
+        // from the same conditions that show each button rather than from
+        // the Flow's own size or children, so it cannot loop.
+        readonly property real flowWidth: {
+            const b = copyShotBtn.implicitWidth
+            const s = toolbarFlow.spacing
+            const items = [b, b, b]
+            if (win.info.recording === true)
+                items.push(recordingTime.implicitWidth)
+            items.push(b)
+            if (win.info.canScreenOff === true)
+                items.push(b)
+            if (win.info.sound === true)
+                items.push(b)
+            items.push(b)
+            if (!win.info.app)
+                items.push(3 * b + 2 * s)
+            const limit = Math.max(b, win.width - 2 * anchors.margins - 8)
+            let widest = 0
+            let x = 0
+            for (const w of items) {
+                if (x > 0 && x + w > limit) {
+                    widest = Math.max(widest, x - s)
+                    x = 0
+                }
+                x += w + s
+            }
+            return Math.max(widest, x - s)
+        }
+
+        Flow {
+            id: toolbarFlow
             anchors.centerIn: parent
+            width: toolbar.flowWidth
             spacing: 2
 
             IconButton {
@@ -430,8 +473,9 @@ Window {
                 onClicked: Mirror.toggleRecording(win.mirrorKey)
             }
             Txt {
+                id: recordingTime
                 visible: win.info.recording === true
-                anchors.verticalCenter: parent.verticalCenter
+                height: copyShotBtn.implicitHeight
                 leftPadding: 2
                 rightPadding: 6
                 role: "code"
@@ -475,6 +519,52 @@ Window {
                 label: (win.fullScreen ? qsTr("Exit full screen (%1)") : qsTr("Full screen (%1)"))
                     .arg(win.onMac ? "⌃⌘F" : "F11")
                 onClicked: win.toggleFullScreen()
+            }
+            // One Flow item, so Back/Home/Recents wrap together.
+            Row {
+                id: navRow
+                visible: !win.info.app
+                spacing: toolbarFlow.spacing
+                // Without control the buttons are dimmed and say why to
+                // screen readers; a click brings back the banner that says
+                // why, and nothing goes to the phone.
+                TapHandler {
+                    enabled: !win.canControl
+                    onTapped: {
+                        hintClose.closed = false
+                        hintPulse.restart()
+                    }
+                }
+                IconButton {
+                    id: navBackBtn
+                    objectName: "mirrorNavBack"
+                    enabled: win.canNavigate
+                    iconPath: Icons.back
+                    iconColor: "white"
+                    label: qsTr("Back")
+                    Accessible.description: win.canControl ? "" : win.accessibleControlDescription
+                    onClicked: win.pressNav("back")
+                }
+                IconButton {
+                    id: navHomeBtn
+                    objectName: "mirrorNavHome"
+                    enabled: win.canNavigate
+                    iconPath: Icons.home
+                    iconColor: "white"
+                    label: qsTr("Home")
+                    Accessible.description: win.canControl ? "" : win.accessibleControlDescription
+                    onClicked: win.pressNav("home")
+                }
+                IconButton {
+                    id: navRecentsBtn
+                    objectName: "mirrorNavRecents"
+                    enabled: win.canNavigate
+                    iconPath: Icons.history
+                    iconColor: "white"
+                    label: qsTr("Recent apps")
+                    Accessible.description: win.canControl ? "" : win.accessibleControlDescription
+                    onClicked: win.pressNav("recents")
+                }
             }
         }
     }

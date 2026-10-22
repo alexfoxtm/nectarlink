@@ -5743,6 +5743,21 @@ What it needs
         <source>How to enable</source>
         <translation>如何启用</translation>
     </message>
+    <message>
+        <location filename="../qml/MirrorWindow.qml" line="544"/>
+        <source>Back</source>
+        <translation>返回</translation>
+    </message>
+    <message>
+        <location filename="../qml/MirrorWindow.qml" line="554"/>
+        <source>Home</source>
+        <translation>主屏幕</translation>
+    </message>
+    <message>
+        <location filename="../qml/MirrorWindow.qml" line="564"/>
+        <source>Recent apps</source>
+        <translation>最近使用的应用</translation>
+    </message>
 </context>
 <context>
     <name>Mp4</name>

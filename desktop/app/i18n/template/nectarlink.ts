@@ -5451,6 +5451,21 @@ What it needs
         <source>How to enable</source>
         <translation type="unfinished" />
     </message>
+    <message>
+        <location filename="../../qml/MirrorWindow.qml" line="544"/>
+        <source>Back</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../qml/MirrorWindow.qml" line="554"/>
+        <source>Home</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../qml/MirrorWindow.qml" line="564"/>
+        <source>Recent apps</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>Mp4</name>
