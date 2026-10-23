@@ -4,10 +4,10 @@
 command cargo xtask notices android/app/notices/RUST-CRATES.txt --target aarch64-linux-android --package nectarlink-ffi --license-texts <SPDX texts from RUST-CRATES.spdx-texts.json>
 package nectarlink-ffi
 target aarch64-linux-android
-crates 327 8177fdc872e17acb9e6986e9ffc60439865d9e90a1588c3a50469efc2d5f5b1b
-covers armv7-linux-androideabi 325 73f018662004fc8620129b5ed1ad86bdcaddc3abe4026f0475f7833223000712
-c02aee68bf4b2e1840ae79f7e81764a3a9dc4c9f02858765403f29f10e0986cf  Cargo.toml
-6645f286744cd8bde645d4bd809cfb10beadd3ffa1e2297210b32941e1aab260  Cargo.lock
+crates 327 bc43e19f86a5370a37279a8d4ba78e225f52696f7327554fa793a380217b5b71
+covers armv7-linux-androideabi 325 7544fffdb0f4db1bff816ffb678896e0981dbd643c83283af46750e03f53fab8
+98cbd61f537a1e1b93ba97d3aa3fd959b92711b016ed4ca755f5097a24e826c2  Cargo.toml
+11f29fb472c0cd80dfcd2380bcc6f19ff88ff2a13c786054e581e01e988dce81  Cargo.lock
 817e898bee31b99b1ce4b694eeabb0e465185f91e25a216e3ec1b742ae0a4091  .cargo/config.toml
 9eb8d5ab35de997ce6677c5d485bbccb4d29a66fef917523ee90500eec4bcd76  core/nectarlink-adb/Cargo.toml
 a9e1b7c37a663f97b30f8e80eed2857c2ea693aea9c04ae6175395753ad92f0d  core/nectarlink-cli/Cargo.toml
@@ -19,4 +19,4 @@ a9e1b7c37a663f97b30f8e80eed2857c2ea693aea9c04ae6175395753ad92f0d  core/nectarlin
 8476a139a958d796402cfb222e7cbce665533f0c99c0128cdd6006853054e63a  spikes/s1-qt-rust/Cargo.toml
 2678c7fd2d716da17e6522bc4ea21851ac49145843c53d194069ef82749990c7  tools/xtask/Cargo.toml
 f330309e01507cc7b8429d48a5551fe18c4ae183d7acce19a21ed752fa8d4dbc  android/app/notices/RUST-CRATES.spdx-texts.json
-7898c70e92f9a95829b7d4393af49892e86f0e54f8071e3e906adba369d18155  android/app/notices/RUST-CRATES.txt
+48a01c47da998be6513521b4307d6047698fd2f4fcf2a209ef86a9c169c3b10d  android/app/notices/RUST-CRATES.txt
