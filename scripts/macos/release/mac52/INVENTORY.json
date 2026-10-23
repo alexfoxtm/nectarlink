@@ -1,0 +1,20 @@
+{
+  "status": "SOURCE_PREPARED_ROOT_FINAL_REVIEW_AND_SEAL_PENDING",
+  "build": 52,
+  "channel": "0.1.4-local.24",
+  "source": null,
+  "tree": null,
+  "parent": null,
+  "cameraReady": false,
+  "includesCameraExtension": false,
+  "genericAppFlags": false,
+  "files": {
+    "BUILD-RECIPE-ADDENDUM.md": "265be76833ddbe1c9fa4f7aba2cc58c1948c3a8aa6b931e88a22083f5db9cfd2",
+    "build-mac52-candidate.py": "8a7e8b67a32bf0180b000314dd706db84d9686e77f183a58837900ec82d9c55d",
+    "dmg-mac52.py": "5f1f70dd00bee319febb04ecf32278b43086e27233be8aea79e5c3933360940f",
+    "mac52_guard.py": "a79ac9ac58bd2c6e7bef8277a465f9603733f3975740a59bf21587d4751f119c",
+    "macho_probe.py": "f22ec508cf701b4cb81b5ac962a30c31747da0457efaa3eacfbf8701bc581986",
+    "package-app.sh": "f688bb16e1730399ce09cac2b7bb97b1244ddd02ef2fddfe80098f70b2891a97",
+    "record-minimum-os.py": "db0c54c75bb3e424d0b3935521e845efaadbd92ec457abe60ab9f07af78f5449"
+  }
+}
