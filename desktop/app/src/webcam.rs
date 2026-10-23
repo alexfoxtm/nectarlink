@@ -1396,6 +1396,42 @@ pub fn liveloop_setup_allowed() -> bool {
     }
 }
 
+/// Explicit replacement of any existing idle image. Never called from lifecycle events.
+pub fn use_liveloop_idle_screen() {
+    #[cfg(target_os = "macos")]
+    {
+        if preview_window_open() { return; }
+        let admitted = state(|s| {
+            if !s.can_prepare_liveloop() { return false; }
+            s.liveloop_setup_busy = true;
+            s.liveloop_setup_status = tr!("Webcam", "Preparing Waypair idle image…");
+            true
+        });
+        if !admitted { return; }
+        core_host::host().hub.changed(Changes::WEBCAM);
+        let spawned = std::thread::Builder::new().name("camera-idle-image".into()).spawn(|| {
+            let result = std::panic::catch_unwind(|| {
+                // Keep application state ownership through the native metadata write.
+                state(|s| {
+                    if s.shutting_down || s.output_target != OutputTarget::WaypairCamera
+                        || s.request.is_some() || s.sink_generation.is_some() || s.capture_view.is_some()
+                        || !matches!(s.phase, Phase::Idle | Phase::Ended { .. }) || s.addon_busy
+                    {
+                        return Err(tr!("Webcam", "Camera is busy; idle image was not changed."));
+                    }
+                    camera_output::use_liveloop_idle_screen().map(|()| tr!(
+                        "Webcam", "Idle screen sent to Waypair Camera. Reopen your video app to check it."
+                    ))
+                })
+            }).unwrap_or_else(|_| Err(tr!("Webcam", "Camera idle image could not finish.")));
+            finish_liveloop_setup(result);
+        });
+        if spawned.is_err() {
+            finish_liveloop_setup(Err(tr!("Webcam", "Camera idle image could not start.")));
+        }
+    }
+}
+
 /// Explicit idle setup only: opens helper setup if absent, otherwise prepares the name.
 /// Blocking helper work runs off the UI thread; neither route starts capture.
 pub fn prepare_liveloop_output() {
@@ -2038,6 +2074,19 @@ mod tests {
         assert!(s.begin_camera_request(DeviceId([1; 32]), false).is_none());
         s.liveloop_setup_busy = false;
         s.shutting_down = true;
+        assert!(!s.can_prepare_liveloop());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn idle_image_setup_refuses_owned_request_and_sink_cleanup() {
+        let mut s = State::default();
+        assert!(s.select_output_target(OutputTarget::WaypairCamera));
+        s.begin_camera_request(DeviceId([1; 32]), false).unwrap();
+        assert!(!s.can_prepare_liveloop());
+        s.request = None;
+        s.phase = Phase::Idle;
+        s.sink_generation = Some(1);
         assert!(!s.can_prepare_liveloop());
     }
 

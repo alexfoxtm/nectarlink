@@ -363,19 +363,20 @@ object InputServer {
                 fun reply(value: String) { output.write((value + "\n").toByteArray(Charsets.UTF_8)); output.flush() }
                 var ticket: ShellHotspot.Ticket? = null
                 try {
+                    if (first == "HOTSPOT AUTO_PROBE") { reply(ShellHotspot.autoProbe().name); return }
                     if (first == "HOTSPOT PROBE") {
                         reply(ShellHotspot.probe().name)
                         return
                     }
                     val command = first.split(' ', limit = 3)
-                    if (command.size != 3 || command[1] !in setOf("PREPARE", "CANCEL_JOIN") || command[2].length > 4096) {
+                    if (command.size != 3 || command[1] !in setOf("PREPARE", "AUTO_PREPARE", "CANCEL_JOIN") || command[2].length > 4096) {
                         reply(ShellHotspot.Result.FAILED.name)
                         return
                     }
                     val json = org.json.JSONObject(String(android.util.Base64.decode(command[2], android.util.Base64.NO_WRAP), Charsets.UTF_8))
                     val owner = ShellHotspot.Owner(json.getString("peer"), json.getString("connection").toULong(), json.getString("request").toULong())
                     if (!owner.valid()) { reply(ShellHotspot.Result.FAILED.name); return }
-                    ticket = if (command[1] == "PREPARE") ShellHotspot.ticket(owner, json.getString("network")) else ShellHotspot.cancel(owner)
+                    ticket = if (command[1] == "AUTO_PREPARE") ShellHotspot.autoTicket(owner) else if (command[1] == "PREPARE") ShellHotspot.ticket(owner, json.getString("network")) else ShellHotspot.cancel(owner)
                     val admitted = ticket
                     if (admitted == null) {
                         val capability = ShellHotspot.probe()
@@ -386,7 +387,17 @@ object InputServer {
                     // recheck the original owned Node/peer/request before GO.
                     reply("READY")
                     client.soTimeout = 2500
-                    if (runCatching { reader.nextLine() }.getOrNull() == "GO") reply(admitted.run().name)
+                    if (runCatching { reader.nextLine() }.getOrNull() == "GO") {
+                        val result = admitted.run()
+                        reply(result.name)
+                        if (command[1] == "AUTO_PREPARE" && result == ShellHotspot.Result.ACTIVE && runCatching { reader.nextLine() }.getOrNull() == "NETWORK") {
+                            val network = admitted.network()
+                            if (network == null) reply("CONFIG_CHANGED") else {
+                                val json = org.json.JSONObject().put("ssid", network.ssid).put("passphrase", network.passphrase).put("security", network.security)
+                                reply(android.util.Base64.encodeToString(json.toString().toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP))
+                            }
+                        }
+                    }
                 } catch (_: LinkageError) {
                     runCatching { reply(ShellHotspot.Result.UNSUPPORTED.name) }
                 } catch (_: Exception) {
@@ -401,7 +412,7 @@ object InputServer {
             try {
                 if (first == "H") {
                     synchronized(writer) {
-                        writer.write("HOTSPOT_PROTOCOL\t2\n")
+                        writer.write("HOTSPOT_PROTOCOL\t2\nHOTSPOT_AUTO_PROTOCOL\t1\n")
                         writer.flush()
                     }
                 }

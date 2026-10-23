@@ -1769,6 +1769,7 @@ Item {
                             description: qsTr("Keep Waypair Link running in the background and select a connected paired phone. Phone approval is still required. After enabling or reopening Waypair Link, close and reopen the camera in the other app.")
                             Toggle {
                                 checked: Webcam.autoDemand
+                                Accessible.name: qsTr("Start camera when an app uses Waypair Camera")
                                 onToggled: (on) => Webcam.configureAutoDemand(on)
                             }
                         }
@@ -1830,10 +1831,9 @@ Item {
                             stackBelow: true
                             iconPath: Icons.video
                             title: qsTr("Waypair Camera setup")
-                            description: Webcam.liveloopSetupBusy ? Webcam.liveloopSetupStatus
+                            description: Webcam.liveloopSetupStatus.length > 0 ? Webcam.liveloopSetupStatus
                                 : Webcam.liveloopOutputAvailable
                                 ? qsTr("Ready. Setup does not start the phone camera.")
-                                : Webcam.liveloopSetupStatus.length > 0 ? Webcam.liveloopSetupStatus
                                 : qsTr("Close apps using the camera before setup. Installation and macOS approval are separate steps.")
                             Row {
                                 spacing: 8
@@ -1851,6 +1851,22 @@ Item {
                                     enabled: Webcam.liveloopSetupAllowed
                                     onClicked: Webcam.recheckLiveloopOutput()
                                 }
+                            }
+                        }
+
+                        ListRow {
+                            width: parent.width
+                            visible: page.onMac && Webcam.outputTarget === "liveloop"
+                            stackBelow: true
+                            iconPath: Icons.video
+                            title: qsTr("Camera idle image")
+                            description: qsTr("Replaces the existing idle image with a static Waypair card. Close apps using the camera first. This does not start phone video.")
+                            Button {
+                                size: "sm"
+                                text: qsTr("Use Waypair idle screen")
+                                Accessible.name: qsTr("Use Waypair idle screen; replaces the existing idle image")
+                                enabled: Webcam.liveloopSetupAllowed && Webcam.liveloopOutputAvailable
+                                onClicked: Webcam.useLiveloopIdleScreen()
                             }
                         }
 

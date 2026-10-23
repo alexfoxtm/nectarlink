@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Compiles into the existing Rust/Qt application, not into a replacement app.
 #import <Foundation/Foundation.h>
+#import <AppKit/AppKit.h>
 #import <CoreMediaIO/CoreMediaIO.h>
 #import <CoreVideo/CoreVideo.h>
 #import <Accelerate/Accelerate.h>
@@ -275,6 +276,85 @@ int32_t wp_liveloop_camera_prepare_name(void) {
     CFStringRef name = CFSTR("Waypair Camera");
     OSStatus status = CMIOObjectSetPropertyData(device, &a, 0, NULL, sizeof(name), &name);
     return status == noErr ? WP_CAMERA_NAME_PENDING : WP_CAMERA_OS_ERROR;
+}
+
+
+// Static app-owned card only: no camera, screen, photo, or audio input.
+static NSData *waypairIdleJPEG(void) {
+    NSBitmapImageRep *bitmap = [[NSBitmapImageRep alloc]
+        initWithBitmapDataPlanes:NULL pixelsWide:1920 pixelsHigh:1080 bitsPerSample:8
+        samplesPerPixel:4 hasAlpha:YES isPlanar:NO colorSpaceName:NSDeviceRGBColorSpace
+        bytesPerRow:0 bitsPerPixel:0];
+    if (!bitmap) return nil;
+    NSGraphicsContext *context = [NSGraphicsContext graphicsContextWithBitmapImageRep:bitmap];
+    if (!context) return nil;
+    [NSGraphicsContext saveGraphicsState];
+    [NSGraphicsContext setCurrentContext:context];
+    [[NSColor colorWithCalibratedRed:0.07 green:0.09 blue:0.13 alpha:1] setFill];
+    NSRectFill(NSMakeRect(0, 0, 1920, 1080));
+    NSArray<NSString *> *lines = @[@"Waypair Camera", @"No phone video",
+        @"Open Waypair Link to start or rearm; approve on your phone."];
+    CGFloat sizes[] = {88, 48, 32};
+    CGFloat positions[] = {600, 490, 370};
+    for (NSUInteger i = 0; i < lines.count; ++i) {
+        NSDictionary *attributes = @{
+            NSFontAttributeName: [NSFont systemFontOfSize:sizes[i]],
+            NSForegroundColorAttributeName: NSColor.whiteColor
+        };
+        NSSize size = [lines[i] sizeWithAttributes:attributes];
+        [lines[i] drawAtPoint:NSMakePoint((1920 - size.width) / 2, positions[i])
+              withAttributes:attributes];
+    }
+    [context flushGraphics];
+    [NSGraphicsContext restoreGraphicsState];
+    NSData *jpeg = [bitmap representationUsingType:NSBitmapImageFileTypeJPEG
+        properties:@{NSImageCompressionFactor: @0.85}];
+    if (!jpeg || jpeg.length == 0 || jpeg.length > 4000000) return nil;
+    NSBitmapImageRep *decoded = [NSBitmapImageRep imageRepWithData:jpeg];
+    return decoded && decoded.pixelsWide == 1920 && decoded.pixelsHigh == 1080 ? jpeg : nil;
+}
+
+
+#if defined(WP_CAMERA_IDLE_SCREEN_TEST)
+// Source-only harness seam: performs no CMIO read/write and opens no producer.
+int32_t wp_camera_test_idle_jpeg(void) {
+    @autoreleasepool {
+        NSData *jpeg = waypairIdleJPEG();
+        NSBitmapImageRep *decoded = jpeg ? [NSBitmapImageRep imageRepWithData:jpeg] : nil;
+        return jpeg.length > 0 && jpeg.length <= 4000000 && decoded &&
+            decoded.pixelsWide == 1920 && decoded.pixelsHigh == 1080 ? 0 : -1;
+    }
+}
+#endif
+
+// Explicit metadata write only. The public property is write-only; no image readback proof.
+int32_t wp_liveloop_camera_use_idle_screen(void) {
+    @autoreleasepool {
+        CMIODeviceID device = 0, currentDevice = 0;
+        CMIOStreamID sink = 0, currentSink = 0;
+        if (wp_liveloop_camera_is_present() != 1 ||
+            !providerSink(CFSTR(WP_LIVELOOP_DEVICE_UID), &device, &sink)) return WP_CAMERA_NOT_INSTALLED;
+        CMIOObjectPropertyAddress picture = address(UINT32_C(0x706c6368), kCMIOObjectPropertyScopeGlobal);
+        Boolean settable = false;
+        OSStatus status = CMIOObjectIsPropertySettable(device, &picture, &settable);
+        if (status != noErr) return status;
+        if (!settable) return WP_CAMERA_INVALID;
+        NSData *jpeg = waypairIdleJPEG();
+        if (!jpeg) return WP_CAMERA_INVALID;
+        NSString *encoded = [jpeg base64EncodedStringWithOptions:0];
+        if (wp_liveloop_camera_is_present() != 1 ||
+            !providerSink(CFSTR(WP_LIVELOOP_DEVICE_UID), &currentDevice, &currentSink) ||
+            currentDevice != device || currentSink != sink) return WP_CAMERA_NOT_INSTALLED;
+        UInt32 running = UINT32_MAX, used = 0;
+        CMIOObjectPropertyAddress a = address(kCMIODevicePropertyDeviceIsRunningSomewhere,
+                                             kCMIOObjectPropertyScopeGlobal);
+        status = CMIOObjectGetPropertyData(device, &a, 0, NULL, sizeof(running), &used, &running);
+        if (status != noErr) return status;
+        if (used != sizeof(running)) return WP_CAMERA_INVALID;
+        if (running != 0) return WP_CAMERA_BUSY;
+        CFStringRef value = (__bridge CFStringRef)encoded;
+        return CMIOObjectSetPropertyData(device, &picture, 0, NULL, sizeof(value), &value);
+    }
 }
 
 // CMIO's callback has no producer context and remains safe after handle close.

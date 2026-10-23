@@ -17,6 +17,7 @@ unsafe extern "C" {
     fn wp_liveloop_camera_is_present() -> i32;
     fn wp_liveloop_camera_is_registered() -> i32;
     fn wp_liveloop_camera_prepare_name() -> i32;
+    fn wp_liveloop_camera_use_idle_screen() -> i32;
     fn wp_liveloop_camera_open(out: *mut *mut c_void) -> i32;
     fn wp_camera_push_bgrx(
         producer: *mut c_void,
@@ -156,5 +157,19 @@ pub fn shutdown() {
     if let Some((_, producer, stopped)) = state.active.take() {
         drop(producer);
         stopped.notify_one();
+    }
+}
+
+/// Explicit user replacement only; OUTPUT excludes all owned producers through the write.
+pub fn use_liveloop_idle_screen() -> Result<(), String> {
+    let state = OUTPUT.lock().unwrap_or_else(|e| e.into_inner());
+    if state.active.is_some() {
+        return Err("Stop the active camera output before replacing its idle image.".into());
+    }
+    // SAFETY: native implementation validates exact UID, property, and external inactivity.
+    match unsafe { wp_liveloop_camera_use_idle_screen() } {
+        0 => Ok(()),
+        -4 => Err("Close apps using the camera before replacing its idle image.".into()),
+        status => Err(format!("Camera idle image was not accepted ({status}).")),
     }
 }

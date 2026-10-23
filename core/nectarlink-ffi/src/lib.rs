@@ -33,6 +33,33 @@ pub enum PhoneHotspotOutcome {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum PhoneHotspotSecurity { Wpa2, Wpa3 }
+
+#[derive(Debug, uniffi::Object)]
+pub struct PhoneHotspotNetwork { inner: core::PhoneHotspotNetwork }
+#[uniffi::export]
+impl PhoneHotspotNetwork {
+    #[uniffi::constructor]
+    pub fn new(ssid: String, passphrase: String, security: PhoneHotspotSecurity) -> Arc<Self> {
+        Arc::new(Self { inner: core::PhoneHotspotNetwork { ssid, passphrase, security: match security {
+            PhoneHotspotSecurity::Wpa2 => core::PhoneHotspotSecurity::Wpa2,
+            PhoneHotspotSecurity::Wpa3 => core::PhoneHotspotSecurity::Wpa3,
+        } } })
+    }
+    pub fn ssid(&self) -> String { self.inner.ssid.clone() }
+    pub fn passphrase(&self) -> String { self.inner.passphrase.clone() }
+    pub fn security(&self) -> PhoneHotspotSecurity { match self.inner.security {
+        core::PhoneHotspotSecurity::Wpa2 => PhoneHotspotSecurity::Wpa2,
+        core::PhoneHotspotSecurity::Wpa3 => PhoneHotspotSecurity::Wpa3,
+    } }
+}
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct PhoneHotspotAutoOutcome {
+    pub state: PhoneHotspotOutcome,
+    pub network: Option<Arc<PhoneHotspotNetwork>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum DeviceKind {
     Phone,
     Tablet,
@@ -2941,6 +2968,8 @@ pub trait Platform: Send + Sync {
         network: String,
     ) -> PhoneHotspotOutcome;
 
+    fn prepare_phone_hotspot_auto_owned(&self, device: String, connection: u64, request: u64) -> PhoneHotspotAutoOutcome;
+
     fn cancel_phone_hotspot_owned(&self, device: String, connection: u64, request: u64);
     /// A PC asked to list a folder in this phone's storage (`""` is root).
     fn storage_list(&self, path: String) -> Result<Vec<StorageEntry>, StorageFailure>;
@@ -3458,6 +3487,19 @@ impl core::Platform for PlatformAdapter {
             PhoneHotspotOutcome::ConfigChanged => core::PhoneHotspotState::ConfigChanged,
             PhoneHotspotOutcome::Failed => core::PhoneHotspotState::Failed,
             PhoneHotspotOutcome::Cancelled => core::PhoneHotspotState::Cancelled,
+        }
+    }
+    fn prepare_phone_hotspot_auto_owned(&self, peer: &core::DeviceId, connection: u64, request: u64) -> core::PhoneHotspotPreparation {
+        let outcome = self.0.prepare_phone_hotspot_auto_owned(peer.to_string(), connection, request);
+        core::PhoneHotspotPreparation {
+            state: match outcome.state {
+                PhoneHotspotOutcome::Active => core::PhoneHotspotState::Active,
+                PhoneHotspotOutcome::NeedsSettings => core::PhoneHotspotState::NeedsSettings,
+                PhoneHotspotOutcome::ConfigChanged => core::PhoneHotspotState::ConfigChanged,
+                PhoneHotspotOutcome::Failed => core::PhoneHotspotState::Failed,
+                PhoneHotspotOutcome::Cancelled => core::PhoneHotspotState::Cancelled,
+            },
+            network: outcome.network.map(|network| network.inner.clone()).filter(|network| network.valid()),
         }
     }
     fn cancel_phone_hotspot_owned(&self, peer: &core::DeviceId, connection: u64, request: u64) {

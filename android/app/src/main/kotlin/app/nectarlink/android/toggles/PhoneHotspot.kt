@@ -26,6 +26,7 @@ internal class PhoneHotspot(context: Context, private val changed: () -> Unit) {
     @Volatile private var known = false
     @Volatile private var tethered = false
     @Volatile private var helperVerified = false
+    @Volatile private var autoVerified = false
     @Volatile private var generation = 0L
     private var callback: Any? = null
 
@@ -40,9 +41,11 @@ internal class PhoneHotspot(context: Context, private val changed: () -> Unit) {
         val owner = generation
         Thread {
             try {
+                val auto = Elevated.hotspotAutoCapability() == ShellHotspot.Result.CAPABILITY_VERIFIED
                 val verified = Elevated.hotspotCapability() == ShellHotspot.Result.CAPABILITY_VERIFIED
-                if (generation == owner && registered && helperVerified != verified) {
+                if (generation == owner && registered && (helperVerified != verified || autoVerified != auto)) {
                     helperVerified = verified
+                    autoVerified = auto
                     changed()
                 }
             } finally { probing.set(false) }
@@ -80,10 +83,33 @@ internal class PhoneHotspot(context: Context, private val changed: () -> Unit) {
         }
         callback = null
         helperVerified = false
+        autoVerified = false
         synchronized(monitor) { known = false; monitor.notifyAll() }
     }
 
     fun canEnableOrJoin(): Boolean = registered && known && helperVerified && Elevated.running
+
+    fun canAutoJoin(): Boolean = canEnableOrJoin() && autoVerified
+
+    fun prepareAuto(peer: String, connection: ULong, request: ULong, stillCurrent: () -> Boolean): app.nectarlink.core.PhoneHotspotAutoOutcome {
+        fun outcome(state: PhoneHotspotOutcome) = app.nectarlink.core.PhoneHotspotAutoOutcome(state, null)
+        if (!stillCurrent()) return outcome(PhoneHotspotOutcome.CANCELLED)
+        if (!canAutoJoin()) return outcome(PhoneHotspotOutcome.NEEDS_SETTINGS)
+        val owner = generation
+        val reply = Elevated.prepareHotspotAutoOwned(peer, connection, request, stillCurrent)
+        if (!stillCurrent() || !registered || generation != owner) return outcome(PhoneHotspotOutcome.CANCELLED)
+        if (reply.state != ShellHotspot.Result.ACTIVE) return outcome(when (reply.state) {
+            ShellHotspot.Result.CONFIG_CHANGED -> PhoneHotspotOutcome.CONFIG_CHANGED
+            ShellHotspot.Result.CANCELLED, ShellHotspot.Result.ACTIVATION_SUBMITTED -> PhoneHotspotOutcome.CANCELLED
+            ShellHotspot.Result.UNSUPPORTED, ShellHotspot.Result.DENIED -> PhoneHotspotOutcome.NEEDS_SETTINGS
+            else -> PhoneHotspotOutcome.FAILED
+        })
+        val network = reply.network ?: return outcome(PhoneHotspotOutcome.FAILED)
+        if (!stillCurrent()) return outcome(PhoneHotspotOutcome.CANCELLED)
+        return app.nectarlink.core.PhoneHotspotAutoOutcome(PhoneHotspotOutcome.ACTIVE,
+            app.nectarlink.core.PhoneHotspotNetwork(network.ssid, network.passphrase,
+                if (network.security == "WPA2") app.nectarlink.core.PhoneHotspotSecurity.WPA2 else app.nectarlink.core.PhoneHotspotSecurity.WPA3))
+    }
 
     /** Called on the blocking platform executor. An active Internet-tether
      * interface is required; carrier Internet reachability is not claimed.

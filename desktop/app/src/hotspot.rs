@@ -189,6 +189,10 @@ pub(crate) fn join(
 }
 
 struct OwnedWifi {
+    #[cfg(target_os = "macos")]
+    network: Option<nectarlink_core::PhoneHotspotNetwork>,
+    #[cfg(target_os = "macos")]
+    associated: AtomicBool,
     device: DeviceId,
     connection: u64,
     cancelled: Arc<AtomicBool>,
@@ -199,7 +203,12 @@ impl Wifi for OwnedWifi {
         crate::win::wifi::scan();
     }
     fn reach(&self, profile: &str) -> Reach {
-        crate::win::wifi::reach(profile)
+        let reach = crate::win::wifi::reach(profile);
+        #[cfg(target_os = "macos")]
+        if self.network.is_some() && !self.associated.load(Ordering::Acquire) && reach == Reach::Connected {
+            return Reach::InRange;
+        }
+        reach
     }
     fn connect(&self, profile: &str) -> Result<(), String> {
         if !self.current() {
@@ -207,7 +216,14 @@ impl Wifi for OwnedWifi {
         }
         #[cfg(target_os = "macos")]
         {
-            crate::win::wifi::connect_owned(profile, &|| self.current())
+            match &self.network {
+                Some(network) => {
+                    crate::win::wifi::connect_ephemeral_owned(network, &|| self.current())?;
+                    self.associated.store(true, Ordering::Release);
+                    Ok(())
+                },
+                None => crate::win::wifi::connect_owned(profile, &|| self.current()),
+            }
         }
         #[cfg(not(target_os = "macos"))]
         {
@@ -223,6 +239,9 @@ impl Wifi for OwnedWifi {
     }
     fn current(&self) -> bool {
         !self.cancelled.load(Ordering::Acquire)
+            && JOINING.lock().unwrap_or_else(|e| e.into_inner()).as_ref()
+                .and_then(|m| m.get(&self.device))
+                .is_some_and(|owner| Arc::ptr_eq(&owner.cancelled, &self.cancelled))
             && core_host::node()
                 .is_some_and(|node| node.phone_hotspot_connection_current(self.device, self.connection))
     }
@@ -295,7 +314,16 @@ pub fn cancel(device: DeviceId) {
 
 /// Explicit user action: prepare the phone on this exact paired connection,
 /// then join only after verified remote readback and current ownership checks.
+pub fn auto_supported(device: DeviceId) -> bool {
+    cfg!(target_os = "macos") && core_host::node().is_some_and(|node| node.phone_hotspot_auto_supported(device))
+}
+
 pub fn join_phone(device: DeviceId) {
+    #[cfg(target_os = "macos")]
+    if auto_supported(device) {
+        join_auto(device);
+        return;
+    }
     let Some(profile) = network_for(device) else {
         show_message("Choose the phone's saved hotspot in Settings > Devices first.");
         return;
@@ -325,7 +353,7 @@ pub fn join_phone(device: DeviceId) {
         Err(_) => {
             retire(device, &cancelled);
             show_message(
-                "Waypair cannot verify automatic hotspot control on this connection. On Galaxy, open Settings > Connections > Mobile Hotspot and Tethering > Mobile Hotspot. You can join it manually in this computer's Wi-Fi settings.",
+                "Automatic hotspot control is unsupported on this connection. Update the paired phone app and enable compatible Phone controls.",
             );
             return;
         }
@@ -349,7 +377,7 @@ pub fn join_phone(device: DeviceId) {
         {
             retire(device, &cancelled);
             show_message(
-                "Waypair could not verify that the phone hotspot is on. On Galaxy, open Settings > Connections > Mobile Hotspot and Tethering > Mobile Hotspot. The Mac has not switched networks.",
+                "Waypair could not verify that the phone hotspot is on. The computer has not switched networks.",
             );
             return;
         }
@@ -360,7 +388,9 @@ pub fn join_phone(device: DeviceId) {
 fn join_prepared(device: DeviceId, connection: u64, profile: String, cancelled: Arc<AtomicBool>) {
     let failure_owner = cancelled.clone();
     let result = std::thread::Builder::new().name("hotspot-join".into()).spawn(move || {
-        let wifi = OwnedWifi { device, connection, cancelled: cancelled.clone() };
+        let wifi = OwnedWifi { device, connection, cancelled: cancelled.clone(),
+            #[cfg(target_os = "macos")] network: None,
+            #[cfg(target_os = "macos")] associated: AtomicBool::new(false) };
         let outcome = join(&wifi, &profile, APPEAR_WITHIN, JOIN_WITHIN);
         let current = wifi.current();
         retire(device, &cancelled);
@@ -488,4 +518,49 @@ mod tests {
         assert_eq!(load(&path), networks);
         assert!(load(&dir.path().join("missing.json")).is_empty());
     }
+}
+
+#[cfg(target_os = "macos")]
+fn join_auto(device: DeviceId) {
+    if let Some(reason) = crate::win::wifi::permission_error() { show_message(reason); return; }
+    let Some(node) = core_host::node() else { return };
+    let Some(connection) = node.phone_hotspot_connection(device) else { return };
+    let Some(cancelled) = reserve(device) else { return };
+    let remote = match node.create_phone_hotspot_auto_request(device) {
+        Ok(owner) => owner,
+        Err(_) => { retire(device, &cancelled); show_message("Automatic hotspot control is unavailable on this connection."); return; }
+    };
+    set_remote_owner(device, &cancelled, remote);
+    if remote.connection != connection { node.cancel_phone_hotspot_request(remote); }
+    core_host::spawn(async move {
+        // Completing this future retires core's remote guards before local association.
+        let result = node.prepare_phone_hotspot_auto(remote).await;
+        if cancelled.load(Ordering::Acquire) || remote.connection != connection || !node.phone_hotspot_connection_current(device, connection) {
+            retire(device, &cancelled); return;
+        }
+        let network = match result {
+            Ok(prepared) if prepared.state == PhoneHotspotState::Active => prepared.network,
+            _ => None,
+        };
+        let Some(network) = network else {
+            retire(device, &cancelled);
+            show_message("The phone could not prepare a protected hotspot. The Mac has not switched networks.");
+            return;
+        };
+        let failure_owner = cancelled.clone();
+        if std::thread::Builder::new().name("hotspot-join".into()).spawn(move || {
+            let profile = network.ssid.clone();
+            let wifi = OwnedWifi { device, connection, cancelled: cancelled.clone(), network: Some(network), associated: AtomicBool::new(false) };
+            let outcome = join(&wifi, &profile, APPEAR_WITHIN, JOIN_WITHIN);
+            let current = wifi.current();
+            retire(device, &cancelled);
+            if !current { return; }
+            match outcome {
+                JoinOutcome::Already | JoinOutcome::Joined => show_message("Connected to the phone hotspot. Internet access depends on the phone's mobile connection."),
+                JoinOutcome::NotFound => show_message("The prepared phone hotspot did not appear. Retry Hotspot."),
+                JoinOutcome::Failed(reason) => show_message(reason),
+                JoinOutcome::Cancelled => {},
+            }
+        }).is_err() { retire(device, &failure_owner); show_message("Could not start the hotspot join. Try again."); }
+    });
 }

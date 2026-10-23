@@ -57,6 +57,11 @@ internal object ShellHotspot {
         if (!owner.valid() || network.toByteArray(Charsets.UTF_8).size !in 1..32 || network.contains('\u0000')) return null
         return service()?.ticket(owner, network)
     }
+    internal class Network(val ssid: String, val passphrase: String, val security: String) {
+        override fun toString(): String = "HotspotNetwork([redacted])"
+    }
+    fun autoProbe(): Result = if (Build.VERSION.SDK_INT >= 36) service()?.autoProbe() ?: Result.UNSUPPORTED else Result.UNSUPPORTED
+    fun autoTicket(owner: Owner): Ticket? = if (owner.valid() && Build.VERSION.SDK_INT >= 36) service()?.ticket(owner, null) else null
     fun cancel(owner: Owner): Ticket? = if (owner.valid() && Process.myUid() == 2000 && Build.VERSION.SDK_INT >= 36) service?.cancellation(owner) else null
 
     /** A ticket owns only this preparation workflow, never Android's live
@@ -65,6 +70,7 @@ internal object ShellHotspot {
     internal class Ticket internal constructor(
         internal val run: () -> Result,
         internal val abandon: () -> Unit,
+        internal val network: () -> Network? = { null },
     )
 
     @RequiresApi(36)
@@ -167,15 +173,34 @@ internal object ShellHotspot {
             }
         }
 
+        private fun readNetwork(configuration: SoftApConfiguration): Network? {
+            val bytes = configuration.wifiSsid?.bytes ?: return null
+            val ssid = runCatching {
+                Charsets.UTF_8.newDecoder().decode(java.nio.ByteBuffer.wrap(bytes)).toString()
+            }.getOrNull() ?: return null
+            if (bytes.size !in 1..32 || ssid.any { it == '\u0000' || it == '\r' || it == '\n' }) return null
+            val security = when (configuration.securityType) {
+                SoftApConfiguration.SECURITY_TYPE_WPA2_PSK -> "WPA2"
+                SoftApConfiguration.SECURITY_TYPE_WPA3_SAE -> "WPA3"
+                else -> return null
+            }
+            val passphrase = configuration.passphrase ?: return null
+            if (passphrase.length !in 8..63 || passphrase.any { it.code !in 32..126 }) return null
+            return Network(ssid, passphrase, security)
+        }
+
+        fun autoProbe(): Result = if (probe() == Result.CAPABILITY_VERIFIED && configuration()?.let(::readNetwork) != null) Result.CAPABILITY_VERIFIED else Result.UNSUPPORTED
+
         fun probe(): Result {
             if (!permitted()) return Result.DENIED
             return if (observe() && configuration() != null) Result.CAPABILITY_VERIFIED else Result.UNSUPPORTED
         }
 
-        fun ticket(owner: Owner, network: String): Ticket? {
+        fun ticket(owner: Owner, network: String?): Ticket? {
             if (probe() != Result.CAPABILITY_VERIFIED) return null
             val configuration = configuration() ?: return null
-            if (configuration.wifiSsid?.bytes?.contentEquals(network.toByteArray(Charsets.UTF_8)) != true) return null
+            if (network == null && readNetwork(configuration) == null) return null
+            if (network != null && configuration.wifiSsid?.bytes?.contentEquals(network.toByteArray(Charsets.UTF_8)) != true) return null
             val fingerprint = fingerprint(configuration)
             val operation = synchronized(monitor) {
                 if (owner in cancelled || pending != null || !known) return null
@@ -187,7 +212,12 @@ internal object ShellHotspot {
                 Operation(owner, fingerprint, interfaces.isNotEmpty(), interfaces, interfaceGeneration, request)
                     .also { pending = it }
             }
-            return Ticket(run = { start(operation) }, abandon = { retire(operation) })
+            return Ticket(run = { start(operation) }, abandon = { retire(operation) }, network = {
+                synchronized(monitor) {
+                    if (operation.cancelled || operation.owner in cancelled || !permitted() || !known || !matchingTetherReadback(operation)) null
+                    else configuration()?.takeIf { MessageDigest.isEqual(fingerprint(it), operation.fingerprint) }?.let(::readNetwork)
+                }
+            })
         }
 
         private fun retire(operation: Operation) {

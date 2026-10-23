@@ -88,6 +88,9 @@ pub mod qobject {
         #[cxx_name = "prepareLiveloopOutput"]
         fn prepare_liveloop_output(self: Pin<&mut Webcam>);
         #[qinvokable]
+        #[cxx_name = "useLiveloopIdleScreen"]
+        fn use_liveloop_idle_screen(self: Pin<&mut Webcam>);
+        #[qinvokable]
         #[cxx_name = "recheckLiveloopOutput"]
         fn recheck_liveloop_output(self: Pin<&mut Webcam>);
         #[qinvokable]
@@ -237,6 +240,11 @@ impl qobject::Webcam {
 
     pub fn prepare_liveloop_output(self: Pin<&mut Self>) {
         webcam::prepare_liveloop_output();
+        self.refresh();
+    }
+
+    pub fn use_liveloop_idle_screen(self: Pin<&mut Self>) {
+        webcam::use_liveloop_idle_screen();
         self.refresh();
     }
 

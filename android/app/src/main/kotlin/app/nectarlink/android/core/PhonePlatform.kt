@@ -332,6 +332,9 @@ internal class PhonePlatform(
     override fun preparePhoneHotspotOwned(device: String, connection: ULong, request: ULong, network: String): app.nectarlink.core.PhoneHotspotOutcome =
         toggles().prepareHotspot(device, connection, request, network, hotspotCurrent(device, connection, request))
 
+    override fun preparePhoneHotspotAutoOwned(device: String, connection: ULong, request: ULong): app.nectarlink.core.PhoneHotspotAutoOutcome =
+        toggles().prepareHotspotAuto(device, connection, request, hotspotCurrent(device, connection, request))
+
     override fun cancelPhoneHotspotOwned(device: String, connection: ULong, request: ULong) =
         toggles().cancelHotspot(device, connection, request, hotspotCancellationCurrent(device, connection, request))
 

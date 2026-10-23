@@ -2631,15 +2631,22 @@ Item {
         property string network: ""
         property var networks: []
         property bool joining: false
+        property bool automatic: false
         cardWidth: 500
         function refreshNetworks() { networks = JSON.parse(AppController.wifiNetworks() || "[]") }
         function openFor(device, name) {
+            if (opened && deviceId === device) return
             deviceId = device
             deviceName = name
-            network = AppController.hotspotNetwork(device)
-            refreshNetworks()
+            automatic = AppController.phoneHotspotAutoSupported(device)
+            network = automatic ? "" : AppController.hotspotNetwork(device)
+            if (!automatic) refreshNetworks()
+            joining = AppController.phoneHotspotJoining(device)
             open()
-            if (!page.macTidy && network.length > 0) AppController.joinPhoneHotspot(device)
+            if (!joining && (automatic || network.length > 0)) {
+                AppController.joinPhoneHotspot(device)
+                joining = AppController.phoneHotspotJoining(device)
+            }
         }
         onOpenedChanged: {
             if (!opened && deviceId.length > 0) AppController.cancelPhoneHotspotJoin(deviceId)
@@ -2658,29 +2665,33 @@ Item {
             Txt {
                 width: parent.width
                 wrapMode: Text.WordWrap
-                text: qsTr("Waypair asks %1 to turn on its hotspot, then joins the saved Wi-Fi network you choose.").arg(phoneHotspotSheet.deviceName)
+                text: phoneHotspotSheet.automatic
+                    ? qsTr("Waypair asks %1 to prepare a protected hotspot, then joins it using temporary credentials.").arg(phoneHotspotSheet.deviceName)
+                    : qsTr("Waypair asks %1 to turn on its hotspot, then joins the saved Wi-Fi network you choose.").arg(phoneHotspotSheet.deviceName)
             }
             Txt {
                 width: parent.width
                 wrapMode: Text.WordWrap
                 muted: true
                 text: page.macTidy
-                    ? qsTr("On Galaxy, you can turn it on in Settings > Connections > Mobile Hotspot and Tethering > Mobile Hotspot. If it is not listed below, join it once in macOS Wi-Fi settings, then refresh.")
-                    : qsTr("On Galaxy, turn on Settings > Connections > Mobile Hotspot and Tethering > Mobile Hotspot. If it is not listed below, join it once in Windows Wi-Fi settings, then refresh.")
+                    ? qsTr("Hotspot discovery requires one-time Location access on this Mac. Compatible phones provide temporary credentials automatically; older phones require a saved Wi-Fi profile.")
+                    : qsTr("Automatic hotspot preparation requires compatible Phone controls. Older peers use the saved Wi-Fi profile selected below.")
             }
             Row {
                 spacing: 8
                 Button { visible: page.macTidy; variant: "outline"; text: qsTr("Allow hotspot discovery"); enabled: !phoneHotspotSheet.joining; onClicked: AppController.requestWifiDiscoveryPermission() }
-                Button { variant: "text"; text: qsTr("Refresh"); enabled: !phoneHotspotSheet.joining; onClicked: phoneHotspotSheet.refreshNetworks() }
+                Button { visible: !phoneHotspotSheet.automatic; variant: "text"; text: qsTr("Refresh"); enabled: !phoneHotspotSheet.joining; onClicked: phoneHotspotSheet.refreshNetworks() }
             }
             Txt {
                 width: parent.width
                 wrapMode: Text.WordWrap
+                visible: !phoneHotspotSheet.automatic
                 text: phoneHotspotSheet.network.length > 0 ? qsTr("Saved hotspot: %1").arg(phoneHotspotSheet.network) : qsTr("Choose this phone's saved hotspot:")
             }
             ListView {
                 width: parent.width
-                height: Math.min(contentHeight, 200)
+                height: visible ? Math.min(contentHeight, 200) : 0
+                visible: !phoneHotspotSheet.automatic
                 clip: true
                 spacing: 4
                 model: phoneHotspotSheet.networks
@@ -2713,7 +2724,7 @@ Item {
                 }
                 Button {
                     text: phoneHotspotSheet.joining ? qsTr("Joining…") : qsTr("Start and join")
-                    enabled: !phoneHotspotSheet.joining && phoneHotspotSheet.network.length > 0
+                    enabled: !phoneHotspotSheet.joining && (phoneHotspotSheet.automatic || phoneHotspotSheet.network.length > 0)
                     onClicked: AppController.joinPhoneHotspot(phoneHotspotSheet.deviceId)
                 }
             }

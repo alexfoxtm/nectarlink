@@ -1,5 +1,9 @@
 # Owned phone-hotspot preparation V3
 
+This is the legacy saved-profile contract. The separately negotiated
+[automatic joining extension](hotspot-auto-v1.md) adds a protected, ephemeral
+network-details handoff and does not require a previously saved Mac network.
+
 Capability: `phone.hotspot.v3`. Both peers must allow the existing per-device `toggles` permission. Elevated Wi-Fi control or helper liveness alone never establishes hotspot authority. V3 explicitly guarantees that cancelling a join does not invoke an Android tether stop after submission; V2 providers are not admitted under that guarantee.
 
 `phone.hotspot.prepare {request, network}` is a correlated RPC on the exact originating paired connection. `request` is a nonzero monotonic nonce; `network` is the UTF-8 SSID of the profile explicitly chosen and saved in the Mac's Wi-Fi settings. The SSID travels only over the authenticated encrypted peer channel and private authenticated helper socket; Debug redacts it. Passwords never cross this protocol.

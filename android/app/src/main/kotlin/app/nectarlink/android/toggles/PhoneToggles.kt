@@ -129,6 +129,7 @@ class PhoneToggles(
         if (torchCameraId != null) add("toggles.flashlight")
         if (canChangeDnd(context)) add("toggles.dnd")
         if (hotspot.canEnableOrJoin()) add("phone.hotspot.v3")
+        if (hotspot.canAutoJoin()) add("phone.hotspot.auto.v1")
         if (canChangeBrightness(context)) add("toggles.brightness")
         if (Elevated.running) {
             add("toggles.wifi")
@@ -158,6 +159,9 @@ class PhoneToggles(
 
     internal fun prepareHotspot(peer: String, connection: ULong, request: ULong, network: String, stillCurrent: () -> Boolean): app.nectarlink.core.PhoneHotspotOutcome =
         hotspot.prepare(peer, connection, request, network, stillCurrent)
+
+    internal fun prepareHotspotAuto(peer: String, connection: ULong, request: ULong, stillCurrent: () -> Boolean): app.nectarlink.core.PhoneHotspotAutoOutcome =
+        hotspot.prepareAuto(peer, connection, request, stillCurrent)
 
     internal fun cancelHotspot(peer: String, connection: ULong, request: ULong, stillCurrent: () -> Boolean) {
         hotspot.cancel(peer, connection, request, stillCurrent)

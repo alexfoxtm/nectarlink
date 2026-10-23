@@ -10,7 +10,7 @@ use crate::{
 };
 
 /// `{ t: type, id?: request id, re?: reply-to id, b?: body }`
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct Envelope {
     pub t: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -19,6 +19,19 @@ pub struct Envelope {
     pub re: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub b: Option<Value>,
+}
+
+impl std::fmt::Debug for Envelope {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut value = f.debug_struct("Envelope");
+        value.field("t", &self.t).field("id", &self.id).field("re", &self.re);
+        if self.t == types::PHONE_HOTSPOT_PREPARE || self.t == types::PHONE_HOTSPOT_RESULT {
+            value.field("b", &"[private]");
+        } else {
+            value.field("b", &self.b);
+        }
+        value.finish()
+    }
 }
 
 impl Envelope {
@@ -58,7 +71,14 @@ impl Envelope {
     /// whose fields are all optional work without one.
     pub fn body<T: DeserializeOwned>(&self) -> Result<T, ProtocolError> {
         let value = self.b.clone().unwrap_or(Value::Map(Vec::new()));
-        value.deserialized().map_err(|e| ProtocolError::BadMessage(format!("{}: {e}", self.t)))
+        value.deserialized().map_err(|e| {
+            let message = if self.t == types::PHONE_HOTSPOT_PREPARE || self.t == types::PHONE_HOTSPOT_RESULT {
+                format!("{}: invalid private hotspot body", self.t)
+            } else {
+                format!("{}: {e}", self.t)
+            };
+            ProtocolError::BadMessage(message)
+        })
     }
 
     /// Checks the message type, turning a peer `error` into

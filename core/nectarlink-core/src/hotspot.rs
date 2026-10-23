@@ -2,13 +2,13 @@
 //! User-requested hotspot preparation, owned by one peer, one live protocol
 //! connection and one monotonic request. The expected saved SSID is carried
 //! only over the authenticated private peer channel and redacted from Debug.
-//! Passwords never cross the protocol; the Mac uses its own Wi-Fi Keychain.
+//! Automatic credentials are ephemeral and travel only over the owned private RPC.
 
 use crate::{Error, Result, node::Shared, session::Session};
 use nectarlink_protocol::{
     DeviceId, Envelope, ErrorCode,
     messages::{
-        PHONE_HOTSPOT_V3, PhoneHotspotCancel, PhoneHotspotPrepare, PhoneHotspotResult, PhoneHotspotState,
+        PHONE_HOTSPOT_V3, PHONE_HOTSPOT_AUTO_V1, PHONE_HOTSPOT_AUTO_CLIENT_V1, PhoneHotspotNetwork, PhoneHotspotCancel, PhoneHotspotPrepare, PhoneHotspotResult, PhoneHotspotState,
         types,
     },
 };
@@ -31,7 +31,14 @@ pub struct PhoneHotspotOwner {
     pub request: u64,
 }
 
+#[derive(Debug, Clone)]
+pub struct PhoneHotspotPreparation {
+    pub state: PhoneHotspotState,
+    pub network: Option<PhoneHotspotNetwork>,
+}
+
 struct Pending {
+    auto_join: bool,
     owner: PhoneHotspotOwner,
     session: Weak<Session>,
     cancelled: AtomicBool,
@@ -97,11 +104,17 @@ impl Drop for Retirement {
 }
 
 pub(crate) fn create(shared: &Arc<Shared>, session: &Arc<Session>) -> Result<PhoneHotspotOwner> {
+    create_mode(shared, session, false)
+}
+pub(crate) fn create_auto(shared: &Arc<Shared>, session: &Arc<Session>) -> Result<PhoneHotspotOwner> {
+    create_mode(shared, session, true)
+}
+fn create_mode(shared: &Arc<Shared>, session: &Arc<Session>, auto_join: bool) -> Result<PhoneHotspotOwner> {
     if !allowed(shared, session) {
         return Err(Error::Denied);
     }
     let caps = shared.store.get_peer(&session.peer)?.map(|peer| peer.caps).unwrap_or_default();
-    if !caps.contains(PHONE_HOTSPOT_V3) {
+    if !caps.contains(PHONE_HOTSPOT_V3) || (auto_join && !caps.contains(PHONE_HOTSPOT_AUTO_V1)) {
         return Err(Error::Unsupported);
     }
     let request = shared
@@ -124,6 +137,7 @@ pub(crate) fn create(shared: &Arc<Shared>, session: &Arc<Session>) -> Result<Pho
     outgoing.insert(
         owner.peer,
         Arc::new(Pending {
+            auto_join,
             owner,
             session: Arc::downgrade(session),
             cancelled: AtomicBool::new(false),
@@ -138,7 +152,9 @@ pub(crate) fn create(shared: &Arc<Shared>, session: &Arc<Session>) -> Result<Pho
 pub(crate) fn incoming_current(shared: &Shared, owner: PhoneHotspotOwner) -> bool {
     let pending = shared.hotspot.incoming.lock().unwrap_or_else(|e| e.into_inner()).get(&owner.peer).cloned();
     shared.local_capabilities().iter().any(|cap| cap == PHONE_HOTSPOT_V3)
-        && pending.is_some_and(|pending| matches(&pending, owner) && pending_current(shared, &pending))
+        && pending.is_some_and(|pending| matches(&pending, owner) && pending_current(shared, &pending)
+            && (!pending.auto_join || (shared.local_capabilities().iter().any(|cap| cap == PHONE_HOTSPOT_AUTO_V1)
+                && shared.store.get_peer(&owner.peer).ok().flatten().is_some_and(|peer| peer.caps.contains(PHONE_HOTSPOT_AUTO_CLIENT_V1)))))
 }
 
 pub(crate) fn cancellation_current(shared: &Shared, owner: PhoneHotspotOwner) -> bool {
@@ -172,19 +188,26 @@ pub(crate) async fn prepare(
     owner: PhoneHotspotOwner,
     network: String,
 ) -> Result<PhoneHotspotState> {
+    Ok(prepare_mode(shared, owner, network, false).await?.state)
+}
+pub(crate) async fn prepare_auto(shared: &Arc<Shared>, owner: PhoneHotspotOwner) -> Result<PhoneHotspotPreparation> {
+    prepare_mode(shared, owner, String::new(), true).await
+}
+async fn prepare_mode(shared: &Arc<Shared>, owner: PhoneHotspotOwner, network: String, auto_join: bool) -> Result<PhoneHotspotPreparation> {
     let pending = shared.hotspot.outgoing.lock().unwrap_or_else(|e| e.into_inner()).get(&owner.peer).cloned();
     let pending = pending.filter(|pending| matches(pending, owner)).ok_or(Error::Denied)?;
     let mut retire = Retirement { shared: shared.clone(), owner, incoming: false, cancel_on_drop: true };
-    if !pending_current(shared, &pending) {
+    if pending.auto_join != auto_join || !pending_current(shared, &pending) {
         return Err(Error::Denied);
     }
-    if network.is_empty() || network.len() > 32 || network.contains('\0') {
+    if (!auto_join && network.is_empty()) || network.len() > 32 || network.contains('\0') {
         return Err(Error::Protocol("invalid saved hotspot profile".into()));
     }
     let session = pending.session.upgrade().ok_or(Error::Denied)?;
+    if auto_join && !shared.store.get_peer(&owner.peer)?.is_some_and(|peer| peer.caps.contains(PHONE_HOTSPOT_AUTO_V1) && peer.caps.contains(PHONE_HOTSPOT_V3)) { return Err(Error::Unsupported); }
     let env = Envelope::new(
         types::PHONE_HOTSPOT_PREPARE,
-        &PhoneHotspotPrepare { request: owner.request, network },
+        &PhoneHotspotPrepare { request: owner.request, network, auto_join },
     )?;
     // Keep polling the underlying correlated request until its normal reply or
     // timeout so Session::request always removes its pending response slot.
@@ -193,13 +216,16 @@ pub(crate) async fn prepare(
     let reply = session.request(env, REQUEST_TIMEOUT).await?;
     reply.expect(types::PHONE_HOTSPOT_RESULT)?;
     let result: PhoneHotspotResult = reply.body()?;
-    if result.request != owner.request || !pending_current(shared, &pending) {
-        return Ok(PhoneHotspotState::Cancelled);
+    if result.request != owner.request || !pending_current(shared, &pending)
+        || (auto_join && !shared.store.get_peer(&owner.peer)?.is_some_and(|peer| peer.caps.contains(PHONE_HOTSPOT_AUTO_V1) && peer.caps.contains(PHONE_HOTSPOT_V3))) {
+        return Ok(PhoneHotspotPreparation { state: PhoneHotspotState::Cancelled, network: None });
     }
     // Successful completion is not a Stop. Keep the phone hotspot available
     // while the explicitly requested Mac network association runs.
     retire.cancel_on_drop = false;
-    Ok(result.state)
+    let network = result.network.filter(|network| auto_join && result.state == PhoneHotspotState::Active && network.valid());
+    let state = if auto_join && result.state == PhoneHotspotState::Active && network.is_none() { PhoneHotspotState::Failed } else { result.state };
+    Ok(PhoneHotspotPreparation { state, network })
 }
 
 /// Preparation is dispatched concurrently so a cancellation frame on the same
@@ -246,7 +272,7 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
         types::PHONE_HOTSPOT_PREPARE => {
             let request: PhoneHotspotPrepare = env.body()?;
             if request.request == 0
-                || request.network.is_empty()
+                || (!request.auto_join && request.network.is_empty())
                 || request.network.len() > 32
                 || request.network.contains('\0')
                 || env.id.is_none()
@@ -259,9 +285,11 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
                     .await?;
                 return Ok(true);
             }
-            if !shared.local_capabilities().iter().any(|cap| cap == PHONE_HOTSPOT_V3) {
+            if !shared.local_capabilities().iter().any(|cap| cap == PHONE_HOTSPOT_V3)
+                || (request.auto_join && (!shared.local_capabilities().iter().any(|cap| cap == PHONE_HOTSPOT_AUTO_V1)
+                    || !shared.store.get_peer(&session.peer)?.is_some_and(|peer| peer.caps.contains(PHONE_HOTSPOT_AUTO_CLIENT_V1)))) {
                 let result =
-                    PhoneHotspotResult { request: request.request, state: PhoneHotspotState::NeedsSettings };
+                    PhoneHotspotResult { request: request.request, state: PhoneHotspotState::NeedsSettings, network: None };
                 session.send(Envelope::new(types::PHONE_HOTSPOT_RESULT, &result)?.reply_to(env.id)).await?;
                 return Ok(true);
             }
@@ -290,6 +318,7 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
                     incoming.insert(
                         owner.peer,
                         Arc::new(Pending {
+                            auto_join: request.auto_join,
                             owner,
                             session: Arc::downgrade(session),
                             cancelled: AtomicBool::new(false),
@@ -317,23 +346,25 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
                 let _retire =
                     Retirement { shared: shared.clone(), owner, incoming: true, cancel_on_drop: false };
                 let platform = shared.platform.clone();
-                let state = if incoming_current(&shared, owner) {
+                let auto_join = request.auto_join;
+                let outcome = if incoming_current(&shared, owner) {
                     tokio::task::spawn_blocking(move || {
-                        platform.prepare_phone_hotspot_owned(
-                            &owner.peer,
-                            owner.connection,
-                            owner.request,
-                            &request.network,
-                        )
-                    })
-                    .await
-                    .unwrap_or(PhoneHotspotState::Failed)
+                        if auto_join {
+                            platform.prepare_phone_hotspot_auto_owned(&owner.peer, owner.connection, owner.request)
+                        } else {
+                            PhoneHotspotPreparation { state: platform.prepare_phone_hotspot_owned(
+                                &owner.peer, owner.connection, owner.request, &request.network), network: None }
+                        }
+                    }).await.unwrap_or(PhoneHotspotPreparation { state: PhoneHotspotState::Failed, network: None })
                 } else {
-                    PhoneHotspotState::Cancelled
+                    PhoneHotspotPreparation { state: PhoneHotspotState::Cancelled, network: None }
                 };
-                let state =
-                    if incoming_current(&shared, owner) { state } else { PhoneHotspotState::Cancelled };
-                let result = PhoneHotspotResult { request: owner.request, state };
+                let current = incoming_current(&shared, owner);
+                let network = outcome.network.filter(|network| current && auto_join && outcome.state == PhoneHotspotState::Active && network.valid());
+                let state = if !current { PhoneHotspotState::Cancelled }
+                    else if auto_join && outcome.state == PhoneHotspotState::Active && network.is_none() { PhoneHotspotState::Failed }
+                    else { outcome.state };
+                let result = PhoneHotspotResult { request: owner.request, state, network };
                 if let Ok(env) = Envelope::new(types::PHONE_HOTSPOT_RESULT, &result) {
                     let _ = session.send(env.reply_to(reply_id)).await;
                 }

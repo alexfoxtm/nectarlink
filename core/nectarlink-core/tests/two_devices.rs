@@ -712,6 +712,13 @@ impl Platform for RecordingPlatform {
         nectarlink_core::PhoneHotspotState::Active
     }
 
+    fn prepare_phone_hotspot_auto_owned(&self, peer: &nectarlink_core::DeviceId, connection: u64, request: u64) -> nectarlink_core::PhoneHotspotPreparation {
+        let state = self.prepare_phone_hotspot_owned(peer, connection, request, "");
+        nectarlink_core::PhoneHotspotPreparation { state, network: (state == nectarlink_core::PhoneHotspotState::Active).then(|| nectarlink_core::PhoneHotspotNetwork {
+            ssid: "Synthetic phone hotspot".into(), passphrase: "fixture-passphrase".into(), security: nectarlink_core::PhoneHotspotSecurity::Wpa2,
+        }) }
+    }
+
     fn cancel_phone_hotspot_owned(&self, peer: &nectarlink_core::DeviceId, connection: u64, request: u64) {
         use std::sync::atomic::Ordering::SeqCst;
         if self
@@ -9047,6 +9054,101 @@ async fn hotspot_cancel_after_submission_preserves_activation_and_ignores_wrong_
     pc.node.cancel_phone_hotspot_request(owner);
     let result = with_timeout("cancel reaches blocked platform", pending).await.unwrap().unwrap();
     assert_eq!(result, nectarlink_core::PhoneHotspotState::Cancelled);
+    assert_eq!(
+        phone.platform.hotspot_commits.load(SeqCst),
+        1,
+        "cancelling the join does not undo an activation already submitted"
+    );
+    assert!(
+        phone.platform.phone_toggles.lock().unwrap().iter().all(|(id, _)| id != "hotspot"),
+        "no legacy phone-wide hotspot-off fallback"
+    );
+    with_timeout("owned cancellation callback", async {
+        while phone.platform.hotspot_cancels.load(SeqCst) != 1 {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await;
+    *phone.platform.hotspot_gate.lock().unwrap() = None;
+    pc.node.shutdown().await;
+    phone.node.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn hotspot_auto_owned_readback_returns_ephemeral_network() {
+    use std::sync::atomic::Ordering::SeqCst;
+    let mut pc = device_with("Desktop", DeviceKind::Desktop, &[nectarlink_core::TOGGLES_SHOW, "phone.hotspot.auto.client.v1"]).await;
+    let mut phone = device_with("Phone", DeviceKind::Phone, &["phone.hotspot.v3", "phone.hotspot.auto.v1"]).await;
+    *phone.platform.hotspot_gate.lock().unwrap() = Some(HotspotGate(phone.node.clone()));
+    pair_qr(&mut pc, &mut phone).await;
+    let owner = pc.node.create_phone_hotspot_auto_request(phone.node.device_id()).unwrap();
+    let result = with_timeout(
+        "owned hotspot prepare",
+        pc.node.prepare_phone_hotspot_auto(owner),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.state, nectarlink_core::PhoneHotspotState::Active);
+    let network = result.network.unwrap();
+    assert!(network.valid());
+    assert_eq!(network.ssid, "Synthetic phone hotspot");
+    assert!(!format!("{network:?}").contains("fixture-passphrase"));
+    let envelope = nectarlink_protocol::Envelope::new(
+        nectarlink_protocol::messages::types::PHONE_HOTSPOT_RESULT,
+        &nectarlink_protocol::messages::PhoneHotspotResult { request: owner.request, state: result.state, network: Some(network) },
+    ).unwrap();
+    assert!(!format!("{envelope:?}").contains("fixture-passphrase"));
+    assert_eq!(phone.platform.hotspot_commits.load(SeqCst), 1);
+    assert_eq!(
+        phone.platform.hotspot_cancels.load(SeqCst),
+        0,
+        "a successful prepare must not send cancellation during retirement"
+    );
+    *phone.platform.hotspot_gate.lock().unwrap() = None;
+    pc.node.shutdown().await;
+    phone.node.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn hotspot_auto_cancel_discards_credentials_and_ignores_wrong_owner() {
+    use std::sync::atomic::Ordering::SeqCst;
+    let malformed = nectarlink_protocol::Envelope::new(
+        nectarlink_protocol::messages::types::PHONE_HOTSPOT_RESULT,
+        &serde_json::json!({"request": 1, "state": "active", "network": {
+            "ssid": "Synthetic phone hotspot", "passphrase": "fixture-passphrase",
+            "security": "fixture-private-sentinel"
+        }}),
+    ).unwrap();
+    let error = malformed.body::<nectarlink_protocol::messages::PhoneHotspotResult>().unwrap_err();
+    assert!(!error.to_string().contains("fixture-private-sentinel"));
+    let mut pc = device_with("Desktop", DeviceKind::Desktop, &[nectarlink_core::TOGGLES_SHOW, "phone.hotspot.auto.client.v1"]).await;
+    let mut phone = device_with("Phone", DeviceKind::Phone, &["phone.hotspot.v3", "phone.hotspot.auto.v1"]).await;
+    *phone.platform.hotspot_gate.lock().unwrap() = Some(HotspotGate(phone.node.clone()));
+    phone.platform.hotspot_hold.store(true, SeqCst);
+    phone.platform.hotspot_submit_before_hold.store(true, SeqCst);
+    pair_qr(&mut pc, &mut phone).await;
+    let owner = pc.node.create_phone_hotspot_auto_request(phone.node.device_id()).unwrap();
+    let sending = pc.node.clone();
+    let pending =
+        tokio::spawn(
+            async move { sending.prepare_phone_hotspot_auto(owner).await },
+        );
+    with_timeout("platform entered", async {
+        while !phone.platform.hotspot_entered.load(SeqCst) {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await;
+    pc.node.cancel_phone_hotspot_request(nectarlink_core::PhoneHotspotOwner {
+        request: owner.request + 1,
+        ..owner
+    });
+    tokio::time::sleep(Duration::from_millis(30)).await;
+    assert!(!pending.is_finished(), "another request's cancellation must not retire this operation");
+    pc.node.cancel_phone_hotspot_request(owner);
+    let result = with_timeout("cancel reaches blocked platform", pending).await.unwrap().unwrap();
+    assert_eq!(result.state, nectarlink_core::PhoneHotspotState::Cancelled);
+    assert!(result.network.is_none());
     assert_eq!(
         phone.platform.hotspot_commits.load(SeqCst),
         1,

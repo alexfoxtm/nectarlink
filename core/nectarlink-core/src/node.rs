@@ -4277,6 +4277,20 @@ impl Node {
         crate::hotspot::create(&self.shared, &session)
     }
 
+    pub fn phone_hotspot_auto_supported(&self, peer: DeviceId) -> bool {
+        self.phone_hotspot_connection(peer).is_some() && self.shared.store.get_peer(&peer).ok().flatten().is_some_and(|peer|
+            peer.caps.contains(nectarlink_protocol::messages::PHONE_HOTSPOT_V3) && peer.caps.contains(nectarlink_protocol::messages::PHONE_HOTSPOT_AUTO_V1))
+    }
+
+    pub fn create_phone_hotspot_auto_request(&self, peer: DeviceId) -> Result<crate::PhoneHotspotOwner> {
+        let session = self.connected(&peer)?;
+        crate::hotspot::create_auto(&self.shared, &session)
+    }
+
+    pub async fn prepare_phone_hotspot_auto(&self, owner: crate::PhoneHotspotOwner) -> Result<crate::PhoneHotspotPreparation> {
+        crate::hotspot::prepare_auto(&self.shared, owner).await
+    }
+
     pub async fn prepare_phone_hotspot(
         &self,
         owner: crate::PhoneHotspotOwner,

@@ -259,6 +259,9 @@ pub mod qobject {
         #[cxx_name = "cancelPhoneHotspotJoin"]
         fn cancel_phone_hotspot_join(self: &AppController, device: &QString);
         #[qinvokable]
+        #[cxx_name = "phoneHotspotAutoSupported"]
+        fn phone_hotspot_auto_supported(self: &AppController, device: &QString) -> bool;
+        #[qinvokable]
         #[cxx_name = "phoneHotspotJoining"]
         fn phone_hotspot_joining(self: &AppController, device: &QString) -> bool;
         #[qinvokable]
@@ -1729,6 +1732,10 @@ impl qobject::AppController {
                 "Join cancelled. If hotspot activation has already been submitted, the phone hotspot stays on. Turn it off manually on the phone.",
             );
         }
+    }
+
+    pub fn phone_hotspot_auto_supported(&self, device: &QString) -> bool {
+        super::parse_device(device).is_some_and(crate::hotspot::auto_supported)
     }
 
     pub fn phone_hotspot_joining(&self, device: &QString) -> bool {

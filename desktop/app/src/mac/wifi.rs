@@ -26,6 +26,8 @@ unsafe extern "C" {
         current: unsafe extern "C" fn(*mut c_void) -> bool,
         owner: *mut c_void,
     ) -> *mut c_char;
+    fn waypair_wifi_connect_ephemeral(name: *const c_char, password: *const c_char, security: i32,
+        current: unsafe extern "C" fn(*mut c_void) -> bool, owner: *mut c_void) -> *mut c_char;
     fn waypair_wifi_profile(peer: *const c_char) -> *mut c_char;
     fn waypair_wifi_set_profile(peer: *const c_char, name: *const c_char) -> i32;
     fn waypair_wifi_free(value: *mut c_char);
@@ -110,5 +112,25 @@ pub fn set_profile_for_peer(peer: &str, profile: Option<&str>) -> Result<(), Str
     } else {
         Err("macOS could not save the hotspot choice in Keychain. Allow Keychain access and try again."
             .into())
+    }
+}
+
+/// Credentials and owner are borrowed only during synchronous association.
+pub fn connect_ephemeral_owned(network: &nectarlink_core::PhoneHotspotNetwork, current: &dyn Fn() -> bool) -> Result<(), String> {
+    let name = CString::new(network.ssid.as_str()).map_err(|_| "Invalid hotspot network")?;
+    let password = CString::new(network.passphrase.as_str()).map_err(|_| "Invalid hotspot credentials")?;
+    let security = match network.security {
+        nectarlink_core::PhoneHotspotSecurity::Wpa2 => 2,
+        nectarlink_core::PhoneHotspotSecurity::Wpa3 => 3,
+    };
+    unsafe extern "C" fn is_current(owner: *mut c_void) -> bool {
+        // SAFETY: native code borrows this gate only until the call returns.
+        unsafe { (&*owner.cast::<&dyn Fn() -> bool>())() }
+    }
+    let gate = current;
+    let owner = (&gate as *const &dyn Fn() -> bool).cast_mut().cast::<c_void>();
+    // SAFETY: strings and gate remain live; native code retains none of them.
+    match unsafe { take(waypair_wifi_connect_ephemeral(name.as_ptr(), password.as_ptr(), security, is_current, owner)) } {
+        None => Ok(()), Some(reason) => Err(reason),
     }
 }

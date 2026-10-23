@@ -509,6 +509,15 @@ pub trait Platform: Send + Sync + 'static {
         crate::PhoneHotspotState::NeedsSettings
     }
 
+    fn prepare_phone_hotspot_auto_owned(
+        &self,
+        _peer: &nectarlink_protocol::DeviceId,
+        _connection: u64,
+        _request: u64,
+    ) -> crate::PhoneHotspotPreparation {
+        crate::PhoneHotspotPreparation { state: crate::PhoneHotspotState::NeedsSettings, network: None }
+    }
+
     /// Cancel only this preparation workflow, rechecking its exact cancellation
     /// gate. A submitted Android activation is never followed by tether stop.
     fn cancel_phone_hotspot_owned(

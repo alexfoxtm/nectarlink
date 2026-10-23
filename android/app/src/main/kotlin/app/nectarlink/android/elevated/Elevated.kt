@@ -95,6 +95,7 @@ object Elevated {
     /** Bound only by a fixed marker read on this exact authenticated H stream;
      * helper liveness or an old helper version must never admit unknown verbs. */
     @Volatile private var hotspotProtocolOwner: java.net.Socket? = null
+    @Volatile private var hotspotAutoProtocolOwner: java.net.Socket? = null
     /** Where the helper listens, and the token it wants, while it runs. */
     @Volatile private var helper: Pair<Int, String>? = null
     @Volatile private var screenOffRequested = false
@@ -528,6 +529,7 @@ object Elevated {
         val local = java.net.Socket(java.net.InetAddress.getLoopbackAddress(), port).apply { tcpNoDelay = true }
         socket = local
         hotspotProtocolOwner = null
+        hotspotAutoProtocolOwner = null
         val writer = OutputStreamWriter(local.outputStream, Charsets.UTF_8)
         writer.write("$token\nH\n")
         writer.flush()
@@ -537,7 +539,9 @@ object Elevated {
         Thread {
             runCatching {
                 local.inputStream.bufferedReader().lineSequence().forEach { line ->
-                    if (line == "HOTSPOT_PROTOCOL\t2") {
+                    if (line == "HOTSPOT_AUTO_PROTOCOL\t1") {
+                        if (socket === local && input != null) { hotspotAutoProtocolOwner = local; runCatching { onChange() } }
+                    } else if (line == "HOTSPOT_PROTOCOL\t2") {
                         if (socket === local && input != null) {
                             hotspotProtocolOwner = local
                             // Feature refresh must not tear down a healthy
@@ -578,6 +582,7 @@ object Elevated {
                 lock.withLock {
                     if (socket === local) {
                         hotspotProtocolOwner = null
+        hotspotAutoProtocolOwner = null
                         val wasRunning = input != null
                         input = null
                         if (wasRunning) onProviderLost()
@@ -817,6 +822,66 @@ object Elevated {
                 ShellHotspot.Result.entries.firstOrNull { it.name == response } ?: ShellHotspot.Result.FAILED
             }
         }.getOrDefault(ShellHotspot.Result.FAILED)
+    }
+
+    internal class AutoReply(val state: ShellHotspot.Result, val network: ShellHotspot.Network? = null) {
+        override fun toString(): String = "HotspotAutoReply([redacted])"
+    }
+    internal fun hotspotAutoCapability(): ShellHotspot.Result = hotspotAutoExchange("AUTO_PROBE", null) { true }.state
+    internal fun prepareHotspotAutoOwned(peer: String, connection: ULong, request: ULong, stillCurrent: () -> Boolean): AutoReply =
+        hotspotAutoExchange("AUTO_PREPARE", ShellHotspot.Owner(peer, connection, request), stillCurrent)
+
+    private fun hotspotAutoExchange(action: String, remoteOwner: ShellHotspot.Owner?, stillCurrent: () -> Boolean): AutoReply {
+        if (action !in setOf("AUTO_PROBE", "AUTO_PREPARE")) return AutoReply(ShellHotspot.Result.FAILED)
+        if (action != "AUTO_PROBE" && (remoteOwner == null || !remoteOwner.valid())) return AutoReply(ShellHotspot.Result.FAILED)
+        val owner = socket ?: return AutoReply(ShellHotspot.Result.UNSUPPORTED)
+        if (hotspotAutoProtocolOwner !== owner) return AutoReply(ShellHotspot.Result.UNSUPPORTED)
+        val endpoint = helper ?: return AutoReply(ShellHotspot.Result.UNSUPPORTED)
+        if (input == null || !stillCurrent()) return AutoReply(ShellHotspot.Result.CANCELLED)
+        return runCatching {
+            java.net.Socket().use { query ->
+                query.connect(java.net.InetSocketAddress(InetAddress.getLoopbackAddress(), endpoint.first), 2000)
+                query.soTimeout = if (action == "AUTO_PREPARE") 40000 else 5000
+                val out = OutputStreamWriter(query.getOutputStream(), Charsets.UTF_8)
+                if (socket !== owner || hotspotAutoProtocolOwner !== owner || helper != endpoint || input == null || !stillCurrent()) return@use AutoReply(ShellHotspot.Result.CANCELLED)
+                val command = if (remoteOwner == null) "HOTSPOT AUTO_PROBE" else {
+                    val json = org.json.JSONObject().put("peer", remoteOwner.peer).put("connection", remoteOwner.connection.toString()).put("request", remoteOwner.request.toString())
+                    "HOTSPOT $action " + android.util.Base64.encodeToString(json.toString().toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP)
+                }
+                // The expected SSID is private socket data, never argv/logs.
+                out.write("${endpoint.second}\n$command\n")
+                out.flush()
+                val reader = query.inputStream.reader(Charsets.UTF_8)
+                fun readReply(): String {
+                    val response = StringBuilder()
+                    while (response.length < 2048) {
+                        val next = reader.read()
+                        if (next < 0 || next == '\n'.code) return response.toString()
+                        response.append(next.toChar())
+                    }
+                    return ""
+                }
+                var response = readReply()
+                if (response == "READY") {
+                    if (socket !== owner || hotspotAutoProtocolOwner !== owner || helper != endpoint || input == null || !stillCurrent()) return@use AutoReply(ShellHotspot.Result.CANCELLED)
+                    out.write("GO\n")
+                    out.flush()
+                    response = readReply()
+                }
+                if (socket !== owner || hotspotAutoProtocolOwner !== owner || helper != endpoint || input == null || !stillCurrent()) return@use AutoReply(ShellHotspot.Result.CANCELLED)
+                val result = ShellHotspot.Result.entries.firstOrNull { it.name == response } ?: ShellHotspot.Result.FAILED
+                if (action != "AUTO_PREPARE" || result != ShellHotspot.Result.ACTIVE) return@use AutoReply(result)
+                out.write("NETWORK\n"); out.flush()
+                val encoded = readReply()
+                if (socket !== owner || hotspotAutoProtocolOwner !== owner || helper != endpoint || input == null || !stillCurrent()) return@use AutoReply(ShellHotspot.Result.CANCELLED)
+                val json = org.json.JSONObject(String(android.util.Base64.decode(encoded, android.util.Base64.NO_WRAP), Charsets.UTF_8))
+                val ssid = json.getString("ssid")
+                val passphrase = json.getString("passphrase")
+                val security = json.getString("security")
+                if (ssid.toByteArray(Charsets.UTF_8).size !in 1..32 || ssid.any { it.code == 0 || it == '\n' || it == '\r' } || passphrase.length !in 8..63 || passphrase.any { it.code !in 32..126 } || security !in setOf("WPA2", "WPA3")) return@use AutoReply(ShellHotspot.Result.FAILED)
+                AutoReply(result, ShellHotspot.Network(ssid, passphrase, security))
+            }
+        }.getOrDefault(AutoReply(ShellHotspot.Result.FAILED))
     }
 
     /** Runs an allowed shell command through the Elevated helper. */

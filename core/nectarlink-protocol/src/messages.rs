@@ -3587,11 +3587,17 @@ impl RemoteInput {
 
 /// Capability for the owned, readback-verified hotspot preparation RPC.
 pub const PHONE_HOTSPOT_V3: &str = "phone.hotspot.v3";
+pub const PHONE_HOTSPOT_AUTO_V1: &str = "phone.hotspot.auto.v1";
+pub const PHONE_HOTSPOT_AUTO_CLIENT_V1: &str = "phone.hotspot.auto.client.v1";
+
+fn hotspot_false(value: &bool) -> bool { !*value }
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PhoneHotspotPrepare {
     pub request: u64,
     pub network: String,
+    #[serde(default, skip_serializing_if = "hotspot_false")]
+    pub auto_join: bool,
 }
 
 impl std::fmt::Debug for PhoneHotspotPrepare {
@@ -3618,10 +3624,35 @@ pub enum PhoneHotspotState {
     Cancelled,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PhoneHotspotResult {
     pub request: u64,
     pub state: PhoneHotspotState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub network: Option<PhoneHotspotNetwork>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PhoneHotspotSecurity { Wpa2, Wpa3 }
+
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PhoneHotspotNetwork {
+    pub ssid: String,
+    pub passphrase: String,
+    pub security: PhoneHotspotSecurity,
+}
+impl PhoneHotspotNetwork {
+    pub fn valid(&self) -> bool {
+        !self.ssid.is_empty() && self.ssid.len() <= 32 && !self.ssid.contains('\0')
+            && (8..=63).contains(&self.passphrase.len())
+            && self.passphrase.bytes().all(|b| (32..=126).contains(&b))
+    }
+}
+impl std::fmt::Debug for PhoneHotspotNetwork {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("PhoneHotspotNetwork([private])")
+    }
 }
 
 // ---- Phone toggles (docs/protocol/toggles.md) ----

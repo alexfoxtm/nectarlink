@@ -28,11 +28,27 @@ static char *copyString(NSString *value) {
     return value ? strdup(value.UTF8String) : NULL;
 }
 
+static NSString *locationPermissionError(void) {
+    if (!CLLocationManager.locationServicesEnabled)
+        return @"Location Services are off. Turn them on in System Settings > Privacy & Security > Location Services, then retry hotspot discovery.";
+    switch ([CLLocationManager new].authorizationStatus) {
+        case kCLAuthorizationStatusNotDetermined:
+            return @"Hotspot discovery permission has not been decided. Choose Allow hotspot discovery and respond to the macOS prompt. If no prompt appears, check Location Services in System Settings.";
+        case kCLAuthorizationStatusDenied:
+            return @"Location access for Waypair Link is denied. Enable Waypair Link in System Settings > Privacy & Security > Location Services, then retry.";
+        case kCLAuthorizationStatusRestricted:
+            return @"Location access is restricted on this Mac. Check the Mac's restrictions or contact its administrator. You can join the hotspot manually in Wi-Fi settings.";
+        case kCLAuthorizationStatusAuthorizedAlways:
+            return nil;
+        default:
+            return @"macOS location permission is unavailable. Check Location Services in System Settings.";
+    }
+}
+
 char *waypair_wifi_permission_error(void) {
     @autoreleasepool {
-        if ([CLLocationManager new].authorizationStatus == kCLAuthorizationStatusNotDetermined)
-            return copyString(@"Choose Allow hotspot discovery in Join phone hotspot and allow the macOS permission prompt, then retry.");
-        if (!locationAllowed()) return copyString(@"Allow Waypair Link in System Settings > Privacy & Security > Location Services to find the phone hotspot. You can also join it manually in Wi-Fi settings.");
+        NSString *permission = locationPermissionError();
+        if (permission) return copyString(permission);
         if (!CWWiFiClient.sharedWiFiClient.interface) return copyString(@"No Wi-Fi interface is available on this Mac.");
         if (!CWWiFiClient.sharedWiFiClient.interface.powerOn) return copyString(@"Turn on Wi-Fi in System Settings, then try again.");
         return NULL;
@@ -48,8 +64,11 @@ char *waypair_wifi_request_permission(void) {
         static CLLocationManager *manager;
         static dispatch_once_t once;
         dispatch_once(&once, ^{ manager = [CLLocationManager new]; });
-        if (manager.authorizationStatus == kCLAuthorizationStatusNotDetermined) [manager requestWhenInUseAuthorization];
-        else if (!locationAllowed()) return copyString(@"Allow Waypair Link in System Settings > Privacy & Security > Location Services, then reopen hotspot setup.");
+        if (!CLLocationManager.locationServicesEnabled) return copyString(locationPermissionError());
+        if (manager.authorizationStatus == kCLAuthorizationStatusNotDetermined) {
+            // Submission is asynchronous; NULL does not mean access was granted.
+            [manager requestWhenInUseAuthorization];
+        } else if (!locationAllowed()) return copyString(locationPermissionError());
         return NULL;
     }
 }
@@ -170,3 +189,35 @@ int waypair_wifi_set_profile(const char *peer, const char *name) {
 }
 
 void waypair_wifi_free(char *value) { free(value); }
+
+// Ephemeral paired-channel credentials: never query or write the Wi-Fi Keychain.
+char *waypair_wifi_connect_ephemeral(const char *name, const char *secret, int security,
+                                    bool (*current)(void *), void *owner) {
+    @autoreleasepool {
+        if (!current || !current(owner)) return copyString(@"Hotspot join cancelled.");
+        char *permission = waypair_wifi_permission_error();
+        if (permission) return permission;
+        NSString *ssid = name ? [NSString stringWithUTF8String:name] : nil;
+        NSString *password = secret ? [NSString stringWithUTF8String:secret] : nil;
+        NSData *data = [ssid dataUsingEncoding:NSUTF8StringEncoding];
+        if (!data.length || data.length > 32 || password.length < 8 || password.length > 63 || (security != 2 && security != 3))
+            return copyString(@"Invalid protected hotspot credentials.");
+        CWInterface *interface = CWWiFiClient.sharedWiFiClient.interface;
+        NSError *error = nil;
+        NSSet<CWNetwork *> *networks = [interface scanForNetworksWithSSID:data error:&error];
+        if (!current(owner)) return copyString(@"Hotspot join cancelled.");
+        if (!networks || error) return copyString(@"macOS could not scan for the hotspot. Check Location Services and Wi-Fi.");
+        CWNetwork *chosen = nil;
+        for (CWNetwork *network in networks) {
+            if (![network.ssidData isEqualToData:data]) continue;
+            // Match the negotiated protection; never fall back from WPA3 to WPA2/open.
+            if ((security == 3 && [network supportsSecurity:kCWSecurityWPA3Personal]) ||
+                (security == 2 && [network supportsSecurity:kCWSecurityWPA2Personal])) { chosen = network; break; }
+        }
+        if (!chosen) return copyString(@"The protected phone hotspot is not in range or its security does not match.");
+        if (!current(owner)) return copyString(@"Hotspot join cancelled.");
+        BOOL joined = [interface associateToNetwork:chosen password:password error:&error];
+        password = nil;
+        return joined && !error ? NULL : copyString(@"macOS could not join the protected phone hotspot. Check Wi-Fi and retry.");
+    }
+}

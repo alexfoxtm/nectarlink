@@ -198,6 +198,7 @@ pub fn compute_capabilities(
         caps.push(nectarlink_core::MIRROR_INPUT_REQUEST.into());
         caps.push(nectarlink_core::WEBCAM_VIRTUAL.into());
         caps.push("camera.webcam.owned.v1".into());
+        caps.push("phone.hotspot.auto.client.v1".into());
         // Fixed Settings route only; general app-window qualification stays off.
         caps.push("mirror.app_settings_qualification_v1".into());
     }
