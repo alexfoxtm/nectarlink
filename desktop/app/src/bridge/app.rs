@@ -76,6 +76,7 @@ pub mod qobject {
         /// `denied`, `provisional`, or `authorized`. Empty on other platforms.
         #[qproperty(QString, notification_permission)]
         #[qproperty(QString, version)]
+        #[qproperty(QString, display_version)]
         /// The Connection Doctor's findings, as JSON: [{ id, outcome:
         /// "ok" | "warn" | "fail", title, detail, fix? }].
         #[qproperty(QString, doctor_checks)]
@@ -373,6 +374,9 @@ pub mod qobject {
         /// Opens a paired phone's storage sync root in File Explorer.
         #[qinvokable]
         fn open_phone_storage(self: &AppController, device: &QString);
+        /// Opens the existing local destination of a selected folder sync rule in Finder.
+        #[qinvokable]
+        fn open_synced_folder(self: &AppController, rule_id: &QString);
         /// Tells the event-driven Home summary which phone the Home page is showing (`""` when hidden).
         #[qinvokable]
         fn watch_home_summary(self: &AppController, device: &QString);
@@ -464,6 +468,7 @@ pub struct AppControllerRust {
     tray_available: bool,
     notification_permission: QString,
     version: QString,
+    display_version: QString,
     doctor_checks: QString,
     doctor_busy: bool,
     can_update: bool,
@@ -775,6 +780,12 @@ fn spawn_data_retention_refresh(qt: CxxQtThread<qobject::AppController>) {
 impl cxx_qt::Initialize for qobject::AppController {
     fn initialize(mut self: Pin<&mut Self>) {
         self.as_mut().set_version(QString::from(env!("CARGO_PKG_VERSION")));
+        self.as_mut().set_display_version(QString::from(concat!(
+            env!("CARGO_PKG_VERSION"),
+            " (",
+            env!("WAYPAIR_RELEASE_BUILD"),
+            ")"
+        )));
         self.as_mut().set_current_page(QString::from("home"));
         self.as_mut().set_can_update(crate::updater::can_update());
         // Nothing downloading yet (0 would show an empty bar).
@@ -1891,6 +1902,12 @@ impl qobject::AppController {
                 QString::from(&format!("file:///{}", path.trim_start_matches('/')))
             }
             None => QString::from("https://github.com/thtbee/nectarlink/tree/main/LICENSES"),
+        }
+    }
+
+    pub fn open_synced_folder(&self, rule_id: &QString) {
+        if let Err(e) = crate::storage::open_synced_folder(&String::from(rule_id)) {
+            show_message(e);
         }
     }
 

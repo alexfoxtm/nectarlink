@@ -25,6 +25,8 @@ pub mod qobject {
         #[qobject]
         #[qml_element]
         #[qml_singleton]
+        #[qproperty(bool, preview_window_open, cxx_name = "previewWindowOpen")]
+        #[qproperty(bool, preview_only, cxx_name = "previewOnly")]
         #[qproperty(bool, addon_registered, cxx_name = "addonRegistered")]
         #[qproperty(bool, addon_busy, cxx_name = "addonBusy")]
         #[qproperty(QString, addon_status_text, cxx_name = "addonStatusText")]
@@ -66,13 +68,21 @@ pub mod qobject {
         #[qinvokable]
         fn stop(self: &Webcam);
         #[qinvokable]
+        #[cxx_name = "selectPreviewOnly"]
+        fn select_preview_only(self: &Webcam, on: bool);
+        #[qinvokable]
         #[cxx_name = "setPreviewActive"]
         fn set_preview_active(self: &Webcam, active: bool);
+        #[qinvokable]
+        #[cxx_name = "showPreviewWindow"]
+        fn show_preview_window(self: &Webcam, open: bool);
     }
 }
 
 #[derive(Default)]
 pub struct WebcamRust {
+    preview_only: bool,
+    preview_window_open: bool,
     addon_registered: bool,
     addon_busy: bool,
     addon_status_text: QString,
@@ -110,6 +120,8 @@ impl cxx_qt::Initialize for qobject::Webcam {
 impl qobject::Webcam {
     fn refresh(mut self: Pin<&mut Self>) {
         let hub = &crate::core_host::host().hub;
+        self.as_mut().set_preview_only(webcam::preview_only());
+        self.as_mut().set_preview_window_open(webcam::preview_window_open());
         self.as_mut().set_addon_registered(webcam::addon_registered());
         self.as_mut().set_addon_busy(webcam::addon_busy());
         self.as_mut().set_addon_status_text(QString::from(&webcam::addon_status_text()));
@@ -179,8 +191,16 @@ impl qobject::Webcam {
         webcam::start(super::parse_device(device));
     }
 
+    pub fn select_preview_only(&self, on: bool) {
+        webcam::set_preview_only(on);
+    }
+
     pub fn stop(&self) {
         webcam::stop();
+    }
+
+    pub fn show_preview_window(&self, open: bool) {
+        webcam::set_preview_window_open(open);
     }
 
     pub fn set_preview_active(&self, active: bool) {

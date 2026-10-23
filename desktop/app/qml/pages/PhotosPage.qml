@@ -21,6 +21,43 @@ Item {
     property var selectedMap: ({})
     property var selectedIds: []
     readonly property int selectedCount: selectedIds.length
+    property bool pagingTransition: true
+    property string expectedAlbum: ""
+    readonly property bool pagingOwnerMatches: active && deviceId.length > 0
+        && Photos.device === deviceId && Photos.album === expectedAlbum
+        && Photos.status === "ready"
+    readonly property bool canPageLoaded: !pagingTransition && pagingOwnerMatches
+    function resumePagingWhenReady() {
+        Qt.callLater(function() {
+            if (page.pagingOwnerMatches) page.pagingTransition = false
+        })
+    }
+    function chooseAlbum(albumId) {
+        pagingTransition = true
+        expectedAlbum = albumId
+        resetLoadedFilter()
+        Photos.selectAlbum(albumId)
+        resumePagingWhenReady()
+    }
+    Connections {
+        target: Photos
+        function onRevisionChanged() { page.resumePagingWhenReady() }
+    }
+    property string loadedQuery: ""
+    property int mediaFilter: 0
+    readonly property bool filteringLoaded: loadedQuery.trim().length > 0 || mediaFilter !== 0
+    function applyLoadedFilter() {
+        clearSelection()
+        viewerIndex = -1
+        Photos.filterLoaded(loadedQuery, mediaFilter)
+    }
+    function resetLoadedFilter() {
+        loadedQuery = ""
+        mediaFilter = 0
+        applyLoadedFilter()
+    }
+    onLoadedQueryChanged: applyLoadedFilter()
+    onMediaFilterChanged: applyLoadedFilter()
     property bool selectMode: false
     property int lastClickedIndex: -1
 
@@ -161,7 +198,7 @@ Item {
                 Photos.ensureFull(item.id)
             }
         } catch (e) {}
-        if (index + 6 >= Photos.count && Photos.more) {
+        if (canPageLoaded && !filteringLoaded && index + 6 >= Photos.count && Photos.more) {
             Photos.loadOlder()
         }
     }
@@ -174,13 +211,23 @@ Item {
     }
 
     function load() {
-        if (active && deviceId.length > 0)
+        pagingTransition = true
+        if (active && deviceId.length > 0) {
+            expectedAlbum = Photos.device === deviceId ? Photos.album : ""
             Photos.open(deviceId)
+            resumePagingWhenReady()
+        }
     }
 
-    onActiveChanged: if (active) load()
+    onActiveChanged: {
+        pagingTransition = true
+        if (active) load()
+    }
     Component.onCompleted: load()
     onDeviceIdChanged: {
+        pagingTransition = true
+        expectedAlbum = ""
+        resetLoadedFilter()
         clearSelection()
         viewerIndex = -1
         load()
@@ -330,7 +377,7 @@ Item {
                     onClicked: {
                         page.clearSelection()
                         page.viewerIndex = -1
-                        Photos.selectAlbum("")
+                        page.chooseAlbum("")
                     }
                 }
 
@@ -347,7 +394,7 @@ Item {
                         onClicked: {
                             page.clearSelection()
                             page.viewerIndex = -1
-                            Photos.selectAlbum(modelData.id)
+                            page.chooseAlbum(modelData.id)
                         }
                     }
                 }
@@ -501,7 +548,7 @@ Item {
                     visible: !gridPane.compactBar || page.selectedCount === 0
                     variant: "text"
                     size: "sm"
-                    text: qsTr("Select all")
+                    text: qsTr("Select loaded (up to 500)")
                     onClicked: page.selectAllLoaded()
                 }
             }
@@ -567,10 +614,68 @@ Item {
             Divider { anchors.bottom: parent.bottom; width: parent.width }
         }
 
+        Column {
+            id: loadedFilterBar
+            anchors.top: toolbar.bottom
+            width: parent.width
+            spacing: 6
+            height: 92
+            Row {
+                x: 20
+                spacing: 8
+                Rectangle {
+                    width: Math.max(100, Math.min(240, gridPane.width - 210))
+                    height: 32
+                    radius: 6
+                    color: Theme.surface
+                    border.width: 1
+                    border.color: Theme.surfaceContentVariant
+                    TextInput {
+                        anchors.fill: parent
+                        anchors.margins: 7
+                        text: page.loadedQuery
+                        onTextEdited: page.loadedQuery = text
+                        color: Theme.surfaceContent
+                        clip: true
+                        selectByMouse: true
+                        Accessible.name: qsTr("Search loaded filenames")
+                    }
+                }
+                Button {
+                    size: "sm"
+                    text: page.mediaFilter === 0 ? qsTr("All media")
+                        : page.mediaFilter === 1 ? qsTr("Photos only") : qsTr("Videos only")
+                    Accessible.name: qsTr("Filter loaded media: %1").arg(text)
+                    onClicked: page.mediaFilter = (page.mediaFilter + 1) % 3
+                }
+                Button {
+                    size: "sm"
+                    text: qsTr("Clear")
+                    enabled: page.filteringLoaded
+                    onClicked: page.resetLoadedFilter()
+                }
+            }
+            Txt {
+                x: 20
+                width: parent.width - 40
+                role: "caption"
+                muted: true
+                text: qsTr("Search loaded filenames · %1 shown of %2 loaded").arg(Photos.count).arg(Photos.loadedCount)
+            }
+            Button {
+                x: 20
+                size: "sm"
+                visible: page.filteringLoaded && Photos.more
+                enabled: page.canPageLoaded && !Photos.loadingOlder
+                text: qsTr("Load older items")
+                onClicked: if (page.canPageLoaded) Photos.loadOlder()
+            }
+        }
+
         // Content area below toolbar.
         Item {
             id: gridContainer
-            anchors.top: toolbar.bottom
+            anchors.top: loadedFilterBar.bottom
             anchors.bottom: parent.bottom
             width: parent.width
 
@@ -650,7 +755,7 @@ Item {
                     horizontalAlignment: Text.AlignHCenter
                     role: "title"
                     size: 15
-                    text: qsTr("No photos or videos")
+                    text: page.filteringLoaded ? qsTr("No matching loaded items") : qsTr("No photos or videos")
                 }
             }
 
@@ -672,7 +777,7 @@ Item {
                 model: Photos
 
                 onAtYEndChanged: {
-                    if (atYEnd && Photos.more && count > 0)
+                    if (page.canPageLoaded && !page.filteringLoaded && atYEnd && Photos.more && count > 0)
                         Photos.loadOlder()
                 }
 

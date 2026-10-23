@@ -50,6 +50,7 @@ pub mod qobject {
         /// Selected album ID ("" for All photos).
         #[qproperty(QString, album)]
         #[qproperty(i32, count)]
+        #[qproperty(i32, loaded_count, cxx_name = "loadedCount")]
         #[qproperty(bool, more)]
         #[qproperty(bool, loading_older, cxx_name = "loadingOlder")]
         #[qproperty(bool, saving)]
@@ -111,6 +112,9 @@ pub mod qobject {
         #[qinvokable]
         fn refresh(self: &Photos);
         #[qinvokable]
+        #[cxx_name = "filterLoaded"]
+        fn filter_loaded(self: Pin<&mut Photos>, query: &QString, media: i32);
+        #[qinvokable]
         #[cxx_name = "needThumb"]
         fn need_thumb(self: &Photos, id: &QString);
         #[qinvokable]
@@ -156,6 +160,9 @@ pub struct PhotosRust {
     albums: QString,
     album: QString,
     count: i32,
+    loaded_count: i32,
+    filter_query: String,
+    filter_media: i32,
     more: bool,
     loading_older: bool,
     saving: bool,
@@ -201,6 +208,11 @@ fn role_value(row: &ItemRow, role: &str) -> QVariant {
     }
 }
 
+fn loaded_item_matches(row: &ItemRow, query: &str, media: i32) -> bool {
+    (media == 0 || (media == 1 && !row.is_video) || (media == 2 && row.is_video))
+        && (query.is_empty() || row.name.to_lowercase().contains(query))
+}
+
 fn folder_from_url(url: &QString) -> Option<PathBuf> {
     let raw = String::from(url);
     if raw.trim().is_empty() {
@@ -227,7 +239,16 @@ impl cxx_qt::Initialize for qobject::Photos {
 
 impl qobject::Photos {
     fn update_view(mut self: Pin<&mut Self>) {
-        let view = photos::view();
+        let mut view = photos::view();
+        self.as_mut().set_loaded_count(view.rows.len() as i32);
+        let query = self.rust().filter_query.clone();
+        let media = self.rust().filter_media;
+        view.rows.retain(|row| loaded_item_matches(row, &query, media));
+        let mut previous = 0;
+        for row in &mut view.rows {
+            row.prev_date = previous;
+            previous = row.date;
+        }
         self.as_mut().set_device(QString::from(&view.device.map(|d| d.to_string()).unwrap_or_default()));
         self.as_mut().set_status(QString::from(view.status.as_str()));
         let albums_str = view.albums.to_string();
@@ -352,6 +373,12 @@ impl qobject::Photos {
         photos::load_older();
     }
 
+    pub fn filter_loaded(mut self: Pin<&mut Self>, query: &QString, media: i32) {
+        self.as_mut().rust_mut().filter_query = String::from(query).trim().to_lowercase();
+        self.as_mut().rust_mut().filter_media = media.clamp(0, 2);
+        self.update_view();
+    }
+
     pub fn refresh(&self) {
         photos::reload();
     }
@@ -451,6 +478,9 @@ mod tests {
             thumb: "file:///C:/cache/thumb.jpg".into(),
             full_url: String::new(),
         };
+        assert!(loaded_item_matches(&row, "img_0042", 1));
+        assert!(!loaded_item_matches(&row, "img_0042", 2));
+        assert!(!loaded_item_matches(&row, "missing", 0));
         let text = |role| role_value(&row, role).value::<QString>().map(String::from).unwrap_or_default();
         assert_eq!(text("itemId"), "media:42");
         assert_eq!(text("name"), "IMG_0042.jpg");

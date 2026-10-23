@@ -1755,6 +1755,25 @@ Item {
 
                         Divider { width: parent.width }
 
+                        ListRow {
+                            width: parent.width
+                            visible: page.onMac
+                            enabled: !Webcam.previewWindowOpen && Webcam.phase !== "streaming" && Webcam.phase !== "asking"
+                            iconPath: Icons.video
+                            title: qsTr("Camera output")
+                            description: Webcam.previewOnly
+                                ? qsTr("Camera preview only. Open the clean preview window for external OBS Window Capture. Close that window or press Escape to stop.")
+                                : qsTr("Requires the Waypair native camera extension to be installed and ready.")
+                            Segmented {
+                                options: [
+                                    { value: "native", label: qsTr("Native camera") },
+                                    { value: "preview", label: qsTr("Camera preview") }
+                                ]
+                                value: Webcam.previewOnly ? "preview" : "native"
+                                onPicked: (value) => Webcam.selectPreviewOnly(value === "preview")
+                            }
+                        }
+
                         // Row 2: Actual virtual camera setup/readiness.
                         ListRow {
                             width: parent.width
@@ -1801,7 +1820,7 @@ Item {
                         ListRow {
                             width: parent.width
                             visible: DeviceList.count > 1
-                            enabled: !page.onMac || Webcam.addonRegistered
+                            enabled: !page.onMac || Webcam.previewOnly || Webcam.addonRegistered
                             opacity: enabled ? 1.0 : 0.5
                             iconPath: Icons.phone
                             title: qsTr("Phone")
@@ -1827,7 +1846,7 @@ Item {
                         Item {
                             id: camMirrorPairRow
                             width: parent.width
-                            enabled: !page.onMac || Webcam.addonRegistered
+                            enabled: !page.onMac || Webcam.previewOnly || Webcam.addonRegistered
                             opacity: enabled ? 1.0 : 0.5
                             readonly property bool splitCols: width >= 460
                             readonly property real colWidth: splitCols ? Math.floor((width - 37) / 2) : width
@@ -1887,7 +1906,7 @@ Item {
                         Divider { width: parent.width }
                         ListRow {
                             width: parent.width
-                            enabled: !page.onMac || Webcam.addonRegistered
+                            enabled: !page.onMac || Webcam.previewOnly || Webcam.addonRegistered
                             opacity: enabled ? 1.0 : 0.5
                             iconPath: Icons.camera
                             title: qsTr("Resolution")
@@ -1919,7 +1938,7 @@ Item {
                                     role: "bodySmall"
                                     muted: Webcam.phase !== "streaming"
                                     elide: Text.ElideRight
-                                    text: page.onMac && Webcam.phase !== "streaming" && Webcam.phase !== "asking"
+                                    text: page.onMac && !Webcam.previewOnly && Webcam.phase !== "streaming" && Webcam.phase !== "asking"
                                         ? Webcam.addonStatusText
                                         : Webcam.statusText.length > 0
                                         ? Webcam.statusText
@@ -1933,13 +1952,13 @@ Item {
                                     anchors.verticalCenter: parent.verticalCenter
                                     // A session already running still gets its Stop.
                                     enabled: DeviceList.count > 0
-                                             && (!page.onMac || Webcam.addonRegistered || Webcam.phase === "streaming" || Webcam.phase === "asking")
+                                             && (!page.onMac || Webcam.previewOnly || Webcam.addonRegistered || Webcam.phase === "streaming" || Webcam.phase === "asking")
                                     variant: Webcam.phase === "streaming" || Webcam.phase === "asking" ? "outline" : "tonal"
                                     size: "sm"
                                     iconPath: Webcam.phase === "streaming" || Webcam.phase === "asking" ? Icons.close : Icons.video
                                     text: Webcam.phase === "streaming" || Webcam.phase === "asking"
-                                        ? qsTr("Stop webcam")
-                                        : qsTr("Start webcam")
+                                        ? (Webcam.previewOnly ? qsTr("Stop camera preview") : qsTr("Stop webcam"))
+                                        : (Webcam.previewOnly ? qsTr("Start camera preview") : qsTr("Start webcam"))
                                     onClicked: {
                                         if (Webcam.phase === "streaming" || Webcam.phase === "asking")
                                             Webcam.stop()
@@ -1947,6 +1966,13 @@ Item {
                                             Webcam.start("")
                                     }
                                 }
+                            }
+                            Button {
+                                visible: page.onMac && Webcam.previewOnly
+                                enabled: !Webcam.previewWindowOpen
+                                text: Webcam.previewWindowOpen ? qsTr("Camera preview window is open") : qsTr("Open camera preview window")
+                                variant: "outline"
+                                onClicked: Webcam.showPreviewWindow(true)
                             }
                             Rectangle {
                                 width: parent.width
@@ -2428,6 +2454,15 @@ Item {
                                             iconPath: Icons.trash
                                             text: qsTr("Remove")
                                             onClicked: Preferences.removeFolderSyncRule(syncRuleDelegate.modelData.id)
+                                        }
+                                        Button {
+                                            visible: page.onMac
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            variant: "text"
+                                            size: "sm"
+                                            iconPath: Icons.folder
+                                            text: qsTr("Open local folder in Finder")
+                                            onClicked: AppController.openSyncedFolder(syncRuleDelegate.modelData.id)
                                         }
                                         Toggle {
                                             anchors.verticalCenter: parent.verticalCenter
@@ -3351,7 +3386,7 @@ Item {
                         ListRow {
                             width: parent.width
                             iconPath: Icons.desktop
-                            title: qsTr("Waypair Link %1").arg(AppController.version)
+                            title: qsTr("Waypair Link %1").arg(AppController.displayVersion)
                             description: AppController.updateStatus.length > 0
                                          ? AppController.updateStatus
                                          : page.onMac ? qsTr("This Mac: %1").arg(AppController.deviceName)

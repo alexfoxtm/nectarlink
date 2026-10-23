@@ -692,9 +692,9 @@ dependencies = [
 
 [[package]]
 name = "ctutils"
-version = "0.4.2"
+version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d5515a3834141de9eafb9717ad39eea8247b5674e6066c404e8c4b365d2a29e"
+checksum = "38d28fb6aa7dd680b3ffd1a3e64e115c177bdba63c0ae7f9cd48129ff05c4fa0"
 dependencies = [
  "cmov",
 ]
@@ -2318,7 +2318,7 @@ dependencies = [
 
 [[package]]
 name = "nectarlink-adb"
-version = "0.1.4"
+version = "0.2.0"
 dependencies = [
  "thiserror 2.0.21",
  "tokio",
@@ -2328,7 +2328,7 @@ dependencies = [
 
 [[package]]
 name = "nectarlink-cli"
-version = "0.1.4"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2347,7 +2347,7 @@ dependencies = [
 
 [[package]]
 name = "nectarlink-core"
-version = "0.1.4"
+version = "0.2.0"
 dependencies = [
  "blake3",
  "bytes",
@@ -2382,7 +2382,7 @@ dependencies = [
 
 [[package]]
 name = "nectarlink-desktop"
-version = "0.1.4"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "blake3",
@@ -2417,7 +2417,7 @@ dependencies = [
 
 [[package]]
 name = "nectarlink-ffi"
-version = "0.1.4"
+version = "0.2.0"
 dependencies = [
  "jni-sys 0.4.1",
  "nectarlink-core",
@@ -2431,7 +2431,7 @@ dependencies = [
 
 [[package]]
 name = "nectarlink-protocol"
-version = "0.1.4"
+version = "0.2.0"
 dependencies = [
  "ciborium",
  "data-encoding",
@@ -2446,7 +2446,7 @@ dependencies = [
 
 [[package]]
 name = "nectarlink-vcam"
-version = "0.1.4"
+version = "0.2.0"
 dependencies = [
  "ab_glyph",
  "embed-resource",
@@ -5089,7 +5089,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "0.1.4"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "serde_json",

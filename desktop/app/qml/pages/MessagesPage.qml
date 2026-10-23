@@ -26,6 +26,43 @@ Item {
     readonly property var shownThreads: query.length === 0 ? threads
         : threads.filter(t => (t.title + " " + t.addresses + " " + (t.appName || "") + " " + (t.lastSender || "") + " " + t.snippet).toLocaleLowerCase().indexOf(query) >= 0)
 
+    // Search only the messages already loaded for this conversation.
+    readonly property string bodyQuery: bodySearch.text.trim().toLocaleLowerCase()
+    readonly property var bodyMatches: {
+        if (!active || !openThread || Messages.device !== deviceId || bodyQuery.length === 0) return []
+        const matches = []
+        for (let i = 0; i < messages.length; i++) {
+            if ((messages[i].body || "").toLocaleLowerCase().indexOf(bodyQuery) >= 0) matches.push(i)
+        }
+        return matches
+    }
+    property int searchRevision: 0
+    property int bodyMatch: -1
+    readonly property int matchedMessageIndex: bodyMatch >= 0 && bodyMatch < bodyMatches.length ? bodyMatches[bodyMatch] : -1
+    function clearBodySearch() { bodySearch.text = ""; bodyMatch = -1 }
+    function moveBodyMatch(direction) {
+        if (bodyMatches.length === 0) return
+        bodyMatch = (bodyMatch + direction + bodyMatches.length) % bodyMatches.length
+        messageList.positionViewAtIndex(bodyMatches[bodyMatch], ListView.Center)
+    }
+    onBodyMatchesChanged: {
+        searchRevision++
+        const revision = searchRevision
+        const ownerDevice = Messages.device
+        const ownerThread = Messages.thread
+        bodyMatch = bodyMatches.length > 0 ? 0 : -1
+        Qt.callLater(() => {
+            if (!page.active || revision !== page.searchRevision
+                || ownerDevice !== Messages.device || ownerDevice !== page.deviceId
+                || ownerThread !== Messages.thread || !page.openThread
+                || page.openThread.id !== ownerThread) return
+            if (page.matchedMessageIndex >= 0)
+                messageList.positionViewAtIndex(page.matchedMessageIndex, ListView.Center)
+            else if (page.bodyQuery.length === 0)
+                messageList.loadOlderAtBeginning()
+        })
+    }
+
     // Contacts matching the "To" field when starting a new message.
     readonly property string recipientQuery: toField.text.trim().toLocaleLowerCase()
     readonly property var recipientMatches: {
@@ -70,6 +107,7 @@ Item {
 
     // Back to the list: nothing open.
     function closeChat() {
+        clearBodySearch()
         Messages.closeThread()
         composing = false
         toField.text = ""
@@ -124,6 +162,7 @@ Item {
         target: Messages
         function onComposeToChanged() { page.applyComposeTarget() }
         function onThreadChanged() {
+            page.clearBodySearch()
             if (Messages.thread.length > 0) {
                 page.composing = false
                 Qt.callLater(() => composer.focusText())
@@ -160,7 +199,7 @@ Item {
     }
     Shortcut {
         sequences: [StandardKey.Paste]
-        enabled: page.active && (!!page.openThread || page.composing) && !composer.isChat && !composer.groupSms && !input.activeFocus
+        enabled: page.active && (!!page.openThread || page.composing) && !composer.isChat && !composer.groupSms && !input.activeFocus && !bodySearch.activeFocus
         onActivated: {
             if (Messages.pasteClipboardImage()) {
                 composer.focusText()
@@ -173,7 +212,7 @@ Item {
         toField.text = ""
         toField.forceActiveFocus()
     }
-    onDeviceIdChanged: { composing = false; load() }
+    onDeviceIdChanged: { clearBodySearch(); composing = false; load() }
 
     // "14:05", "Yesterday", "Tue", or a date.
     function shortTime(ms) {
@@ -680,9 +719,72 @@ Item {
             }
         }
 
+        Row {
+            id: conversationSearch
+            anchors.top: chatHeader.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.margins: 16
+            height: visible ? 40 : 0
+            spacing: 8
+            visible: !!page.openThread
+            TextInput {
+                id: bodySearch
+                width: Math.max(80, parent.width - matchCount.width - previousMatch.width - nextMatch.width - clearBodySearchButton.width - 32)
+                height: parent.height
+                verticalAlignment: TextInput.AlignVCenter
+                font.family: Theme.fontUi
+                font.pixelSize: 14
+                color: Theme.surfaceContent
+                selectionColor: Theme.primaryContainer
+                selectedTextColor: Theme.primaryContainerContent
+                clip: true
+                Accessible.name: qsTr("Search loaded messages in this conversation")
+                Keys.onEscapePressed: (event) => {
+                    event.accepted = text.length > 0
+                    page.clearBodySearch()
+                }
+                Keys.onReturnPressed: page.moveBodyMatch(1)
+                Txt {
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: bodySearch.text.length === 0
+                    text: qsTr("Search loaded messages")
+                    muted: true
+                }
+            }
+            Txt {
+                id: matchCount
+                anchors.verticalCenter: parent.verticalCenter
+                text: page.bodyQuery.length === 0 ? "" : page.bodyMatches.length === 0
+                    ? qsTr("No matches") : qsTr("%1 of %2").arg(page.bodyMatch + 1).arg(page.bodyMatches.length)
+                Accessible.name: text
+                muted: true
+            }
+            Button {
+                id: previousMatch
+                text: qsTr("Previous")
+                enabled: page.bodyMatches.length > 0
+                onClicked: page.moveBodyMatch(-1)
+            }
+            Button {
+                id: nextMatch
+                text: qsTr("Next")
+                enabled: page.bodyMatches.length > 0
+                onClicked: page.moveBodyMatch(1)
+            }
+            IconButton {
+                id: clearBodySearchButton
+                width: 32; height: 32
+                iconPath: Icons.close
+                label: qsTr("Clear message search")
+                enabled: bodySearch.text.length > 0
+                onClicked: { page.clearBodySearch(); bodySearch.forceActiveFocus() }
+            }
+        }
+
         ListView {
             id: messageList
-            anchors.top: chatHeader.bottom
+            anchors.top: conversationSearch.bottom
             anchors.bottom: attachmentBar.visible ? attachmentBar.top : composer.top
             anchors.bottomMargin: 8
             width: parent.width
@@ -716,12 +818,16 @@ Item {
                 }
                 lastCount = count
             }
-            onAtYBeginningChanged: {
-                if (atYBeginning && Messages.more && count > 0 && !Messages.loadingOlder) {
+            function loadOlderAtBeginning() {
+                if (page.active && page.bodyQuery.length === 0 && page.openThread
+                    && Messages.device === page.deviceId && Messages.thread === page.openThread.id
+                    && lastThreadId === Messages.thread && atYBeginning
+                    && Messages.more && count > 0 && !Messages.loadingOlder) {
                     savedBottomOffset = contentHeight - contentY
                     Messages.loadOlder()
                 }
             }
+            onAtYBeginningChanged: loadOlderAtBeginning()
             header: Item {
                 width: messageList.width
                 height: Messages.loadingOlder ? 40 : 0
@@ -730,6 +836,7 @@ Item {
             delegate: Bubble {
                 width: messageList.width
                 message: modelData
+                searchCurrent: index === page.matchedMessageIndex
                 previous: index > 0 ? page.messages[index - 1] : null
             }
             Txt {
@@ -1135,6 +1242,7 @@ Item {
         id: bubble
         property var message
         property var previous: null
+        property bool searchCurrent: false
         readonly property bool mine: message.outgoing
         readonly property real maxWidth: Math.min(width * 0.72, 520)
         readonly property bool hasUrl: message.body.indexOf("http://") >= 0 || message.body.indexOf("https://") >= 0
@@ -1184,12 +1292,12 @@ Item {
             anchors.leftMargin: 24
             anchors.rightMargin: 24
             readonly property var audioList: bubble.message.audios || []
-            width: Math.max(pictures.width, audiosCol.width, Math.min(text.implicitWidth, bubble.maxWidth - 28) + 28)
-            height: pictures.height + audiosCol.height + (text.visible ? text.height + 18 : 0)
+            width: Math.max(pictures.width, audiosCol.width, Math.min(messageText.implicitWidth, bubble.maxWidth - 28) + 28)
+            height: pictures.height + audiosCol.height + (messageText.visible ? messageText.height + 18 : 0)
             radius: 18
             color: bubble.mine ? Theme.primaryContainer : Theme.surfaceContainerHigh
-            border.width: Theme.graphite ? 1 : 0
-            border.color: Theme.outlineVariant
+            border.width: bubble.searchCurrent ? 2 : Theme.graphite ? 1 : 0
+            border.color: bubble.searchCurrent ? Theme.primary : Theme.outlineVariant
             Column {
                 id: pictures
                 width: bubble.message.images.length > 0 ? Math.min(260, bubble.maxWidth) : 0
@@ -1291,7 +1399,7 @@ Item {
                 }
             }
             TextEdit {
-                id: text
+                id: messageText
                 anchors.top: audiosCol.bottom
                 anchors.topMargin: 9
                 x: 14
@@ -1305,7 +1413,7 @@ Item {
                 wrapMode: TextEdit.Wrap
                 textFormat: bubble.hasUrl ? TextEdit.RichText : TextEdit.PlainText
                 onLinkActivated: (link) => Qt.openUrlExternally(link)
-                HoverHandler { cursorShape: text.hoveredLink.length > 0 ? Qt.PointingHandCursor : Qt.IBeamCursor }
+                HoverHandler { cursorShape: messageText.hoveredLink.length > 0 ? Qt.PointingHandCursor : Qt.IBeamCursor }
                 font.family: Theme.fontUi
                 font.pixelSize: 14
                 font.italic: bubble.message.body.length === 0
@@ -1341,8 +1449,8 @@ Item {
             opacity: bubbleHover.hovered || activeFocus ? 1 : 0
             Behavior on opacity { NumberAnimation { duration: Theme.fadeFast } }
             iconPath: Icons.copy
-            label: qsTr("Copy text")
-            onClicked: Messages.copy(bubble.message.body)
+            label: messageText.selectedText.length > 0 ? qsTr("Copy selected text") : qsTr("Copy text")
+            onClicked: Messages.copy(messageText.selectedText.length > 0 ? messageText.selectedText : bubble.message.body)
         }
         // A one-time code, one click from the clipboard.
         Item {

@@ -1143,7 +1143,7 @@ fun SettingsScreen(
                         }
                     }
                     SettingRowDivider()
-                    Text(stringResource(R.string.about_version, BuildConfig.VERSION_NAME), style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.about_version, "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"), style = MaterialTheme.typography.bodyMedium)
                     CheckForUpdates(updater)
                 }
             }

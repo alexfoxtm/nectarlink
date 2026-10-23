@@ -11,13 +11,20 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-// The version comes from the workspace (Cargo.toml), like the PC app's.
+// Canonical release identity shared by Link Android and desktop.
+val releaseProperties = Properties().apply {
+    rootProject.file("../release-version.properties").inputStream().use { load(it) }
+}
+val releaseVersion: String = requireNotNull(releaseProperties.getProperty("version")) {
+    "release-version.properties must define version"
+}.also { require(it.matches(Regex("[0-9]+\\.[0-9]+\\.[0-9]+"))) { "release version must be semantic version" } }
+val releaseBuild: Int = requireNotNull(releaseProperties.getProperty("build")?.toIntOrNull()?.takeIf { it in 1..2_100_000_000 }) {
+    "release-version.properties must define a positive Android build"
+}
 val cargoVersion: String = rootProject.file("../Cargo.toml").readLines()
     .first { it.startsWith("version = ") }
     .substringAfter('"').substringBefore('"')
-/** 1.2.3 → 1002003: every release must have a larger code than the last. */
-val cargoVersionCode: Int = cargoVersion.substringBefore('-').split('.').map(String::toInt)
-    .let { (major, minor, patch) -> major * 1_000_000 + minor * 1_000 + patch }
+require(cargoVersion == releaseVersion) { "Cargo workspace version must match release-version.properties" }
 
 // A fork's release sets its own identity and version, independent of upstream's
 // (docs/waypair/ANDROID_BUILD.md). Each defaults to upstream's.
@@ -25,13 +32,13 @@ val appId: String = providers.gradleProperty("waypair.applicationId").orNull?.al
     require(it.matches(Regex("[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+"))) { "waypair.applicationId must be a package name" }
 } ?: "app.nectarlink"
 val appVersion: String = providers.gradleProperty("waypair.versionName").orNull?.also {
-    require(it.isNotBlank()) { "waypair.versionName must not be blank" }
-} ?: cargoVersion
+    require(it == releaseVersion) { "waypair.versionName must match release-version.properties" }
+} ?: releaseVersion
 val appVersionCode: Int = providers.gradleProperty("waypair.versionCode").orNull?.let {
-    requireNotNull(it.toIntOrNull()?.takeIf { code -> code in 1..2_100_000_000 }) {
-        "waypair.versionCode must be an integer from 1 to 2100000000"
+    requireNotNull(it.toIntOrNull()?.takeIf { code -> code == releaseBuild }) {
+        "waypair.versionCode must match release-version.properties"
     }
-} ?: cargoVersionCode
+} ?: releaseBuild
 // About links this build's exact source: for a release, its archive published
 // beside the APK (docs/waypair/R2_RELEASE.md). Other builds have none, and
 // About says so beside the fork's repository.

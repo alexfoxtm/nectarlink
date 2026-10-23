@@ -17,6 +17,7 @@ mod mark;
 
 const QML: &[&str] = &[
     "qml/App.qml",
+    "qml/CameraPreviewWindow.qml",
     "qml/IslandWindow.qml",
     "qml/LaserOverlay.qml",
     "qml/MainWindow.qml",
@@ -262,7 +263,31 @@ END
     embed_resource::compile(&rc_path, embed_resource::NONE).manifest_required().expect("compile resources");
 }
 
+fn release_identity() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../release-version.properties");
+    println!("cargo::rerun-if-changed={}", path.display());
+    let properties = fs::read_to_string(&path).expect("read canonical release-version.properties");
+    let property = |key: &str| {
+        let mut values = properties.lines().filter_map(|line| {
+            let (name, value) = line.split_once('=')?;
+            (name.trim() == key).then_some(value.trim())
+        });
+        let value = values.next().unwrap_or_else(|| panic!("missing release property {key}"));
+        assert!(values.next().is_none(), "duplicate release property {key}");
+        value
+    };
+    assert_eq!(
+        property("version"),
+        env!("CARGO_PKG_VERSION"),
+        "Cargo version must match canonical release version"
+    );
+    let build: u32 = property("build").parse().expect("canonical release build must be an integer");
+    assert!((1..=2_100_000_000).contains(&build), "canonical release build is out of range");
+    println!("cargo::rustc-env=WAYPAIR_RELEASE_BUILD={build}");
+}
+
 fn main() {
+    release_identity();
     println!("cargo:rerun-if-changed=src/mark.rs");
     for qml in QML.iter().chain(QML_SINGLETONS.iter()) {
         println!("cargo:rerun-if-changed={qml}");

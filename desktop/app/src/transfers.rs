@@ -104,6 +104,15 @@ pub fn cancel_all_queued(device: Option<DeviceId>) {
     }
 }
 
+/// Retries failed/expired items only for the explicitly selected peer.
+pub fn retry_failed_queue(device: DeviceId) {
+    let Some(node) = core_host::node() else { return };
+    match node.retry_all_failed_queue_items(Some(device)) {
+        Ok(count) => show_message(tr!("Transfers", "%1 queued item(s) ready to retry.", count)),
+        Err(e) => show_message(describe(&e)),
+    }
+}
+
 /// Retries a failed or expired queue item by ID.
 pub fn retry_queue_item(id: &str) {
     let Some(node) = core_host::node() else { return };

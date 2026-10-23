@@ -25,6 +25,8 @@ pub mod qobject {
         type QVariant = cxx_qt_lib::QVariant;
         include!("cxx-qt-lib/qhash.h");
         type QHash_i32_QByteArray = cxx_qt_lib::QHash<cxx_qt_lib::QHashPair_i32_QByteArray>;
+        include!("cxx-qt-lib/qstring.h");
+        type QString = cxx_qt_lib::QString;
         include!("cxx-qt-lib/qlist.h");
         type QList_i32 = cxx_qt_lib::QList<i32>;
     }
@@ -78,6 +80,10 @@ pub mod qobject {
 
     unsafe extern "RustQt" {
         #[qinvokable]
+        #[cxx_name = "watchDevice"]
+        fn watch_device(self: Pin<&mut NotificationHistory>, device: &QString);
+
+        #[qinvokable]
         #[cxx_override]
         fn data(self: &NotificationHistory, index: &QModelIndex, role: i32) -> QVariant;
         #[qinvokable]
@@ -105,6 +111,7 @@ struct Row {
 pub struct NotificationHistoryRust {
     count: i32,
     rows: Vec<Row>,
+    watched_device: String,
 }
 
 /// Model roles (Qt::UserRole + n).
@@ -141,10 +148,17 @@ impl cxx_qt::Initialize for qobject::NotificationHistory {
 }
 
 impl qobject::NotificationHistory {
+    pub fn watch_device(mut self: Pin<&mut Self>, device: &QString) {
+        self.as_mut().rust_mut().watched_device = device.to_string();
+        self.refresh();
+    }
+
     fn refresh(mut self: Pin<&mut Self>) {
+        let device = &self.watched_device;
         let new: Vec<Row> = core_host::host().hub.read(|s| {
             s.history
                 .iter()
+                .filter(|h| !device.is_empty() && h.device.to_string() == *device)
                 .filter(|h| s.app_rule(&h.notification.app) != AppRule::Hidden)
                 .map(|h| Row {
                     device_name: s.name_of(&h.device).unwrap_or_default(),

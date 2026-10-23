@@ -73,8 +73,18 @@ pub enum Phase {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum OutputTarget {
+    #[default]
+    NativeCamera,
+    PreviewOnly,
+}
+
 #[derive(Debug, Default)]
 struct State {
+    output_target: OutputTarget,
+    #[cfg(target_os = "macos")]
+    sink_stopped: Option<Arc<tokio::sync::Notify>>,
     phase: Phase,
     preferred_phone: Option<DeviceId>,
     addon_registered: bool,
@@ -117,6 +127,23 @@ struct CameraRequest {
 
 #[cfg(target_os = "macos")]
 impl State {
+    fn select_output_target(&mut self, target: OutputTarget) -> bool {
+        if self.shutting_down
+            || self.request.is_some()
+            || self.sink_generation.is_some()
+            || self.capture_view.is_some()
+        {
+            return false;
+        }
+        self.output_target = target;
+        true
+    }
+
+    fn notify_sink_stopped(&mut self) {
+        if let Some(stopped) = self.sink_stopped.take() {
+            stopped.notify_one();
+        }
+    }
     fn next_camera_generation(&mut self) -> Option<u64> {
         self.next_camera_generation = self.next_camera_generation.checked_add(1)?;
         Some(self.next_camera_generation)
@@ -233,6 +260,7 @@ impl State {
             }
             None => Phase::Idle,
         };
+        self.notify_sink_stopped();
         close_and_clear();
         true
     }
@@ -246,6 +274,33 @@ static HEIGHT: AtomicU32 = AtomicU32::new(720);
 /// (offered until a phone says it can't).
 static UHD: AtomicBool = AtomicBool::new(true);
 static PREVIEW_ACTIVE: AtomicBool = AtomicBool::new(false);
+static PREVIEW_WINDOW_OPEN: AtomicBool = AtomicBool::new(false);
+
+fn preview_active() -> bool {
+    PREVIEW_ACTIVE.load(Ordering::Acquire) || PREVIEW_WINDOW_OPEN.load(Ordering::Acquire)
+}
+
+pub fn preview_window_open() -> bool {
+    PREVIEW_WINDOW_OPEN.load(Ordering::Acquire)
+}
+
+/// The app-owned window observes the existing stream; it never starts another request.
+pub fn set_preview_window_open(open: bool) {
+    if open && !preview_only() {
+        return;
+    }
+    let previous = PREVIEW_WINDOW_OPEN.swap(open, Ordering::AcqRel);
+    if previous == open {
+        return;
+    }
+    if open {
+        refresh_idle_frame();
+    } else {
+        stop();
+        set_preview_active(PREVIEW_ACTIVE.load(Ordering::Acquire));
+    }
+    core_host::host().hub.changed(Changes::WEBCAM);
+}
 
 fn state<T>(f: impl FnOnce(&mut State) -> T) -> T {
     f(STATE.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_default())
@@ -353,6 +408,7 @@ pub fn shutdown() {
             s.shutting_down = true;
             s.cancel_camera_request();
             s.sink_generation = None;
+            s.notify_sink_stopped();
             camera_output::shutdown();
             s.phase = Phase::Idle;
             s.vcam_handle = None;
@@ -655,7 +711,7 @@ fn refresh_idle_frame() {
     if let Some(mapping) = idle_mapping() {
         mapping.set_idle(&name);
     }
-    if PREVIEW_ACTIVE.load(Ordering::Relaxed) {
+    if preview_active() {
         let (w, h) = (640u32, 360u32);
         let mut bgrx = vec![0u8; (w * h * 4) as usize];
         render_placeholder_bgrx(&mut bgrx, w, h, &name);
@@ -665,7 +721,7 @@ fn refresh_idle_frame() {
 
 #[cfg(target_os = "macos")]
 fn refresh_idle_frame() {
-    if !PREVIEW_ACTIVE.load(Ordering::Acquire) {
+    if !preview_active() {
         return;
     }
     let name = phone_name_for(selected_phone());
@@ -676,7 +732,7 @@ fn refresh_idle_frame() {
         if !s.shutting_down
             && s.sink_generation.is_none()
             && !matches!(s.phase, Phase::Streaming { .. })
-            && PREVIEW_ACTIVE.load(Ordering::Acquire)
+            && preview_active()
         {
             ffi::video_frame(PREVIEW_STREAM, width, height, &pixels);
         }
@@ -689,7 +745,7 @@ pub fn set_preview_active(active: bool) {
     let prev = PREVIEW_ACTIVE.swap(active, Ordering::AcqRel);
     if active && !prev {
         refresh_idle_frame();
-    } else if !active {
+    } else if !active && !preview_window_open() {
         #[cfg(target_os = "macos")]
         state(|s| {
             if s.sink_generation.is_none() {
@@ -710,6 +766,9 @@ pub fn set_preview_active(active: bool) {
 /// main window closes to the tray.
 pub fn release_idle_resources() {
     PREVIEW_ACTIVE.store(false, Ordering::Release);
+    if preview_window_open() {
+        return;
+    }
     #[cfg(target_os = "macos")]
     {
         state(|s| {
@@ -929,7 +988,7 @@ pub fn start(device: Option<DeviceId>) {
         if s.shutting_down || s.request.is_some() || s.sink_generation.is_some() {
             return None;
         }
-        if !vcam::is_registered() {
+        if s.output_target == OutputTarget::NativeCamera && !vcam::is_registered() {
             s.phase = Phase::Ended { reason: vcam::status_text() };
             return None;
         }
@@ -950,6 +1009,7 @@ pub fn stop() {
         s.cancel_camera_request();
         s.ensure_camera_cleanup();
         s.sink_generation = None;
+        s.notify_sink_stopped();
         camera_output::shutdown();
         if s.request.is_none() {
             s.phase = Phase::Idle;
@@ -966,10 +1026,12 @@ pub fn stop() {
 }
 
 #[cfg(target_os = "macos")]
-fn finish_camera_sink(lease: camera_output::Lease, generation: u64, reason: Option<String>) {
+fn finish_camera_sink(lease: Option<camera_output::Lease>, generation: u64, reason: Option<String>) {
     let (changed, cleanup) = state(|s| {
         let changed = s.finish_camera_sink(generation, reason, || {
-            camera_output::release(lease);
+            if let Some(lease) = lease {
+                camera_output::release(lease);
+            }
             ffi::video_clear(PREVIEW_STREAM);
         });
         (changed, s.take_cleanup_actor())
@@ -984,7 +1046,7 @@ fn finish_camera_sink(lease: camera_output::Lease, generation: u64, reason: Opti
 
 #[cfg(target_os = "macos")]
 fn publish_camera_sink(
-    lease: camera_output::Lease,
+    lease: Option<camera_output::Lease>,
     generation: u64,
     width: u32,
     height: u32,
@@ -997,12 +1059,26 @@ fn publish_camera_sink(
         }
         if !s.capture_view.as_ref().is_some_and(|view| view.is_current()) {
             ended = s.finish_camera_sink(generation, None, || {
-                camera_output::release(lease);
+                if let Some(lease) = lease {
+                    camera_output::release(lease);
+                }
                 ffi::video_clear(PREVIEW_STREAM);
             });
             return false;
         }
-        match camera_output::publish(lease, width, height, pixels) {
+        let result = if width == 0
+            || height == 0
+            || width > 8192
+            || height > 8192
+            || pixels.len() != width as usize * height as usize * 4
+        {
+            Err("Invalid camera preview frame.".into())
+        } else if let Some(lease) = lease {
+            camera_output::publish(lease, width, height, pixels)
+        } else {
+            Ok(())
+        };
+        match result {
             Ok(()) => {
                 // video_frame copies and only queues Qt wakeups; it does not
                 // synchronously call Rust controller code while STATE is held.
@@ -1011,7 +1087,9 @@ fn publish_camera_sink(
             }
             Err(reason) => {
                 ended = s.finish_camera_sink(generation, Some(reason), || {
-                    camera_output::release(lease);
+                    if let Some(lease) = lease {
+                        camera_output::release(lease);
+                    }
                     ffi::video_clear(PREVIEW_STREAM);
                 });
                 false
@@ -1039,6 +1117,24 @@ pub fn on_event(event: &NodeEvent) {
         refresh_idle_frame();
         core_host::host().hub.changed(Changes::WEBCAM);
     }
+}
+
+pub fn preview_only() -> bool {
+    state(|s| s.output_target == OutputTarget::PreviewOnly)
+}
+
+pub fn set_preview_only(on: bool) {
+    if preview_window_open() {
+        return;
+    }
+    #[cfg(target_os = "macos")]
+    if state(|s| {
+        s.select_output_target(if on { OutputTarget::PreviewOnly } else { OutputTarget::NativeCamera })
+    }) {
+        core_host::host().hub.changed(Changes::WEBCAM);
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = on;
 }
 
 /// Requests a webcam stream from `device` (or the selected phone).
@@ -1145,7 +1241,10 @@ pub fn sink_owned(device: &DeviceId, view: &nectarlink_core::WebcamView) -> Opti
         if !view.is_current() || !s.capture_view.as_ref().is_some_and(|owner| owner.same_owner(view)) {
             return None;
         }
-        if s.shutting_down || s.sink_generation.is_some() || !vcam::is_registered() {
+        if s.shutting_down
+            || s.sink_generation.is_some()
+            || (s.output_target == OutputTarget::NativeCamera && !vcam::is_registered())
+        {
             return None;
         }
         if let Some(request) = &s.request
@@ -1154,18 +1253,25 @@ pub fn sink_owned(device: &DeviceId, view: &nectarlink_core::WebcamView) -> Opti
             return None;
         }
         let stopped = Arc::new(tokio::sync::Notify::new());
-        let lease = match camera_output::claim(*device, stopped.clone()) {
-            Ok(lease) => lease,
-            Err(reason) => {
-                s.cancel_camera_request();
-                s.phase = Phase::Ended { reason };
-                return None;
+        let lease = if s.output_target == OutputTarget::PreviewOnly {
+            None
+        } else {
+            match camera_output::claim(*device, stopped.clone()) {
+                Ok(lease) => Some(lease),
+                Err(reason) => {
+                    s.cancel_camera_request();
+                    s.phase = Phase::Ended { reason };
+                    return None;
+                }
             }
         };
         let Some(generation) = s.next_camera_generation() else {
-            camera_output::release(lease);
+            if let Some(lease) = lease {
+                camera_output::release(lease);
+            }
             return None;
         };
+        s.sink_stopped = Some(stopped.clone());
         s.sink_generation = Some(generation);
         if let Some(request) = s.request.as_mut() {
             request.sink_admitted = true;
@@ -1191,7 +1297,7 @@ struct Sink {
     device: DeviceId,
     video: OnceLock<Video>,
     #[cfg(target_os = "macos")]
-    lease: camera_output::Lease,
+    lease: Option<camera_output::Lease>,
     #[cfg(target_os = "macos")]
     generation: u64,
     #[cfg(target_os = "macos")]
@@ -1231,7 +1337,7 @@ impl Sink {
 impl Video {
     fn start(
         device: DeviceId,
-        #[cfg(target_os = "macos")] lease: camera_output::Lease,
+        #[cfg(target_os = "macos")] lease: Option<camera_output::Lease>,
         #[cfg(target_os = "macos")] generation: u64,
     ) -> Self {
         let (queue, items) = sync_channel(BACKLOG);
@@ -1357,7 +1463,7 @@ fn decode(
     #[cfg(not(target_os = "macos"))] device: DeviceId,
     items: &Receiver<Item>,
     waiting: &AtomicUsize,
-    #[cfg(target_os = "macos")] lease: camera_output::Lease,
+    #[cfg(target_os = "macos")] lease: Option<camera_output::Lease>,
     #[cfg(target_os = "macos")] generation: u64,
 ) {
     // On the GPU when there is one: 4K takes about 24 ms a frame in software
@@ -1485,6 +1591,33 @@ fn decode(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn preview_target_finishes_and_notifies_its_owner() {
+        let mut s = State::default();
+        assert!(s.select_output_target(OutputTarget::PreviewOnly));
+        let stopped = Arc::new(tokio::sync::Notify::new());
+        s.sink_stopped = Some(stopped.clone());
+        s.sink_generation = Some(7);
+        let mut cleared = false;
+        assert!(s.finish_camera_sink(7, None, || cleared = true));
+        assert!(cleared);
+        tokio::time::timeout(std::time::Duration::from_millis(100), stopped.notified()).await.unwrap();
+        assert!(s.sink_stopped.is_none());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn active_target_and_successor_are_protected() {
+        let mut s = State::default();
+        assert_eq!(s.output_target, OutputTarget::NativeCamera);
+        s.sink_generation = Some(8);
+        assert!(!s.select_output_target(OutputTarget::PreviewOnly));
+        assert!(!s.finish_camera_sink(7, None, || panic!("stale sink cleared successor")));
+        assert_eq!(s.sink_generation, Some(8));
+        assert_eq!(s.output_target, OutputTarget::NativeCamera);
+    }
 
     #[test]
     fn maps_720_1080_and_2160_4k_dimensions() {

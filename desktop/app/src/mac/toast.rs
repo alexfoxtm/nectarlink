@@ -4,7 +4,8 @@
 //! The banner uses the host app's own name and icon. Title, subtitle, and
 //! body stay the phone title, the desktop attribution, and the phone text.
 //! Phone actions and supported free-form replies use native notification
-//! actions; icon override, image, and progress are not represented.
+//! actions. Progress supplied with a post is included as text; icon override
+//! and image are not represented.
 
 use std::{
     path::{Path, PathBuf},
@@ -175,11 +176,41 @@ pub fn notification_identifier(device: &str, key: &str) -> String {
     format!("nl:{:x}:{device}:{:x}:{key}", device.len(), key.len())
 }
 
+/// Uses the supplied status and label without introducing untranslated UI copy.
+/// UserNotifications has no progress bar, so full posts include a text snapshot.
+fn progress_body(body: &str, progress: Option<&Progress>) -> String {
+    let Some(progress) = progress else {
+        return body.to_string();
+    };
+    let mut line = progress.status.trim().to_string();
+    let label = progress.label.trim();
+    if !label.is_empty() {
+        if !line.is_empty() {
+            line.push_str(" — ");
+        }
+        line.push_str(label);
+    } else if let Some(value) = progress.value.filter(|value| value.is_finite()) {
+        let percent = (value.clamp(0.0, 1.0) * 100.0).round() as u32;
+        if line.is_empty() {
+            line = format!("{percent}%");
+        } else {
+            line.push_str(&format!(" ({percent}%)"));
+        }
+    }
+    if line.is_empty() {
+        body.to_string()
+    } else if body.is_empty() {
+        line
+    } else {
+        format!("{body}\n{line}")
+    }
+}
+
 pub fn banner_text(toast: &Toast) -> BannerText {
     BannerText {
         title: toast.title.clone(),
         subtitle: toast.attribution.clone(),
-        body: toast.body.clone(),
+        body: progress_body(&toast.body, toast.progress.as_ref()),
         device: toast.device.clone(),
         key: toast.key.clone(),
         identifier: notification_identifier(&toast.device, &toast.key),
@@ -393,9 +424,6 @@ pub fn start(_icon: PathBuf, on_event: impl Fn(ToastEvent) + Send + Sync + 'stat
 }
 
 pub fn show(toast: Toast) {
-    if toast.progress.is_some() {
-        tracing::debug!("notification progress is not shown in the native banner");
-    }
     user_notifications::post(toast);
 }
 
@@ -473,6 +501,33 @@ fn macos_major() -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn progress_snapshot_preserves_body_and_supplied_labels() {
+        let mut progress =
+            Progress { status: "Загрузка".into(), value: Some(0.42), label: String::new() };
+        assert_eq!(progress_body("File\nDetails", Some(&progress)), "File\nDetails\nЗагрузка (42%)");
+        progress.label = "42 из 100 МБ".into();
+        assert_eq!(progress_body("File", Some(&progress)), "File\nЗагрузка — 42 из 100 МБ");
+        progress.status.clear();
+        progress.label.clear();
+        progress.value = Some(2.0);
+        assert_eq!(progress_body("", Some(&progress)), "100%");
+        progress.value = Some(-1.0);
+        assert_eq!(progress_body("", Some(&progress)), "0%");
+    }
+
+    #[test]
+    fn invalid_or_missing_progress_does_not_invent_a_percentage() {
+        let mut progress = Progress { status: String::new(), value: Some(f64::NAN), label: String::new() };
+        assert_eq!(progress_body("  Original\n", Some(&progress)), "  Original\n");
+        progress.value = Some(f64::INFINITY);
+        assert_eq!(progress_body("Original", Some(&progress)), "Original");
+        progress.value = None;
+        progress.status = "Working".into();
+        assert_eq!(progress_body("Original", Some(&progress)), "Original\nWorking");
+        assert_eq!(progress_body("  Original\n", None), "  Original\n");
+    }
 
     #[test]
     fn authorized_banner_keeps_phone_title_attribution_and_body() {

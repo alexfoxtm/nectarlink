@@ -146,11 +146,14 @@ pub mod qobject {
         #[cxx_name = "cancelAllQueued"]
         fn cancel_all_queued(self: &TransferList, device: &QString);
         #[qinvokable]
+        #[cxx_name = "retryFailedQueue"]
+        fn retry_failed_queue(self: &TransferList, device: &QString);
+        #[qinvokable]
         #[cxx_name = "retryQueueItem"]
         fn retry_queue_item(self: &TransferList, id: &QString);
         #[qinvokable]
         #[cxx_name = "clearFinishedQueue"]
-        fn clear_finished_queue(self: &TransferList);
+        fn clear_finished_queue(self: &TransferList, device: &QString);
     }
 
     impl cxx_qt::Threading for TransferList {}
@@ -413,15 +416,22 @@ impl qobject::TransferList {
     }
 
     pub fn cancel_all_queued(&self, device: &QString) {
-        transfers::cancel_all_queued(super::parse_device(device));
+        let Some(device) = super::parse_device(device) else { return };
+        transfers::cancel_all_queued(Some(device));
+    }
+
+    pub fn retry_failed_queue(&self, device: &QString) {
+        let Some(device) = super::parse_device(device) else { return };
+        transfers::retry_failed_queue(device);
     }
 
     pub fn retry_queue_item(&self, id: &QString) {
         transfers::retry_queue_item(&String::from(id));
     }
 
-    pub fn clear_finished_queue(&self) {
-        transfers::clear_finished_queue(None);
+    pub fn clear_finished_queue(&self, device: &QString) {
+        let Some(device) = super::parse_device(device) else { return };
+        transfers::clear_finished_queue(Some(device));
     }
 }
 

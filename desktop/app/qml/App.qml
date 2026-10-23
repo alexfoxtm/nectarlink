@@ -19,6 +19,14 @@ QtObject {
             item.restoreAndBringToFront()
         }
     }
+    readonly property Loader cameraPreviewLoader: Loader {
+        active: Webcam.previewWindowOpen
+        source: active ? "qrc:/qt/qml/app/nectarlink/qml/CameraPreviewWindow.qml" : ""
+        onStatusChanged: {
+            if (status === Loader.Error)
+                Webcam.showPreviewWindow(false)
+        }
+    }
     readonly property Loader laserLoader: Loader {
         active: AppController.laserActive
         source: active ? "qrc:/qt/qml/app/nectarlink/qml/LaserOverlay.qml" : ""

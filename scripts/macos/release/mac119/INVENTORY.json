@@ -1,0 +1,20 @@
+{
+  "status": "MISSING_HOLD",
+  "build": 119,
+  "channel": "0.2.0",
+  "source": null,
+  "tree": null,
+  "parent": null,
+  "cameraReady": false,
+  "includesCameraExtension": false,
+  "genericAppFlags": false,
+  "files": {
+    "BUILD-RECIPE-ADDENDUM.md": "47ba9e64d40c997bde5bc6072c8e16a05af76109b55a602fc7028bc2687c2334",
+    "build-mac119-candidate.py": "5d337e8be8e1e14c48e4bf041932f4015d19b00ca6aceb38657d6520679fab3f",
+    "dmg-mac119.py": "7038fc1ec895d7c312a836864873e7018f06450b5d00050a607f8d2ecbc071fb",
+    "mac119_guard.py": "aed7ce6844b44227817322ee84b51f000c6b22ee218c364f5bc199952ccd49b7",
+    "macho_probe.py": "f22ec508cf701b4cb81b5ac962a30c31747da0457efaa3eacfbf8701bc581986",
+    "package-app.sh": "b3b81696b597dece24f7a9255bcf8658d1c0fcd06e4aae5ef108b69ec284bc0c",
+    "record-minimum-os.py": "db0c54c75bb3e424d0b3935521e845efaadbd92ec457abe60ab9f07af78f5449"
+  }
+}

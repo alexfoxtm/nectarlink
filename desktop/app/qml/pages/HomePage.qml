@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import QtQuick
+import QtQuick.Controls as Controls
 import QtQuick.Window
 import QtQuick.Dialogs
 import QtQuick.Shapes
@@ -49,6 +50,20 @@ Item {
         }
     }
 
+    readonly property var selectedQueueItems: sendQueueItems.filter(item =>
+        currentDeviceId.length > 0 && item.deviceId === currentDeviceId)
+    readonly property int selectedQueueFailures: selectedQueueItems.filter(item =>
+        item.status === "failed" || item.status === "expired").length
+    readonly property int selectedQueueActive: selectedQueueItems.filter(item =>
+        item.status === "waiting" || item.status === "sending").length
+    readonly property var filteredQueueItems: selectedQueueItems.filter(item => {
+        const query = queueSearch.text.trim().toLocaleLowerCase()
+        return (!query.length || (item.title || "").toLocaleLowerCase().indexOf(query) >= 0)
+            && (queueKind.currentIndex === 0 || (queueKind.currentIndex === 1
+                ? ["files", "folder", "handoff_document", "recording"].indexOf(item.kind) >= 0
+                : ["files", "folder", "handoff_document", "recording"].indexOf(item.kind) < 0))
+    })
+
     function formatQueueSize(bytes) {
         if (!bytes || bytes <= 0) return ""
         if (bytes < 1024) return qsTr("%1 B").arg(Math.round(bytes))
@@ -79,12 +94,21 @@ Item {
             AppController.currentDevice = current
     }
     onCurrentDeviceIdChanged: {
+        historySheet.close()
+        historySearch.text = ""
+        NotificationHistory.watchDevice("")
         AppController.watchHomeSummary(visible ? currentDeviceId : "")
         if (phoneHotspotSheet.opened && phoneHotspotSheet.deviceId !== currentDeviceId)
             phoneHotspotSheet.close()
     }
-    onVisibleChanged: AppController.watchHomeSummary(visible ? currentDeviceId : "")
-    Component.onDestruction: AppController.watchHomeSummary("")
+    onVisibleChanged: {
+        AppController.watchHomeSummary(visible ? currentDeviceId : "")
+        if (!visible) historySheet.close()
+    }
+    Component.onDestruction: {
+        AppController.watchHomeSummary("")
+        NotificationHistory.watchDevice("")
+    }
     Connections {
         target: DeviceList
         function onCountChanged() {
@@ -1355,7 +1379,7 @@ Item {
             Card {
                 id: sendQueueCard
                 width: parent.width
-                visible: page.sendQueueItems.length > 0
+                visible: page.selectedQueueItems.length > 0
                 opacity: visible ? 1 : 0
                 Behavior on opacity {
                     enabled: !Theme.reduceMotion && !page.resizing
@@ -1370,36 +1394,67 @@ Item {
                     spacing: 4
                     Item {
                         width: parent.width
-                        height: Math.max(queueHeader.height, queueHeaderActions.height)
+                        height: queueHeader.height + queueHeaderActions.height + 4
                         Txt {
                             id: queueHeader
-                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.top: parent.top
                             role: "label"
                             muted: true
-                            text: TransferList.waitingCount > 0
-                                  ? qsTr("Waiting to send · %1").arg(TransferList.waitingCount)
+                            text: page.selectedQueueActive > 0
+                                  ? qsTr("Waiting to send · %1").arg(page.selectedQueueActive)
                                   : qsTr("Waiting to send")
                         }
                         Row {
                             id: queueHeaderActions
                             anchors.right: parent.right
-                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.bottom: parent.bottom
                             spacing: 6
                             Button {
-                                visible: TransferList.hasFailedOrExpiredQueue
+                                visible: page.selectedQueueFailures > 0
+                                variant: "text"
+                                size: "sm"
+                                text: qsTr("Retry failed")
+                                onClicked: TransferList.retryFailedQueue(page.currentDeviceId)
+                            }
+                            Button {
+                                visible: page.selectedQueueFailures > 0
                                 variant: "text"
                                 size: "sm"
                                 text: qsTr("Clear")
-                                onClicked: TransferList.clearFinishedQueue()
+                                onClicked: TransferList.clearFinishedQueue(page.currentDeviceId)
                             }
                             Button {
-                                visible: TransferList.waitingCount > 0
+                                visible: page.selectedQueueActive > 0
                                 variant: "text"
                                 size: "sm"
                                 text: qsTr("Cancel all")
-                                onClicked: TransferList.cancelAllQueued("")
+                                onClicked: TransferList.cancelAllQueued(page.currentDeviceId)
                             }
                         }
+                    }
+                    Row {
+                        width: parent.width
+                        spacing: 8
+                        Controls.TextField {
+                            id: queueSearch
+                            width: Math.max(80, parent.width - queueKind.width - parent.spacing)
+                            placeholderText: qsTr("Find queued item by name")
+                            Accessible.name: qsTr("Find queued item by name")
+                            selectByMouse: true
+                        }
+                        Controls.ComboBox {
+                            id: queueKind
+                            width: 140
+                            model: [qsTr("All types"), qsTr("Files"), qsTr("Other items")]
+                            Accessible.name: qsTr("Queued item type")
+                        }
+                    }
+                    Txt {
+                        width: parent.width
+                        visible: page.filteredQueueItems.length === 0
+                        text: qsTr("No queued items match your filters.")
+                        wrapMode: Text.WordWrap
+                        muted: true
                     }
                     Column {
                         id: sendQueueList
@@ -1413,7 +1468,7 @@ Item {
                             NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 180; easing.type: Easing.OutCubic }
                         }
                         Repeater {
-                            model: page.sendQueueItems
+                            model: page.filteredQueueItems
                             delegate: Item {
                                 id: queueRow
                                 required property var modelData
@@ -1628,7 +1683,7 @@ Item {
                             anchors.right: clearAll.visible ? clearAll.left : parent.right
                             anchors.rightMargin: clearAll.visible ? 8 : 0
                             anchors.verticalCenter: parent.verticalCenter
-                            visible: NotificationList.historyEnabled && NotificationHistory.count > 0
+                            visible: NotificationList.historyEnabled && page.currentDeviceId.length > 0
                             iconPath: Icons.history
                             text: qsTr("History")
                             label: qsTr("Notification history (last 24 hours)")
@@ -2717,6 +2772,19 @@ Item {
     Sheet {
         id: historySheet
         cardWidth: 560
+        onOpenedChanged: {
+            historySearch.text = ""
+            NotificationHistory.watchDevice(opened ? page.currentDeviceId : "")
+            if (opened) historySearch.forceActiveFocus(Qt.OtherFocusReason)
+        }
+        readonly property int matchCount: {
+            let count = 0
+            for (let i = 0; i < historyRows.count; ++i) {
+                const row = historyRows.itemAt(i)
+                if (row && row.visible) ++count
+            }
+            return count
+        }
         Column {
             width: parent.width
             spacing: 12
@@ -2731,7 +2799,7 @@ Item {
                     visible: NotificationHistory.count > 0
                     variant: "text"
                     size: "sm"
-                    text: qsTr("Clear history")
+                    text: qsTr("Clear all history")
                     onClicked: NotificationList.clearHistory()
                 }
             }
@@ -2741,7 +2809,7 @@ Item {
                 role: "bodySmall"
                 muted: true
                 text: NotificationHistory.count > 0
-                      ? qsTr("Dismissed notifications from the last 24 hours.")
+                      ? qsTr("Dismissed notifications for this device from the last 24 hours. Clear all history removes history for every device.")
                       : qsTr("No recent notifications.")
             }
             // Search: by app, title or text, ignoring case.
@@ -2770,8 +2838,8 @@ Item {
                     }
                     anchors.left: searchIcon.right
                     anchors.leftMargin: 10
-                    anchors.right: parent.right
-                    anchors.rightMargin: 16
+                    anchors.right: clearHistorySearch.left
+                    anchors.rightMargin: 8
                     anchors.verticalCenter: parent.verticalCenter
                     font.family: Theme.fontUi
                     font.pixelSize: 14
@@ -2793,6 +2861,26 @@ Item {
                         text: qsTr("Search notification history")
                     }
                 }
+                Button {
+                    id: clearHistorySearch
+                    anchors.right: parent.right
+                    anchors.rightMargin: 8
+                    anchors.verticalCenter: parent.verticalCenter
+                    variant: "text"
+                    size: "sm"
+                    text: qsTr("Clear search")
+                    enabled: historySearch.text.length > 0
+                    onClicked: {
+                        historySearch.text = ""
+                        historySearch.forceActiveFocus(Qt.OtherFocusReason)
+                    }
+                }
+            }
+            Txt {
+                width: parent.width
+                text: qsTr("%1 of %2 notifications").arg(historySheet.matchCount).arg(NotificationHistory.count)
+                role: "bodySmall"
+                muted: true
             }
             Flickable {
                 width: parent.width
@@ -2804,18 +2892,22 @@ Item {
                     id: historyColumn
                     width: parent.width
                     Repeater {
+                        id: historyRows
                         model: historySheet.opened ? NotificationHistory : null
                         delegate: HistoryItem {
                             required property string deviceId
                             required property string app
                             width: historyColumn.width
-                            visible: historySearch.matches([appName, title, text, sub])
+                            visible: deviceId === page.currentDeviceId && historySearch.matches([app, appName, title, text, sub])
                             canOpenApp: (Qt.platform.os !== "osx" && Qt.platform.os !== "macos") && (AppController.capsRevision >= 0
                                 && AppController.featureState(deviceId, "mirroring.app_windows").state === "available")
                                 && app.length > 0
                             onOpenAppRequested: {
+                                const targetDevice = deviceId
+                                const targetApp = app
+                                const targetName = appName.length > 0 ? appName : app
                                 historySheet.close()
-                                Mirror.startApp(deviceId, app, appName.length > 0 ? appName : app)
+                                Mirror.startApp(targetDevice, targetApp, targetName)
                             }
                         }
                     }
@@ -2823,7 +2915,7 @@ Item {
             }
             Txt {
                 width: parent.width
-                visible: historySearch.query.length > 0 && historyColumn.height === 0
+                visible: historySearch.query.length > 0 && historySheet.matchCount === 0
                 horizontalAlignment: Text.AlignHCenter
                 role: "body"
                 muted: true
@@ -2839,6 +2931,16 @@ Item {
     Sheet {
         id: clipboardSheet
         cardWidth: 560
+        property string kindFilter: "all"
+        property bool pinnedOnly: false
+        function resetFilters() {
+            kindFilter = "all"
+            pinnedOnly = false
+            clipboardSearch.text = ""
+        }
+        onOpenedChanged: {
+            if (!opened) resetFilters()
+        }
         readonly property var items: {
             if (!clipboardSheet.opened)
                 return []
@@ -2923,9 +3025,35 @@ Item {
                     }
                 }
             }
+            Row {
+                width: parent.width
+                spacing: 12
+                visible: clipboardSheet.items.length > 0
+                Segmented {
+                    value: clipboardSheet.kindFilter
+                    options: [
+                        { value: "all", label: qsTr("All clips") },
+                        { value: "text", label: qsTr("Text") },
+                        { value: "image", label: qsTr("Images") }
+                    ]
+                    Accessible.name: qsTr("Clipboard content type")
+                    onPicked: (value) => clipboardSheet.kindFilter = value
+                }
+                Toggle {
+                    anchors.verticalCenter: parent.verticalCenter
+                    checked: clipboardSheet.pinnedOnly
+                    label: qsTr("Pinned clips only")
+                    onToggled: (checked) => clipboardSheet.pinnedOnly = checked
+                }
+                Txt {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: qsTr("Pinned only")
+                    role: "label"
+                }
+            }
             Flickable {
                 width: parent.width
-                height: Math.min(clipboardColumn.height, page.height - 260)
+                height: Math.min(clipboardColumn.height, Math.max(0, page.height - 310))
                 contentHeight: clipboardColumn.height
                 clip: true
                 boundsBehavior: Flickable.StopAtBounds
@@ -2943,7 +3071,9 @@ Item {
                                 : (modelData.deviceName ? qsTr("Sent to %1").arg(modelData.deviceName) : qsTr("From this PC"))
                             readonly property string timeLabel: page.relativeTime(modelData.timestamp || 0)
                             width: clipboardColumn.width
-                            visible: clipboardSearch.matches([
+                            visible: (!clipboardSheet.pinnedOnly || Boolean(modelData.pinned))
+                                     && (clipboardSheet.kindFilter === "all" || modelData.kind === clipboardSheet.kindFilter)
+                                     && clipboardSearch.matches([
                                 modelData.text || "",
                                 sourceLabel,
                                 modelData.kind === "image" ? qsTr("Image") : ""
@@ -3066,14 +3196,26 @@ Item {
             }
             Txt {
                 width: parent.width
-                visible: clipboardSearch.query.length > 0 && clipboardColumn.height === 0
+                visible: clipboardSheet.items.length > 0 && clipboardColumn.height === 0
                 horizontalAlignment: Text.AlignHCenter
                 role: "body"
                 muted: true
-                text: qsTr("Nothing matches “%1”.").arg(clipboardSearch.text.trim())
+                text: clipboardSearch.query.length > 0
+                    ? qsTr("No clips match “%1” and the selected filters.").arg(clipboardSearch.text.trim())
+                    : qsTr("No clips match the selected filters.")
             }
             Row {
                 anchors.right: parent.right
+                spacing: 8
+                Button {
+                    visible: clipboardSearch.query.length > 0 || clipboardSheet.pinnedOnly || clipboardSheet.kindFilter !== "all"
+                    variant: "text"
+                    text: qsTr("Reset filters")
+                    onClicked: {
+                        clipboardSheet.resetFilters()
+                        clipboardSearch.forceActiveFocus()
+                    }
+                }
                 Button { text: qsTr("Done"); onClicked: clipboardSheet.close() }
             }
         }

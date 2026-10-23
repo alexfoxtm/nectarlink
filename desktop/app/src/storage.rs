@@ -1307,3 +1307,81 @@ mod imp {
 }
 
 pub use imp::*;
+
+/// Opens only the existing local destination of the explicitly selected sync rule.
+/// This does not start synchronization or expose remote storage as a filesystem.
+pub fn open_synced_folder(rule_id: &str) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let path = local_folder_for_rule(&crate::settings::folder_sync_rules(), rule_id)?;
+        for ancestor in path.ancestors() {
+            let metadata = std::fs::symlink_metadata(ancestor)
+                .map_err(|_| "The local sync folder is not available yet.".to_owned())?;
+            if metadata.file_type().is_symlink() || !metadata.is_dir() {
+                return Err("The local sync folder must be an existing directory without symlinks.".into());
+            }
+        }
+        let status = std::process::Command::new("/usr/bin/open")
+            .args(["-a", "Finder", "--"])
+            .arg(&path)
+            .status()
+            .map_err(|e| format!("Could not open the local sync folder: {e}"))?;
+        if status.success() { Ok(()) } else { Err("Finder could not open the local sync folder.".into()) }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = rule_id;
+        Err("Opening a synced folder in Finder is only available on macOS.".into())
+    }
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn local_folder_for_rule(
+    rules: &[crate::folder_sync::FolderSyncRule],
+    rule_id: &str,
+) -> Result<std::path::PathBuf, String> {
+    let mut matching = rules.iter().filter(|rule| !rule_id.is_empty() && rule.id == rule_id);
+    let rule = matching.next().ok_or_else(|| "This folder sync rule no longer exists.".to_owned())?;
+    if matching.next().is_some() {
+        return Err("The folder sync rule is ambiguous.".into());
+    }
+    let path = std::path::PathBuf::from(&rule.pc_folder);
+    if !path.is_absolute() || path.components().any(|part| matches!(part, std::path::Component::ParentDir)) {
+        return Err("The local sync folder must use an absolute path without parent traversal.".into());
+    }
+    Ok(path)
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod finder_tests {
+    use super::local_folder_for_rule;
+    use crate::folder_sync::FolderSyncRule;
+
+    fn rule(id: &str, folder: &str) -> FolderSyncRule {
+        FolderSyncRule {
+            id: id.into(),
+            phone_id: "phone-a".into(),
+            phone_folder: "DCIM/Camera".into(),
+            pc_folder: folder.into(),
+            mode: "one_way_phone_to_pc".into(),
+            enabled: false,
+        }
+    }
+
+    #[test]
+    fn selects_exact_rule_local_folder_even_when_sync_is_stopped() {
+        let rules = [rule("a", "/Users/example/Other"), rule("b", "/Users/example/Phone photos #1")];
+        assert_eq!(
+            local_folder_for_rule(&rules, "b").unwrap(),
+            std::path::PathBuf::from("/Users/example/Phone photos #1")
+        );
+    }
+
+    #[test]
+    fn rejects_missing_ambiguous_and_non_absolute_rule_destinations() {
+        assert!(local_folder_for_rule(&[rule("a", "/Users/example/Photos")], "missing").is_err());
+        assert!(local_folder_for_rule(&[rule("a", "/A"), rule("a", "/B")], "a").is_err());
+        assert!(local_folder_for_rule(&[rule("a", "https://example.com")], "a").is_err());
+        assert!(local_folder_for_rule(&[rule("a", "/Users/example/../Other")], "a").is_err());
+    }
+}
