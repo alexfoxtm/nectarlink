@@ -169,6 +169,21 @@ fn shaders_qrc() -> PathBuf {
         .map(PathBuf::from)
         .and_then(|qmake| qmake.parent().map(|bin| bin.join("qsb")))
         .unwrap_or_else(|| PathBuf::from("qsb"));
+    // Track only the selected compiler file that actually exists. A missing
+    // bare "qsb" rerun path would itself keep Cargo permanently dirty.
+    let qsb_file =
+        if cfg!(windows) && qsb.extension().is_none() { qsb.with_extension("exe") } else { qsb.clone() };
+    let selected_qsb = if qsb_file.is_absolute() || qsb_file.components().count() > 1 {
+        Some(qsb_file)
+    } else {
+        println!("cargo::rerun-if-env-changed=PATH");
+        std::env::var_os("PATH").and_then(|paths| {
+            std::env::split_paths(&paths).map(|dir| dir.join(&qsb_file)).find(|file| file.is_file())
+        })
+    };
+    if let Some(file) = selected_qsb.filter(|file| file.is_file()) {
+        println!("cargo::rerun-if-changed={}", file.display());
+    }
     let mut qrc = String::from("<RCC>\n  <qresource prefix=\"/shaders\">\n");
     for shader in SHADERS {
         let source = src.join(shader);
@@ -176,12 +191,21 @@ fn shaders_qrc() -> PathBuf {
         println!("cargo::rerun-if-changed={}", source.display());
         println!("cargo::rerun-if-changed={}", committed.display());
         let built = out.join(format!("{shader}.qsb"));
+        let temporary = out.join(format!("{shader}.qsb.tmp"));
         let compiled = std::process::Command::new(&qsb)
             .args(["--glsl", "100es,120,150", "--hlsl", "50", "--msl", "12", "-o"])
-            .arg(&built)
+            .arg(&temporary)
             .arg(&source)
             .status()
             .is_ok_and(|s| s.success());
+        // CxxQt tracks the final .qsb as a qrc input. Preserve its timestamp
+        // when a successful compiler invocation produced identical bytes.
+        let generated = compiled.then(|| fs::read(&temporary));
+        let _ = fs::remove_file(&temporary);
+        if let Some(bytes) = generated {
+            let bytes = bytes.unwrap_or_else(|e| panic!("read shader {}: {e}", temporary.display()));
+            write_if_changed(&built, bytes);
+        }
         let path = if compiled { built } else { committed };
         let path = path.display().to_string().replace('\\', "/");
         qrc.push_str(&format!("    <file alias=\"{shader}.qsb\">{path}</file>\n"));
