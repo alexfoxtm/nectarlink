@@ -999,6 +999,9 @@ pub fn start(device: Option<DeviceId>) {
         return;
     };
     save_settings(|settings| settings.webcam_phone = Some(device.to_string()));
+    if preview_only() {
+        set_preview_window_open(true);
+    }
     core_host::host().hub.changed(Changes::WEBCAM);
     core_host::spawn(camera_request(node, device, generation, current_webcam_start()));
 }

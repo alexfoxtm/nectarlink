@@ -6328,6 +6328,34 @@ What it needs
         <source>Save %1</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>%1 of %2 loaded items</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Filter loaded file and folder names</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Filter loaded names…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Filtering only the first %1 loaded items in this folder.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>No loaded names match</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Try another name or clear the filter.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Try another name. Only the loaded items in this folder are filtered.</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>PhoneMic</name>

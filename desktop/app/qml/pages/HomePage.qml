@@ -2088,13 +2088,13 @@ Item {
                             onLockedClicked: phoneControls.hoveredLockedFeature = (phoneControls.hoveredLockedFeature === feature ? ({}) : feature)
                             onClicked: AppController.setPhoneToggle(home.deviceId, "bluetooth", String(!active))
                         }
-                        Button {
+                        QuickToggleButton {
                             width: toggleRow.buttonWidth
-                            height: 52
-                            variant: "tonal"
                             iconPath: Icons.wifi
-                            text: qsTr("Join hotspot")
-                            Accessible.name: qsTr("Join phone hotspot")
+                            shortTitle: qsTr("Hotspot")
+                            label: qsTr("Join phone hotspot")
+                            feature: ({ state: "available" })
+                            Accessible.role: Accessible.Button
                             onClicked: phoneHotspotSheet.openFor(home.deviceId, home.name)
                         }
                     }

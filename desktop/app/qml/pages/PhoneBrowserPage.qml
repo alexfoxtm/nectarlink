@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import QtQuick
+import QtQuick.Window
+import QtQuick.Controls as Controls
 import QtQuick.Dialogs
 import app.nectarlink
 
@@ -31,7 +33,8 @@ Item {
         if (["offline", "denied", "unsupported"].indexOf(page.status) >= 0) return page.status
         if (!page.consented) return "consent"
         if (["notFound", "invalid", "failed"].indexOf(page.status) >= 0) return page.status
-        if (page.status === "ready" && PhoneBrowser.count === 0) return "empty"
+        if (page.status === "ready" && PhoneBrowser.loadedCount === 0) return "empty"
+        if (page.status === "ready" && PhoneBrowser.count === 0) return "noMatches"
         return ""
     }
     readonly property bool listShown: page.stateKind === "" && PhoneBrowser.count > 0
@@ -102,13 +105,16 @@ Item {
 
     onShouldOpenChanged: PhoneBrowser.close()
     onDeviceIdChanged: {
+        nameFilter.clear()
         page.cancelPendingSave()
         page.saveMessage = ""
         PhoneBrowser.close()
     }
     onConsentedChanged: {
-        if (!page.consented)
+        if (!page.consented) {
+            nameFilter.clear()
             page.cancelPendingSave()
+        }
     }
     Component.onCompleted: PhoneBrowser.close()
     Component.onDestruction: PhoneBrowser.close()
@@ -129,6 +135,7 @@ Item {
             page.savingPath = ""
         }
         function onPathChanged() {
+            nameFilter.clear()
             page.cancelPendingSave()
             page.saveMessage = ""
             entryList.currentIndex = 0
@@ -145,6 +152,32 @@ Item {
         sequences: ["Ctrl+R", "F5"]
         enabled: page.active && page.browsing && !page.loading
         onActivated: PhoneBrowser.refresh()
+    }
+
+    readonly property bool ownsBrowserFocus: {
+        const window = page.Window.window
+        if (!window || !window.active)
+            return false
+        let item = window.activeFocusItem
+        while (item) {
+            if (item === page)
+                return true
+            item = item.parent
+        }
+        return false
+    }
+    readonly property bool canFocusFilter: page.active && page.visible && page.enabled
+        && page.consented && page.status === "ready"
+        && nameFilter.visible && nameFilter.enabled
+        && !saveDialog.visible && !AppController.commandPaletteOpen && page.ownsBrowserFocus
+
+    Shortcut {
+        sequences: ["Ctrl+F"]
+        enabled: page.canFocusFilter
+        onActivated: {
+            if (page.canFocusFilter)
+                nameFilter.forceActiveFocus(Qt.ShortcutFocusReason)
+        }
     }
 
     FolderDialog {
@@ -209,6 +242,8 @@ Item {
                     if (page.status !== "ready" && page.status !== "loading")
                         return where
                     const n = PhoneBrowser.count
+                    if (nameFilter.text.trim().length > 0)
+                        return where + " · " + qsTr("%1 of %2 loaded items").arg(n).arg(PhoneBrowser.loadedCount)
                     const items = PhoneBrowser.truncated ? qsTr("%1+ items").arg(n)
                         : n === 1 ? qsTr("1 item") : qsTr("%1 items").arg(n)
                     return where + " · " + items
@@ -270,10 +305,35 @@ Item {
         Divider { anchors.bottom: parent.bottom; width: parent.width }
     }
 
+    Item {
+        id: filterBar
+        anchors.top: toolbar.bottom
+        width: parent.width
+        visible: page.consented && page.status === "ready" && PhoneBrowser.loadedCount > 0
+        height: visible ? 48 : 0
+
+        Controls.TextField {
+            id: nameFilter
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.margins: 16
+            anchors.verticalCenter: parent.verticalCenter
+            placeholderText: qsTr("Filter loaded names…")
+            Accessible.name: qsTr("Filter loaded file and folder names")
+            selectByMouse: true
+            onTextChanged: {
+                PhoneBrowser.setFilter(text)
+                entryList.currentIndex = 0
+                entryList.positionViewAtBeginning()
+            }
+            Keys.onEscapePressed: clear()
+        }
+    }
+
     // Shown only when the phone capped the listing.
     Item {
         id: truncatedNote
-        anchors.top: toolbar.bottom
+        anchors.top: filterBar.bottom
         width: parent.width
         visible: page.listShown && PhoneBrowser.truncated
         height: visible ? 32 : 0
@@ -293,7 +353,7 @@ Item {
                 width: Math.min(implicitWidth, truncatedNote.width - 60)
                 role: "caption"
                 muted: true
-                text: qsTr("Showing the first %1 items in this folder.").arg(PhoneBrowser.count)
+                text: qsTr("Filtering only the first %1 loaded items in this folder.").arg(PhoneBrowser.loadedCount)
             }
         }
     }
@@ -347,6 +407,7 @@ Item {
                     case "invalid": return qsTr("This folder can't be opened")
                     case "failed": return qsTr("Couldn't load this folder")
                     case "empty": return qsTr("This folder is empty")
+                    case "noMatches": return qsTr("No loaded names match")
                     }
                     return ""
                 }
@@ -361,6 +422,9 @@ Item {
                 visible: text.length > 0
                 text: {
                     switch (page.stateKind) {
+                    case "noMatches": return PhoneBrowser.truncated
+                        ? qsTr("Try another name. Only the loaded items in this folder are filtered.")
+                        : qsTr("Try another name or clear the filter.")
                     case "noDevice": return qsTr("Pair your phone to browse its shared folders.")
                     case "consent": return qsTr("See the folders %1 shares with this Mac. Nothing is read until you choose to browse, and access ends when you leave this page.").arg(page.phoneName)
                     case "off": return qsTr("Browsing phone folders isn't available in this version yet.")

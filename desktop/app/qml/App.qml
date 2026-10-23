@@ -22,6 +22,11 @@ QtObject {
     readonly property Loader cameraPreviewLoader: Loader {
         active: Webcam.previewWindowOpen
         source: active ? "qrc:/qt/qml/app/nectarlink/qml/CameraPreviewWindow.qml" : ""
+        onLoaded: {
+            item.show()
+            item.raise()
+            item.requestActivate()
+        }
         onStatusChanged: {
             if (status === Loader.Error)
                 Webcam.showPreviewWindow(false)

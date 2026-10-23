@@ -6620,6 +6620,34 @@ What it needs
         <source>Save %1</source>
         <translation>保存 %1</translation>
     </message>
+    <message>
+        <source>%1 of %2 loaded items</source>
+        <translation>已加载项目中有 %1 项匹配，共 %2 项</translation>
+    </message>
+    <message>
+        <source>Filter loaded file and folder names</source>
+        <translation>筛选已加载的文件和文件夹名称</translation>
+    </message>
+    <message>
+        <source>Filter loaded names…</source>
+        <translation>筛选已加载的名称…</translation>
+    </message>
+    <message>
+        <source>Filtering only the first %1 loaded items in this folder.</source>
+        <translation>仅筛选此文件夹中最先加载的 %1 个项目。</translation>
+    </message>
+    <message>
+        <source>No loaded names match</source>
+        <translation>没有匹配的已加载名称</translation>
+    </message>
+    <message>
+        <source>Try another name or clear the filter.</source>
+        <translation>请尝试其他名称或清除筛选条件。</translation>
+    </message>
+    <message>
+        <source>Try another name. Only the loaded items in this folder are filtered.</source>
+        <translation>请尝试其他名称。仅筛选此文件夹中已加载的项目。</translation>
+    </message>
 </context>
 <context>
     <name>PhoneMic</name>

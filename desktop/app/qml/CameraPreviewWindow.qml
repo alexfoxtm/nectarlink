@@ -12,7 +12,7 @@ Window {
     height: 540
     minimumWidth: 320
     minimumHeight: 180
-    title: qsTr("Camera preview · %1p · Escape to stop").arg(Webcam.height)
+    title: "Waypair Camera"
     onClosing: Webcam.showPreviewWindow(false)
 
     Shortcut {

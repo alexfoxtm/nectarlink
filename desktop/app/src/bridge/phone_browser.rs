@@ -45,6 +45,7 @@ pub mod qobject {
         /// "notFound", "invalid", "offline", or "failed".
         #[qproperty(QString, status)]
         #[qproperty(i32, count)]
+        #[qproperty(i32, loaded_count, cxx_name = "loadedCount")]
         #[qproperty(bool, can_up, cxx_name = "canUp")]
         #[qproperty(bool, saving)]
         #[qproperty(bool, truncated)]
@@ -111,6 +112,10 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "openFolder"]
         fn open_folder(self: &PhoneBrowser, path: &QString);
+        /// Filters only names already loaded; never starts a storage request.
+        #[qinvokable]
+        #[cxx_name = "setFilter"]
+        fn set_filter(self: Pin<&mut PhoneBrowser>, query: &QString);
         #[qinvokable]
         fn refresh(self: &PhoneBrowser);
         #[qinvokable]
@@ -137,6 +142,8 @@ pub struct PhoneBrowserRust {
     path: QString,
     status: QString,
     count: i32,
+    loaded_count: i32,
+    filter: String,
     can_up: bool,
     saving: bool,
     truncated: bool,
@@ -183,7 +190,17 @@ impl cxx_qt::Initialize for qobject::PhoneBrowser {
 
 impl qobject::PhoneBrowser {
     fn update_view(mut self: Pin<&mut Self>) {
-        let view = phone_browser::view();
+        let mut view = phone_browser::view();
+        // A filter belongs to one consented folder, never to another phone.
+        let device = QString::from(&view.device.map(|id| id.to_string()).unwrap_or_default());
+        if self.device != device || String::from(&self.path) != view.path || view.device.is_none() {
+            self.as_mut().rust_mut().filter.clear();
+        }
+        self.as_mut().set_loaded_count(view.rows.len() as i32);
+        let query = self.filter.to_lowercase();
+        if !query.is_empty() {
+            view.rows.retain(|row| row.name.to_lowercase().contains(&query));
+        }
         self.as_mut().set_enabled(view.enabled);
         self.as_mut().set_device(QString::from(&view.device.map(|id| id.to_string()).unwrap_or_default()));
         self.as_mut().set_path(QString::from(&view.path));
@@ -260,6 +277,11 @@ impl qobject::PhoneBrowser {
 
     pub fn open_folder(&self, path: &QString) {
         phone_browser::open_folder(&String::from(path));
+    }
+
+    pub fn set_filter(mut self: Pin<&mut Self>, query: &QString) {
+        self.as_mut().rust_mut().filter = String::from(query).trim().to_owned();
+        self.update_view();
     }
 
     pub fn refresh(&self) {
