@@ -10,7 +10,7 @@
   "genericAppFlags": false,
   "files": {
     "BUILD-RECIPE-ADDENDUM.md": "ff2a7a37bcb1ff8542ed70e5554f46cac7bed5899f51d0e0659d3f00f855dadc",
-    "build-mac122-candidate.py": "285102ecb926cfd3ff7d41805e574d0ec1a02aeec7a98fab316735e729da4d33",
+    "build-mac122-candidate.py": "9b70d3686d11d7f20fa862e82a72073527aa052095e1e082dd384e74509c6c61",
     "dmg-mac122.py": "062e37497d36546104f67d43dd53293603a923aed2c05e9d976d2eaccd1af37e",
     "mac122_guard.py": "da876c7ee3c06ab8c3f4a7d49d01b084c17aa25ebd17fb4e6cfcfd7ed3d8bd21",
     "macho_probe.py": "f22ec508cf701b4cb81b5ac962a30c31747da0457efaa3eacfbf8701bc581986",

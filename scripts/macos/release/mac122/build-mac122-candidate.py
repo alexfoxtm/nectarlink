@@ -120,8 +120,70 @@ try:
     sparkle = tmp / 'Sparkle.framework'
     notices = out / 'notices'
     command = ['python3', 'scripts/macos/prepare-notices.py', 'prepare', '--rust-notices', str(out / 'RUST-NOTICES.txt'), '--license-texts', str(tmp / 'license-texts'), '--sparkle-framework', str(sparkle), '--sparkle-license', str(tmp / 'Sparkle-LICENSE'), '--adb-pin', 'scripts/macos/adb-platform-tools.json', '--source-commit', source, '--source-archive-url', 'https://pub-a57457f4da43415ea6335550ee9e2983.r2.dev/waypair/nectar/macos/releases/v0.2.3/' + archive.name, '--source-archive-sha256', digest(archive), '--source-repository', 'https://github.com/alexfoxtm/nectarlink', '--output-dir', str(notices)]
+    # Exact reviewed host drift only; never discover or select a latest keg.
+    overrides = {
+        "brotli": {
+            "oldVersion": "1.2.0",
+            "version": "1.2.1",
+            "files": {
+                "INSTALL_RECEIPT.json": {
+                    "sha256": "8fe282565883a6820bba884b487448c126d71f378ce9458cca9ee7a4f24a09c8",
+                    "bytes": 1232
+                },
+                "LICENSE": {
+                    "sha256": "3d180008e36922a4e8daec11c34c7af264fed5962d07924aea928c38e8663c94",
+                    "bytes": 1084
+                },
+                ".brew/brotli.rb": {
+                    "sha256": "5e2f806ea663cf0b0e8d403236e043855619c22e0c646a23fbbb716461a872b3",
+                    "bytes": 1382
+                },
+                "sbom.spdx.json": {
+                    "sha256": "3de963d30ed2782b1dbf38174974c5abe91e834eaf352ea5f76a9175b68bcc86",
+                    "bytes": 3027
+                }
+            }
+        },
+        "harfbuzz": {
+            "oldVersion": "14.6.0",
+            "version": "15.0.0",
+            "files": {
+                "INSTALL_RECEIPT.json": {
+                    "sha256": "14b637e5c66123d3d1915754aa8f929c140b30434c40d9f5302177d22b2ba721",
+                    "bytes": 6091
+                },
+                "COPYING": {
+                    "sha256": "ba8f810f2455c2f08e2d56bb49b72f37fcf68f1f4fade38977cfd7372050ad64",
+                    "bytes": 1971
+                },
+                ".brew/harfbuzz.rb": {
+                    "sha256": "cffe3a219b4076991868f6c50265d1ef3bf9fc39b7f0f656752adeed2f391f1d",
+                    "bytes": 1913
+                },
+                "sbom.spdx.json": {
+                    "sha256": "9feb08ae6c7dc8987c1fcfb88ea954f9a8c4f041251b4fb423b2832dd12e2f5b",
+                    "bytes": 24945
+                }
+            }
+        }
+    }
+    seen_overrides = set()
     for keg in old['homebrew']:
-        command.extend(['--keg', str(Path(os.environ['MAC122_HOMEBREW_CELLAR']) / keg['name'] / keg['version'])])
+        version = keg['version']
+        override = overrides.get(keg['name'])
+        if override:
+            assert version == override['oldVersion'], 'unexpected historical keg version'
+            version = override['version']
+            selected = Path(os.environ['MAC122_HOMEBREW_CELLAR']) / keg['name'] / version
+            assert selected.is_dir() and not selected.is_symlink(), 'reviewed fixed keg unavailable'
+            for relative, expected in override['files'].items():
+                path = selected / relative
+                assert path.is_file() and not path.is_symlink(), 'reviewed keg metadata must be regular'
+                assert digest(path) == expected['sha256'] and path.stat().st_size == expected['bytes'], 'reviewed keg input changed'
+            seen_overrides.add(keg['name'])
+        command.extend(['--keg', str(Path(os.environ['MAC122_HOMEBREW_CELLAR']) / keg['name'] / version)])
+    assert seen_overrides == set(overrides), 'both reviewed host dependencies must be present'
+    record['exactHostDependencyOverrides'] = overrides
     step('prepare-notices', command)
     data_keg = qt_cellar
     data_source = arch_ref
