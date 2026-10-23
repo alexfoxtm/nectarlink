@@ -356,6 +356,7 @@ fn main() {
             "waypair_camera_host",
             &[
                 "src/mac/camera_extension/WaypairCameraProducer.m",
+                "src/mac/camera_demand.m",
                 "src/mac/camera_extension/WaypairCameraActivation.m",
             ],
         );

@@ -625,7 +625,7 @@ fn main() -> ExitCode {
     storage::start();
     folder_sync::start_poller();
     photo_backup::start();
-    webcam::init(&settings);
+    webcam::init(&settings, normal_profile);
     phone_mic::init(&settings);
     local_api::init(&settings);
     win::widget::write_state_snapshot(&data_dir);

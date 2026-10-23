@@ -108,6 +108,8 @@ impl OutputTarget {
 struct State {
     output_target: OutputTarget,
     #[cfg(target_os = "macos")]
+    demand: Demand,
+    #[cfg(target_os = "macos")]
     liveloop_setup_busy: bool,
     #[cfg(target_os = "macos")]
     liveloop_setup_status: String,
@@ -237,6 +239,7 @@ impl State {
             return false;
         }
         let request = self.request.take().expect("matched request");
+        if request.cancelled && self.demand.request == Some(generation) { self.demand.block(); }
         if request.cancelled
             && self.sink_generation.is_none()
             && request
@@ -291,6 +294,7 @@ impl State {
         if self.sink_generation != Some(generation) {
             return false;
         }
+        if self.demand.sink == Some(generation) { self.demand.block(); }
         self.sink_generation = None;
         self.cancel_camera_request();
         self.ensure_camera_cleanup();
@@ -304,6 +308,44 @@ impl State {
         self.notify_sink_stopped();
         close_and_clear();
         true
+    }
+}
+
+
+#[cfg(target_os = "macos")]
+#[derive(Debug, Default)]
+struct Demand {
+    enabled: bool,
+    allowed: bool,
+    armed: bool,
+    active: bool,
+    request: Option<u64>,
+    sink: Option<u64>,
+    /// Only the exact cleanup created by a clean last-consumer departure may defer a reopen.
+    cleanup: Option<u64>,
+}
+
+#[cfg(target_os = "macos")]
+impl Demand {
+    fn active_edge(&mut self) -> bool {
+        if self.active { return false; }
+        self.active = true;
+        self.enabled && self.armed && self.cleanup.is_none()
+    }
+    fn cleaned(&mut self, generation: u64) -> bool {
+        if self.cleanup != Some(generation) { return false; }
+        self.cleanup = None;
+        self.enabled && self.armed && self.active
+    }
+    fn owns(&self, request: Option<u64>, sink: Option<u64>) -> bool {
+        self.request.is_some_and(|owner| Some(owner) == request)
+            || self.sink.is_some_and(|owner| Some(owner) == sink)
+    }
+    fn block(&mut self) {
+        self.armed = false;
+        self.request = None;
+        self.sink = None;
+        self.cleanup = None;
     }
 }
 
@@ -413,7 +455,7 @@ pub fn set_resolution(res: &str) {
 
 /// Initializes webcam preferences and (if registered) the Windows virtual
 /// camera session.
-pub fn init(settings: &Settings) {
+pub fn init(settings: &Settings, normal_profile: bool) {
     MIRROR.store(settings.webcam_mirror, Ordering::Relaxed);
     CAMERA_FRONT.store(settings.webcam_camera.trim().eq_ignore_ascii_case("front"), Ordering::Relaxed);
     let h = normalize_height(settings.webcam_height);
@@ -434,6 +476,12 @@ pub fn init(settings: &Settings) {
     state(|s| {
         #[cfg(target_os = "macos")]
         s.select_output_target(OutputTarget::from_token(&settings.webcam_output_target).unwrap_or_default());
+        #[cfg(target_os = "macos")]
+        {
+            s.demand.allowed = normal_profile;
+            s.demand.enabled = normal_profile && settings.webcam_auto_demand;
+            s.demand.armed = normal_profile && settings.webcam_auto_demand && settings.webcam_demand_armed;
+        }
         s.preferred_phone = preferred;
         s.addon_registered = registered;
         s.vcam_handle = vcam_handle;
@@ -441,10 +489,16 @@ pub fn init(settings: &Settings) {
     if registered {
         refresh_idle_frame();
     }
+    #[cfg(target_os = "macos")]
+    if normal_profile { crate::win::camera_demand::start(); }
+    #[cfg(not(target_os = "macos"))]
+    let _ = normal_profile;
 }
 
 /// Stops the virtual camera session on app exit.
 pub fn shutdown() {
+    #[cfg(target_os = "macos")]
+    crate::win::camera_demand::stop();
     #[cfg(target_os = "macos")]
     {
         state(|s| {
@@ -509,6 +563,8 @@ pub fn selected_phone() -> Option<DeviceId> {
 }
 
 pub fn set_selected_phone(device: DeviceId) {
+    #[cfg(target_os = "macos")]
+    if state(|s| s.preferred_phone != Some(device)) { block_demand(); }
     state(|s| s.preferred_phone = Some(device));
     save_settings(|s| s.webcam_phone = Some(device.to_string()));
     refresh_idle_frame();
@@ -904,6 +960,7 @@ fn camera_request_completed(generation: u64, result: nectarlink_core::Result<()>
             request.cancelled = true;
             request.cancel_attempt = request.cancel_attempt.saturating_add(1);
             request.wake.notify_one();
+            if s.demand.owns(Some(generation), s.sink_generation) { s.demand.block(); }
             s.phase = Phase::Ended { reason };
         });
         core_host::host().hub.changed(Changes::WEBCAM);
@@ -961,6 +1018,7 @@ async fn complete_camera_request(generation: u64) {
             if !request.cancelled && request.view.as_ref().is_some_and(|view| !view.is_current()) {
                 request.cancelled = true;
                 request.cancel_attempt = request.cancel_attempt.saturating_add(1);
+                if s.demand.request == Some(generation) { s.demand.block(); }
             }
             if request.cancelled {
                 let gone = request.view.as_ref().is_some_and(|view| !view.original_session_current());
@@ -986,8 +1044,8 @@ async fn complete_camera_request(generation: u64) {
             Next::Wait(wake, None, _) => wake.notified().await,
             Next::Stop(view, attempt) => {
                 let stopped = match view {
-                    Some(view) => view.stop_if_current().await.map(|_| ()),
-                    None => Ok(()),
+                    Some(view) => view.stop_if_current().await,
+                    None => Ok(true),
                 };
                 if let Err(error) = stopped {
                     failed_attempt = Some(attempt);
@@ -996,6 +1054,10 @@ async fn complete_camera_request(generation: u64) {
                         if let Some(request) =
                             s.request.as_mut().filter(|request| request.generation == generation)
                         {
+                            if s.demand.cleanup == Some(generation) {
+                                persist_demand(s.demand.enabled, false);
+                                s.demand.block();
+                            }
                             request.stop_error = Some(format!(
                                 "Original camera cleanup is pending: {reason}. Press Stop to retry."
                             ));
@@ -1005,10 +1067,15 @@ async fn complete_camera_request(generation: u64) {
                     core_host::host().hub.changed(Changes::WEBCAM);
                     continue;
                 }
-                state(|s| {
-                    s.retire_camera_request(generation);
+                let restart = state(|s| {
+                    if matches!(stopped, Ok(false)) && s.demand.cleanup == Some(generation) {
+                        persist_demand(s.demand.enabled, false);
+                        s.demand.block();
+                    }
+                    s.retire_camera_request(generation) && s.demand.cleaned(generation)
                 });
                 core_host::host().hub.changed(Changes::WEBCAM);
+                if restart { start_demand_for_selected(); }
                 return;
             }
             Next::Done => {
@@ -1019,8 +1086,99 @@ async fn complete_camera_request(generation: u64) {
     }
 }
 
+
+/// Demand notifications can only ask through the existing owned phone approval gate.
+#[cfg(target_os = "macos")]
+fn persist_demand(enabled: bool, armed: bool) -> bool {
+    let dir = &core_host::host().data_dir;
+    match Settings::save_camera_demand(dir, enabled, armed) {
+        Ok(()) => true,
+        Err(error) => { tracing::warn!(%error, "Camera demand preference could not be saved"); false }
+    }
+}
+
+pub fn auto_demand() -> bool {
+    #[cfg(target_os = "macos")]
+    { return state(|s| s.demand.enabled); }
+    #[cfg(not(target_os = "macos"))]
+    false
+}
+pub fn demand_armed() -> bool {
+    #[cfg(target_os = "macos")]
+    { return state(|s| s.demand.armed); }
+    #[cfg(not(target_os = "macos"))]
+    false
+}
+pub fn set_auto_demand(enabled: bool) {
+    #[cfg(target_os = "macos")]
+    {
+        let cleanup = state(|s| {
+            if !s.demand.allowed || !persist_demand(enabled, enabled) { return None; }
+            let owned = s.demand.owns(s.request.as_ref().map(|r| r.generation), s.sink_generation);
+            s.demand.enabled = enabled;
+            s.demand.block();
+            s.demand.armed = enabled;
+            // Even explicit rearm waits for the next fresh source-active edge.
+            if owned { stop_camera_state(s) } else { None }
+        });
+        finish_stop(cleanup);
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = enabled;
+}
+
+#[cfg(target_os = "macos")]
+fn block_demand() {
+    let cleanup = state(|s| {
+        let owned = s.demand.owns(s.request.as_ref().map(|r| r.generation), s.sink_generation);
+        if s.demand.enabled { persist_demand(true, false); }
+        s.demand.block();
+        if owned { stop_camera_state(s) } else { None }
+    });
+    finish_stop(cleanup);
+}
+
+#[cfg(target_os = "macos")]
+fn start_demand_for_selected() {
+    // Never use selected_phone(): its UI convenience fallback may choose another phone.
+    let preferred = state(|s| s.preferred_phone);
+    let phone = preferred.filter(|id| core_host::host().hub.read(|app| {
+        app.devices.iter().any(|d| d.id == *id && matches!(d.link, nectarlink_core::LinkState::Online { .. }))
+    }));
+    if let Some(phone) = phone { start_with_origin(Some(phone), true); }
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn consumer_demand(active: bool) {
+    if active {
+        let allowed = state(|s| s.demand.active_edge());
+        if !allowed { return; }
+        start_demand_for_selected();
+    } else {
+        let cleanup = state(|s| {
+            if !s.demand.active { return None; }
+            s.demand.active = false;
+            let owned = s.demand.owns(s.request.as_ref().map(|r| r.generation), s.sink_generation);
+            if !owned { return None; }
+            // Only a normal final-consumer exit rearms a completed demand episode.
+            let rearm = s.demand.enabled && persist_demand(true, true);
+            s.demand.block();
+            s.demand.armed = rearm;
+            let cleanup = stop_camera_state(s);
+            if rearm { s.demand.cleanup = s.request.as_ref().map(|request| request.generation); }
+            cleanup
+        });
+        finish_stop(cleanup);
+    }
+}
+
 #[cfg(target_os = "macos")]
 pub fn start(device: Option<DeviceId>) {
+    start_with_origin(device, false);
+}
+
+#[cfg(target_os = "macos")]
+fn start_with_origin(device: Option<DeviceId>, demand: bool) {
     let Some(device) = device.or_else(selected_phone) else {
         return;
     };
@@ -1045,7 +1203,17 @@ pub fn start(device: Option<DeviceId>) {
             };
             return None;
         }
-        s.begin_camera_request(device, false)
+        if demand {
+            if !s.demand.enabled || !s.demand.armed || !s.demand.active
+                || s.output_target != OutputTarget::WaypairCamera || s.preferred_phone != Some(device)
+            { return None; }
+            // Persist before sending anything: a crash/relaunch cannot retry this episode.
+            if !persist_demand(s.demand.enabled, false) { return None; }
+            s.demand.armed = false;
+        }
+        let generation = s.begin_camera_request(device, false)?;
+        if demand { s.demand.request = Some(generation); }
+        Some(generation)
     });
     let Some(generation) = generation else {
         core_host::host().hub.changed(Changes::WEBCAM);
@@ -1062,6 +1230,15 @@ pub fn start(device: Option<DeviceId>) {
 #[cfg(target_os = "macos")]
 pub fn stop() {
     let cleanup = state(|s| {
+        if s.demand.enabled { persist_demand(true, false); }
+        s.demand.block();
+        stop_camera_state(s)
+    });
+    finish_stop(cleanup);
+}
+
+#[cfg(target_os = "macos")]
+fn stop_camera_state(s: &mut State) -> Option<u64> {
         s.cancel_camera_request();
         s.ensure_camera_cleanup();
         s.sink_generation = None;
@@ -1072,7 +1249,10 @@ pub fn stop() {
         }
         ffi::video_clear(PREVIEW_STREAM);
         s.take_cleanup_actor()
-    });
+}
+
+#[cfg(target_os = "macos")]
+fn finish_stop(cleanup: Option<u64>) {
     if let Some(generation) = cleanup {
         core_host::spawn(complete_camera_request(generation));
     }
@@ -1329,6 +1509,8 @@ pub fn set_output_target(target: &str) {
         return;
     }
     #[cfg(target_os = "macos")]
+    if state(|s| s.output_target != target) { block_demand(); }
+    #[cfg(target_os = "macos")]
     if state(|s| s.select_output_target(target)) {
         save_settings(|s| s.webcam_output_target = target.token().to_owned());
         core_host::host().hub.changed(Changes::WEBCAM);
@@ -1486,6 +1668,9 @@ pub fn sink_owned(device: &DeviceId, view: &nectarlink_core::WebcamView) -> Opti
         };
         s.sink_stopped = Some(stopped.clone());
         s.sink_generation = Some(generation);
+        if s.request.as_ref().is_some_and(|request| s.demand.request == Some(request.generation)) {
+            s.demand.sink = Some(generation);
+        }
         if let Some(request) = s.request.as_mut() {
             request.sink_admitted = true;
             request.wake.notify_one();
@@ -1898,5 +2083,55 @@ mod tests {
 
         set_height(720);
         assert_eq!(height(), 720);
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod demand_tests {
+    use super::Demand;
+    #[test]
+    fn source_cycle_has_one_exact_owner_and_retains_other_consumers() {
+        let mut demand = Demand { enabled: true, armed: true, ..Default::default() };
+        assert!(demand.active_edge());
+        demand.armed = false;
+        demand.request = Some(11);
+        assert!(!demand.active_edge()); // A second app is not another first-consumer edge.
+        demand.sink = Some(12);
+        assert!(demand.owns(None, Some(12))); // Request may retire after sink admission.
+        assert!(!demand.owns(Some(13), Some(14))); // A successor never inherits ownership.
+        demand.active = false;
+        demand.block();
+        demand.armed = true; // A clean last-consumer exit restores the arm.
+        demand.cleanup = Some(21);
+        assert!(!demand.active_edge()); // Rapid reopen waits for this exact old cleanup.
+        assert!(!demand.cleaned(20)); // A late unrelated retirement cannot resume it.
+        assert!(demand.cleaned(21)); // Successful matching cleanup schedules one request.
+        assert!(!demand.cleaned(21)); // Repeated retirement never schedules a second request.
+        assert!(!demand.active_edge());
+    }
+    #[test]
+    fn stop_or_revoke_cannot_restart_or_stop_a_manual_successor() {
+        let mut demand = Demand { enabled: true, armed: true, ..Default::default() };
+        assert!(demand.active_edge());
+        demand.request = Some(1);
+        demand.sink = Some(2);
+        demand.cleanup = Some(5);
+        demand.block(); // Explicit Stop, terminal revoke, or failed cleanup clears deferred reopen.
+        assert!(!demand.cleaned(5));
+        assert!(!demand.active_edge());
+        assert!(!demand.owns(Some(3), Some(4))); // A late inactive edge cannot stop manual output.
+        demand.active = false;
+        assert!(!demand.active_edge()); // Even a new episode requires explicit rearm after failure.
+        let mut restarted = Demand { enabled: true, armed: false, ..Default::default() };
+        assert!(!restarted.active_edge()); // Persisted arm was consumed before phone request.
+        let dir = tempfile::tempdir().unwrap();
+        super::Settings::save_camera_demand(dir.path(), true, true).unwrap();
+        let stale_preferences = super::Settings::load(dir.path());
+        super::Settings::save_camera_demand(dir.path(), true, false).unwrap();
+        stale_preferences.save(dir.path()).unwrap();
+        assert!(!super::Settings::load(dir.path()).webcam_demand_armed);
+        super::Settings::save_camera_demand(dir.path(), false, false).unwrap();
+        stale_preferences.save(dir.path()).unwrap();
+        assert!(!super::Settings::load(dir.path()).webcam_auto_demand);
     }
 }

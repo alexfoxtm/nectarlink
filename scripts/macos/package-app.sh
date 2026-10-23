@@ -808,6 +808,9 @@ python3 "$REPO_ROOT/scripts/macos/prepare-notices.py" check-bundle "$NOTICES_DIR
 # the compiler host or a stale fixed deployment promise. Run before signing.
 python3 "$REPO_ROOT/scripts/macos/record-minimum-os.py" "$APP_PATH"
 
+# Validate the finished host plist after deployment and before signing.
+python3 "$REPO_ROOT/scripts/macos/check-hotspot-permissions.py" "$APP_PATH/Contents/Info.plist"
+
 printf '\nUnsigned bundle assembled (NOT signed, NOT notarized, not installed):\n  %s\n' "$APP_PATH"
 printf 'Identifier: %s  Version: %s (%s)\n' "$BUNDLE_ID" "$VERSION" "$BUILD_VERSION"
 printf 'Executable SHA-256: %s\n' "$(shasum -a 256 "$APP_PATH/Contents/MacOS/$EXEC_NAME" | awk '{print $1}')"

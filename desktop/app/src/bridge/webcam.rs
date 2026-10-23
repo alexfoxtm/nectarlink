@@ -27,6 +27,8 @@ pub mod qobject {
         #[qml_singleton]
         #[qproperty(bool, preview_window_open, cxx_name = "previewWindowOpen")]
         #[qproperty(bool, preview_only, cxx_name = "previewOnly")]
+        #[qproperty(bool, auto_demand, cxx_name = "autoDemand")]
+        #[qproperty(bool, demand_armed, cxx_name = "demandArmed")]
         #[qproperty(QString, output_target, cxx_name = "outputTarget")]
         #[qproperty(bool, obs_output_available, cxx_name = "obsOutputAvailable")]
         #[qproperty(bool, liveloop_output_available, cxx_name = "liveloopOutputAvailable")]
@@ -74,6 +76,9 @@ pub mod qobject {
         #[qinvokable]
         fn stop(self: &Webcam);
         #[qinvokable]
+        #[cxx_name = "configureAutoDemand"]
+        fn configure_auto_demand(self: &Webcam, enabled: bool);
+        #[qinvokable]
         #[cxx_name = "selectPreviewOnly"]
         fn select_preview_only(self: &Webcam, on: bool);
         #[qinvokable]
@@ -97,6 +102,8 @@ pub mod qobject {
 #[derive(Default)]
 pub struct WebcamRust {
     preview_only: bool,
+    auto_demand: bool,
+    demand_armed: bool,
     output_target: QString,
     obs_output_available: bool,
     liveloop_output_available: bool,
@@ -142,6 +149,8 @@ impl qobject::Webcam {
     fn refresh(mut self: Pin<&mut Self>) {
         let hub = &crate::core_host::host().hub;
         self.as_mut().set_preview_only(webcam::preview_only());
+        self.as_mut().set_auto_demand(webcam::auto_demand());
+        self.as_mut().set_demand_armed(webcam::demand_armed());
         self.as_mut().set_output_target(QString::from(webcam::output_target()));
         self.as_mut().set_obs_output_available(webcam::obs_output_ready());
         self.as_mut().set_liveloop_output_available(webcam::liveloop_output_ready());
@@ -234,6 +243,10 @@ impl qobject::Webcam {
     pub fn recheck_liveloop_output(self: Pin<&mut Self>) {
         webcam::recheck_liveloop_output();
         self.refresh();
+    }
+
+    pub fn configure_auto_demand(&self, enabled: bool) {
+        webcam::set_auto_demand(enabled);
     }
 
     pub fn stop(&self) {

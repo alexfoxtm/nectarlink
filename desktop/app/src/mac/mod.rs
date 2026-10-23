@@ -11,6 +11,7 @@ pub mod browser_handoff;
 pub mod bt_hfp;
 pub mod camera_helper;
 pub mod camera_output;
+pub mod camera_demand;
 pub mod clipboard;
 pub mod doctor;
 pub mod elevated;

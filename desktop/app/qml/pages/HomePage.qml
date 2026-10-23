@@ -2639,7 +2639,7 @@ Item {
             network = AppController.hotspotNetwork(device)
             refreshNetworks()
             open()
-            if (network.length > 0) AppController.joinPhoneHotspot(device)
+            if (!page.macTidy && network.length > 0) AppController.joinPhoneHotspot(device)
         }
         onOpenedChanged: {
             if (!opened && deviceId.length > 0) AppController.cancelPhoneHotspotJoin(deviceId)

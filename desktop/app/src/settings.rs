@@ -11,6 +11,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 const FILE_NAME: &str = "desktop-settings.json";
+static SAVE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Default)]
 #[serde(rename_all = "lowercase")]
@@ -403,6 +404,12 @@ pub struct Settings {
     /// Explicit macOS output choice; restoring it never starts capture.
     #[serde(default = "default_webcam_output_target", alias = "webcam_output_target")]
     pub webcam_output_target: String,
+    /// Explicit opt-in; demand still requires the phone’s native approval.
+    #[serde(default)]
+    pub webcam_auto_demand: bool,
+    /// Consumed before a demand request; only explicit rearm or clean last-consumer exit restores it.
+    #[serde(default)]
+    pub webcam_demand_armed: bool,
     /// Where a phone's microphone plays (an output endpoint ID; `None`: a
     /// virtual audio cable if there is one, else the default output).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -553,6 +560,8 @@ impl Default for Settings {
             webcam_height: 720,
             webcam_mirror: false,
             webcam_output_target: default_webcam_output_target(),
+            webcam_auto_demand: false,
+            webcam_demand_armed: false,
             webcam_camera: default_webcam_camera(),
             phone_mic_output: None,
             phone_mic_gain: crate::phone_mic::DEFAULT_GAIN,
@@ -695,8 +704,25 @@ impl Settings {
 
     /// Saves atomically: a crash mid-write never leaves a half-written file.
     pub fn save(&self, dir: &Path) -> std::io::Result<()> {
-        static SAVE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
         let _guard = SAVE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        // Camera consent state has its own writer. An older UI snapshot must
+        // never restore an arm consumed by a request, Stop or phone refusal.
+        let current = Self::load(dir);
+        let mut merged = self.clone();
+        merged.webcam_auto_demand = current.webcam_auto_demand;
+        merged.webcam_demand_armed = current.webcam_demand_armed;
+        merged.save_locked(dir)
+    }
+
+    pub fn save_camera_demand(dir: &Path, enabled: bool, armed: bool) -> std::io::Result<()> {
+        let _guard = SAVE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let mut current = Self::load(dir);
+        current.webcam_auto_demand = enabled;
+        current.webcam_demand_armed = enabled && armed;
+        current.save_locked(dir)
+    }
+
+    fn save_locked(&self, dir: &Path) -> std::io::Result<()> {
         let path = Self::path(dir);
         let tmp = path.with_extension("json.tmp");
         {
@@ -756,6 +782,8 @@ mod tests {
             webcam_height: 2160,
             webcam_mirror: true,
             webcam_output_target: "obs".into(),
+            webcam_auto_demand: false,
+            webcam_demand_armed: false,
             webcam_camera: "front".into(),
             phone_mic_output: Some("{0.0.0.00000000}.{cable}".into()),
             phone_mic_gain: 250,

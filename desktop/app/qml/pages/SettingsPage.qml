@@ -1762,6 +1762,28 @@ Item {
                         Divider { width: parent.width }
 
                         ListRow {
+                            width: parent.width
+                            visible: page.onMac && Webcam.outputTarget === "liveloop"
+                            iconPath: Icons.video
+                            title: qsTr("Start camera when an app uses Waypair Camera")
+                            description: qsTr("Keep Waypair Link running in the background and select a connected paired phone. Phone approval is still required. After enabling or reopening Waypair Link, close and reopen the camera in the other app.")
+                            Toggle {
+                                checked: Webcam.autoDemand
+                                onToggled: (on) => Webcam.configureAutoDemand(on)
+                            }
+                        }
+                        ListRow {
+                            width: parent.width
+                            visible: page.onMac && Webcam.outputTarget === "liveloop" && Webcam.autoDemand && !Webcam.demandArmed
+                            title: qsTr("Automatic camera start is paused")
+                            description: qsTr("After Stop, phone refusal, or a lost camera session, rearm here and reopen the camera in the other app.")
+                            Button {
+                                text: qsTr("Rearm automatic start")
+                                onClicked: Webcam.configureAutoDemand(true)
+                            }
+                        }
+
+                        ListRow {
                             id: cameraOutputRow
                             width: parent.width
                             stackBelow: true
