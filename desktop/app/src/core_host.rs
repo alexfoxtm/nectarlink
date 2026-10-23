@@ -189,12 +189,14 @@ pub fn compute_capabilities(
     }
     // Receive the phone's video and send request-bound input to an explicitly
     // consenting phone. This does not offer input injection or capture OF this
-    // Mac; audio, webcam, storage, deck and wake capabilities stay off.
+    // Mac; audio, storage, deck and wake capabilities stay off. The owned
+    // camera receiver supports preview without requiring the native extension.
     #[cfg(target_os = "macos")]
     {
         caps.push(nectarlink_core::MIRROR_VIEW.into());
         caps.push(nectarlink_core::MIRROR_CORRELATION.into());
         caps.push(nectarlink_core::MIRROR_INPUT_REQUEST.into());
+        caps.push(nectarlink_core::WEBCAM_VIRTUAL.into());
         caps.push("camera.webcam.owned.v1".into());
         // Fixed Settings route only; general app-window qualification stays off.
         caps.push("mirror.app_settings_qualification_v1".into());
@@ -230,8 +232,6 @@ pub fn compute_capabilities(
         caps.push(nectarlink_core::INPUT_INJECT.into());
     }
     if crate::win::vcam::is_registered() {
-        #[cfg(target_os = "macos")]
-        caps.push(nectarlink_core::WEBCAM_VIRTUAL.into());
         caps.push(nectarlink_core::WEBCAM_ADDON_VCAM.into());
     }
     caps
@@ -552,11 +552,11 @@ mod tests {
             !caps.contains(&nectarlink_core::STORAGE_WRITE.into()),
             "macOS must not advertise storage.write"
         );
-        assert_eq!(
+        assert!(
             caps.contains(&nectarlink_core::WEBCAM_VIRTUAL.into()),
-            caps.contains(&nectarlink_core::WEBCAM_ADDON_VCAM.into()),
-            "Mac camera receiver and add-on readiness must be advertised together"
+            "Mac owned camera preview receiver must not depend on native extension readiness"
         );
+        assert!(caps.contains(&"camera.webcam.owned.v1".into()));
         assert!(!caps.contains(&nectarlink_core::PC_AUDIO.into()), "macOS must not advertise pc.audio");
         assert!(!caps.contains(&nectarlink_core::RECORDER.into()), "macOS must not advertise recorder");
         assert!(

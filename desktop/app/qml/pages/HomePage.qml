@@ -2276,13 +2276,13 @@ Item {
                               ? (Webcam.statusText.length > 0 ? Webcam.statusText : qsTr("Streaming"))
                               : ""
                     iconPath: Icons.video
-                    feature: home.onMac && !Webcam.addonRegistered
+                    feature: home.onMac && !Webcam.previewOnly && !Webcam.addonRegistered
                              ? ({ state: "locked", action: "enableAddon", target: "vcam" })
                              : home.feature("camera.webcam")
                     active: (Webcam.phase === "streaming" || Webcam.phase === "asking")
                             && Webcam.activeDevice === home.deviceId
                     onClicked: {
-                        if (home.onMac && !Webcam.addonRegistered
+                        if (home.onMac && !Webcam.previewOnly && !Webcam.addonRegistered
                                 && Webcam.phase !== "streaming" && Webcam.phase !== "asking") {
                             if (Webcam.addonSetupAllowed && !Webcam.addonBusy)
                                 Webcam.setupAddon()

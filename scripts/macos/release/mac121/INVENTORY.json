@@ -1,0 +1,20 @@
+{
+  "status": "MISSING_HOLD",
+  "build": 121,
+  "channel": "0.2.2",
+  "source": null,
+  "tree": null,
+  "parent": "d9924511197d58b947b742b7b59a72c285b9b618",
+  "cameraReady": false,
+  "includesCameraExtension": false,
+  "genericAppFlags": false,
+  "files": {
+    "BUILD-RECIPE-ADDENDUM.md": "fe1305e05822ee332bffb0995840cb74bbbd23c53d19c35326375e7002c616e5",
+    "build-mac121-candidate.py": "f885dfaa5002fcf60450f38b55302556842b62264d449ce2f82d93047c7ea428",
+    "dmg-mac121.py": "23491daaa44cde80e3258c3a8191a4dff0c5204f230fe6a30941e725616fd241",
+    "mac121_guard.py": "e23f67f965e520692dd13603241b67e74f3d66b4819e4310d3f6bc093e673bec",
+    "macho_probe.py": "f22ec508cf701b4cb81b5ac962a30c31747da0457efaa3eacfbf8701bc581986",
+    "package-app.sh": "42027a5bc19abacccfa5d67650af4f407ef91cf3f328fc4a7979b6bbea0026d9",
+    "record-minimum-os.py": "db0c54c75bb3e424d0b3935521e845efaadbd92ec457abe60ab9f07af78f5449"
+  }
+}
