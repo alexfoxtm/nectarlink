@@ -175,6 +175,7 @@ pub(crate) struct Session {
     pub(crate) mirror_control_id: u64,
     /// This connection's latest peer-owner input epoch; never persisted/reused.
     pub(crate) mirror_input_epoch: AtomicU64,
+    pub(crate) settings_qualification: Mutex<Option<crate::mirror::SettingsQualification>>,
     /// Who opened the connection; used to resolve duplicate connections.
     pub dialer: DeviceId,
     pub conn: Connection,
@@ -235,6 +236,7 @@ impl Session {
             peer,
             mirror_control_id,
             mirror_input_epoch: AtomicU64::new(input_epoch),
+            settings_qualification: Mutex::new(None),
             dialer,
             conn,
             outbox,

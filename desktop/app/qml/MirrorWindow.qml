@@ -24,8 +24,15 @@ Window {
     }
     readonly property string deviceName: info.name || ""
     readonly property string phase: info.phase || ""
-    readonly property bool canControl: info.canControl === true
-    readonly property bool viewOnly: info.viewOnly === true
+    // Restriction-only marker: this window can lose UI actions, never gain authority.
+    readonly property bool settingsWindow: info.settingsQualification === true
+    readonly property bool canControl: !settingsWindow && info.canControl === true
+    readonly property bool viewOnly: settingsWindow || info.viewOnly === true
+    readonly property bool canScroll: settingsWindow && phase === "showing" && info.canScroll === true
+    readonly property bool canRequestControl: !settingsWindow && info.canRequestControl !== false
+    readonly property bool canReopen: !settingsWindow && info.canReopen !== false
+    readonly property bool canCopyScreenshot: !settingsWindow
+    readonly property bool canScreenOff: !settingsWindow && info.canScreenOff === true
     // Negotiated control state from the backend (request-bound phone-control
     // contract): available, ownerApproval, stopped, inputUnavailable,
     // unsupported, offline, notShowing, mirroringOff. Missing on old peers
@@ -38,6 +45,11 @@ Window {
     readonly property string accessibleControlDescription: {
         if (win.phase !== "showing")
             return ""
+        if (win.settingsWindow) {
+            return win.canScroll
+                ? qsTr("This window shows your phone's Settings. You can scroll here; make changes on your phone. Other phone controls are unavailable.")
+                : qsTr("This window shows your phone's Settings. Scrolling needs this computer's phone-control allowance. Other phone controls are unavailable.")
+        }
         if (win.canControl) {
             return qsTr("Phone control is on. Type or use arrow keys to control the phone. Press F6 to reach the toolbar. Escape in the toolbar returns here.")
         }
@@ -145,7 +157,7 @@ Window {
         if (!canControl)
             video.resetLocalGesture()
     }
-    onActiveChanged: if (win.active) Mirror.syncClipboardOnFocus(win.mirrorKey)
+    onActiveChanged: if (win.active && !win.settingsWindow) Mirror.syncClipboardOnFocus(win.mirrorKey)
     function fitFrameToAvailableArea() {
         if (frame.width <= 0)
             return
@@ -245,7 +257,7 @@ Window {
         acceptsText: win.phase === "showing" && win.canControl
         // The emoji panel (Win+.) and input methods give finished text here
         // instead of as key presses.
-        onTextCommitted: (text) => Mirror.text(win.mirrorKey, text)
+        onTextCommitted: (text) => { if (win.canControl) Mirror.text(win.mirrorKey, text) }
 
         // Where on the phone's screen a point in the window is (0 to 1).
         function resetLocalGesture() {
@@ -261,12 +273,16 @@ Window {
 
         DropArea {
             id: mirrorDropArea
+            objectName: "mirrorDropArea"
             anchors.fill: parent
-            enabled: win.phase === "showing"
+            enabled: win.phase === "showing" && !win.settingsWindow
             onEntered: (drag) => {
-                Mirror.syncClipboardOnFocus(win.mirrorKey)
+                if (!win.settingsWindow)
+                    Mirror.syncClipboardOnFocus(win.mirrorKey)
             }
             onDropped: (drop) => {
+                if (win.settingsWindow)
+                    return
                 const urls = []
                 if (drop.urls) {
                     for (let i = 0; i < drop.urls.length; i++) {
@@ -286,9 +302,9 @@ Window {
             onHoveredChanged: {
                 if (hovered) {
                     toolbarWakeTimer.restart()
-                    if (win.phase === "showing")
+                    if (win.phase === "showing" && !win.settingsWindow)
                         Mirror.enterWindow(win.mirrorKey)
-                } else {
+                } else if (!win.settingsWindow) {
                     Mirror.leaveWindow()
                 }
             }
@@ -306,10 +322,13 @@ Window {
             property double lastMove: 0
             onPressed: (mouse) => {
                 video.forceActiveFocus()
+                if (win.settingsWindow)
+                    return
                 if (!win.canControl) {
                     hintClose.closed = false
                     hintPulse.restart()
-                    Mirror.requestControl(win.mirrorKey)
+                    if (win.canRequestControl)
+                        Mirror.requestControl(win.mirrorKey)
                     return
                 }
                 const p = video.at(mouse.x, mouse.y)
@@ -337,9 +356,19 @@ Window {
             }
             onCanceled: video.resetLocalGesture()
             onWheel: (wheel) => {
+                if (win.settingsWindow) {
+                    wheel.accepted = true
+                    if (!win.canScroll)
+                        return
+                    const p = video.at(wheel.x, wheel.y)
+                    if (p.inside)
+                        Mirror.scroll(win.mirrorKey, p.x, p.y, -wheel.angleDelta.x / 120, -wheel.angleDelta.y / 120)
+                    return
+                }
                 if (!win.canControl) {
                     hintClose.closed = false
-                    Mirror.requestControl(win.mirrorKey)
+                    if (win.canRequestControl)
+                        Mirror.requestControl(win.mirrorKey)
                     return
                 }
                 const p = video.at(wheel.x, wheel.y)
@@ -365,6 +394,8 @@ Window {
                     toolbarWakeTimer.restart()
                     if (toolbar.overflowMode)
                         overflowBtn.forceActiveFocus(Qt.TabFocusReason)
+                    else if (win.settingsWindow)
+                        saveShotBtn.forceActiveFocus(Qt.TabFocusReason)
                     else
                         copyShotBtn.forceActiveFocus(Qt.TabFocusReason)
                     event.accepted = true
@@ -372,7 +403,8 @@ Window {
                 return
             }
             if ((event.modifiers & Qt.ControlModifier) && (event.modifiers & Qt.ShiftModifier) && event.key === Qt.Key_C) {
-                Mirror.screenshotClipboard(win.mirrorKey)
+                if (win.canCopyScreenshot)
+                    Mirror.screenshotClipboard(win.mirrorKey)
                 event.accepted = true
                 return
             }
@@ -492,7 +524,7 @@ Window {
         // Secondary actions move to More when the phone window is narrow.
         readonly property bool overflowMode: win.width < 460
         opacity: topZoneHover.hovered || toolbarHover.hovered || toolbarWakeTimer.running
-            || win.info.recording === true || win.info.screenOff === true || toolbarHasFocus ? 1 : 0
+            || win.info.recording === true || (!win.settingsWindow && win.info.screenOff === true) || toolbarHasFocus ? 1 : 0
         Behavior on opacity { enabled: !Theme.reduceMotion; NumberAnimation { duration: Theme.fadeFast } }
 
         HoverHandler { id: toolbarHover }
@@ -508,16 +540,17 @@ Window {
         readonly property real flowWidth: {
             const b = copyShotBtn.implicitWidth
             const s = toolbarFlow.spacing
-            const items = toolbar.overflowMode ? [b, b] : [b, b, b]
+            const items = toolbar.overflowMode ? [b, b] : win.settingsWindow ? [b, b] : [b, b, b]
             if (win.info.recording === true)
                 items.push(recordingTime.implicitWidth)
-            items.push(b)
-            if (win.info.canScreenOff === true)
+            if (!win.settingsWindow)
                 items.push(b)
-            if (win.info.sound === true)
+            if (win.canScreenOff)
+                items.push(b)
+            if (win.info.sound === true && !win.settingsWindow)
                 items.push(b)
             items.push(b)
-            if (!win.info.app)
+            if (!win.info.app && !win.settingsWindow)
                 items.push(3 * b + 2 * s)
             const limit = Math.max(b, win.width - 2 * anchors.margins - 8)
             let widest = 0
@@ -549,12 +582,12 @@ Window {
             }
             IconButton {
                 id: copyShotBtn
-                visible: !toolbar.overflowMode
                 objectName: "mirrorCopyShot"
+                visible: !toolbar.overflowMode && win.canCopyScreenshot
                 iconPath: Icons.copy
                 iconColor: "white"
                 label: qsTr("Copy screenshot (%1)").arg(win.onMac ? "⌘⇧C" : "Ctrl+Shift+C")
-                onClicked: Mirror.screenshotClipboard(win.mirrorKey)
+                onClicked: if (win.canCopyScreenshot) Mirror.screenshotClipboard(win.mirrorKey)
             }
             IconButton {
                 id: saveShotBtn
@@ -586,30 +619,34 @@ Window {
             }
             IconButton {
                 id: stayAwakeBtn
+                objectName: "mirrorStayAwake"
+                visible: !win.settingsWindow
                 iconPath: Icons.coffee
                 iconColor: win.info.stayAwake === true ? Theme.primary : "white"
                 label: win.info.stayAwake === true
                     ? qsTr("Phone stays awake while mirroring (turn off)")
                     : qsTr("Keep phone awake while mirroring")
-                onClicked: Mirror.setStayAwake(win.mirrorKey, !(win.info.stayAwake === true))
+                onClicked: if (!win.settingsWindow) Mirror.setStayAwake(win.mirrorKey, !(win.info.stayAwake === true))
             }
             IconButton {
                 id: screenOffBtn
-                visible: win.info.canScreenOff === true
+                objectName: "mirrorScreenOff"
+                visible: win.canScreenOff
                 iconPath: Icons.screenOff
                 iconColor: win.info.screenOff === true ? Theme.primary : "white"
                 label: win.info.screenOff === true
                     ? qsTr("Turn phone screen back on")
                     : qsTr("Turn phone screen off while mirroring")
-                onClicked: Mirror.setScreenOff(win.mirrorKey, !(win.info.screenOff === true))
+                onClicked: if (win.canScreenOff) Mirror.setScreenOff(win.mirrorKey, !(win.info.screenOff === true))
             }
             IconButton {
                 id: soundBtn
-                visible: win.info.sound === true
+                objectName: "mirrorSound"
+                visible: win.info.sound === true && !win.settingsWindow
                 iconPath: Mirror.muted ? Icons.soundOff : Icons.speaker
                 iconColor: "white"
                 label: Mirror.muted ? qsTr("Play the phone's sound here") : qsTr("Mute the phone's sound here")
-                onClicked: Mirror.toggleSound()
+                onClicked: if (!win.settingsWindow) Mirror.toggleSound()
             }
             IconButton {
                 id: fullScreenBtn
@@ -624,7 +661,7 @@ Window {
             // One Flow item, so Back/Home/Recents wrap together.
             Row {
                 id: navRow
-                visible: !win.info.app
+                visible: !win.info.app && !win.settingsWindow
                 spacing: toolbarFlow.spacing
                 // Without control the buttons are dimmed and say why to
                 // screen readers; a click brings back the banner that says
@@ -699,7 +736,7 @@ Window {
                         key: "copy",
                         icon: Icons.copy,
                         label: qsTr("Copy screenshot (%1)").arg(win.onMac ? "⌘⇧C" : "Ctrl+Shift+C"),
-                        action: () => Mirror.screenshotClipboard(win.mirrorKey)
+                        action: () => { if (win.canCopyScreenshot) Mirror.screenshotClipboard(win.mirrorKey) }
                     },
                     {
                         key: "save",
@@ -711,6 +748,7 @@ Window {
                 delegate: Button {
                     width: parent.width
                     objectName: "mirrorOverflow" + modelData.key
+                    visible: modelData.key !== "copy" || win.canCopyScreenshot
                     variant: "tonal"
                     text: modelData.label
                     iconPath: modelData.icon
@@ -735,7 +773,7 @@ Window {
         radius: 16
         color: Qt.rgba(0, 0, 0, 0.68)
         visible: opacity > 0
-        opacity: Mirror.muted && win.info.sound === true && toolbar.visible && toolbar.opacity === 0 ? 1 : 0
+        opacity: !win.settingsWindow && Mirror.muted && win.info.sound === true && toolbar.visible && toolbar.opacity === 0 ? 1 : 0
         Behavior on opacity { enabled: !Theme.reduceMotion; NumberAnimation { duration: Theme.fadeFast } }
         IconButton {
             anchors.centerIn: parent
@@ -745,7 +783,7 @@ Window {
             iconPath: Icons.soundOff
             iconColor: "white"
             label: qsTr("Play the phone's sound here")
-            onClicked: Mirror.toggleSound()
+            onClicked: if (!win.settingsWindow) Mirror.toggleSound()
         }
     }
 
@@ -795,7 +833,8 @@ Window {
         anchors.margins: 12
         height: Math.max(hint.implicitHeight + 20, 48)
         radius: Theme.radiusMd
-        visible: win.phase === "showing" && video.frameSize.width > 0 && !win.canControl && !win.info.app && !hintClose.closed
+        visible: win.phase === "showing" && video.frameSize.width > 0 && !hintClose.closed
+            && (win.settingsWindow || (!win.canControl && !win.info.app))
         color: Qt.rgba(0, 0, 0, 0.72)
 
         SequentialAnimation {
@@ -821,7 +860,7 @@ Window {
         Txt {
             id: hint
             anchors.left: parent.left
-            anchors.right: notifyPhoneBtn.left
+            anchors.right: win.settingsWindow ? hintClose.left : notifyPhoneBtn.left
             anchors.margins: 10
             anchors.verticalCenter: parent.verticalCenter
             wrapMode: Text.WordWrap
@@ -831,14 +870,16 @@ Window {
         }
         Button {
             id: notifyPhoneBtn
+            objectName: "mirrorRequestControl"
             anchors.right: hintClose.left
             anchors.rightMargin: 4
             anchors.verticalCenter: parent.verticalCenter
             variant: "tonal"
             size: "sm"
             text: qsTr("How to enable")
-            enabled: !win.viewOnly
-            onClicked: Mirror.requestControl(win.mirrorKey)
+            visible: !win.settingsWindow
+            enabled: win.canRequestControl && !win.viewOnly
+            onClicked: if (win.canRequestControl) Mirror.requestControl(win.mirrorKey)
         }
         IconButton {
             id: hintClose
@@ -898,10 +939,14 @@ Window {
                 role: "body"
                 muted: true
                 objectName: "mirrorPreFrameDetail"
-                text: win.phase === "asking" && !win.info.app
+                text: win.phase === "asking" && win.settingsWindow
+                      ? qsTr("In Waypair Link on your phone, allow this computer to open Settings once.")
+                      : win.phase === "asking" && !win.info.app
                       ? qsTr("Open Waypair Link on %1 and approve sharing the entire screen.").arg(win.deviceName)
                       : win.phase === "showing" && video.frameSize.width <= 0 && !win.info.app
                       ? qsTr("No phone picture has arrived. Check that %1 is unlocked and still sharing.").arg(win.deviceName)
+                      : win.phase === "ended" && win.settingsWindow
+                      ? qsTr("Allow this computer again on your phone, then open a new Settings window.")
                       : win.phase === "ended" ? ((win.info.reason || "").length > 0 ? win.info.reason
                                                 : win.info.app ? qsTr("The app closed on %1.").arg(win.deviceName)
                                                 : qsTr("The phone stopped sharing its screen."))
@@ -916,11 +961,12 @@ Window {
                 onClicked: win.close()
             }
             Button {
+                objectName: "mirrorPreFrameReopen"
                 anchors.horizontalCenter: parent.horizontalCenter
-                visible: win.phase === "ended"
+                visible: win.phase === "ended" && win.canReopen
                 variant: "tonal"
                 text: win.info.app ? qsTr("Open again") : qsTr("Try again")
-                onClicked: Mirror.reopen(win.mirrorKey)
+                onClicked: if (win.canReopen) Mirror.reopen(win.mirrorKey)
             }
         }
     }

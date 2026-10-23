@@ -362,6 +362,7 @@ private fun App(
     onWebcamConsumed: () -> Unit,
     onActiveRemoteChanged: (String?) -> Unit,
 ) {
+    val settingsQualificationPcIds by core.settingsQualificationPcIds.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableStateOf(Tab.Home) }
     var pairing by rememberSaveable { mutableStateOf(false) }
     var manualWalkthroughOpen by rememberSaveable { mutableStateOf(false) }
@@ -966,6 +967,9 @@ private fun App(
                                     onSetMicEnabled = core::setMicEnabled,
                                     onSetMirroringEnabled = core::setMirroringEnabled,
                                     onSetPhoneControlEnabled = core::setPhoneControlEnabled,
+                                    settingsQualificationPcIds = settingsQualificationPcIds,
+                                    onAllowSettingsWindowOnce = core::allowSettingsWindowOnce,
+                                    onRevokeSettingsWindowAccess = core::revokeSettingsWindowAccess,
                                     onAddSafFolder = core::addSafFolder,
                                     onRemoveSafFolder = core::removeSafFolder,
                                     onSetClipboardHistoryEnabled = core::setClipboardHistoryEnabled,

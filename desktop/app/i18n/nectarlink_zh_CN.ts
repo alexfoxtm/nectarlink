@@ -236,6 +236,14 @@
         <source>%1, open</source>
         <translation>%1，打开</translation>
     </message>
+    <message>
+        <source>In Waypair Link on your phone, allow this computer to open Settings once, then open the window here. Scrolling needs the phone-control allowance.</source>
+        <translation>请在手机上的 Waypair Link 中允许这台电脑一次性打开“设置”，然后在此处打开窗口。滚动需要手机控制授权。</translation>
+    </message>
+    <message>
+        <source>Open Settings window</source>
+        <translation>打开“设置”窗口</translation>
+    </message>
 </context>
 <context>
     <name>AppsSheet</name>
@@ -4528,6 +4536,54 @@ What it needs
         <source>Open externally</source>
         <translation>用外部程序打开</translation>
     </message>
+    <message>
+        <source>Waypair asks %1 to turn on its hotspot, then joins the saved Wi-Fi network you choose.</source>
+        <translation>Waypair 会请求 %1 开启热点，然后连接你选择的已保存 Wi-Fi 网络。</translation>
+    </message>
+    <message>
+        <source>On Galaxy, you can turn it on in Settings &gt; Connections &gt; Mobile Hotspot and Tethering &gt; Mobile Hotspot. If it is not listed below, join it once in macOS Wi-Fi settings, then refresh.</source>
+        <translation>在 Galaxy 手机上，可在“设置”&gt;“连接”&gt;“移动热点和网络共享”&gt;“移动热点”中开启热点。如果下方没有显示该热点，请先在 macOS 的 Wi-Fi 设置中连接一次，然后刷新。</translation>
+    </message>
+    <message>
+        <source>On Galaxy, turn on Settings &gt; Connections &gt; Mobile Hotspot and Tethering &gt; Mobile Hotspot. If it is not listed below, join it once in Windows Wi-Fi settings, then refresh.</source>
+        <translation>在 Galaxy 手机上，请在“设置”&gt;“连接”&gt;“移动热点和网络共享”&gt;“移动热点”中开启热点。如果下方没有显示该热点，请先在 Windows 的 Wi-Fi 设置中连接一次，然后刷新。</translation>
+    </message>
+    <message>
+        <source>Allow hotspot discovery</source>
+        <translation>允许发现热点</translation>
+    </message>
+    <message>
+        <source>Saved hotspot: %1</source>
+        <translation>已保存的热点：%1</translation>
+    </message>
+    <message>
+        <source>Choose this phone's saved hotspot:</source>
+        <translation>选择此手机已保存的热点：</translation>
+    </message>
+    <message>
+        <source>Joining changes this computer's Wi-Fi network. Cancel join leaves the phone hotspot on once activation has been submitted. Turn it off manually in the phone's Settings. A Wi-Fi switch already submitted may still finish.</source>
+        <translation>加入热点会更改这台电脑当前连接的 Wi-Fi 网络。热点启动请求提交后，取消加入不会关闭手机热点；请在手机“设置”中手动关闭。已提交的 Wi-Fi 切换仍可能完成。</translation>
+    </message>
+    <message>
+        <source>Cancel join</source>
+        <translation>取消加入</translation>
+    </message>
+    <message>
+        <source>Joining…</source>
+        <translation>正在加入…</translation>
+    </message>
+    <message>
+        <source>Start and join</source>
+        <translation>开启并加入</translation>
+    </message>
+    <message>
+        <source>Join hotspot</source>
+        <translation>加入热点</translation>
+    </message>
+    <message>
+        <source>Join phone hotspot</source>
+        <translation>加入手机热点</translation>
+    </message>
 </context>
 <context>
     <name>Hotspot</name>
@@ -4545,6 +4601,10 @@ What it needs
         <location filename="rust_strings.h" line="311"/>
         <source>Couldn&apos;t join %1&apos;s hotspot. Pick %2 in Windows&apos; Wi-Fi list.</source>
         <translation>无法连接到 %1 的热点。请在 Windows 的 Wi-Fi 列表中选择 %2。</translation>
+    </message>
+    <message>
+        <source>Connected to the phone hotspot. Internet access depends on the phone's mobile connection.</source>
+        <translation>已连接到手机热点。互联网访问取决于手机的移动网络连接。</translation>
     </message>
 </context>
 <context>
@@ -5620,6 +5680,26 @@ What it needs
         <source>No picture arrived from the phone. Keep the phone unlocked while it shares its screen, then try again.</source>
         <translation>未收到手机画面。请在共享屏幕时保持手机解锁，然后重试。</translation>
     </message>
+    <message>
+        <source>Allow this computer again on your phone, then open a new Settings window.</source>
+        <translation>请在手机上重新允许这台电脑，然后重新打开“设置”窗口。</translation>
+    </message>
+    <message>
+        <source>In Waypair Link on your phone, allow this computer to open Settings once, then open a new Settings window here.</source>
+        <translation>请在手机上的 Waypair Link 中允许这台电脑一次性打开“设置”，然后在此处打开新的“设置”窗口。</translation>
+    </message>
+    <message>
+        <source>Opening Settings in a window is unavailable for this phone connection.</source>
+        <translation>当前手机连接不支持在窗口中打开“设置”。</translation>
+    </message>
+    <message>
+        <source>Settings</source>
+        <translation>设置</translation>
+    </message>
+    <message>
+        <source>Settings didn't open on the phone. Allow this computer again in Waypair Link, then open a new Settings window.</source>
+        <translation>手机未能打开“设置”。请在 Waypair Link 中重新允许这台电脑，然后重新打开“设置”窗口。</translation>
+    </message>
 </context>
 <context>
     <name>MirrorWindow</name>
@@ -5868,6 +5948,22 @@ What it needs
         <location filename="../qml/MirrorWindow.qml" line="836" />
         <source>Stop</source>
         <translation>停止</translation>
+    </message>
+    <message>
+        <source>Allow this computer again on your phone, then open a new Settings window.</source>
+        <translation>请在手机上重新允许这台电脑，然后重新打开“设置”窗口。</translation>
+    </message>
+    <message>
+        <source>In Waypair Link on your phone, allow this computer to open Settings once.</source>
+        <translation>请在手机上的 Waypair Link 中允许这台电脑一次性打开“设置”。</translation>
+    </message>
+    <message>
+        <source>This window shows your phone's Settings. Scrolling needs this computer's phone-control allowance. Other phone controls are unavailable.</source>
+        <translation>此窗口显示手机上的“设置”。滚动需要手机授权这台电脑进行手机控制。其他手机控制功能不可用。</translation>
+    </message>
+    <message>
+        <source>This window shows your phone's Settings. You can scroll here; make changes on your phone. Other phone controls are unavailable.</source>
+        <translation>此窗口显示手机上的“设置”。你可以在此滚动浏览；请在手机上进行更改。其他手机控制功能不可用。</translation>
     </message>
 </context>
 <context>
@@ -8684,6 +8780,18 @@ What it needs
         <source>Clear everything</source>
         <translation>清除全部</translation>
     </message>
+    <message>
+        <source>Join %1 from Home &gt; Join hotspot.</source>
+        <translation>请从“主页”&gt;“加入热点”加入 %1。</translation>
+    </message>
+    <message>
+        <source>Join the phone hotspot once in macOS Wi-Fi settings, then choose the saved network here.</source>
+        <translation>请先在 macOS 的 Wi-Fi 设置中连接一次手机热点，然后在此选择已保存的网络。</translation>
+    </message>
+    <message>
+        <source>Choose the phone's saved hotspot. macOS keeps its password in Keychain. Use Home &gt; Join hotspot to allow Wi-Fi discovery, then reopen this list.</source>
+        <translation>选择手机已保存的热点。macOS 会将其密码保存在钥匙串中。请通过“主页”&gt;“加入热点”允许发现 Wi-Fi 网络，然后重新打开此列表。</translation>
+    </message>
 </context>
 <context>
     <name>Setup</name>
@@ -9501,6 +9609,10 @@ What it needs
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
+    <message>
+        <source>Drag to Finder</source>
+        <translation>拖到 Finder</translation>
+    </message>
 </context>
 <context>
     <name>Transfers</name>
@@ -9895,6 +10007,58 @@ What it needs
         <location filename="rust_strings.h" line="491"/>
         <source>Streaming %1 × %2 · %3 fps from %4</source>
         <translation>正在从 %4 传输 %1 × %2 · %3 fps</translation>
+    </message>
+    <message>
+        <source>Not included</source>
+        <translation>未包含</translation>
+    </message>
+    <message>
+        <source>The camera extension is not included in this app. Setup is unavailable.</source>
+        <translation>此应用未包含摄像头扩展，因此无法进行设置。</translation>
+    </message>
+    <message>
+        <source>Activation completed. Click Check camera to check whether the device is ready.</source>
+        <translation>激活请求已完成。点击“检查摄像头”以检查设备是否已就绪。</translation>
+    </message>
+    <message>
+        <source>Allow the Waypair camera extension in System Settings, then return here.</source>
+        <translation>请在“系统设置”中允许 Waypair 摄像头扩展，然后返回此处。</translation>
+    </message>
+    <message>
+        <source>Camera extension is disabled.</source>
+        <translation>摄像头扩展已停用。</translation>
+    </message>
+    <message>
+        <source>Camera extension request failed (OS error %1).</source>
+        <translation>摄像头扩展请求失败（操作系统错误 %1）。</translation>
+    </message>
+    <message>
+        <source>Check camera</source>
+        <translation>检查摄像头</translation>
+    </message>
+    <message>
+        <source>Enable camera extension</source>
+        <translation>启用摄像头扩展</translation>
+    </message>
+    <message>
+        <source>Enable the camera extension to use your phone in video apps.</source>
+        <translation>启用摄像头扩展后，即可在视频应用中使用手机摄像头。</translation>
+    </message>
+    <message>
+        <source>Requesting camera extension activation…</source>
+        <translation>正在请求激活摄像头扩展…</translation>
+    </message>
+    <message>
+        <source>Restart macOS to finish the camera extension request.</source>
+        <translation>请重新启动 macOS 以完成摄像头扩展请求。</translation>
+    </message>
+    <message>
+        <source>Stopping camera on %1…</source>
+        <translation>正在停止 %1 上的摄像头…</translation>
+    </message>
+    <message>
+        <source>Waypair Camera is ready · 720p at 30 fps.</source>
+        <translation>Waypair 摄像头已就绪 · 720p，30 fps。</translation>
     </message>
 </context>
 <context>

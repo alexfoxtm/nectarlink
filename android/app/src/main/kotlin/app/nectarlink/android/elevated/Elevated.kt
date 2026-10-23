@@ -37,6 +37,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -404,13 +405,23 @@ object Elevated {
             }
             rootActive = true
             connectSocketLocked(port, token)
+            val monitoredSocket = socket
             Thread {
                 runCatching { output.lineSequence().forEach { line -> Log.d(TAG, "root-helper: $line") } }
-                input = null
-                rootActive = false
-                runCatching { socket?.close() }
-                if (_state.value == State.Running) _state.value = State.Waiting
-                onChange()
+                runBlocking {
+                    lock.withLock {
+                        if (rootProcess === proc && socket === monitoredSocket) {
+                            val wasRunning = input != null
+                            input = null
+                            if (wasRunning) onProviderLost()
+                            rootProcess = null
+                            rootActive = false
+                            runCatching { socket?.close() }
+                            if (_state.value == State.Running) _state.value = State.Waiting
+                            onChange()
+                        }
+                    }
+                }
                 scheduleRetry()
             }.start()
             true
@@ -493,12 +504,21 @@ object Elevated {
         check(first.startsWith("ready ") && port != null) { "the helper said ${first.ifEmpty { "nothing" }}" }
         connectSocketLocked(port, token)
         // Watches the helper: when its shell ends, Elevated stops.
+        val monitoredSocket = socket
         Thread {
             runCatching { output.lineSequence().forEach { line -> Log.d(TAG, "helper: $line") } }
-            input = null
-            runCatching { socket?.close() }
-            if (_state.value == State.Running) _state.value = if (paired()) State.Waiting else State.NotSetUp
-            onChange()
+            runBlocking {
+                lock.withLock {
+                    if (shell === stream && socket === monitoredSocket) {
+                        val wasRunning = input != null
+                        input = null
+                        if (wasRunning) onProviderLost()
+                        runCatching { socket?.close() }
+                        if (_state.value == State.Running) _state.value = if (paired()) State.Waiting else State.NotSetUp
+                        onChange()
+                    }
+                }
+            }
             scheduleRetry()
         }.start()
     }
@@ -513,7 +533,7 @@ object Elevated {
         writer.flush()
         input = writer
         _state.value = State.Running
-        if (screenOffRequested) send(writer, "P 0")
+        if (screenOffRequested) offMain.execute { sendNow(writer, "P 0") { input === writer } }
         Thread {
             runCatching {
                 local.inputStream.bufferedReader().lineSequence().forEach { line ->
@@ -554,14 +574,20 @@ object Elevated {
                     }
                 }
             }
-            if (socket === local) {
-                hotspotProtocolOwner = null
-                input = null
-                runCatching { local.close() }
-                if (_state.value == State.Running) _state.value = if (paired()) State.Waiting else State.NotSetUp
-                onChange()
-                scheduleRetry()
+            runBlocking {
+                lock.withLock {
+                    if (socket === local) {
+                        hotspotProtocolOwner = null
+                        val wasRunning = input != null
+                        input = null
+                        if (wasRunning) onProviderLost()
+                        runCatching { local.close() }
+                        if (_state.value == State.Running) _state.value = if (paired()) State.Waiting else State.NotSetUp
+                        onChange()
+                    }
+                }
             }
+            scheduleRetry()
         }.start()
         onChange()
     }
@@ -571,6 +597,9 @@ object Elevated {
         if (!::context.isInitialized) init(appContext)
         setAutomaticStartAllowed(true)
         lock.withLock {
+            val wasRunning = input != null
+            input = null
+            if (wasRunning) onProviderLost()
             runCatching { socket?.close() }
             runCatching { connectSocketLocked(port, token) }.onFailure {
                 Log.w(TAG, "couldn't attach to shell helper", it)
@@ -624,7 +653,9 @@ object Elevated {
     private fun stopLocked() {
         screenOffRequested = false
         rootActive = false
+        val wasRunning = input != null
         input = null
+        if (wasRunning) onProviderLost()
         helper = null
         runCatching { socket?.close() }
         runCatching { shell?.close() }
@@ -651,6 +682,9 @@ object Elevated {
         _state.value = State.NotSetUp
         onChange()
     }
+
+    /** Synchronous loss boundary; called while the Elevated lifecycle mutex excludes recovery. */
+    @Volatile var onProviderLost: () -> Unit = {}
 
     /** Told when Elevated starts or stops (what the phone offers changes). */
     @Volatile var onChange: () -> Unit = {}
@@ -883,6 +917,20 @@ object Elevated {
         return sendNow(writer, line, stillCurrent)
     }
 
+    /** A failed write is a real provider loss; serialize it with start/stop and exact writer ownership. */
+    private fun retireWriterIfCurrent(writer: Writer) {
+        var retired = false
+        runBlocking {
+            lock.withLock {
+                if (input === writer) {
+                    stopLocked()
+                    retired = true
+                }
+            }
+        }
+        if (retired) scheduleRetry()
+    }
+
     private val offMain = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
         Thread(r, "elevated-send").apply { isDaemon = true }
     }
@@ -898,7 +946,7 @@ object Elevated {
         true
     } catch (e: Exception) {
         Log.i(TAG, "the input helper went away", e)
-        if (input === writer) input = null
+        retireWriterIfCurrent(writer)
         false
     }
 

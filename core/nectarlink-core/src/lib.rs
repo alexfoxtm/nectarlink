@@ -85,7 +85,7 @@ pub use media::{MediaAction, MediaError};
 pub use mic::{MicSink, TOGGLE as MIC_TOGGLE};
 pub use mirror::{
     MirrorControl, MirrorControlContext, MirrorSend, MirrorSink, MirrorStream, MirrorView, PC_MIRROR_TOGGLE,
-    PHONE_CONTROL_TOGGLE,
+    PHONE_CONTROL_TOGGLE, PhoneSettingsQualificationOwner,
 };
 pub use nectarlink_protocol::messages::clip::{
     IMAGE_TYPES as CLIP_IMAGE_TYPES, MAX_IMAGE_BYTES as CLIP_MAX_IMAGE_BYTES,
@@ -118,6 +118,7 @@ pub use nectarlink_protocol::{
         media_watch::{MAX_READ as MEDIA_WATCH_MAX_READ, STREAM as MEDIA_STREAM, WATCH as MEDIA_WATCH},
         mic::{LISTEN as MIC_LISTEN, STREAM as MIC_STREAM},
         mirror::{
+            APP_SETTINGS_QUALIFICATION_V1 as MIRROR_APP_SETTINGS_QUALIFICATION_V1,
             APP_WINDOWS_OWNED_V1 as MIRROR_APP_WINDOWS_OWNED_V1, AUDIO as MIRROR_AUDIO,
             AUDIO_PLAYBACK as MIRROR_AUDIO_PLAYBACK, AV1 as MIRROR_AV1, CAPTURE as MIRROR_CAPTURE,
             CONTROL_ALLOWED as MIRROR_CONTROL_ALLOWED, CONTROL_STOPPED as MIRROR_CONTROL_STOPPED,

@@ -1415,6 +1415,10 @@
     <string name="profile_other">Second profile</string>
     <string name="phone_control_pc_toggle">Allow phone control</string>
     <string name="phone_control_pc_toggle_hint">Allow this trusted computer to tap, scroll and type only while this phone’s screen is shared. Off by default. This switch does not undo Stop.</string>
+    <string name="settings_window_access_title">Settings window</string>
+    <string name="settings_window_access_hint">Allow this computer to open Android Settings once in its own window. Scrolling follows your existing phone-control settings.</string>
+    <string name="settings_window_allow_once">Allow a Settings window once</string>
+    <string name="settings_window_revoke">Revoke Settings window access</string>
     <string name="mirror_request_text_control">It can also tap, scroll and type on this phone. Tap to share it. You can stop anytime.</string>
     <string name="webcam_start_on_pc">Start webcam from your computer</string>
 </resources>

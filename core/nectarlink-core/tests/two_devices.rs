@@ -68,6 +68,9 @@ struct RecordingPlatform {
         Mutex<Vec<(nectarlink_core::DeviceId, u32, u32, nectarlink_core::MirrorControlContext)>>,
     mirror_start_barrier: Mutex<Option<Arc<std::sync::Barrier>>>,
     mirror_reject: std::sync::atomic::AtomicBool,
+    settings_supported: std::sync::atomic::AtomicBool,
+    settings_requests: Mutex<Vec<(nectarlink_core::DeviceId, u64, u64, u64)>>,
+    owned_mirror_keyframes: Mutex<Vec<nectarlink_core::MirrorControlContext>>,
     watch_offers: Mutex<Vec<String>>,
     mic_asks: Mutex<Vec<String>>,
     mic: Arc<TestMicSink>,
@@ -205,6 +208,27 @@ impl Platform for RecordingPlatform {
         let watch = options.watch.as_deref().map(|p| format!(" watching {p}")).unwrap_or_default();
         self.mirror_asks.lock().unwrap().push(format!("start {}{sound}{app}{watch}", options.max_size));
         Ok(())
+    }
+    fn settings_window_qualification_supported(&self) -> bool {
+        self.settings_supported.load(std::sync::atomic::Ordering::Acquire)
+    }
+    fn mirror_settings_requested_owned(
+        &self,
+        peer: &nectarlink_core::DeviceId,
+        options: &nectarlink_core::MirrorStart,
+        connection: u64,
+        capture: u64,
+        offer: u64,
+    ) -> Result<(), String> {
+        self.settings_requests.lock().unwrap().push((*peer, connection, capture, offer));
+        self.mirror_requested(peer, options)
+    }
+    fn mirror_keyframe_requested_owned(
+        &self,
+        _peer: &nectarlink_core::DeviceId,
+        context: nectarlink_core::MirrorControlContext,
+    ) {
+        self.owned_mirror_keyframes.lock().unwrap().push(context);
     }
     fn watch_offered(
         &self,
@@ -7751,6 +7775,92 @@ async fn phone_control_revocation_stale_owners_store_failure_and_reconnect_fail_
 }
 
 #[cfg(feature = "test-support")]
+async fn settings_qualification_pair(pc: &TestDevice, phone: &TestDevice) {
+    use nectarlink_core::{
+        MIRROR_APP_SETTINGS_QUALIFICATION_V1, MIRROR_CAPTURE, MIRROR_CORRELATION, MIRROR_INPUT,
+        MIRROR_INPUT_REQUEST, MIRROR_VIEW, MIRROR_VIRTUAL_DISPLAY,
+    };
+    phone.platform.settings_supported.store(true, std::sync::atomic::Ordering::Release);
+    pc.node
+        .update_power(
+            PowerLevel::NotApplicable,
+            vec![
+                MIRROR_VIEW.into(),
+                MIRROR_CORRELATION.into(),
+                MIRROR_INPUT_REQUEST.into(),
+                MIRROR_APP_SETTINGS_QUALIFICATION_V1.into(),
+            ],
+        )
+        .await;
+    phone
+        .node
+        .update_power(
+            PowerLevel::Elevated,
+            vec![
+                MIRROR_CAPTURE.into(),
+                MIRROR_CORRELATION.into(),
+                MIRROR_INPUT.into(),
+                MIRROR_INPUT_REQUEST.into(),
+                MIRROR_VIRTUAL_DISPLAY.into(),
+                MIRROR_APP_SETTINGS_QUALIFICATION_V1.into(),
+            ],
+        )
+        .await;
+    with_timeout("desktop Settings mechanism advertisement", async {
+        while !phone.node.test_peer_supports(pc.node.device_id(), MIRROR_APP_SETTINGS_QUALIFICATION_V1) {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await;
+}
+
+#[cfg(feature = "test-support")]
+async fn wait_settings_offer_cap(pc: &TestDevice, phone: &TestDevice) {
+    with_timeout("phone scoped Settings advertisement", async {
+        while !pc
+            .node
+            .test_peer_supports(phone.node.device_id(), nectarlink_core::MIRROR_APP_SETTINGS_QUALIFICATION_V1)
+        {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await;
+}
+
+#[cfg(feature = "test-support")]
+async fn start_settings_view(
+    pc: &TestDevice,
+    phone: &TestDevice,
+    app_session: u32,
+) -> nectarlink_core::MirrorView {
+    let result = Arc::new(Mutex::new(None));
+    let published = result.clone();
+    pc.node
+        .settings_window_start_owned(phone.node.device_id(), app_session, move |view| {
+            assert!(view.is_current() && view.is_settings_qualification());
+            *published.lock().unwrap() = Some(view);
+            true
+        })
+        .await
+        .unwrap();
+    result.lock().unwrap().clone().unwrap()
+}
+
+#[cfg(feature = "test-support")]
+async fn wait_owned_app_keyframe(phone: &TestDevice, owner: nectarlink_core::MirrorControlContext) {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if phone.platform.owned_mirror_keyframes.lock().unwrap().contains(&owner) {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("exact owned app keyframe callback was not delivered within 5s");
+}
+
+#[cfg(feature = "test-support")]
 async fn wait_owned_app_resize(phone: &TestDevice, count: usize) {
     with_timeout("owned app resize", async {
         while phone.platform.owned_mirror_resizes.lock().unwrap().len() < count {
@@ -7839,6 +7949,88 @@ async fn app_control_uses_the_owned_stream_and_screen_stop_stays_independent() {
     assert!(!lease.is_current());
     screen.close();
     app.close();
+
+    // Same real pair now exercises the attended scope with general owned support absent.
+    settings_qualification_pair(&pc, &phone).await;
+    phone.node.set_phone_control_enabled(pc.node.device_id(), false).unwrap();
+    let pc_id = pc.node.device_id();
+    let phone_id = phone.node.device_id();
+    let (scope_screen, screen_request) = request_control_session(&mut pc, &mut phone, 0).await;
+    let screen_owner = phone.node.mirror_capture_context(pc_id, screen_request).unwrap();
+    assert!(
+        !pc.node.test_peer_supports(phone_id, nectarlink_core::MIRROR_APP_SETTINGS_QUALIFICATION_V1),
+        "unarmed receiver does not advertise scope"
+    );
+    let owner = phone.node.arm_phone_settings_window_qualification(pc_id).unwrap();
+    wait_settings_offer_cap(&pc, &phone).await;
+    assert!(!pc.node.test_peer_supports(phone_id, MIRROR_APP_WINDOWS_OWNED_V1));
+    let view = start_settings_view(&pc, &phone, 19).await;
+    let qualified = show_control_request(&mut pc, &phone, 19, view.request()).await;
+    let accepted = phone.node.mirror_capture_context_for_session(pc_id, 19, view.request()).unwrap();
+    assert!(phone.node.settings_qualification_capture_current(pc_id, owner.offer, accepted));
+    assert_eq!(
+        phone.platform.settings_requests.lock().unwrap().last().copied(),
+        Some((pc_id, owner.connection, accepted.capture, owner.offer))
+    );
+    let actual = phone.platform.mirror_requests.lock().unwrap().last().cloned().unwrap();
+    assert_eq!(actual.app.as_deref(), Some("com.android.settings"));
+    assert_eq!((actual.max_size, actual.fps, actual.bitrate), (1920, 60, 8_000_000));
+    assert!(!actual.audio && !actual.stay_awake && !actual.screen_off && actual.watch.is_none());
+    with_timeout("qualified grant OFF", async {
+        while view.control_reason() == "available" {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await;
+    assert!(view.control().is_err());
+    let resizes = phone.platform.owned_mirror_resizes.lock().unwrap().len();
+    view.send_if_current(900, 700, || true).await.unwrap();
+    wait_owned_app_resize(&phone, resizes + 1).await;
+    assert!(view.is_current() && !qualified.is_closed(), "grant OFF preserves viewing/resize");
+    phone.node.set_phone_control_enabled(pc_id, true).unwrap();
+    with_timeout("qualified actual Scroll grant", async {
+        while view.control_reason() != "available" {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await;
+    assert!(
+        pc.node.mirror_control_for_session(phone_id, 19, view.request()).is_err(),
+        "generic input constructor cannot acquire private scope"
+    );
+    let scroll = view.control().unwrap();
+    assert!(scroll.send(MirrorInput::Text { text: "denied synthetic text".into() }).await.is_err());
+    assert!(scroll.send(MirrorInput::Key { key: "enter".into() }).await.is_err());
+    phone.platform.control_inputs.lock().unwrap().clear();
+    scroll.send(MirrorInput::Scroll { x: 0.5, y: 0.5, dx: 0.0, dy: 1.0 }).await.unwrap();
+    control_barrier(&pc, &phone).await;
+    let posted = phone.platform.control_inputs.lock().unwrap().clone();
+    assert_eq!(posted.len(), 1);
+    assert_eq!(
+        (posted[0].2.session, posted[0].2.request, posted[0].2.capture, posted[0].2.connection),
+        (19, view.request(), accepted.capture, owner.connection)
+    );
+    assert!(phone.node.mirror_control_input_current(pc_id, posted[0].2));
+    assert!(view.request_keyframe_if_current().await.unwrap());
+    control_barrier(&pc, &phone).await;
+    wait_owned_app_keyframe(&phone, posted[0].2).await;
+    assert_eq!(
+        phone.platform.owned_mirror_keyframes.lock().unwrap().last().unwrap().capture,
+        accepted.capture
+    );
+    phone.node.mirror_deny_typing(pc_id).unwrap();
+    assert!(!phone.node.mirror_control_input_current(pc_id, posted[0].2));
+    assert!(view.is_current(), "durable Stop does not retire view");
+    assert!(view.stop_if_current().await.unwrap());
+    wait_owned_app_stop(&phone, pc_id, accepted).await;
+    assert!(!phone.node.phone_settings_qualification_current(owner));
+    assert!(!phone.node.mirror_capture_current(pc_id, accepted));
+    assert!(
+        phone.node.mirror_capture_current(pc_id, screen_owner) && !scope_screen.is_closed(),
+        "scope close leaves screen0 intact"
+    );
+    qualified.close();
+    scope_screen.close();
     pc.node.shutdown().await;
     phone.node.shutdown().await;
 }
@@ -8198,17 +8390,15 @@ async fn app_control_denies_legacy_grant_off_stop_and_reused_capture_owners() {
     .await
     .unwrap();
     let retire_release = EnteredBarrier::new(retire_gate);
-    let published = Arc::new(tokio::sync::Notify::new());
-    let ready = published.clone();
+    let (ready, published) = std::sync::mpsc::channel();
     let next_view = Arc::new(Mutex::new(None));
     let capture_view = next_view.clone();
     let next_node = pc.node.clone();
-    let attempting = Arc::new(tokio::sync::Notify::new());
-    let attempt = attempting.clone();
+    let (attempt, attempting) = std::sync::mpsc::channel();
     let runtime = tokio::runtime::Handle::current();
     let next_start = tokio::task::spawn_blocking(move || {
         runtime.block_on(async move {
-            attempt.notify_one();
+            let _ = attempt.send(());
             next_node
                 .mirror_start_owned(
                     phone_id,
@@ -8226,19 +8416,29 @@ async fn app_control_denies_legacy_grant_off_stop_and_reused_capture_owners() {
                     },
                     move |view| {
                         *capture_view.lock().unwrap() = Some(view);
-                        ready.notify_one();
+                        let _ = ready.send(());
                         true
                     },
                 )
                 .await
         })
     });
-    with_timeout("replacement start task scheduled", attempting.notified()).await;
-    assert!(
-        tokio::time::timeout(Duration::from_millis(100), published.notified()).await.is_err(),
-        "replacement cannot publish while old retirement still owns the reader guard"
-    );
-    retire_release.release().await;
+    // The actual source-stop intentionally blocks a Tokio worker under the
+    // Session guard. Observe the real attempt/ready callbacks and release that
+    // interlock independently of Tokio notification/timer progress.
+    tokio::task::spawn_blocking(move || {
+        let _retire_release = retire_release;
+        attempting.recv_timeout(WAIT).expect("replacement start task was not scheduled");
+        assert!(
+            matches!(
+                published.recv_timeout(Duration::from_millis(100)),
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+            ),
+            "replacement cannot publish while old retirement still owns the reader guard"
+        );
+    })
+    .await
+    .unwrap();
     source_stop.await.unwrap().unwrap();
     next_start.await.unwrap().unwrap();
     let next_view = next_view.lock().unwrap().clone().unwrap();
@@ -8252,6 +8452,222 @@ async fn app_control_denies_legacy_grant_off_stop_and_reused_capture_owners() {
     wait_owned_app_stop(&phone, pc_id, next_owner).await;
     next_stream.close();
     reconnected.close();
+
+    // Scoped failure path uses the same real Node/platform/queue seams.
+    use nectarlink_protocol::{
+        Envelope,
+        messages::{MirrorSession, MirrorSettingsStart, types},
+    };
+    settings_qualification_pair(&pc, &phone).await;
+    let db = rusqlite::Connection::open(phone.dir.path().join("nectarlink.db")).unwrap();
+    db.execute_batch("CREATE TRIGGER fail_settings_offer BEFORE INSERT ON meta WHEN NEW.key = 'mirror_next_request' BEGIN SELECT RAISE(ABORT, 'synthetic offer allocation failure'); END;").unwrap();
+    assert!(phone.node.arm_phone_settings_window_qualification(pc_id).is_err());
+    db.execute_batch("DROP TRIGGER fail_settings_offer;").unwrap();
+    // The explicit arm tap cannot inherit a provider restarted during offer allocation.
+    let (arm_gate, arm_entered) = phone.node.test_hold_next_settings_arm().unwrap();
+    let arming_node = phone.node.clone();
+    let crossing_arm =
+        tokio::task::spawn_blocking(move || arming_node.arm_phone_settings_window_qualification(pc_id));
+    with_timeout("actual arm allocation interlock", arm_entered.notified()).await;
+    let entered = arm_gate.clone();
+    tokio::task::spawn_blocking(move || {
+        entered.wait();
+    })
+    .await
+    .unwrap();
+    let arm_release = EnteredBarrier::new(arm_gate);
+    // The callback can recover before async capability refresh removes a token.
+    // Drive the synchronous real loss hook while leaving every capability unchanged.
+    phone.platform.settings_supported.store(false, std::sync::atomic::Ordering::Release);
+    phone.node.settings_window_qualification_provider_lost();
+    phone.platform.settings_supported.store(true, std::sync::atomic::Ordering::Release);
+    arm_release.release().await;
+    assert!(
+        matches!(crossing_arm.await.unwrap(), Err(Error::Denied)),
+        "arm allocation crossing provider OFF/ON is spent even when capability refresh misses loss"
+    );
+    let lost_armed = phone.node.arm_phone_settings_window_qualification(pc_id).unwrap();
+    assert!(phone.node.phone_settings_qualification_current(lost_armed));
+    phone.platform.settings_supported.store(false, std::sync::atomic::Ordering::Release);
+    phone.node.settings_window_qualification_provider_lost();
+    phone.platform.settings_supported.store(true, std::sync::atomic::Ordering::Release);
+    assert!(
+        !phone.node.phone_settings_qualification_current(lost_armed),
+        "an Armed offer cannot revive after the getter recovers"
+    );
+    assert!(!phone.node.revoke_phone_settings_window_qualification_if_current(lost_armed).unwrap());
+    let owner_a = phone.node.arm_phone_settings_window_qualification(pc_id).unwrap();
+    assert_ne!(lost_armed.offer, owner_a.offer);
+    wait_settings_offer_cap(&pc, &phone).await;
+    assert!(
+        phone.node.arm_phone_settings_window_qualification(pc_id).is_err(),
+        "no implicit scope replacement"
+    );
+    let ready_gate = Arc::new(std::sync::Barrier::new(2));
+    let callback_gate = ready_gate.clone();
+    let ready_entered = Arc::new(tokio::sync::Notify::new());
+    let signal_ready = ready_entered.clone();
+    let old_view = Arc::new(Mutex::new(None));
+    let save_old = old_view.clone();
+    let sender = pc.node.clone();
+    let runtime = tokio::runtime::Handle::current();
+    let delayed_start = tokio::task::spawn_blocking(move || {
+        runtime.block_on(async move {
+            sender
+                .settings_window_start_owned(phone_id, 29, move |view| {
+                    *save_old.lock().unwrap() = Some(view);
+                    signal_ready.notify_one();
+                    callback_gate.wait();
+                    callback_gate.wait();
+                    true
+                })
+                .await
+        })
+    });
+    with_timeout("actual Settings view ready before START", ready_entered.notified()).await;
+    let entered = ready_gate.clone();
+    tokio::task::spawn_blocking(move || {
+        entered.wait();
+    })
+    .await
+    .unwrap();
+    let release = EnteredBarrier::new(ready_gate);
+    let old_view = old_view.lock().unwrap().clone().unwrap();
+    assert!(phone.node.revoke_phone_settings_window_qualification_if_current(owner_a).unwrap());
+    let owner_b = phone.node.arm_phone_settings_window_qualification(pc_id).unwrap();
+    assert_ne!(owner_a.offer, owner_b.offer);
+    let launches = phone.platform.settings_requests.lock().unwrap().len();
+    assert!(old_view.stop_if_current().await.unwrap(), "old scoped STOP is sent before old START");
+    assert!(phone.node.phone_settings_qualification_current(owner_b));
+    release.release().await;
+    assert!(delayed_start.await.unwrap().is_err(), "old queued START cannot consume re-armed offer");
+    assert_eq!(phone.platform.settings_requests.lock().unwrap().len(), launches);
+    assert!(!phone.node.revoke_phone_settings_window_qualification_if_current(owner_a).unwrap());
+    assert!(phone.node.phone_settings_qualification_current(owner_b));
+
+    for body in [
+        serde_json::json!({"offer": 0, "session": 29, "request": old_view.request()}),
+        serde_json::json!({"offer": owner_a.offer, "session": 29, "request": old_view.request()}),
+        serde_json::json!({"offer": owner_b.offer, "session": 0, "request": old_view.request()}),
+        serde_json::json!({"offer": owner_b.offer, "session": 29, "request": 0}),
+        serde_json::json!({"offer": owner_b.offer, "session": 29, "request": old_view.request(), "app": "com.example.chat"}),
+        serde_json::json!({"offer": owner_b.offer, "session": 29, "request": old_view.request(), "audio": true}),
+        serde_json::json!({"offer": owner_b.offer, "session": 29, "request": old_view.request(), "watch": "player"}),
+        serde_json::json!({"offer": owner_b.offer, "session": 29, "request": old_view.request(), "stay_awake": true}),
+    ] {
+        let reply = pc
+            .node
+            .test_mirror_settings_packet(
+                phone_id,
+                Envelope::new(types::MIRROR_SETTINGS_START, &body).unwrap(),
+            )
+            .await
+            .unwrap();
+        assert!(reply.expect(types::OK).is_err());
+        assert!(phone.node.phone_settings_qualification_current(owner_b));
+    }
+    let legacy = nectarlink_core::MirrorStart {
+        max_size: 128,
+        fps: 30,
+        bitrate: 1_000_000,
+        audio: false,
+        session: 29,
+        app: Some("com.android.settings".into()),
+        stay_awake: false,
+        screen_off: false,
+        watch: None,
+        request: Some(old_view.request()),
+    };
+    assert!(
+        pc.node
+            .test_mirror_settings_packet(phone_id, Envelope::new(types::MIRROR_START, &legacy).unwrap())
+            .await
+            .unwrap()
+            .expect(types::OK)
+            .is_err(),
+        "receiver closes the legacy admission seam while Armed"
+    );
+    wait_settings_offer_cap(&pc, &phone).await;
+    let (scope_screen, screen_request) = request_control_session(&mut pc, &mut phone, 0).await;
+    let screen_owner = phone.node.mirror_capture_context(pc_id, screen_request).unwrap();
+    let view_b = start_settings_view(&pc, &phone, 29).await;
+    let stream_b = show_control_request(&mut pc, &phone, 29, view_b.request()).await;
+    let capture_b = phone.node.mirror_capture_context_for_session(pc_id, 29, view_b.request()).unwrap();
+    let duplicate = MirrorSettingsStart { offer: owner_b.offer, session: 29, request: view_b.request() };
+    assert!(
+        pc.node
+            .test_mirror_settings_packet(
+                phone_id,
+                Envelope::new(types::MIRROR_SETTINGS_START, &duplicate).unwrap()
+            )
+            .await
+            .unwrap()
+            .expect(types::OK)
+            .is_err(),
+        "one offer creates at most one capture"
+    );
+    let no_offer_stop = MirrorSession { session: 29, request: Some(view_b.request()) };
+    pc.node
+        .test_mirror_settings_packet(phone_id, Envelope::new(types::MIRROR_STOP, &no_offer_stop).unwrap())
+        .await
+        .unwrap()
+        .expect(types::OK)
+        .unwrap();
+    assert!(phone.node.settings_qualification_capture_current(pc_id, owner_b.offer, capture_b));
+    let keyframes = phone.platform.owned_mirror_keyframes.lock().unwrap().len();
+    pc.node.mirror_keyframe(phone_id, 29).await;
+    control_barrier(&pc, &phone).await;
+    assert_eq!(
+        phone.platform.owned_mirror_keyframes.lock().unwrap().len(),
+        keyframes,
+        "legacy keyframe cannot select scoped capture"
+    );
+    assert!(view_b.request_keyframe_if_current().await.unwrap());
+    control_barrier(&pc, &phone).await;
+    wait_owned_app_keyframe(&phone, capture_b).await;
+    assert_eq!(phone.platform.owned_mirror_keyframes.lock().unwrap().len(), keyframes + 1);
+
+    // Actual mechanism loss advances a checked LOCAL provider lifetime before recovery.
+    // Re-advertising the same mechanism cannot resurrect B's consent/capture.
+    phone
+        .node
+        .update_power(
+            PowerLevel::Basic,
+            vec![
+                nectarlink_core::MIRROR_CAPTURE.into(),
+                nectarlink_core::MIRROR_CORRELATION.into(),
+                nectarlink_core::MIRROR_INPUT_REQUEST.into(),
+            ],
+        )
+        .await;
+    assert!(!phone.node.phone_settings_qualification_current(owner_b));
+    assert!(!phone.node.mirror_capture_current(pc_id, capture_b));
+    settings_qualification_pair(&pc, &phone).await;
+    assert!(!phone.node.phone_settings_qualification_current(owner_b));
+    assert!(!phone.node.settings_qualification_capture_current(pc_id, owner_b.offer, capture_b));
+    let owner_c = phone.node.arm_phone_settings_window_qualification(pc_id).unwrap();
+    assert_ne!(owner_b.offer, owner_c.offer);
+    assert!(!phone.node.revoke_phone_settings_window_qualification_if_current(owner_b).unwrap());
+    let stale = MirrorSettingsStart { offer: owner_b.offer, session: 29, request: view_b.request() };
+    assert!(
+        pc.node
+            .test_mirror_settings_packet(
+                phone_id,
+                Envelope::new(types::MIRROR_SETTINGS_START, &stale).unwrap()
+            )
+            .await
+            .unwrap()
+            .expect(types::OK)
+            .is_err()
+    );
+    assert!(phone.node.phone_settings_qualification_current(owner_c));
+    assert!(
+        phone.node.mirror_capture_current(pc_id, screen_owner) && !scope_screen.is_closed(),
+        "provider/scope invalidation preserves screen0"
+    );
+    assert!(phone.node.revoke_phone_settings_window_qualification_if_current(owner_c).unwrap());
+    stream_b.close();
+    scope_screen.close();
     pc.node.shutdown().await;
     phone.node.shutdown().await;
 }

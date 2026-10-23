@@ -102,6 +102,87 @@ TestCase {
                 "phase loss clears local state without emitting a touch cancel")
     }
 
+    function test_settings_window_allows_only_approved_wheel_scrolling() {
+        createMirror(true, "showing", {
+            app: true, title: "Settings", settingsQualification: true,
+            canControl: true, viewOnly: false, controlReason: "unsupported",
+            canScroll: true, scrollReason: "available", canRequestControl: true,
+            canReopen: true, canScreenOff: true, stayAwake: true, screenOff: true,
+            sound: true
+        })
+
+        verify(!mirrorWindow.canControl, "the restriction marker must never grant phone control")
+        verify(mirrorWindow.viewOnly)
+        verify(mirrorWindow.canScroll)
+        verify(!mirrorWindow.canRequestControl)
+        verify(!mirrorWindow.canReopen)
+        verify(!mirrorWindow.canScreenOff)
+        verify(!videoView.acceptsText)
+        verify(!findChild(mirrorWindow, "mirrorDropArea").enabled)
+        verify(!findChild(mirrorWindow, "mirrorStayAwake").visible)
+        verify(!findChild(mirrorWindow, "mirrorScreenOff").visible)
+        verify(!findChild(mirrorWindow, "mirrorSound").visible)
+        verify(!findChild(mirrorWindow, "mirrorCopyShot").visible)
+        verify(!findChild(mirrorWindow, "mirrorRequestControl").visible)
+
+        mirrorWindow.width = Math.max(500, mirrorWindow.width)
+        const toolbar = findChild(mirrorWindow, "mirrorToolbar")
+        const saveShot = findChild(mirrorWindow, "mirrorSaveShot")
+        tryVerify(() => toolbar.visible && !toolbar.overflowMode && saveShot.visible)
+        mirrorWindow.requestActivate()
+        tryVerify(() => mirrorWindow.active)
+        videoView.forceActiveFocus()
+        tryVerify(() => videoView.activeFocus)
+        keyClick(Qt.Key_F6)
+        tryVerify(() => saveShot.activeFocus)
+
+        Mirror.calls = []
+        mouseClick(gesture, 80, 80, Qt.LeftButton)
+        mouseClick(gesture, 80, 80, Qt.RightButton)
+        mouseClick(gesture, 80, 80, Qt.MiddleButton)
+        videoView.forceActiveFocus()
+        tryVerify(() => mirrorWindow.active && videoView.activeFocus)
+        keyClick(Qt.Key_A)
+        keyClick(Qt.Key_V, Qt.ControlModifier)
+        keyClick(Qt.Key_C, Qt.ControlModifier | Qt.ShiftModifier)
+        mouseWheel(gesture, 80, 80, 0, 120, Qt.NoButton, Qt.NoModifier)
+
+        compare(Mirror.calls.filter(call => call[0] === "scroll").length, 1)
+        const blockedNames = ["requestControl", "touch", "press", "text", "paste",
+                              "screenshotClipboard", "dropFiles", "syncClipboardOnFocus",
+                              "enterWindow", "leaveWindow", "setScreenOff", "setStayAwake", "toggleSound"]
+        for (let i = 0; i < blockedNames.length; i++) {
+            const blocked = blockedNames[i]
+            compare(Mirror.calls.filter(call => call[0] === blocked).length, 0,
+                    blocked + " must be blocked for this window")
+        }
+
+        Mirror.windows = JSON.stringify([{
+            key: "passive-test", name: "Fixture", phase: "ended", app: true,
+            settingsQualification: true, canControl: false, viewOnly: true,
+            canScroll: false, canRequestControl: false, canReopen: false
+        }])
+        tryVerify(() => !findChild(mirrorWindow, "mirrorPreFrameReopen").visible)
+        verify(findChild(mirrorWindow, "mirrorPreFrameDetail").text.indexOf("new Settings window") >= 0)
+    }
+
+    function test_settings_window_wheel_without_allowance_does_not_request_control() {
+        createMirror(false, "showing", {
+            app: true, title: "Settings", settingsQualification: true,
+            canControl: false, viewOnly: true, controlReason: "ownerApproval",
+            canScroll: false, scrollReason: "ownerApproval", canRequestControl: false,
+            canReopen: false, canScreenOff: false, stayAwake: false, screenOff: false
+        })
+        Mirror.calls = []
+
+        mouseWheel(gesture, 80, 80, 0, 120, Qt.NoButton, Qt.NoModifier)
+        mouseClick(gesture, 80, 80, Qt.LeftButton)
+
+        compare(Mirror.calls.filter(call => call[0] === "scroll").length, 0)
+        compare(Mirror.calls.filter(call => call[0] === "requestControl").length, 0)
+        compare(Mirror.calls.filter(call => call[0] === "touch").length, 0)
+    }
+
 
     function test_first_portrait_is_centered_and_rotation_stays_in_available_area() {
         createMirror(false, "showing", { app: false })

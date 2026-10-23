@@ -49,6 +49,7 @@ import app.nectarlink.core.MirrorStream
 import app.nectarlink.core.Link
 import app.nectarlink.core.NectarlinkException
 import app.nectarlink.core.NectarlinkNode
+import app.nectarlink.core.PhoneSettingsQualificationOwner
 import app.nectarlink.core.NetworkRouteInfo
 import app.nectarlink.core.NodeOptions
 import app.nectarlink.core.Notification
@@ -104,6 +105,26 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
         syncActiveMediaColor()
         enqueueNotificationOp { it.mediaChanged(players) }
     }
+    private val appWindows = AppWindows(
+        this.context, scope,
+        owner = { pc, session, request, connection, capture ->
+            val receivingNode = node
+            val accepted = runCatching { receivingNode?.mirrorCaptureContextForSession(pc, session, request) }.getOrNull()
+            if (receivingNode != null && node === receivingNode && accepted != null &&
+                accepted.connection == connection && accepted.capture == capture
+            ) {
+                receivingNode to accepted
+            } else null
+        },
+        currentNode = { original -> node === original },
+        nameOf = { pc -> _state.value.nameOf(pc).orEmpty() },
+        settingsQualificationCurrent = { original, pc, offer, accepted ->
+            runCatching {
+                node === original && original.settingsQualificationCaptureCurrent(pc, offer, accepted)
+            }.getOrDefault(false)
+        },
+        onSettingsQualificationEnded = ::settingsQualificationEnded,
+    )
     private val platform = PhonePlatform(
         this.context,
         ringer,
@@ -165,18 +186,7 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
                 } })
         },
         onOwnedWebcamStop = { _, owner -> WebcamEntries.stopOwned(owner) },
-        appWindows = AppWindows(
-            this.context, scope,
-            owner = { pc, session, request, connection, capture ->
-                val receivingNode = node
-                val accepted = runCatching { receivingNode?.mirrorCaptureContextForSession(pc, session, request) }.getOrNull()
-                if (receivingNode != null && node === receivingNode && accepted != null && accepted.connection == connection && accepted.capture == capture) {
-                    receivingNode to accepted
-                } else null
-            },
-            currentNode = { original -> node === original },
-            nameOf = { pc -> _state.value.nameOf(pc).orEmpty() },
-        ),
+        appWindows = appWindows,
         nameOf = { pc -> _state.value.nameOf(pc).orEmpty() },
         onKeyboardFromPc = { pc, on -> setKeyboardFromPc(pc, on) },
         typingCurrent = { pc, generation -> node?.mirrorTypingCurrent(pc, generation) == true },
@@ -277,6 +287,13 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
     private val remoteOps = Channel<suspend (NectarlinkNode) -> Unit>(Channel.UNLIMITED)
 
     private val opsLock = Any()
+    private data class SettingsQualificationBinding(
+        val node: NectarlinkNode,
+        val owner: PhoneSettingsQualificationOwner,
+    )
+    private val settingsQualificationOwners = linkedMapOf<String, SettingsQualificationBinding>()
+    private val _settingsQualificationPcIds = MutableStateFlow<Set<String>>(emptySet())
+    val settingsQualificationPcIds: StateFlow<Set<String>> = _settingsQualificationPcIds.asStateFlow()
     @Volatile private var isRunning = false
 
     private fun enqueueNotificationOp(op: suspend (NectarlinkNode) -> Unit) {
@@ -687,6 +704,7 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
 
                 val activeNode = node
                 synchronized(opsLock) {
+                    revokeAllSettingsQualificationsLocked()
                     isRunning = false
                     node = null
                     // Drain any pending operations so they don't replay on the next run.
@@ -860,6 +878,7 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
                             },
                         )
                     }
+                    if (!elevated) revokeAllSettingsQualifications()
                     if (granted && NotificationListener.instance == null) {
                         NotificationListenerService.requestRebind(NotificationListener.component(context))
                     } else if (becameSensitive) {
@@ -931,6 +950,7 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
         }
         if (event.affectsCoreState()) {
             _state.update { it.reduce(event) }
+            forgetUnavailableSettingsQualifications()
         }
         when (event) {
             is Event.Transfer -> onTransfer(event.transfer)
@@ -2051,7 +2071,12 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
             // Apps in windows of their own run on displays the Elevated helper makes.
             (if (Elevated.running && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 listOf("mirror.virtual_display") +
-                    if (OWNED_APP_WINDOWS_QUALIFIED) listOf("mirror.app_windows_owned_v1") else emptyList()
+                    (if (OWNED_APP_WINDOWS_QUALIFIED) listOf("mirror.app_windows_owned_v1") else emptyList()) +
+                    (if (appWindows.settingsWindowQualificationSupported()) {
+                        listOf("mirror.app_settings_qualification_v1")
+                    } else {
+                        emptyList()
+                    })
             } else emptyList()) +
             // Asked for when a PC wants the sound, or streamed via Elevated helper.
             (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q || Elevated.running) listOf("mirror.audio.playback") else emptyList())
@@ -2607,7 +2632,10 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
         command { it.refresh() }
     }
 
-    fun unpair(id: String) = command { it.unpair(id) }
+    fun unpair(id: String) {
+        revokeSettingsWindowAccess(id)
+        command { it.unpair(id) }
+    }
 
     /** Stops this phone ringing. */
     fun stopRinging() {
@@ -2657,7 +2685,10 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
      * ends that Stop. Taps made before a Stop never end it.
      */
     fun setMirroringEnabled(pcId: String, enabled: Boolean) {
-        _state.update { it.withMirroringEnabled(pcId, enabled) }
+        synchronized(opsLock) {
+            if (!enabled) revokeSettingsWindowAccessLocked(pcId)
+            _state.update { it.withMirroringEnabled(pcId, enabled) }
+        }
         // Read here on the tapping thread, where Stop runs too: a Stop tapped after this keeps
         // this tap from ending it, however late the write below runs. Keep the Node too, so a
         // queued write cannot be replayed against the replacement Node after lifecycle restart.
@@ -2696,6 +2727,107 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
     /** Only the current accepted capture owner; this never grants input. */
     fun mirrorCaptureContext(pcId: String, request: ULong): app.nectarlink.core.PhoneControlContext? =
         synchronized(opsLock) { node?.mirrorCaptureContext(pcId, request) }
+
+    /** A phone owner arms one Settings window for one selected trusted desktop. */
+    fun allowSettingsWindowOnce(pcId: String) {
+        synchronized(opsLock) {
+            val activeNode = node ?: return
+            val device = _state.value.devices.firstOrNull { it.id == pcId } ?: return
+            if (!isRunning || !appWindows.settingsWindowQualificationSupported() ||
+                !device.online || !device.mirroringEnabled ||
+                (device.kind != app.nectarlink.core.DeviceKind.DESKTOP && device.kind != app.nectarlink.core.DeviceKind.LAPTOP)
+            ) return
+            val previous = settingsQualificationOwners[pcId]
+            if (previous != null) {
+                if (previous.node === activeNode &&
+                    runCatching { previous.node.phoneSettingsQualificationCurrent(previous.owner) }.getOrDefault(false)
+                ) return
+                if (previous.node !== activeNode) {
+                    runCatching {
+                        previous.node.revokePhoneSettingsWindowQualificationIfCurrent(previous.owner)
+                    }
+                }
+                settingsQualificationOwners.remove(pcId)
+            }
+            try {
+                val owner = activeNode.armPhoneSettingsWindowQualification(pcId)
+                settingsQualificationOwners[pcId] = SettingsQualificationBinding(activeNode, owner)
+                publishSettingsQualificationOwnersLocked()
+            } catch (e: NectarlinkException) {
+                _messages.tryEmit(describe(e))
+            }
+        }
+    }
+
+    /** Revokes only the owner record retained from the explicit phone action. */
+    fun revokeSettingsWindowAccess(pcId: String) {
+        synchronized(opsLock) { revokeSettingsWindowAccessLocked(pcId) }
+    }
+
+    private fun revokeSettingsWindowAccessLocked(pcId: String) {
+        val binding = settingsQualificationOwners[pcId] ?: return
+        try {
+            binding.node.revokePhoneSettingsWindowQualificationIfCurrent(binding.owner)
+            if (settingsQualificationOwners[pcId] === binding) {
+                settingsQualificationOwners.remove(pcId)
+                publishSettingsQualificationOwnersLocked()
+            }
+        } catch (e: NectarlinkException) {
+            _messages.tryEmit(describe(e))
+        }
+    }
+
+    /** Called synchronously by Elevated while its provider-loss transition is serialized. */
+    fun onElevatedProviderLost() {
+        synchronized(opsLock) {
+            node?.settingsWindowQualificationProviderLost()
+            settingsQualificationOwners.clear()
+            publishSettingsQualificationOwnersLocked()
+        }
+    }
+
+    private fun revokeAllSettingsQualifications() {
+        synchronized(opsLock) { revokeAllSettingsQualificationsLocked() }
+    }
+
+    private fun revokeAllSettingsQualificationsLocked() {
+        for (binding in settingsQualificationOwners.values) {
+            runCatching {
+                binding.node.revokePhoneSettingsWindowQualificationIfCurrent(binding.owner)
+            }.onFailure { Log.w(TAG, "could not revoke a Settings window owner", it) }
+        }
+        settingsQualificationOwners.clear()
+        publishSettingsQualificationOwnersLocked()
+    }
+
+    private fun publishSettingsQualificationOwnersLocked() {
+        _settingsQualificationPcIds.value = settingsQualificationOwners.keys.toSet()
+    }
+
+    /** Called after exact provider completion; offer prevents a late callback clearing a re-arm. */
+    private fun settingsQualificationEnded(pcId: String, offer: ULong) {
+        synchronized(opsLock) {
+            val binding = settingsQualificationOwners[pcId] ?: return
+            if (binding.owner.offer != offer) return
+            settingsQualificationOwners.remove(pcId)
+            publishSettingsQualificationOwnersLocked()
+        }
+    }
+
+    /** Core retires the offer on disconnect; this drops stale UI ownership without reentry. */
+    private fun forgetUnavailableSettingsQualifications() {
+        synchronized(opsLock) {
+            val currentPcs = _state.value.devices
+                .filter {
+                    it.online && it.mirroringEnabled &&
+                        (it.kind == app.nectarlink.core.DeviceKind.DESKTOP || it.kind == app.nectarlink.core.DeviceKind.LAPTOP)
+                }
+                .mapTo(HashSet()) { it.id }
+            if (settingsQualificationOwners.keys.removeAll { it !in currentPcs }) {
+                publishSettingsQualificationOwnersLocked()
+            }
+        }
+    }
 
     /** Compose with the consent owner: cancel only the exact consumed prompt. */
     fun declineMirrorRequest(pcId: String, request: ULong, connection: ULong) {

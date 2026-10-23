@@ -90,6 +90,7 @@ class NectarlinkApplication : Application() {
         BankingPause.restoreIfStranded(this)
         Elevated.init(this, startInBackground = Preferences.isBackgroundServiceEnabled(this))
         // What the phone offers PCs follows Elevated starting and stopping.
+        Elevated.onProviderLost = { core.onElevatedProviderLost() }
         Elevated.onChange = { core.refreshNotificationAccess() }
         Elevated.onClipboardChanged = { text, html -> core.onElevatedClipboardChanged(text, html) }
         Elevated.onLinkCopied = { url, copiedAt -> core.onElevatedLinkCopied(url, copiedAt) }

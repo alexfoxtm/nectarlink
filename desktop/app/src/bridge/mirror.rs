@@ -29,13 +29,15 @@ pub mod qobject {
         #[qml_singleton]
         /// The windows, as JSON: `[{ key, device, session, name, title,
         /// phase ("asking", "showing", "ended"), reason, canControl,
-        /// controlReason, canRequestControl, viewOnly, sound,
-        /// app }]`.
+        /// controlReason, canRequestControl, viewOnly, sound, app,
+        /// settingsQualification, canScroll, scrollReason, canReopen }]`.
         #[qproperty(QString, windows)]
         /// The user turned the phones' sound off on this PC.
         #[qproperty(bool, muted)]
         /// Whether this host build admits app windows (not an input grant).
         #[qproperty(bool, app_windows_supported, cxx_name = "appWindowsSupported")]
+        /// This Mac implements the private Settings entry; not phone consent/readiness.
+        #[qproperty(bool, settings_qualification_supported, cxx_name = "settingsQualificationSupported")]
         /// The phone whose apps [`apps`] lists.
         #[qproperty(QString, apps_device, cxx_name = "appsDevice")]
         /// Its apps, as JSON: `[{ pkg, label, icon }]` (icon: a file URL or "").
@@ -63,6 +65,10 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "startApp"]
         fn start_app(self: &Mirror, device: &QString, pkg: &QString, label: &QString);
+        /// Opens only the phone-owner-allowed fixed Settings route.
+        #[qinvokable]
+        #[cxx_name = "startSettingsQualification"]
+        fn start_settings_qualification(self: &Mirror, device: &QString);
         /// Reopens an ended window (the screen or an app window).
         #[qinvokable]
         fn reopen(self: &Mirror, key: &QString);
@@ -168,6 +174,7 @@ pub struct MirrorRust {
     windows: QString,
     muted: bool,
     app_windows_supported: bool,
+    settings_qualification_supported: bool,
     apps_device: QString,
     apps: QString,
     recent_apps: QString,
@@ -193,18 +200,21 @@ impl cxx_qt::Initialize for qobject::Mirror {
 impl qobject::Mirror {
     fn refresh(mut self: Pin<&mut Self>) {
         self.as_mut().set_app_windows_supported(mirror::APP_WINDOWS);
+        self.as_mut().set_settings_qualification_supported(cfg!(target_os = "macos"));
         let host = crate::core_host::host();
         let hub = &host.hub;
         let data_dir = &host.data_dir;
         let windows: Vec<serde_json::Value> = mirror::windows()
             .into_iter()
             .map(|(window, shown)| {
-                let control_reason = mirror::control_reason(window);
+                let scoped = shown.settings_qualification;
+                let control_reason = if scoped { "unsupported" } else { mirror::control_reason(window) };
+                let scroll_reason = if scoped { mirror::scroll_reason(window) } else { control_reason };
                 let (control, can_screen_off, name) = hub.read(|s| {
                     let matrix = s.matrices.get(&window.device);
-                    let control = (window.session == MIRROR_SCREEN || mirror::APP_WINDOWS)
+                    let control = !scoped && (window.session == MIRROR_SCREEN || mirror::APP_WINDOWS)
                         && control_reason == "available";
-                    let can_screen_off = mirror::APP_WINDOWS
+                    let can_screen_off = !scoped && mirror::APP_WINDOWS
                         && matrix.and_then(|m| m.state("mirroring.app_windows"))
                             == Some(FeatureState::Available);
                     (control, can_screen_off, s.name_of(&window.device).unwrap_or_default())
@@ -233,15 +243,19 @@ impl qobject::Mirror {
                     "app": shown.app.is_some(),
                     "phase": phase,
                     "reason": reason,
-                    "viewOnly": window.session == MIRROR_SCREEN && control_reason == "unsupported",
+                    "viewOnly": scoped || (window.session == MIRROR_SCREEN && control_reason == "unsupported"),
+                    "settingsQualification": scoped,
+                    "canScroll": if scoped { scroll_reason == "available" } else { control },
+                    "scrollReason": scroll_reason,
+                    "canReopen": !scoped && (window.session == MIRROR_SCREEN || mirror::APP_WINDOWS),
                     "canControl": control,
                     "controlReason": control_reason,
                     "canRequestControl": false,
                     "sound": window.session == MIRROR_SCREEN && mirror::has_sound(&window.device),
                     "recording": mirror::is_recording(&window),
                     "recordingStartedMs": mirror::recording_started_ms(&window),
-                    "stayAwake": mirror::stay_awake(&window.device),
-                    "screenOff": mirror::screen_off(&window.device),
+                    "stayAwake": !scoped && mirror::stay_awake(&window.device),
+                    "screenOff": !scoped && mirror::screen_off(&window.device),
                     "canScreenOff": can_screen_off,
                     "notice": mirror::last_notice(&window),
                     "savedX": geom.map(|g| g.x),
@@ -313,6 +327,12 @@ impl qobject::Mirror {
         let pkg = String::from(pkg);
         if let (Some(device), true) = (super::parse_device(device), nectarlink_core::is_package_name(&pkg)) {
             mirror::start_app(device, pkg, String::from(label));
+        }
+    }
+
+    pub fn start_settings_qualification(&self, device: &QString) {
+        if let Some(device) = super::parse_device(device) {
+            mirror::start_settings_qualification(device);
         }
     }
 
@@ -389,6 +409,10 @@ impl qobject::Mirror {
     }
 
     pub fn paste(&self, key: &QString) {
+        let Some(window) = Window::parse(&String::from(key)) else { return };
+        if mirror::is_settings_qualification(window) {
+            return;
+        }
         if let crate::win::clipboard::Clip::Text { text, .. } = crate::win::clipboard::read_for_paste() {
             // Long text goes in pieces, each a whole number of characters.
             let mut piece = String::new();

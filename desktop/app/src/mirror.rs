@@ -113,6 +113,8 @@ pub struct Shown {
     /// For an app window: the app's name, and its package.
     pub app: Option<String>,
     pub pkg: Option<String>,
+    /// Private fixed-Settings window kind; restrictions only, never Core authority.
+    pub settings_qualification: bool,
 }
 
 /// A phone's apps that open in windows.
@@ -411,6 +413,9 @@ pub fn screen_off(device: &DeviceId) -> bool {
 /// windows). The notice says the request was made, not that the phone did it:
 /// the send below is fire-and-forget with no remote acknowledgement.
 pub fn set_stay_awake(window: Window, on: bool) {
+    if state(|s| s.windows.get(&window).is_none_or(|shown| shown.settings_qualification)) {
+        return;
+    }
     let screen_off = state(|s| {
         if on {
             s.stay_awake.insert(window.device);
@@ -436,6 +441,9 @@ pub fn set_stay_awake(window: Window, on: bool) {
 /// screen or app windows). The notice says the request was made; whether the
 /// phone's panel changed is not known here (no remote acknowledgement).
 pub fn set_screen_off(window: Window, on: bool) {
+    if state(|s| s.windows.get(&window).is_none_or(|shown| shown.settings_qualification)) {
+        return;
+    }
     let stay_awake = state(|s| {
         if on {
             s.screen_off.insert(window.device);
@@ -549,6 +557,9 @@ fn free_path(dir: &Path, name: &str) -> PathBuf {
 
 /// Copies the current mirror frame for `window` to the PC clipboard as PNG.
 pub fn screenshot_clipboard(window: Window) {
+    if is_settings_qualification(window) {
+        return;
+    }
     let Some(bitmap) = latest_bitmap(&window) else {
         set_notice(window, "Wait for the screen to appear first");
         show_message(tr!("Mirror", "Wait for the screen to appear first."));
@@ -724,9 +735,7 @@ pub fn toggle_recording(window: Window) {
 
     set_notice(window, "Recording started");
     core_host::host().hub.changed(Changes::MIRROR);
-    if let Some(node) = core_host::node() {
-        core_host::spawn(async move { node.mirror_keyframe(window.device, window.session).await });
-    }
+    request_keyframe(window, None, None);
 }
 
 /// Stops and finalizes any active MP4 recording for `window`.
@@ -962,7 +971,10 @@ pub fn start(device: DeviceId) {
         if !s.mirroring(&device) {
             s.screen_off.remove(&device);
         }
-        s.windows.insert(window, Shown { phase: Phase::Asking, app: None, pkg: None });
+        s.windows.insert(
+            window,
+            Shown { settings_qualification: false, phase: Phase::Asking, app: None, pkg: None },
+        );
         power(s, &device)
     });
     request(window, MirrorStart { stay_awake, screen_off, ..OPTIONS });
@@ -1068,7 +1080,15 @@ pub fn start_app(device: DeviceId, pkg: String, label: String) {
         if !s.mirroring(&device) {
             s.screen_off.remove(&device);
         }
-        s.windows.insert(window, Shown { phase: Phase::Asking, app: Some(label), pkg: Some(pkg.clone()) });
+        s.windows.insert(
+            window,
+            Shown {
+                settings_qualification: false,
+                phase: Phase::Asking,
+                app: Some(label),
+                pkg: Some(pkg.clone()),
+            },
+        );
         Some((window, power(s, &device)))
     });
     let Some((window, (stay_awake, screen_off))) = window else { return };
@@ -1085,8 +1105,56 @@ pub fn start_app(device: DeviceId, pkg: String, label: String) {
     );
 }
 
+/// Opens only the phone-owner-armed Settings route. No package or power options
+/// are accepted, and general app-window qualification remains disabled.
+pub fn start_settings_qualification(device: DeviceId) {
+    if !VIEW_ONLY {
+        return;
+    }
+    let window = state(|s| {
+        if s.windows.iter().any(|(window, shown)| {
+            window.device == device
+                && shown.settings_qualification
+                && matches!(shown.phase, Phase::Asking | Phase::Showing)
+        }) {
+            return None;
+        }
+        let session = NEXT_SESSION
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                current.checked_add(1).filter(|_| current != MIRROR_SCREEN)
+            })
+            .ok()?;
+        let window = Window { device, session };
+        s.windows.insert(
+            window,
+            Shown {
+                phase: Phase::Asking,
+                app: Some(tr!("Mirror", "Settings")),
+                pkg: Some("com.android.settings".into()),
+                settings_qualification: true,
+            },
+        );
+        Some(window)
+    });
+    if let Some(window) = window {
+        request_window(window, None);
+    }
+}
+
+/// Restriction marker retained even after an ended view; it grants no authority.
+pub fn is_settings_qualification(window: Window) -> bool {
+    state(|s| s.windows.get(&window).is_some_and(|shown| shown.settings_qualification))
+}
+
 /// Reopens a mirroring window that ended (the screen or an app window).
 pub fn reopen(window: Window) {
+    if is_settings_qualification(window) {
+        set_notice(
+            window,
+            tr!("Mirror", "Allow this computer again on your phone, then open a new Settings window."),
+        );
+        return;
+    }
     if window.session == MIRROR_SCREEN {
         start(window.device);
         return;
@@ -1160,6 +1228,12 @@ pub fn resize(window: Window, width: u32, height: u32) {
 }
 
 fn request(window: Window, options: MirrorStart) {
+    request_window(window, Some(options));
+}
+
+// None is the private Settings route, not caller-controlled MirrorStart flags.
+fn request_window(window: Window, options: Option<MirrorStart>) {
+    let settings_qualification = options.is_none();
     let node = core_host::node();
     let request = NEXT_REQUEST.fetch_add(1, Ordering::Relaxed);
     state(|s| {
@@ -1174,8 +1248,13 @@ fn request(window: Window, options: MirrorStart) {
         ffi::video_clear(&window.key());
     });
     core_host::host().hub.changed(Changes::MIRROR);
-    let Some(node) = node else { return };
-    let app = options.app.is_some();
+    let Some(node) = node else {
+        if settings_qualification {
+            set_phase(window, Phase::Ended(Some(tr!("Mirror", "The phone isn't connected."))));
+        }
+        return;
+    };
+    let app = settings_qualification || options.as_ref().is_some_and(|options| options.app.is_some());
     core_host::spawn(async move {
         let started = {
             let _turn = TURN.lock().await;
@@ -1188,24 +1267,40 @@ fn request(window: Window, options: MirrorStart) {
             if !state(|s| s.owns_request(&window, request)) {
                 return;
             }
-            if app {
-                node.mirror_start_owned(window.device, options, move |view| {
-                    state(|s| {
-                        if !s.owns_request(&window, request) {
-                            return false;
-                        }
-                        let Some(owner) = s.request_nodes.get_mut(&window) else { return false };
-                        owner.app_view = Some(view);
-                        true
-                    })
+            let ready = move |view: nectarlink_core::MirrorView| {
+                state(|s| {
+                    if !s.owns_request(&window, request)
+                        || view.is_settings_qualification() != settings_qualification
+                        || !s.windows.get(&window).is_some_and(|shown| {
+                            shown.settings_qualification == settings_qualification
+                                && (!settings_qualification
+                                    || shown.pkg.as_deref() == Some("com.android.settings"))
+                        })
+                    {
+                        return false;
+                    }
+                    let Some(owner) = s.request_nodes.get_mut(&window) else { return false };
+                    owner.app_view = Some(view);
+                    true
                 })
-                .await
+            };
+            if settings_qualification {
+                node.settings_window_start_owned(window.device, window.session, ready).await
+            } else if app {
+                node.mirror_start_owned(window.device, options.expect("ordinary app options"), ready).await
             } else {
-                node.mirror_start(window.device, options).await
+                node.mirror_start(window.device, options.expect("screen options")).await
             }
         };
         if let Err(e) = started {
             let reason = match e {
+                Error::Unsupported if settings_qualification => {
+                    tr!("Mirror", "Opening Settings in a window is unavailable for this phone connection.")
+                }
+                Error::Denied if settings_qualification => tr!(
+                    "Mirror",
+                    "In Waypair Link on your phone, allow this computer to open Settings once, then open a new Settings window here."
+                ),
                 Error::Denied => tr!("Mirror", "Mirroring is turned off for this phone."),
                 Error::Unsupported if app => tr!(
                     "Mirror",
@@ -1246,10 +1341,14 @@ fn request(window: Window, options: MirrorStart) {
                 let owner = s.request_nodes.get(&window)?.clone();
                 s.set_phase(
                     window,
-                    Phase::Ended(Some(tr!(
-                        "Mirror",
-                        "The app didn't open on the phone. Try again, or open Waypair Link on the phone to check Wireless debugging."
-                    ))),
+                    Phase::Ended(Some(if settings_qualification {
+                        tr!("Mirror", "Settings didn't open on the phone. Allow this computer again in Waypair Link, then open a new Settings window.")
+                    } else {
+                        tr!(
+                            "Mirror",
+                            "The app didn't open on the phone. Try again, or open Waypair Link on the phone to check Wireless debugging."
+                        )
+                    })),
                 );
                 Some(owner)
             });
@@ -1612,10 +1711,38 @@ pub fn control_reason(window: Window) -> &'static str {
     node.mirror_control_reason_for_session(window.device, window.session, wire_request)
 }
 
+/// Only a real admitted Settings view can authorize wheel input. This does not
+/// change generic canControl or the general app-window matrix.
+pub fn scroll_reason(window: Window) -> &'static str {
+    if !is_settings_qualification(window) {
+        return control_reason(window);
+    }
+    let view = state(|s| {
+        let shown = s.windows.get(&window)?;
+        if !shown.settings_qualification
+            || shown.pkg.as_deref() != Some("com.android.settings")
+            || shown.phase != Phase::Showing
+            || !s.streams.contains_key(&window)
+            || latest_bitmap(&window).is_none()
+        {
+            return None;
+        }
+        let view = s.request_nodes.get(&window)?.app_view.as_ref()?;
+        if !view.is_settings_qualification() || s.control_requests.get(&window) != Some(&view.request()) {
+            return None;
+        }
+        Some(view.clone())
+    });
+    view.map_or("notShowing", |view| view.control_reason())
+}
+
 /// Ordered queue reuses the existing MirrorInput handlers. Every phone event
 /// captures its original Node/connection/request/epoch before entering the queue.
 pub fn input(window: Window, input: nectarlink_core::MirrorInput) {
-    if window.session != MIRROR_SCREEN && !APP_WINDOWS {
+    let scoped = is_settings_qualification(window);
+    if (window.session != MIRROR_SCREEN && !APP_WINDOWS && !scoped)
+        || (scoped && !matches!(&input, nectarlink_core::MirrorInput::Scroll { .. }))
+    {
         return;
     }
     let captured = state(|s| {
@@ -1629,12 +1756,24 @@ pub fn input(window: Window, input: nectarlink_core::MirrorInput) {
             *s.requests.get(&window)?,
             *s.streams.get(&window)?,
             *s.control_requests.get(&window)?,
+            s.request_nodes.get(&window)?.app_view.clone(),
         ))
     });
-    let Some((node, local_request, stream, wire_request)) = captured else { return };
-    let Ok(control) = node.mirror_control_for_session(window.device, window.session, wire_request) else {
-        return;
+    let Some((node, local_request, stream, wire_request, view)) = captured else { return };
+    let control = if scoped {
+        let Some(view) =
+            view.filter(|view| view.is_settings_qualification() && view.request() == wire_request)
+        else {
+            return;
+        };
+        if scroll_reason(window) != "available" {
+            return;
+        }
+        view.control()
+    } else {
+        node.mirror_control_for_session(window.device, window.session, wire_request)
     };
+    let Ok(control) = control else { return };
     type QueuedMirrorInput = (Window, nectarlink_core::MirrorControl, u64, u64, nectarlink_core::MirrorInput);
     static QUEUE: std::sync::OnceLock<tokio::sync::mpsc::UnboundedSender<QueuedMirrorInput>> =
         std::sync::OnceLock::new();
@@ -1723,6 +1862,9 @@ pub fn drop_files(raw_urls: &[String]) {
     let Some(window) = explicit_window.or_else(active_or_showing_window) else {
         return;
     };
+    if state(|s| s.windows.get(&window).is_none_or(|shown| shown.settings_qualification)) {
+        return;
+    }
     let notice = if paths.len() == 1 {
         let name = paths[0].file_name().and_then(|n| n.to_str()).unwrap_or("file");
         tr!("Mirror", "Sending %1…", name)
@@ -2016,11 +2158,17 @@ fn ensure_gamepad_loop() {
 /// stream of its own): only for mirrorings this PC asked for.
 pub fn sink(device: &DeviceId, session: u32) -> Option<Arc<dyn MirrorSink>> {
     let window = Window { device: *device, session };
-    let wanted = APP_WINDOWS || session == MIRROR_SCREEN;
     state(|s| {
         let request = *s.requests.get(&window)?;
         let live = s.windows.get(&window).is_some_and(|w| matches!(w.phase, Phase::Asking | Phase::Showing));
-        if !(wanted && live) {
+        let scoped = s.windows.get(&window).is_some_and(|shown| {
+            shown.settings_qualification && shown.pkg.as_deref() == Some("com.android.settings")
+        }) && s
+            .request_nodes
+            .get(&window)
+            .and_then(|owner| owner.app_view.as_ref())
+            .is_some_and(|view| view.is_settings_qualification() && view.is_current());
+        if !((APP_WINDOWS || session == MIRROR_SCREEN || scoped) && live) {
             return None;
         }
         // Each sink gets a generation, so a later sound stream can tell that
@@ -2097,12 +2245,39 @@ impl Video {
     }
 }
 
+fn request_keyframe(window: Window, request: Option<u64>, stream: Option<u64>) {
+    let captured = state(|s| {
+        if request.is_some_and(|request| !s.owns_request(&window, request))
+            || stream.is_some_and(|stream| !s.shows(&window, stream))
+        {
+            return None;
+        }
+        let scoped = s.windows.get(&window)?.settings_qualification;
+        if !scoped {
+            return Some(None);
+        }
+        let view = s.request_nodes.get(&window)?.app_view.as_ref()?;
+        if !view.is_settings_qualification()
+            || !view.is_current()
+            || s.control_requests.get(&window) != Some(&view.request())
+        {
+            return None;
+        }
+        Some(Some(view.clone()))
+    });
+    let Some(view) = captured else { return };
+    if let Some(view) = view {
+        core_host::spawn(async move {
+            let _ = view.request_keyframe_if_current().await;
+        });
+    } else if let Some(node) = core_host::node() {
+        core_host::spawn(async move { node.mirror_keyframe(window.device, window.session).await });
+    }
+}
+
 impl Sink {
     fn keyframe_please(&self) {
-        let window = self.window;
-        if let Some(node) = core_host::node() {
-            core_host::spawn(async move { node.mirror_keyframe(window.device, window.session).await });
-        }
+        request_keyframe(self.window, Some(self.request), self.video.get().map(|video| video.stream));
     }
 }
 
@@ -2336,11 +2511,7 @@ fn decode(window: Window, id: u64, items: &Receiver<Item>, waiting: &AtomicUsize
         }
     };
     tracing::info!(gpu = decoder.on_gpu(), codec = decoder.codec(), "mirror decoder ready");
-    let keyframe_please = || {
-        if let Some(node) = core_host::node() {
-            core_host::spawn(async move { node.mirror_keyframe(window.device, window.session).await });
-        }
-    };
+    let keyframe_please = || request_keyframe(window, None, Some(id));
     let mut size = (0, 0);
     // After a gap, pictures are garbage until the next keyframe.
     let mut need_keyframe = true;
@@ -3871,7 +4042,10 @@ mod mac_receive_fixture {
     fn live_screen_request(device: DeviceId, generation: u64) -> Window {
         let window = Window::screen(device);
         super::state(|s| {
-            s.windows.insert(window, Shown { phase: Phase::Showing, app: None, pkg: None });
+            s.windows.insert(
+                window,
+                Shown { settings_qualification: false, phase: Phase::Showing, app: None, pkg: None },
+            );
             s.requests.insert(window, generation);
         });
         window
@@ -4049,7 +4223,10 @@ mod mac_receive_fixture {
         let window = Window::screen(phone_id);
         let app_request = core_request ^ 0x9E37_79B9_7F4A_7C15;
         super::state(|state| {
-            state.windows.insert(window, Shown { phase: Phase::Asking, app: None, pkg: None });
+            state.windows.insert(
+                window,
+                Shown { settings_qualification: false, phase: Phase::Asking, app: None, pkg: None },
+            );
             state.requests.insert(window, app_request);
         });
 
@@ -4152,7 +4329,10 @@ mod mac_receive_fixture {
         let window = Window::screen(phone_id);
         let app_request = core_request ^ 0x9E37_79B9_7F4A_7C15;
         super::state(|state| {
-            state.windows.insert(window, Shown { phase: Phase::Asking, app: None, pkg: None });
+            state.windows.insert(
+                window,
+                Shown { settings_qualification: false, phase: Phase::Asking, app: None, pkg: None },
+            );
             state.requests.insert(window, app_request);
             state.request_nodes.insert(window, super::RequestNode { node: receiver.clone(), app_view: None });
         });

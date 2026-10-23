@@ -196,6 +196,8 @@ pub fn compute_capabilities(
         caps.push(nectarlink_core::MIRROR_CORRELATION.into());
         caps.push(nectarlink_core::MIRROR_INPUT_REQUEST.into());
         caps.push("camera.webcam.owned.v1".into());
+        // Fixed Settings route only; general app-window qualification stays off.
+        caps.push("mirror.app_settings_qualification_v1".into());
     }
     #[cfg(windows)]
     let mut pc_mirror_enabled = crate::pc_mirror::is_active();

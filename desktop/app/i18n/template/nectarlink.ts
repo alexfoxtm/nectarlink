@@ -236,6 +236,14 @@
         <source>%1, open</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>In Waypair Link on your phone, allow this computer to open Settings once, then open the window here. Scrolling needs the phone-control allowance.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Open Settings window</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>AppsSheet</name>
@@ -4244,6 +4252,54 @@ What it needs
         <source>Open externally</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Waypair asks %1 to turn on its hotspot, then joins the saved Wi-Fi network you choose.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>On Galaxy, you can turn it on in Settings &gt; Connections &gt; Mobile Hotspot and Tethering &gt; Mobile Hotspot. If it is not listed below, join it once in macOS Wi-Fi settings, then refresh.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>On Galaxy, turn on Settings &gt; Connections &gt; Mobile Hotspot and Tethering &gt; Mobile Hotspot. If it is not listed below, join it once in Windows Wi-Fi settings, then refresh.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Allow hotspot discovery</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Saved hotspot: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Choose this phone's saved hotspot:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Joining changes this computer's Wi-Fi network. Cancel join leaves the phone hotspot on once activation has been submitted. Turn it off manually in the phone's Settings. A Wi-Fi switch already submitted may still finish.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Cancel join</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Joining…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Start and join</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Join hotspot</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Join phone hotspot</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>Hotspot</name>
@@ -4260,6 +4316,10 @@ What it needs
     <message>
         <location filename="../rust_strings.h" line="311"/>
         <source>Couldn&apos;t join %1&apos;s hotspot. Pick %2 in Windows&apos; Wi-Fi list.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Connected to the phone hotspot. Internet access depends on the phone's mobile connection.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -5328,6 +5388,26 @@ What it needs
         <source>No picture arrived from the phone. Keep the phone unlocked while it shares its screen, then try again.</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Allow this computer again on your phone, then open a new Settings window.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>In Waypair Link on your phone, allow this computer to open Settings once, then open a new Settings window here.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Opening Settings in a window is unavailable for this phone connection.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Settings</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Settings didn't open on the phone. Allow this computer again in Waypair Link, then open a new Settings window.</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>MirrorWindow</name>
@@ -5576,6 +5656,22 @@ What it needs
         <location filename="../../qml/MirrorWindow.qml" line="836" />
         <source>Stop</source>
         <translation type="unfinished" />
+    </message>
+    <message>
+        <source>Allow this computer again on your phone, then open a new Settings window.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>In Waypair Link on your phone, allow this computer to open Settings once.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>This window shows your phone's Settings. Scrolling needs this computer's phone-control allowance. Other phone controls are unavailable.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>This window shows your phone's Settings. You can scroll here; make changes on your phone. Other phone controls are unavailable.</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -8359,6 +8455,18 @@ What it needs
         <source>Clear everything</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Join %1 from Home &gt; Join hotspot.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Join the phone hotspot once in macOS Wi-Fi settings, then choose the saved network here.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Choose the phone's saved hotspot. macOS keeps its password in Keychain. Use Home &gt; Join hotspot to allow Wi-Fi discovery, then reopen this list.</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>Setup</name>
@@ -9176,6 +9284,10 @@ What it needs
         <source>Cancel</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Drag to Finder</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>Transfers</name>
@@ -9565,6 +9677,58 @@ What it needs
     <message>
         <location filename="../rust_strings.h" line="491"/>
         <source>Streaming %1 × %2 · %3 fps from %4</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Not included</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>The camera extension is not included in this app. Setup is unavailable.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Activation completed. Click Check camera to check whether the device is ready.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Allow the Waypair camera extension in System Settings, then return here.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Camera extension is disabled.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Camera extension request failed (OS error %1).</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Check camera</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Enable camera extension</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Enable the camera extension to use your phone in video apps.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Requesting camera extension activation…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Restart macOS to finish the camera extension request.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Stopping camera on %1…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Waypair Camera is ready · 720p at 30 fps.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

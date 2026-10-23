@@ -16,6 +16,7 @@ Item {
     readonly property var negotiatedFeature: AppController.capsRevision >= 0 && deviceId.length > 0
         ? AppController.featureState(deviceId, "mirroring.app_windows") : ({})
     readonly property bool macGap: !Mirror.appWindowsSupported
+    readonly property bool settingsEntrySupported: Mirror.settingsQualificationSupported
     readonly property var feature: negotiatedFeature
     readonly property bool available: !macGap && (feature.state === "available" || feature.state === "partial")
 
@@ -93,6 +94,22 @@ Item {
                 ? qsTr("Pair your phone to open its apps in windows on this PC.")
                 : page.macGap ? qsTr("Opening phone apps in windows is not yet available on Mac.")
                 : (page.feature.reason || qsTr("Set up Wireless debugging in Waypair Link on the phone to open its apps here."))
+        }
+        Txt {
+            width: parent.width
+            visible: page.deviceId.length > 0 && page.macGap && page.settingsEntrySupported
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.WordWrap
+            role: "body"
+            muted: true
+            text: qsTr("In Waypair Link on your phone, allow this computer to open Settings once, then open the window here. Scrolling needs the phone-control allowance.")
+        }
+        Button {
+            anchors.horizontalCenter: parent.horizontalCenter
+            visible: page.deviceId.length > 0 && page.macGap && page.settingsEntrySupported
+            enabled: page.openPkgs["com.android.settings"] !== true
+            text: qsTr("Open Settings window")
+            onClicked: Mirror.startSettingsQualification(page.deviceId)
         }
         LockChip {
             anchors.horizontalCenter: parent.horizontalCenter

@@ -68,6 +68,8 @@ pub mod types {
     pub const SMS_SEND: &str = "sms.send";
     pub const SMS_PART: &str = "sms.part";
     pub const SMS_CHANGED: &str = "sms.changed";
+    pub const MIRROR_SETTINGS_OFFER: &str = "mirror.settings.offer";
+    pub const MIRROR_SETTINGS_START: &str = "mirror.settings.start";
     pub const MIRROR_START: &str = "mirror.start";
     pub const MIRROR_STOP: &str = "mirror.stop";
     pub const MIRROR_POWER: &str = "mirror.power";
@@ -1416,6 +1418,8 @@ pub mod mirror {
     /// and cancellation during stream writes. Compatibility only: never an
     /// owner grant, Stop rearm or capture permission.
     pub const APP_WINDOWS_OWNED_V1: &str = "mirror.app_windows_owned_v1";
+    /// Explicit one-shot Settings capture qualification, never a general grant.
+    pub const APP_SETTINGS_QUALIFICATION_V1: &str = "mirror.app_settings_qualification_v1";
     /// Per-PC phone-owner grant, never a globally advertised permission.
     pub const CONTROL_ALLOWED: &str = "mirror.control.allowed";
     /// The phone owner's durable Stop currently blocks this PC.
@@ -1457,6 +1461,33 @@ pub fn is_package_name(name: &str) -> bool {
             part.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
                 && part.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
         })
+}
+
+/// An attended Settings offer query accepts only an empty map.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MirrorSettingsOfferRequest {}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MirrorSettingsOffer {
+    pub offer: u64,
+}
+
+/// Receiver chooses the fixed Settings package and video preset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MirrorSettingsStart {
+    pub offer: u64,
+    pub session: u32,
+    pub request: u64,
+}
+
+/// Optional projection on mirror.stop, matching the existing source-stop pattern.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MirrorSettingsStop {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settings_offer: Option<u64>,
 }
 
 /// Body of `mirror.start`: show me your screen.

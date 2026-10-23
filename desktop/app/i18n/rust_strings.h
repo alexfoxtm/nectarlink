@@ -337,9 +337,7 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Guide", "What it does\nStreams your phone screen into a low-latency desktop window with hardware-accelerated decoding, or opens individual Android apps in their own windows on your PC.\n\nWhere to find it\n- Left navigation rail › Apps.\n- Home › Mirror screen quick action.\n\nWhat it needs\n- Standard mode mirrors the full phone screen after you tap Start now on Android's screen capture prompt.\n- Elevated mode (Wireless debugging or root) skips the prompt and unlocks individual app windows.\n- Assist mode or Elevated mode lets you click, scroll, and type inside the mirrored window."), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "What it does\nSyncs media playback between your phone and PC, switches Windows audio output and microphone devices, and turns your phone into a customizable grid of shortcut tiles, macros, and volume sliders.\n\nWhere to find it\n- Left navigation rail › Deck.\n\nWhat it needs\n- Paired phone over any active connection."), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("Guide", "What it does\nTriggers your phone camera from any Windows app to snap a photo or scan a document, then copies the result to the Windows clipboard and pastes it into the active window.\n\nWhere to find it\n- Global hotkeys Ctrl+Alt+C (Take photo with phone) and Ctrl+Alt+D (Scan document with phone).\n- Home › Continuity Camera.\n\nWhat it needs\n- Camera permission on your phone."), // desktop/app/src/bridge/app.rs
-    QT_TRANSLATE_NOOP("Hotspot", "%1's hotspot didn't show up. Check that it's on, then pick %2 in Windows' Wi-Fi list."), // desktop/app/src/hotspot.rs
-    QT_TRANSLATE_NOOP("Hotspot", "Connected to %1's hotspot."), // desktop/app/src/hotspot.rs
-    QT_TRANSLATE_NOOP("Hotspot", "Couldn't join %1's hotspot. Pick %2 in Windows' Wi-Fi list."), // desktop/app/src/hotspot.rs
+    QT_TRANSLATE_NOOP("Hotspot", "Connected to the phone hotspot. Internet access depends on the phone's mobile connection."), // desktop/app/src/hotspot.rs
     QT_TRANSLATE_NOOP("Links", "%1: tap the notification on your phone to continue watching."), // desktop/app/src/links.rs
     QT_TRANSLATE_NOOP("Links", "%1: tap the notification on your phone to open in Maps."), // desktop/app/src/links.rs
     QT_TRANSLATE_NOOP("Links", "Copy a link or address first"), // desktop/app/src/links.rs
@@ -376,8 +374,10 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Messages", "Attachment is %1 (MMS supports up to 900 KB)"), // desktop/app/src/messages.rs
     QT_TRANSLATE_NOOP("Messages", "Group texts can't be sent from the PC yet."), // desktop/app/src/messages.rs
     QT_TRANSLATE_NOOP("Messages", "Only image or voice-note audio files can be attached."), // desktop/app/src/messages.rs
+    QT_TRANSLATE_NOOP("Mirror", "Allow this computer again on your phone, then open a new Settings window."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Connect the phone and start screen mirroring to control it."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Couldn't start recording."), // desktop/app/src/mirror.rs
+    QT_TRANSLATE_NOOP("Mirror", "In Waypair Link on your phone, allow this computer to open Settings once, then open a new Settings window here."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Keep-awake request cleared"), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Keep-awake requested"), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Mirror recording"), // desktop/app/src/mirror.rs
@@ -386,6 +386,7 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Mirror", "No picture arrived from the phone. Keep the phone unlocked while it shares its screen, then try again."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "On the phone, allow this computer to control the phone in Settings."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "On the phone, enable Control from your PC or start Elevated mode."), // desktop/app/src/mirror.rs
+    QT_TRANSLATE_NOOP("Mirror", "Opening Settings in a window is unavailable for this phone connection."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Phone control is unavailable for this connection."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Phone control was stopped on the phone. To allow this computer again, turn Screen sharing and typing off and then on for this computer in Waypair Link's settings on the phone."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Recording from %1, saved in %2"), // desktop/app/src/mirror.rs
@@ -400,6 +401,8 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Mirror", "Sending %1 files…"), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Sending %1…"), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Set up Wireless debugging in Waypair Link on the phone to open its apps here."), // desktop/app/src/mirror.rs
+    QT_TRANSLATE_NOOP("Mirror", "Settings"), // desktop/app/src/mirror.rs
+    QT_TRANSLATE_NOOP("Mirror", "Settings didn't open on the phone. Allow this computer again in Waypair Link, then open a new Settings window."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Show in folder"), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "The app didn't open on the phone. Try again, or open Waypair Link on the phone to check Wireless debugging."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "The phone isn't connected."), // desktop/app/src/mirror.rs
@@ -527,9 +530,21 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Updater", "Waypair Link is updated to %1"), // desktop/app/src/updater.rs
     QT_TRANSLATE_NOOP("Updater", "Your phone reconnects on its own."), // desktop/app/src/updater.rs
     QT_TRANSLATE_NOOP("Wake", "Waking other PCs isn't available on macOS yet."), // desktop/app/src/mac/wol.rs
-    QT_TRANSLATE_NOOP("Webcam", "Phone as webcam isn't available on macOS yet."), // desktop/app/src/mac/vcam.rs
+    QT_TRANSLATE_NOOP("Webcam", "Activation completed. Click Check camera to check whether the device is ready."), // desktop/app/src/mac/vcam.rs
+    QT_TRANSLATE_NOOP("Webcam", "Allow the Waypair camera extension in System Settings, then return here."), // desktop/app/src/mac/vcam.rs
+    QT_TRANSLATE_NOOP("Webcam", "Camera extension is disabled."), // desktop/app/src/mac/vcam.rs
+    QT_TRANSLATE_NOOP("Webcam", "Camera extension request failed (OS error %1)."), // desktop/app/src/mac/vcam.rs
+    QT_TRANSLATE_NOOP("Webcam", "Check camera"), // desktop/app/src/mac/vcam.rs
+    QT_TRANSLATE_NOOP("Webcam", "Enable camera extension"), // desktop/app/src/mac/vcam.rs
+    QT_TRANSLATE_NOOP("Webcam", "Enable the camera extension to use your phone in video apps."), // desktop/app/src/mac/vcam.rs
+    QT_TRANSLATE_NOOP("Webcam", "Not included"), // desktop/app/src/mac/vcam.rs
+    QT_TRANSLATE_NOOP("Webcam", "Requesting camera extension activation…"), // desktop/app/src/mac/vcam.rs
+    QT_TRANSLATE_NOOP("Webcam", "Restart macOS to finish the camera extension request."), // desktop/app/src/mac/vcam.rs
     QT_TRANSLATE_NOOP("Webcam", "Starting camera on %1…"), // desktop/app/src/bridge/webcam.rs
+    QT_TRANSLATE_NOOP("Webcam", "Stopping camera on %1…"), // desktop/app/src/bridge/webcam.rs
     QT_TRANSLATE_NOOP("Webcam", "Streaming %1 × %2 · %3 fps from %4"), // desktop/app/src/bridge/webcam.rs
+    QT_TRANSLATE_NOOP("Webcam", "The camera extension is not included in this app. Setup is unavailable."), // desktop/app/src/mac/vcam.rs
+    QT_TRANSLATE_NOOP("Webcam", "Waypair Camera is ready · 720p at 30 fps."), // desktop/app/src/mac/vcam.rs
     QT_TRANSLATE_NOOP("Widget", "No phone connected"), // desktop/app/src/win/widget.rs
     QT_TRANSLATE_NOOP("Widget", "No recent clipboard items"), // desktop/app/src/win/widget.rs
     QT_TRANSLATE_NOOP("Widget", "Not available"), // desktop/app/src/win/widget.rs

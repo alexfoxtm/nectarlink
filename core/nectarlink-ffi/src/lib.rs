@@ -1079,6 +1079,14 @@ impl WebcamCaptureContext {
     }
 }
 
+/// Phone-local one-shot owner identifier; retain its original NectarlinkNode.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct PhoneSettingsQualificationOwner {
+    pub pc_id: String,
+    pub connection: u64,
+    pub offer: u64,
+}
+
 /// Exact original phone input admission, retained through Android posting.
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct PhoneControlContext {
@@ -2827,6 +2835,17 @@ pub trait Platform: Send + Sync {
     /// on a display of its own and stream it with `mirror_open`, its config
     /// packets carrying the session. False if it can't.
     fn mirror_requested(&self, pc_id: String, options: MirrorOptions, connection: u64, capture: u64) -> bool;
+    /// Implemented/current provider, not owner admission or native qualification.
+    fn settings_window_qualification_supported(&self) -> bool;
+    fn mirror_settings_requested_owned(
+        &self,
+        pc_id: String,
+        options: MirrorOptions,
+        connection: u64,
+        capture: u64,
+        offer: u64,
+    ) -> bool;
+    fn mirror_keyframe_requested_owned(&self, pc_id: String, context: PhoneControlContext);
     /// The PC stopped watching the screen (session 0) or an app window.
     fn mirror_stop_requested(&self, pc_id: String, session: u32);
     fn mirror_stop_requested_owned(
@@ -3100,6 +3119,37 @@ impl core::Platform for PlatformAdapter {
         } else {
             Err("the phone couldn't".into())
         }
+    }
+    fn settings_window_qualification_supported(&self) -> bool {
+        self.0.settings_window_qualification_supported()
+    }
+    fn mirror_settings_requested_owned(
+        &self,
+        peer: &DeviceId,
+        options: &core::MirrorStart,
+        connection: u64,
+        capture: u64,
+        offer: u64,
+    ) -> Result<(), String> {
+        let options = MirrorOptions {
+            max_size: options.max_size,
+            fps: options.fps,
+            bitrate: options.bitrate,
+            audio: options.audio,
+            session: options.session,
+            app: options.app.clone(),
+            stay_awake: options.stay_awake,
+            screen_off: options.screen_off,
+            request: options.request,
+        };
+        if self.0.mirror_settings_requested_owned(peer.to_string(), options, connection, capture, offer) {
+            Ok(())
+        } else {
+            Err("the phone declined Settings qualification".into())
+        }
+    }
+    fn mirror_keyframe_requested_owned(&self, peer: &DeviceId, context: core::MirrorControlContext) {
+        self.0.mirror_keyframe_requested_owned(peer.to_string(), context.into());
     }
     fn mirror_stop_requested(&self, peer: &DeviceId, session: u32) {
         self.0.mirror_stop_requested(peer.to_string(), session);
@@ -4373,6 +4423,50 @@ impl NectarlinkNode {
 
     pub fn mirror_connection_current(&self, pc_id: String, connection: u64) -> bool {
         parse_id(&pc_id).is_ok_and(|id| self.node.mirror_connection_current(id, connection))
+    }
+
+    /// Synchronous actual provider-loss boundary, before recovery is permitted.
+    pub fn settings_window_qualification_provider_lost(&self) {
+        self.node.settings_window_qualification_provider_lost();
+    }
+
+    /// Explicit local attended scope. Synchronous; never grant/rearm input.
+    pub fn arm_phone_settings_window_qualification(
+        &self,
+        pc_id: String,
+    ) -> Result<PhoneSettingsQualificationOwner> {
+        let owner = self.node.arm_phone_settings_window_qualification(parse_id(&pc_id)?)?;
+        Ok(PhoneSettingsQualificationOwner { pc_id, connection: owner.connection, offer: owner.offer })
+    }
+    pub fn revoke_phone_settings_window_qualification_if_current(
+        &self,
+        owner: PhoneSettingsQualificationOwner,
+    ) -> Result<bool> {
+        Ok(self.node.revoke_phone_settings_window_qualification_if_current(
+            core::PhoneSettingsQualificationOwner {
+                peer: parse_id(&owner.pc_id)?,
+                connection: owner.connection,
+                offer: owner.offer,
+            },
+        )?)
+    }
+    pub fn phone_settings_qualification_current(&self, owner: PhoneSettingsQualificationOwner) -> bool {
+        parse_id(&owner.pc_id).is_ok_and(|peer| {
+            self.node.phone_settings_qualification_current(core::PhoneSettingsQualificationOwner {
+                peer,
+                connection: owner.connection,
+                offer: owner.offer,
+            })
+        })
+    }
+    pub fn settings_qualification_capture_current(
+        &self,
+        pc_id: String,
+        offer: u64,
+        context: PhoneControlContext,
+    ) -> bool {
+        parse_id(&pc_id)
+            .is_ok_and(|peer| self.node.settings_qualification_capture_current(peer, offer, context.into()))
     }
 
     /// Capture identity for this accepted incoming view request, independent of input consent.

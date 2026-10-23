@@ -42,11 +42,52 @@ pub const PHONE_CONTROL_TOGGLE: &str = "phone_control";
 /// The existing accepted-request map also owns its live video stream.
 #[derive(Debug)]
 pub(crate) struct IncomingMirror {
+    scope: MirrorScope,
     request: u64,
     connection: u64,
     capture: u64,
     video: Option<Weak<AtomicBool>>,
     stop: Option<Weak<tokio::sync::Notify>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MirrorScope {
+    Ordinary,
+    SettingsQualification { offer: u64 },
+}
+impl MirrorScope {
+    fn capability(self) -> &'static str {
+        match self {
+            Self::Ordinary => mirror::APP_WINDOWS_OWNED_V1,
+            Self::SettingsQualification { .. } => mirror::APP_SETTINGS_QUALIFICATION_V1,
+        }
+    }
+    fn offer(self) -> Option<u64> {
+        match self {
+            Self::Ordinary => None,
+            Self::SettingsQualification { offer } => Some(offer),
+        }
+    }
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct OutgoingMirror {
+    pub(crate) request: u64,
+    pub(crate) scope: MirrorScope,
+}
+
+/// One actual receiving Session owns the attended attempt; capture stays in IncomingMirror.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct SettingsQualification {
+    pub(crate) offer: u64,
+    pub(crate) epoch: u64,
+    pub(crate) provider_epoch: u64,
+    pub(crate) claimed: Option<(u32, u64, u64)>,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PhoneSettingsQualificationOwner {
+    pub peer: DeviceId,
+    pub connection: u64,
+    pub offer: u64,
 }
 
 /// Rechecked by the phone platform immediately before injection, after posting.
@@ -64,6 +105,7 @@ pub struct MirrorControlContext {
 /// epoch. It never reconnects or reads a replacement request when dequeued.
 #[derive(Clone)]
 pub struct MirrorControl {
+    scope: MirrorScope,
     shared: Arc<Shared>,
     session: Arc<Session>,
     request: u64,
@@ -87,7 +129,18 @@ impl MirrorControl {
         mirroring: u32,
         request: u64,
     ) -> Result<Self> {
+        Self::new_scoped(shared, session, mirroring, request, MirrorScope::Ordinary)
+    }
+
+    fn new_scoped(
+        shared: Arc<Shared>,
+        session: Arc<Session>,
+        mirroring: u32,
+        request: u64,
+        scope: MirrorScope,
+    ) -> Result<Self> {
         let control = Self {
+            scope,
             shared,
             epoch: session.mirror_input_epoch.load(Ordering::Acquire),
             session,
@@ -104,8 +157,12 @@ impl MirrorControl {
         self.epoch != 0
             && self.session.mirror_input_epoch.load(Ordering::Acquire) == self.epoch
             && self.shared.session(&self.session.peer).is_some_and(|live| Arc::ptr_eq(&live, &self.session))
-            && self.shared.mirror_control_reason(&self.session.peer, self.mirroring, self.request)
-                == "available"
+            && self.shared.mirror_control_reason_scoped(
+                &self.session.peer,
+                self.mirroring,
+                self.request,
+                self.scope,
+            ) == "available"
     }
 
     /// Check again after outbox backpressure, then enqueue on that exact connection.
@@ -115,7 +172,9 @@ impl MirrorControl {
 
     /// The viewer rechecks its Showing window after outbox backpressure too.
     pub async fn send_if_current(&self, input: MirrorInput, showing: impl FnOnce() -> bool) -> Result<()> {
-        if !phone_control_input_valid(&input, self.mirroring) {
+        if !phone_control_input_valid(&input, self.mirroring)
+            || (self.scope.offer().is_some() && !matches!(input, MirrorInput::Scroll { .. }))
+        {
             return Err(Error::Protocol("invalid phone control input".into()));
         }
         let env = nectarlink_protocol::messages::mirror_control_input_envelope(
@@ -137,6 +196,7 @@ impl MirrorControl {
 /// Capture operations neither require nor grant phone input permission.
 #[derive(Clone)]
 pub struct MirrorView {
+    scope: MirrorScope,
     shared: Arc<Shared>,
     session: Arc<Session>,
     mirroring: u32,
@@ -168,7 +228,7 @@ impl MirrorView {
         {
             return Err(Error::Unsupported);
         }
-        let target = Self { shared, session, mirroring, request };
+        let target = Self { shared, session, mirroring, request, scope: MirrorScope::Ordinary };
         if !target.is_current() {
             return Err(Error::Denied);
         }
@@ -182,15 +242,58 @@ impl MirrorView {
             && self.shared.store.is_paired(&self.session.peer).unwrap_or(false)
             && self.shared.session(&self.session.peer).is_some_and(|live| Arc::ptr_eq(&live, &self.session))
             && self.shared.peer_supports(&self.session.peer, mirror::VIRTUAL_DISPLAY)
-            && self.shared.peer_supports(&self.session.peer, mirror::APP_WINDOWS_OWNED_V1)
+            && self.shared.peer_supports(&self.session.peer, self.scope.capability())
             && self.shared.mirror_correlated(&self.session.peer)
+            && (self.scope.offer().is_none()
+                || self
+                    .shared
+                    .local_capabilities()
+                    .iter()
+                    .any(|cap| cap == mirror::APP_SETTINGS_QUALIFICATION_V1))
             && self
                 .shared
                 .mirror_outgoing
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .get(&(self.session.peer, self.mirroring))
-                == Some(&self.request)
+                == Some(&OutgoingMirror { request: self.request, scope: self.scope })
+    }
+
+    pub fn is_settings_qualification(&self) -> bool {
+        self.scope.offer().is_some()
+    }
+
+    pub fn control_reason(&self) -> &'static str {
+        if !self.is_current() {
+            return "notShowing";
+        }
+        self.shared.mirror_control_reason_scoped(&self.session.peer, self.mirroring, self.request, self.scope)
+    }
+
+    pub fn control(&self) -> Result<MirrorControl> {
+        if !self.is_current() {
+            return Err(Error::Denied);
+        }
+        MirrorControl::new_scoped(
+            self.shared.clone(),
+            self.session.clone(),
+            self.mirroring,
+            self.request,
+            self.scope,
+        )
+    }
+
+    pub async fn request_keyframe_if_current(&self) -> Result<bool> {
+        let env = Envelope::new(
+            types::MIRROR_KEYFRAME,
+            &MirrorSession { session: self.mirroring, request: Some(self.request) },
+        )?;
+        let permit = self.session.reserve().await?;
+        if !self.is_current() {
+            return Ok(false);
+        }
+        permit.send(env);
+        Ok(true)
     }
 
     /// Sender-local durable request, echoed by this accepted capture's stream.
@@ -205,7 +308,7 @@ impl MirrorView {
         if !retired {
             return Ok(false);
         }
-        stop(&self.session, self.mirroring, Some(self.request)).await?;
+        stop_scoped(&self.session, self.mirroring, Some(self.request), self.scope.offer()).await?;
         Ok(true)
     }
 
@@ -330,7 +433,7 @@ async fn finish_start(shared: &Shared, session: &Session, options: MirrorStart, 
         .and_then(|reply| reply.expect(types::OK).map_err(Error::from));
     if result.is_err() {
         let mut outgoing = shared.mirror_outgoing.lock().unwrap_or_else(|e| e.into_inner());
-        if outgoing.get(&(session.peer, options.session)) == Some(&request) {
+        if outgoing.get(&(session.peer, options.session)).map(|owner| owner.request) == Some(request) {
             outgoing.remove(&(session.peer, options.session));
         }
     }
@@ -360,32 +463,154 @@ pub(crate) async fn start_owned(
         return Err(Error::Unsupported);
     }
     let (options, env) = prepare_start(shared, session, options)?;
-    let request = options.request.expect("prepare_start allocated the request");
-    let view =
-        MirrorView { shared: shared.clone(), session: session.clone(), mirroring: options.session, request };
+    finish_owned_start(shared, session, options, env, MirrorScope::Ordinary, ready).await
+}
+
+async fn finish_owned_start(
+    shared: &Arc<Shared>,
+    session: &Arc<Session>,
+    options: MirrorStart,
+    env: Envelope,
+    scope: MirrorScope,
+    ready: impl FnOnce(MirrorView) -> bool,
+) -> Result<()> {
+    let request = options.request.expect("owned start allocated the request");
+    let view = MirrorView {
+        shared: shared.clone(),
+        session: session.clone(),
+        mirroring: options.session,
+        request,
+        scope,
+    };
     if !view.is_current() || !ready(view.clone()) {
-        let mut outgoing = shared.mirror_outgoing.lock().unwrap_or_else(|e| e.into_inner());
-        if outgoing.get(&(session.peer, options.session)) == Some(&request) {
-            outgoing.remove(&(session.peer, options.session));
+        {
+            let mut outgoing = shared.mirror_outgoing.lock().unwrap_or_else(|e| e.into_inner());
+            if outgoing.get(&(session.peer, options.session)).copied()
+                == Some(OutgoingMirror { request, scope })
+            {
+                outgoing.remove(&(session.peer, options.session));
+            }
+        }
+        if scope.offer().is_some() {
+            let _ = stop_scoped(session, view.mirroring, Some(request), scope.offer()).await;
         }
         return Err(Error::Denied);
     }
     if let Err(error) = finish_start(shared, session, options, env).await {
         // A timed-out start may still be completing at the source. Release
         // only the original wire request on its original connection.
-        let _ = stop(session, view.mirroring, Some(request)).await;
+        let _ = stop_scoped(session, view.mirroring, Some(request), scope.offer()).await;
         return Err(error);
     }
     if !view.is_current() {
         // Close may have queued Stop before this Start reached the source.
-        let _ = stop(session, view.mirroring, Some(request)).await;
+        let _ = stop_scoped(session, view.mirroring, Some(request), scope.offer()).await;
         return Err(Error::Denied);
     }
     Ok(())
 }
 
+/// Separate scoped admission; never retries ordinary MIRROR_START.
+pub(crate) async fn start_settings_owned(
+    shared: &Arc<Shared>,
+    session: &Arc<Session>,
+    mirroring: u32,
+    ready: impl FnOnce(MirrorView) -> bool,
+) -> Result<()> {
+    if mirroring == mirror::SCREEN
+        || !is_local_desktop(shared)
+        || !shared.local_capabilities().iter().any(|cap| cap == mirror::APP_SETTINGS_QUALIFICATION_V1)
+        || !shared.local_capabilities().iter().any(|cap| cap == mirror::INPUT_REQUEST)
+        || !shared.local_capabilities().iter().any(|cap| cap == mirror::VIEW)
+        || !shared.mirror_correlated(&session.peer)
+        || !shared.peer_supports(&session.peer, mirror::APP_SETTINGS_QUALIFICATION_V1)
+        || !shared.peer_supports(&session.peer, mirror::VIRTUAL_DISPLAY)
+        || !shared.peer_supports(&session.peer, mirror::INPUT_REQUEST)
+    {
+        return Err(Error::Unsupported);
+    }
+    if !shared.toggle_on(&session.peer, TOGGLE)
+        || !shared.store.is_paired(&session.peer)?
+        || !shared.session(&session.peer).is_some_and(|live| Arc::ptr_eq(&live, session))
+    {
+        return Err(Error::Denied);
+    }
+    let query = Envelope::new(
+        types::MIRROR_SETTINGS_OFFER,
+        &nectarlink_protocol::messages::MirrorSettingsOfferRequest {},
+    )?;
+    let offer: nectarlink_protocol::messages::MirrorSettingsOffer = session
+        .request(query, crate::session::REQUEST_TIMEOUT)
+        .await?
+        .expect_body(types::MIRROR_SETTINGS_OFFER)?;
+    if offer.offer == 0 {
+        return Err(Error::Denied);
+    }
+    if !shared.session(&session.peer).is_some_and(|live| Arc::ptr_eq(&live, session)) {
+        let _ = stop_scoped(session, mirroring, None, Some(offer.offer)).await;
+        return Err(Error::Denied);
+    }
+    let request = match shared.store.next_mirror_request() {
+        Ok(request) => request,
+        Err(error) => {
+            let _ = stop_scoped(session, mirroring, None, Some(offer.offer)).await;
+            return Err(error);
+        }
+    };
+    let scope = MirrorScope::SettingsQualification { offer: offer.offer };
+    let options = MirrorStart {
+        max_size: 1920,
+        fps: 60,
+        bitrate: 8_000_000,
+        audio: false,
+        session: mirroring,
+        app: Some("com.android.settings".into()),
+        stay_awake: false,
+        screen_off: false,
+        watch: None,
+        request: Some(request),
+    };
+    let env = Envelope::new(
+        types::MIRROR_SETTINGS_START,
+        &nectarlink_protocol::messages::MirrorSettingsStart {
+            offer: offer.offer,
+            session: mirroring,
+            request,
+        },
+    )?;
+    let registered =
+        shared.register_settings_view_if_current(session, mirroring, OutgoingMirror { request, scope });
+    if !registered {
+        let _ = stop_scoped(session, mirroring, Some(request), Some(offer.offer)).await;
+        return Err(Error::Denied);
+    }
+    finish_owned_start(shared, session, options, env, scope, ready).await
+}
+
 pub(crate) async fn stop(session: &Session, mirroring: u32, request: Option<u64>) -> Result<()> {
-    let env = Envelope::new(types::MIRROR_STOP, &MirrorSession { session: mirroring, request })?;
+    stop_scoped(session, mirroring, request, None).await
+}
+
+async fn stop_scoped(
+    session: &Session,
+    mirroring: u32,
+    request: Option<u64>,
+    offer: Option<u64>,
+) -> Result<()> {
+    #[derive(serde::Serialize)]
+    struct StopBody {
+        #[serde(flatten)]
+        target: MirrorSession,
+        #[serde(flatten)]
+        scope: nectarlink_protocol::messages::MirrorSettingsStop,
+    }
+    let env = Envelope::new(
+        types::MIRROR_STOP,
+        &StopBody {
+            target: MirrorSession { session: mirroring, request },
+            scope: nectarlink_protocol::messages::MirrorSettingsStop { settings_offer: offer },
+        },
+    )?;
     session.request(env, crate::session::REQUEST_TIMEOUT).await?.expect(types::OK)?;
     Ok(())
 }
@@ -785,7 +1010,7 @@ pub(crate) async fn receive(
     let correlated = shared.mirror_correlated(&peer)
         || (mirroring != mirror::SCREEN && shared.peer_supports(&peer, mirror::APP_WINDOWS_OWNED_V1));
     if !shared.session(&peer).is_some_and(|live| Arc::ptr_eq(&live, &session))
-        || !mirror_token_accepted(expected, config.request, correlated)
+        || !mirror_token_accepted(expected.map(|owner| owner.request), config.request, correlated)
     {
         tracing::warn!("a phone's video stream answered an older mirroring request");
         return refuse(send, recv);
@@ -806,7 +1031,7 @@ pub(crate) async fn receive(
                     .unwrap_or_else(|e| e.into_inner())
                     .get(&(peer, mirroring))
                     .copied()
-                    == request)
+                    == expected)
     };
     let Some(stopped) = shared.register_mirror_view_reader(&session, mirroring, request, correlated) else {
         return refuse(send, recv);
@@ -935,6 +1160,72 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
     let peer = session.peer;
     let platform = shared.platform.clone();
     match env.t.as_str() {
+        types::MIRROR_SETTINGS_OFFER => {
+            let body = env.body::<nectarlink_protocol::messages::MirrorSettingsOfferRequest>();
+            let reply = if body.is_err() {
+                Envelope::error(ErrorCode::BadMessage, "Settings offer requires an empty map")
+            } else if let Some(scope) = shared.settings_scope(session).filter(|scope| scope.claimed.is_none())
+            {
+                Envelope::new(
+                    types::MIRROR_SETTINGS_OFFER,
+                    &nectarlink_protocol::messages::MirrorSettingsOffer { offer: scope.offer },
+                )?
+            } else {
+                Envelope::error(ErrorCode::Denied, "Settings qualification is not armed")
+            };
+            session.send(reply.reply_to(env.id)).await?;
+        }
+        types::MIRROR_SETTINGS_START => {
+            let reply = match env.body::<nectarlink_protocol::messages::MirrorSettingsStart>() {
+                Err(_) => Envelope::error(ErrorCode::BadMessage, "invalid Settings start"),
+                Ok(start) => {
+                    if let Some(capture) =
+                        shared.claim_settings_window(session, start.offer, start.session, start.request)
+                    {
+                        let options = MirrorStart {
+                            max_size: 1920,
+                            fps: 60,
+                            bitrate: 8_000_000,
+                            audio: false,
+                            session: start.session,
+                            app: Some("com.android.settings".into()),
+                            stay_awake: false,
+                            screen_off: false,
+                            watch: None,
+                            request: Some(start.request),
+                        };
+                        let connection = session.mirror_control_id;
+                        let accepted = tokio::task::spawn_blocking(move || {
+                            platform.mirror_settings_requested_owned(
+                                &peer,
+                                &options,
+                                connection,
+                                capture,
+                                start.offer,
+                            )
+                        })
+                        .await
+                        .unwrap_or_else(|error| Err(error.to_string()));
+                        let current = shared.settings_scope(session).is_some_and(|scope| {
+                            scope.offer == start.offer
+                                && scope.claimed == Some((start.session, start.request, capture))
+                        });
+                        if accepted.is_ok() && current {
+                            Envelope::empty(types::OK)
+                        } else {
+                            shared.revoke_settings_scope(
+                                PhoneSettingsQualificationOwner { peer, connection, offer: start.offer },
+                                Some((start.session, Some(start.request))),
+                            );
+                            Envelope::error(ErrorCode::Denied, "Settings capture was declined or retired")
+                        }
+                    } else {
+                        Envelope::error(ErrorCode::Denied, "Settings offer was spent or replaced")
+                    }
+                }
+            };
+            session.send(reply.reply_to(env.id)).await?;
+        }
         types::MIRROR_START => {
             let admission_epoch = shared.mirror_epoch(&peer);
             if !shared.session(&peer).is_some_and(|live| Arc::ptr_eq(&live, session)) {
@@ -1029,6 +1320,26 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
         types::MIRROR_STOP => {
             let MirrorSession { session: mirroring, request } = env.body()?;
             let source: nectarlink_protocol::messages::MirrorSourceStop = env.body()?;
+            let scoped: nectarlink_protocol::messages::MirrorSettingsStop = env.body()?;
+            if let Some(offer) = scoped.settings_offer {
+                if !source.source_stopped
+                    && mirroring != mirror::SCREEN
+                    && shared.session(&peer).is_some_and(|live| Arc::ptr_eq(&live, session))
+                {
+                    // Armed cancellation has no incoming capture yet. A missing
+                    // request is allowed only there and can never match a claim.
+                    shared.revoke_settings_scope(
+                        PhoneSettingsQualificationOwner {
+                            peer,
+                            connection: session.mirror_control_id,
+                            offer,
+                        },
+                        Some((mirroring, request)),
+                    );
+                }
+                session.send(Envelope::empty(types::OK).reply_to(env.id)).await?;
+                return Ok(true);
+            }
             if source.source_stopped {
                 // A source decline applies only to our outgoing request. It must
                 // never invoke this PC's capture-stop callback or affect a newer request.
@@ -1050,6 +1361,12 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
                 && (request.is_none()
                     || !shared.session(&peer).is_some_and(|live| Arc::ptr_eq(&live, session)))
             {
+                session.send(Envelope::empty(types::OK).reply_to(env.id)).await?;
+                return Ok(true);
+            }
+            // Qualification viewer Stop must carry its consent offer. An ordinary
+            // legacy body cannot retire the scoped capture, even with its request.
+            if shared.incoming_settings_offer(&peer, mirroring).is_some() {
                 session.send(Envelope::empty(types::OK).reply_to(env.id)).await?;
                 return Ok(true);
             }
@@ -1075,8 +1392,23 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
             session.send(Envelope::empty(types::OK).reply_to(env.id)).await?;
         }
         types::MIRROR_KEYFRAME => {
-            let MirrorSession { session: mirroring, .. } = env.body()?;
-            tokio::task::spawn_blocking(move || platform.mirror_keyframe_requested(&peer, mirroring));
+            let MirrorSession { session: mirroring, request } = env.body()?;
+            if let Some(offer) = shared.incoming_settings_offer(&peer, mirroring) {
+                if let Some(request) = request
+                    && let Some(context) = shared.mirror_capture_context(&peer, mirroring, request)
+                    && context.connection == session.mirror_control_id
+                    && shared.settings_capture_current(&peer, offer, context)
+                {
+                    let shared = shared.clone();
+                    tokio::task::spawn_blocking(move || {
+                        if shared.settings_capture_current(&peer, offer, context) {
+                            platform.mirror_keyframe_requested_owned(&peer, context);
+                        }
+                    });
+                }
+            } else {
+                tokio::task::spawn_blocking(move || platform.mirror_keyframe_requested(&peer, mirroring));
+            }
         }
         types::MIRROR_RESIZE => {
             let resize: MirrorResize = env.body()?;
@@ -1123,6 +1455,8 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
                     let context =
                         MirrorControlContext { generation, connection: session.mirror_control_id, ..owner };
                     if phone_control_input_valid(&input, mirroring)
+                        && (shared.incoming_settings_offer(&peer, mirroring).is_none()
+                            || matches!(input, MirrorInput::Scroll { .. }))
                         && shared.phone_control_current(&peer, context)
                     {
                         platform.mirror_control_input(&peer, input, context);
@@ -1254,6 +1588,17 @@ impl MirrorStream {
             self.close();
             return MirrorSend::Closed;
         }
+        if kind == PacketKind::Config
+            && !self.audio
+            && let Some((shared, peer, _, Some(owner))) = &self.control_owner
+            && shared.incoming_settings_offer(peer, owner.session).is_some()
+            && !MirrorConfig::from_cbor(&data).is_ok_and(|config| {
+                config.is_valid() && config.session == owner.session && config.request == Some(owner.request)
+            })
+        {
+            self.close();
+            return MirrorSend::Closed;
+        }
         let mut resyncing = self.resyncing.lock().unwrap_or_else(|e| e.into_inner());
         if *resyncing && kind == PacketKind::Frame && !self.audio {
             return MirrorSend::NeedKeyframe;
@@ -1308,6 +1653,9 @@ impl MirrorStream {
     pub fn close(&self) {
         self.closed.store(true, Ordering::Release);
         self.stop.notify_one();
+        if let Some((shared, peer, _, Some(owner))) = &self.control_owner {
+            shared.finish_settings_capture(*peer, *owner);
+        }
     }
 
     pub fn is_closed(&self) -> bool {
@@ -1407,13 +1755,14 @@ pub(crate) async fn open(
     } else {
         None
     };
-    let mut stream = MirrorStream::spawn_stream_with_lifetime(
+    let mut stream = MirrorStream::spawn_stream_with_capture(
         send,
         recv,
         audio,
         on_end,
         pending.live.closed.clone(),
         pending.live.stop.clone(),
+        owner.map(|owner| (shared.clone(), session.peer, owner)),
     );
     if !audio && !is_local_desktop(shared) {
         stream.control_owner = Some((shared.clone(), session.peer, session.mirror_control_id, owner));
@@ -1455,12 +1804,24 @@ impl MirrorStream {
     }
 
     pub(crate) fn spawn_stream_with_lifetime(
+        send: SendStream,
+        recv: RecvStream,
+        audio: bool,
+        on_end: Option<(Arc<Shared>, i64, std::time::Instant)>,
+        closed: Arc<AtomicBool>,
+        stop: Arc<tokio::sync::Notify>,
+    ) -> MirrorStream {
+        Self::spawn_stream_with_capture(send, recv, audio, on_end, closed, stop, None)
+    }
+
+    fn spawn_stream_with_capture(
         mut send: SendStream,
         mut recv: RecvStream,
         audio: bool,
         on_end: Option<(Arc<Shared>, i64, std::time::Instant)>,
         closed: Arc<AtomicBool>,
         stop: Arc<tokio::sync::Notify>,
+        capture_end: Option<(Arc<Shared>, DeviceId, MirrorControlContext)>,
     ) -> MirrorStream {
         // Sound and video go out as soon as they're written; sound first.
         let _ = send.set_priority(if audio { AUDIO_PRIORITY } else { VIDEO_PRIORITY });
@@ -1501,6 +1862,9 @@ impl MirrorStream {
             }
             done.store(true, Ordering::Release);
             let _ = send.finish();
+            if let Some((shared, peer, owner)) = capture_end {
+                shared.finish_settings_capture(peer, owner);
+            }
             if let Some((shared, row_id, started_at)) = on_end {
                 shared.finish_timeline_session(row_id, started_at.elapsed().as_secs().max(1));
             }
@@ -1612,6 +1976,16 @@ impl Shared {
         mirroring: u32,
         request: u64,
     ) -> &'static str {
+        self.mirror_control_reason_scoped(peer, mirroring, request, MirrorScope::Ordinary)
+    }
+
+    fn mirror_control_reason_scoped(
+        &self,
+        peer: &DeviceId,
+        mirroring: u32,
+        request: u64,
+        scope: MirrorScope,
+    ) -> &'static str {
         if self.cancel.is_cancelled() || self.session(peer).is_none() {
             return "offline";
         }
@@ -1627,7 +2001,7 @@ impl Shared {
                 mirror::VIRTUAL_DISPLAY
             })
             || !record.caps.contains(mirror::INPUT_REQUEST)
-            || (mirroring != mirror::SCREEN && !record.caps.contains(mirror::APP_WINDOWS_OWNED_V1))
+            || (mirroring != mirror::SCREEN && !record.caps.contains(scope.capability()))
         {
             return "unsupported";
         }
@@ -1647,11 +2021,45 @@ impl Shared {
             return "unsupported";
         }
         if self.mirror_outgoing.lock().unwrap_or_else(|e| e.into_inner()).get(&(*peer, mirroring))
-            != Some(&request)
+            != Some(&OutgoingMirror { request, scope })
         {
             return "notShowing";
         }
         "available"
+    }
+
+    pub(crate) fn incoming_settings_offer(&self, peer: &DeviceId, mirroring: u32) -> Option<u64> {
+        self.mirror_incoming
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&(*peer, mirroring))
+            .and_then(|owner| owner.scope.offer())
+    }
+
+    pub(crate) fn settings_capture_current(
+        &self,
+        peer: &DeviceId,
+        offer: u64,
+        context: MirrorControlContext,
+    ) -> bool {
+        let Some(original) = self.session(peer) else { return false };
+        if original.mirror_control_id != context.connection {
+            return false;
+        }
+        let Some(scope) = self.settings_scope(&original) else { return false };
+        scope.offer == offer
+            && scope.claimed == Some((context.session, context.request, context.capture))
+            && self
+                .mirror_incoming
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .get(&(*peer, context.session))
+                .is_some_and(|owner| {
+                    owner.request == context.request
+                        && owner.capture == context.capture
+                        && owner.connection == context.connection
+                        && owner.scope == (MirrorScope::SettingsQualification { offer })
+                })
     }
 
     pub(crate) fn mirror_capture_context(
@@ -1692,10 +2100,14 @@ impl Shared {
             && self.mirror_capture_context(peer, context.session, context.request).is_some_and(|owner| {
                 owner.connection == context.connection && owner.capture == context.capture
             })
+            && self
+                .incoming_settings_offer(peer, context.session)
+                .is_none_or(|offer| self.settings_capture_current(peer, offer, context))
     }
 
     pub(crate) fn phone_control_current(&self, peer: &DeviceId, context: MirrorControlContext) -> bool {
         if context.connection == 0
+            || !self.mirror_capture_current(peer, context)
             || self.cancel.is_cancelled()
             || !self.session(peer).is_some_and(|session| session.mirror_control_id == context.connection)
             || !self.peer_supports(peer, mirror::INPUT_REQUEST)
@@ -1778,12 +2190,19 @@ impl Shared {
 
     /// Records a request token this device sent (`mirror.start`).
     pub(crate) fn note_mirror_outgoing(&self, peer: &DeviceId, session: u32, request: u64) {
-        self.mirror_outgoing.lock().unwrap_or_else(|e| e.into_inner()).insert((*peer, session), request);
+        self.mirror_outgoing
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert((*peer, session), OutgoingMirror { request, scope: MirrorScope::Ordinary });
     }
 
     /// Takes the recorded outgoing token (a stop ends the request).
     pub(crate) fn take_mirror_outgoing(&self, peer: &DeviceId, session: u32) -> Option<u64> {
-        self.mirror_outgoing.lock().unwrap_or_else(|e| e.into_inner()).remove(&(*peer, session))
+        self.mirror_outgoing
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&(*peer, session))
+            .map(|owner| owner.request)
     }
 
     /// An owned stream is registered before its first config. End that exact
@@ -1821,6 +2240,17 @@ impl Shared {
         request: u64,
         connection: u64,
     ) -> Option<u64> {
+        self.note_mirror_incoming_scoped(peer, session, request, connection, MirrorScope::Ordinary)
+    }
+
+    pub(crate) fn note_mirror_incoming_scoped(
+        &self,
+        peer: &DeviceId,
+        session: u32,
+        request: u64,
+        connection: u64,
+        scope: MirrorScope,
+    ) -> Option<u64> {
         static NEXT_CAPTURE: AtomicU64 = AtomicU64::new(1);
         let capture = if session == mirror::SCREEN {
             0
@@ -1837,7 +2267,7 @@ impl Shared {
         }
         let previous = incoming.insert(
             (*peer, session),
-            IncomingMirror { request, connection, capture, video: None, stop: None },
+            IncomingMirror { request, connection, capture, scope, video: None, stop: None },
         );
         drop(incoming);
         if let Some(previous) = previous {

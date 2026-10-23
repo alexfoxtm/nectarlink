@@ -26,6 +26,21 @@ unsafe extern "C" {
     );
 }
 
+/// Whether this app bundle contains the expected extension payload. Presence
+/// permits an activation request; it does not establish signature or readiness.
+fn extension_payload_present() -> bool {
+    let Ok(exe) = std::env::current_exe() else {
+        return false;
+    };
+    if !crate::win::toast::app_bundle_executable(&exe) {
+        return false;
+    }
+    let Some(contents) = exe.parent().and_then(|macos| macos.parent()) else {
+        return false;
+    };
+    contents.join("Library/SystemExtensions/com.waypair.mac.CameraExtension.systemextension").is_dir()
+}
+
 pub fn is_registered() -> bool {
     if matches!(STATUS.load(Ordering::Acquire), 1 | 2 | 4 | 5 | 6) {
         return false;
@@ -37,6 +52,9 @@ pub fn is_registered() -> bool {
 pub fn status_text() -> String {
     if is_registered() {
         return tr!("Webcam", "Waypair Camera is ready · 720p at 30 fps.");
+    }
+    if !extension_payload_present() {
+        return tr!("Webcam", "The camera extension is not included in this app. Setup is unavailable.");
     }
     match STATUS.load(Ordering::Acquire) {
         1 => tr!("Webcam", "Requesting camera extension activation…"),
@@ -53,6 +71,9 @@ pub fn status_text() -> String {
     }
 }
 pub fn setup_label() -> String {
+    if !extension_payload_present() {
+        return tr!("Webcam", "Not included");
+    }
     if STATUS.load(Ordering::Acquire) == 3 {
         tr!("Webcam", "Check camera")
     } else {
@@ -60,7 +81,7 @@ pub fn setup_label() -> String {
     }
 }
 pub fn setup_allowed() -> bool {
-    !matches!(STATUS.load(Ordering::Acquire), 1 | 2 | 4)
+    !matches!(STATUS.load(Ordering::Acquire), 1 | 2 | 4) && extension_payload_present()
 }
 
 // Preserve the shared Windows CLI surface without executing an elevated helper
@@ -129,7 +150,11 @@ pub fn run_elevated(arg: &'static str, on_done: impl FnOnce(bool) + Send + 'stat
         return;
     }
     if enabled && !setup_allowed() {
-        on_done(false);
+        let registered = is_registered();
+        on_done(registered);
+        if registered {
+            announce();
+        }
         return;
     }
     if enabled && is_registered() {

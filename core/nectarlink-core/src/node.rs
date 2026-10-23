@@ -241,7 +241,11 @@ pub(crate) struct Shared {
     pub(crate) mirror_stops: Mutex<HashMap<MirrorStop, Arc<tokio::sync::Notify>>>,
     /// Request tokens this device sent in `mirror.start`, by peer and
     /// session: the stream that answers must echo the token back.
-    pub(crate) mirror_outgoing: Mutex<HashMap<(DeviceId, u32), u64>>,
+    pub(crate) mirror_outgoing: Mutex<HashMap<(DeviceId, u32), crate::mirror::OutgoingMirror>>,
+    /// Checked provider lifetime, advanced on actual capability loss under local write.
+    pub(crate) settings_provider_epoch: std::sync::atomic::AtomicU64,
+    #[cfg(feature = "test-support")]
+    settings_arm_barrier: Mutex<Option<(Arc<std::sync::Barrier>, Arc<Notify>)>>,
     /// Request tokens this device accepted in `mirror.start`, by peer and
     /// session: `mirror.stop` for an older token takes no action.
     pub(crate) mirror_incoming: Mutex<HashMap<(DeviceId, u32), crate::mirror::IncomingMirror>>,
@@ -358,6 +362,14 @@ impl Shared {
             || self.cancel.is_cancelled()
             || !self.toggle_on(&session.peer, crate::mirror::TOGGLE)
         {
+            return None;
+        }
+        let scope = lock(&session.settings_qualification);
+        if scope.as_ref().is_some_and(|scope| {
+            scope.epoch == epoch
+                && scope.provider_epoch
+                    == self.settings_provider_epoch.load(std::sync::atomic::Ordering::Acquire)
+        }) {
             return None;
         }
         self.note_mirror_incoming(&session.peer, mirroring, request, session.mirror_control_id)
@@ -721,6 +733,28 @@ impl Shared {
         Some(apply())
     }
 
+    /// Register a scoped viewer under the original Session guard. The check and
+    /// outgoing insertion remain atomic with connection replacement/retirement.
+    pub(crate) fn register_settings_view_if_current(
+        &self,
+        original: &Arc<Session>,
+        mirroring: u32,
+        owner: crate::mirror::OutgoingMirror,
+    ) -> bool {
+        let sessions = lock(&self.sessions);
+        if self.cancel.is_cancelled()
+            || !sessions
+                .get(&original.peer)
+                .is_some_and(|live| live.is_alive() && Arc::ptr_eq(live, original))
+            || !self.toggle_on(&original.peer, crate::mirror::TOGGLE)
+            || !self.peer_supports(&original.peer, crate::MIRROR_APP_SETTINGS_QUALIFICATION_V1)
+        {
+            return false;
+        }
+        lock(&self.mirror_outgoing).insert((original.peer, mirroring), owner);
+        true
+    }
+
     /// Session -> outgoing -> reader lock order matches on_session_end.
     /// A conditional close cannot retire a replacement Node/request/connection.
     pub(crate) fn retire_mirror_view(&self, original: &Arc<Session>, mirroring: u32, request: u64) -> bool {
@@ -729,7 +763,7 @@ impl Shared {
             return false;
         }
         let mut outgoing = lock(&self.mirror_outgoing);
-        if outgoing.get(&(original.peer, mirroring)) != Some(&request) {
+        if outgoing.get(&(original.peer, mirroring)).map(|owner| owner.request) != Some(request) {
             return false;
         }
         outgoing.remove(&(original.peer, mirroring));
@@ -759,7 +793,7 @@ impl Shared {
             return None;
         }
         let outgoing = lock(&self.mirror_outgoing);
-        if correlated && outgoing.get(&(original.peer, mirroring)).copied() != request {
+        if correlated && outgoing.get(&(original.peer, mirroring)).map(|owner| owner.request) != request {
             return None;
         }
         Some(self.new_mirror_stop(&original.peer, mirroring, nectarlink_protocol::messages::mirror::OP_VIDEO))
@@ -1297,7 +1331,13 @@ impl Shared {
     }
 
     pub(crate) fn capabilities_for_peer(&self, peer: &DeviceId, global: &[String]) -> Vec<String> {
-        self.phone_control_caps_for(peer, crate::storage::caps_for_peer(self, peer, global))
+        let mut caps = self.phone_control_caps_for(peer, crate::storage::caps_for_peer(self, peer, global));
+        if crate::mirror::is_local_phone(self)
+            && !self.session(peer).is_some_and(|original| self.settings_scope(&original).is_some())
+        {
+            caps.retain(|cap| cap != crate::MIRROR_APP_SETTINGS_QUALIFICATION_V1);
+        }
+        caps
     }
 
     fn announce_phone_control(self: &Arc<Self>, peer: &DeviceId) {
@@ -2073,6 +2113,9 @@ impl Node {
             deck: Default::default(),
             mirror_stops: Mutex::new(HashMap::new()),
             mirror_outgoing: Mutex::new(HashMap::new()),
+            settings_provider_epoch: std::sync::atomic::AtomicU64::new(1),
+            #[cfg(feature = "test-support")]
+            settings_arm_barrier: Mutex::new(None),
             mirror_incoming: Mutex::new(HashMap::new()),
             mirror_live_out: Mutex::new(HashMap::new()),
             mirror_revoke_epoch: Mutex::new(HashMap::new()),
@@ -2204,6 +2247,20 @@ impl Node {
 
     /// Stops all sessions and networking.
     pub async fn shutdown(&self) {
+        // Spend scoped owners before draining Sessions, retaining exact native teardown.
+        for original in self.shared.live_sessions() {
+            let scope = *lock(&original.settings_qualification);
+            if let Some(scope) = scope {
+                self.shared.revoke_settings_scope(
+                    crate::PhoneSettingsQualificationOwner {
+                        peer: original.peer,
+                        connection: original.mirror_control_id,
+                        offer: scope.offer,
+                    },
+                    None,
+                );
+            }
+        }
         self.shared.cancel.cancel();
         for owner in self.shared.webcam_owned.revoke_all() {
             crate::webcam_owned::request_cleanup(owner);
@@ -2475,6 +2532,41 @@ impl Node {
         Ok(())
     }
 
+    /// Pause only the actual attended arm after durable offer allocation.
+    #[cfg(feature = "test-support")]
+    pub fn test_hold_next_settings_arm(&self) -> Result<(Arc<std::sync::Barrier>, Arc<Notify>)> {
+        if !self.shared.test_support_loopback_mirror_fixture {
+            return Err(Error::Denied);
+        }
+        let barrier = Arc::new(std::sync::Barrier::new(2));
+        let entered = Arc::new(Notify::new());
+        *lock(&self.shared.settings_arm_barrier) = Some((barrier.clone(), entered.clone()));
+        Ok((barrier, entered))
+    }
+
+    /// Narrow real-Session fixture readback; never an admission bypass.
+    #[cfg(feature = "test-support")]
+    pub fn test_peer_supports(&self, peer: DeviceId, capability: &str) -> bool {
+        self.shared.test_support_loopback_mirror_fixture && self.shared.peer_supports(&peer, capability)
+    }
+
+    /// Malformed/stale packets through the real isolated control Session.
+    #[cfg(feature = "test-support")]
+    pub async fn test_mirror_settings_packet(&self, peer: DeviceId, env: Envelope) -> Result<Envelope> {
+        if !self.shared.test_support_loopback_mirror_fixture
+            || !matches!(
+                env.t.as_str(),
+                types::MIRROR_SETTINGS_OFFER
+                    | types::MIRROR_SETTINGS_START
+                    | types::MIRROR_START
+                    | types::MIRROR_STOP
+            )
+        {
+            return Err(Error::Denied);
+        }
+        self.connected(&peer)?.request(env, REQUEST_TIMEOUT).await
+    }
+
     /// Like [`connected`](Self::connected), but waits up to [`STREAM_RECONNECT_WAIT`]
     /// for a connection that just dropped or was replaced to come back.
     async fn connected_soon(&self, peer: &DeviceId) -> Result<Arc<Session>> {
@@ -2592,7 +2684,9 @@ impl Node {
                 && self.shared.local_capabilities().iter().any(|cap| cap == crate::MIRROR_INPUT_REQUEST)
                 && self.shared.peer_supports(&peer, crate::MIRROR_INPUT_REQUEST);
             let incoming = self.shared.incoming_mirror_request(&peer, crate::MIRROR_SCREEN);
-            let outgoing = lock(&self.shared.mirror_outgoing).get(&(peer, crate::MIRROR_SCREEN)).copied();
+            let outgoing = lock(&self.shared.mirror_outgoing)
+                .get(&(peer, crate::MIRROR_SCREEN))
+                .map(|owner| owner.request);
             if toggle == crate::mirror::PC_MIRROR_TOGGLE {
                 lock(&self.shared.pc_mirror_sessions).remove(&peer);
             }
@@ -4494,6 +4588,19 @@ impl Node {
                 local.power = power;
                 local.extra_capabilities = extra_capabilities;
                 let caps = local.capabilities();
+                if [
+                    crate::MIRROR_APP_SETTINGS_QUALIFICATION_V1,
+                    crate::MIRROR_VIRTUAL_DISPLAY,
+                    crate::MIRROR_CORRELATION,
+                    crate::MIRROR_INPUT_REQUEST,
+                ]
+                .iter()
+                .any(|name| {
+                    before.iter().any(|cap| cap.as_str() == *name)
+                        && !caps.iter().any(|cap| cap.as_str() == *name)
+                }) {
+                    self.shared.advance_settings_provider_lifetime();
+                }
                 if before.iter().any(|cap| cap == "notify.reply")
                     && !caps.iter().any(|cap| cap == "notify.reply")
                 {
@@ -4536,6 +4643,21 @@ impl Node {
                         tracing::warn!(%error, "phone input availability invalidation failed closed");
                     }
                 }
+            }
+        }
+        for original in self.shared.live_sessions() {
+            let scope = *lock(&original.settings_qualification);
+            if let Some(scope) = scope
+                && self.shared.settings_scope(&original).is_none()
+            {
+                self.shared.revoke_settings_scope(
+                    crate::PhoneSettingsQualificationOwner {
+                        peer: original.peer,
+                        connection: original.mirror_control_id,
+                        offer: scope.offer,
+                    },
+                    None,
+                );
             }
         }
         self.shared.announce_power(power);
@@ -5276,6 +5398,302 @@ async fn deliver_queued_rpc(
                 }
             }
         }
+    }
+}
+
+impl Shared {
+    /// Actual local provider loss, including events missed by async capability refresh.
+    /// Never a wire identity/input grant; zero permanently denies on exhaustion.
+    fn advance_settings_provider_lifetime(&self) {
+        use std::sync::atomic::Ordering;
+        if self
+            .settings_provider_epoch
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |epoch| {
+                (epoch != 0).then(|| epoch.checked_add(1)).flatten()
+            })
+            .is_err()
+        {
+            self.settings_provider_epoch.store(0, Ordering::Release);
+        }
+    }
+
+    pub(crate) fn settings_provider_usable(&self) -> bool {
+        crate::mirror::is_local_phone(self)
+            && !self.cancel.is_cancelled()
+            && self.platform.settings_window_qualification_supported()
+            && [
+                crate::MIRROR_APP_SETTINGS_QUALIFICATION_V1,
+                crate::MIRROR_VIRTUAL_DISPLAY,
+                crate::MIRROR_CORRELATION,
+                crate::MIRROR_INPUT_REQUEST,
+            ]
+            .iter()
+            .all(|name| self.local_capabilities().iter().any(|cap| cap.as_str() == *name))
+            && self.settings_provider_epoch.load(std::sync::atomic::Ordering::Acquire) != 0
+    }
+
+    /// Caller gets a snapshot only from this exact authenticated receiving Session.
+    pub(crate) fn settings_scope(
+        &self,
+        original: &Arc<Session>,
+    ) -> Option<crate::mirror::SettingsQualification> {
+        let sessions = lock(&self.sessions);
+        if !sessions.get(&original.peer).is_some_and(|live| live.is_alive() && Arc::ptr_eq(live, original)) {
+            return None;
+        }
+        let epochs = lock(&self.mirror_revoke_epoch);
+        let scope = *lock(&original.settings_qualification);
+        scope.filter(|scope| {
+            self.settings_provider_usable()
+                && self.toggle_on(&original.peer, crate::mirror::TOGGLE)
+                && self.store.is_paired(&original.peer).unwrap_or(false)
+                && scope.epoch == epochs.get(&original.peer).copied().unwrap_or(0)
+                && scope.provider_epoch
+                    == self.settings_provider_epoch.load(std::sync::atomic::Ordering::Acquire)
+                && self.peer_supports(&original.peer, crate::MIRROR_APP_SETTINGS_QUALIFICATION_V1)
+                && self.peer_supports(&original.peer, crate::MIRROR_INPUT_REQUEST)
+                && self.mirror_correlated(&original.peer)
+        })
+    }
+
+    pub(crate) fn claim_settings_window(
+        &self,
+        original: &Arc<Session>,
+        offer: u64,
+        mirroring: u32,
+        request: u64,
+    ) -> Option<u64> {
+        if offer == 0 || mirroring == crate::MIRROR_SCREEN || request == 0 {
+            return None;
+        }
+        let sessions = lock(&self.sessions);
+        if !sessions.get(&original.peer).is_some_and(|live| live.is_alive() && Arc::ptr_eq(live, original)) {
+            return None;
+        }
+        let epochs = lock(&self.mirror_revoke_epoch);
+        let mut state = lock(&original.settings_qualification);
+        let scope = state.as_mut()?;
+        if scope.offer != offer
+            || scope.claimed.is_some()
+            || scope.epoch != epochs.get(&original.peer).copied().unwrap_or(0)
+            || scope.provider_epoch != self.settings_provider_epoch.load(std::sync::atomic::Ordering::Acquire)
+            || !self.settings_provider_usable()
+            || !self.toggle_on(&original.peer, crate::mirror::TOGGLE)
+            || !self.store.is_paired(&original.peer).unwrap_or(false)
+            || !self.peer_supports(&original.peer, crate::MIRROR_APP_SETTINGS_QUALIFICATION_V1)
+            || !self.peer_supports(&original.peer, crate::MIRROR_INPUT_REQUEST)
+            || !self.mirror_correlated(&original.peer)
+        {
+            return None;
+        }
+        let capture = self.note_mirror_incoming_scoped(
+            &original.peer,
+            mirroring,
+            request,
+            original.mirror_control_id,
+            crate::mirror::MirrorScope::SettingsQualification { offer },
+        )?;
+        scope.claimed = Some((mirroring, request, capture));
+        Some(capture)
+    }
+
+    /// Atomic local spend precedes all queued teardown and capability work.
+    pub(crate) fn revoke_settings_scope(
+        self: &Arc<Self>,
+        owner: crate::PhoneSettingsQualificationOwner,
+        expected: Option<(u32, Option<u64>)>,
+    ) -> bool {
+        let (original, claimed) = {
+            let sessions = lock(&self.sessions);
+            let Some(original) = sessions
+                .get(&owner.peer)
+                .filter(|session| session.mirror_control_id == owner.connection)
+                .cloned()
+            else {
+                return false;
+            };
+            let _epochs = lock(&self.mirror_revoke_epoch);
+            let mut state = lock(&original.settings_qualification);
+            let Some(scope) = *state else { return false };
+            if owner.offer == 0
+                || scope.offer != owner.offer
+                || expected.is_some_and(|(expected_session, expected_request)| {
+                    scope.claimed.is_some_and(|(session, request, _)| {
+                        expected_session != session || expected_request != Some(request)
+                    })
+                })
+            {
+                return false;
+            }
+            if let Some((mirroring, request, capture)) = scope.claimed {
+                self.take_mirror_incoming_request(&owner.peer, mirroring, request, owner.connection, capture);
+            }
+            *state = None;
+            drop(state);
+            (original, scope.claimed)
+        };
+        self.queue_caps(&original, false);
+        if let Some((mirroring, request, capture)) = claimed {
+            let platform = self.platform.clone();
+            let peer = owner.peer;
+            self.runtime.spawn_blocking(move || {
+                platform.mirror_stop_requested_owned(
+                    &peer,
+                    mirroring,
+                    Some(request),
+                    owner.connection,
+                    capture,
+                );
+            });
+            self.runtime.spawn(async move {
+                if let Ok(env) =
+                    nectarlink_protocol::messages::mirror_source_stop_envelope(mirroring, request)
+                {
+                    let _ = original.request(env, REQUEST_TIMEOUT).await;
+                }
+            });
+        }
+        true
+    }
+
+    pub(crate) fn finish_settings_capture(
+        self: &Arc<Self>,
+        peer: DeviceId,
+        context: crate::MirrorControlContext,
+    ) {
+        let Some(original) = self.session(&peer) else { return };
+        let scope = *lock(&original.settings_qualification);
+        if let Some(scope) = scope
+            && original.mirror_control_id == context.connection
+            && scope.claimed == Some((context.session, context.request, context.capture))
+        {
+            self.revoke_settings_scope(
+                crate::PhoneSettingsQualificationOwner {
+                    peer,
+                    connection: context.connection,
+                    offer: scope.offer,
+                },
+                Some((context.session, Some(context.request))),
+            );
+        }
+    }
+}
+
+impl Node {
+    /// Call synchronously at actual provider loss, after publishing unavailable
+    /// and before its lifecycle lock permits recovery. Invalidates even an arm
+    /// paused before publishing its owner; exact scope teardown never clears screen0.
+    pub fn settings_window_qualification_provider_lost(&self) {
+        if !crate::mirror::is_local_phone(&self.shared) {
+            return;
+        }
+        self.shared.advance_settings_provider_lifetime();
+        for original in self.shared.live_sessions() {
+            let scope = *lock(&original.settings_qualification);
+            if let Some(scope) = scope {
+                self.shared.revoke_settings_scope(
+                    crate::PhoneSettingsQualificationOwner {
+                        peer: original.peer,
+                        connection: original.mirror_control_id,
+                        offer: scope.offer,
+                    },
+                    None,
+                );
+            }
+        }
+    }
+
+    /// Explicit attended phone-owner action; never enables phone input.
+    pub fn arm_phone_settings_window_qualification(
+        &self,
+        peer: DeviceId,
+    ) -> Result<crate::PhoneSettingsQualificationOwner> {
+        let original = self.connected(&peer)?;
+        let provider_epoch = self.shared.settings_provider_epoch.load(std::sync::atomic::Ordering::Acquire);
+        let epoch = self.shared.mirror_epoch(&peer);
+        if !self.shared.settings_provider_usable()
+            || !self.shared.peer_supports(&peer, crate::MIRROR_APP_SETTINGS_QUALIFICATION_V1)
+            || !self.shared.peer_supports(&peer, crate::MIRROR_INPUT_REQUEST)
+            || !self.shared.mirror_correlated(&peer)
+            || !self
+                .shared
+                .store
+                .get_peer(&peer)?
+                .is_some_and(|record| matches!(record.info.kind, DeviceKind::Desktop | DeviceKind::Laptop))
+        {
+            return Err(Error::Unsupported);
+        }
+        let offer = self.shared.store.next_mirror_request()?;
+        #[cfg(feature = "test-support")]
+        {
+            let barrier = lock(&self.shared.settings_arm_barrier).take();
+            if let Some((barrier, entered)) = barrier {
+                entered.notify_one();
+                barrier.wait();
+                barrier.wait();
+            }
+        }
+        {
+            let sessions = lock(&self.shared.sessions);
+            if !sessions.get(&peer).is_some_and(|live| live.is_alive() && Arc::ptr_eq(live, &original)) {
+                return Err(Error::Denied);
+            }
+            let epochs = lock(&self.shared.mirror_revoke_epoch);
+            let mut state = lock(&original.settings_qualification);
+            if epoch != epochs.get(&peer).copied().unwrap_or(0)
+                || provider_epoch
+                    != self.shared.settings_provider_epoch.load(std::sync::atomic::Ordering::Acquire)
+                || !self.shared.settings_provider_usable()
+                || !self.shared.toggle_on(&peer, crate::mirror::TOGGLE)
+                || !self.shared.store.is_paired(&peer)?
+                || state.is_some_and(|scope| scope.epoch == epoch && scope.provider_epoch == provider_epoch)
+                || lock(&self.shared.mirror_incoming)
+                    .keys()
+                    .any(|(id, session)| *id == peer && *session != crate::MIRROR_SCREEN)
+            {
+                return Err(Error::Denied);
+            }
+            *state =
+                Some(crate::mirror::SettingsQualification { offer, epoch, provider_epoch, claimed: None });
+        }
+        self.shared.queue_caps(&original, false);
+        Ok(crate::PhoneSettingsQualificationOwner { peer, connection: original.mirror_control_id, offer })
+    }
+
+    pub fn revoke_phone_settings_window_qualification_if_current(
+        &self,
+        owner: crate::PhoneSettingsQualificationOwner,
+    ) -> Result<bool> {
+        Ok(self.shared.revoke_settings_scope(owner, None))
+    }
+
+    pub fn phone_settings_qualification_current(
+        &self,
+        owner: crate::PhoneSettingsQualificationOwner,
+    ) -> bool {
+        self.shared.session(&owner.peer).is_some_and(|original| {
+            original.mirror_control_id == owner.connection
+                && self.shared.settings_scope(&original).is_some_and(|scope| scope.offer == owner.offer)
+        })
+    }
+
+    pub fn settings_qualification_capture_current(
+        &self,
+        peer: DeviceId,
+        offer: u64,
+        context: crate::MirrorControlContext,
+    ) -> bool {
+        self.shared.settings_capture_current(&peer, offer, context)
+    }
+
+    pub async fn settings_window_start_owned(
+        &self,
+        peer: DeviceId,
+        app_session: u32,
+        ready: impl FnOnce(crate::MirrorView) -> bool,
+    ) -> Result<()> {
+        let original = self.connected(&peer)?;
+        crate::mirror::start_settings_owned(&self.shared, &original, app_session, ready).await
     }
 }
 

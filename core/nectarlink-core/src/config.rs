@@ -269,6 +269,29 @@ pub trait Platform: Send + Sync + 'static {
         self.mirror_requested(peer, options)
     }
 
+    /// Implemented/current attended Settings provider. Never a grant.
+    fn settings_window_qualification_supported(&self) -> bool {
+        false
+    }
+    /// Fixed Settings launch after Core claims this exact local capture/offer.
+    fn mirror_settings_requested_owned(
+        &self,
+        _peer: &nectarlink_protocol::DeviceId,
+        _options: &crate::MirrorStart,
+        _connection: u64,
+        _capture: u64,
+        _offer: u64,
+    ) -> Result<(), String> {
+        Err("Settings qualification is unsupported".into())
+    }
+    /// Exact capture; default never falls back to peer/session lookup.
+    fn mirror_keyframe_requested_owned(
+        &self,
+        _peer: &nectarlink_protocol::DeviceId,
+        _context: crate::MirrorControlContext,
+    ) {
+    }
+
     /// The PC stopped watching: stop sharing the screen or app window.
     fn mirror_stop_requested(&self, _peer: &nectarlink_protocol::DeviceId, _session: u32) {}
 

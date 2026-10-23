@@ -145,6 +145,17 @@ internal class PhonePlatform(
     override fun contacts(query: String?, offset: UInt, limit: UInt): List<Contact> =
         contacts().list(query, offset.toInt(), limit.toInt())
 
+    override fun settingsWindowQualificationSupported(): Boolean =
+        appWindows.settingsWindowQualificationSupported()
+
+    override fun mirrorSettingsRequestedOwned(
+        pcId: String,
+        options: MirrorOptions,
+        connection: ULong,
+        capture: ULong,
+        offer: ULong,
+    ): Boolean = appWindows.openSettingsQualification(pcId, options, connection, capture, offer)
+
     override fun mirrorRequested(pcId: String, options: MirrorOptions, connection: ULong, capture: ULong): Boolean =
         if (options.app != null) {
             appWindows.open(pcId, options, connection, capture)
@@ -192,6 +203,10 @@ internal class PhonePlatform(
 
     override fun mirrorKeyframeRequested(pcId: String, session: UInt) =
         if (session == SCREEN) MirrorService.keyframe(pcId) else appWindows.keyframe(pcId, session)
+
+    override fun mirrorKeyframeRequestedOwned(pcId: String, context: app.nectarlink.core.PhoneControlContext) {
+        if (context.session != SCREEN) appWindows.keyframeOwned(pcId, context)
+    }
 
     override fun mirrorResizeRequested(pcId: String, session: UInt, width: UInt, height: UInt) {
         // App resize requires the accepted receiver-local capture context below.

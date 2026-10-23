@@ -49,6 +49,10 @@ class AppWindows(
     private val currentNode: (NectarlinkNode) -> Boolean,
     /** A PC's name. */
     private val nameOf: (String) -> String,
+    /** Retires only local UI state after this exact qualification offer ends. */
+    private val onSettingsQualificationEnded: (String, ULong) -> Unit = { _, _ -> },
+    /** Rechecks the exact live Node, capture owner, and phone-owned offer. */
+    private val settingsQualificationCurrent: (NectarlinkNode, String, ULong, PhoneControlContext) -> Boolean = { _, _, _, _ -> false },
 ) {
     private val context = context.applicationContext
 
@@ -62,6 +66,7 @@ class AppWindows(
         val maxSize: Int,
         val node: NectarlinkNode,
         val owner: PhoneControlContext,
+        val settingsOffer: ULong?,
         val current: () -> Boolean,
     ) {
         @Volatile var display: Int = -1
@@ -77,13 +82,49 @@ class AppWindows(
         instance = this
     }
 
-    /** Runs the PC's app on a display of its own and streams it; false if it can't. */
-    fun open(pc: String, options: MirrorOptions, connection: ULong, capture: ULong): Boolean {
+    /** Runs the PC app on a display of its own and streams it; false if it cannot. */
+    fun open(pc: String, options: MirrorOptions, connection: ULong, capture: ULong): Boolean =
+        openInternal(pc, options, connection, capture, settingsOffer = null)
+
+    /** The only qualified provider is the existing Elevated virtual-display app path. */
+    fun settingsWindowQualificationSupported(): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Elevated.running
+
+    /** Fixed, phone-owned Settings launch; no caller-selected package or power/audio flags. */
+    fun openSettingsQualification(
+        pc: String,
+        options: MirrorOptions,
+        connection: ULong,
+        capture: ULong,
+        offer: ULong,
+    ): Boolean {
+        val valid = settingsWindowQualificationSupported() && offer != 0uL &&
+            connection != 0uL && capture != 0uL &&
+            options.app == SETTINGS_PACKAGE && options.session != 0u && options.request != null && options.request != 0uL &&
+            options.maxSize == 1920u && options.fps == 60u && options.bitrate == 8_000_000u &&
+            !options.audio && !options.stayAwake && !options.screenOff
+        val opened = valid && openInternal(pc, options, connection, capture, settingsOffer = offer)
+        if (!opened) onSettingsQualificationEnded(pc, offer)
+        return opened
+    }
+
+    private fun openInternal(
+        pc: String,
+        options: MirrorOptions,
+        connection: ULong,
+        capture: ULong,
+        settingsOffer: ULong?,
+    ): Boolean {
         val pkg = options.app ?: return false
         val request = options.request ?: return false
-        if (pkg == context.packageName || options.session == 0u) return false
+        if (pkg == context.packageName || options.session == 0u || (settingsOffer != null && !settingsWindowQualificationSupported())) return false
         val (node, accepted) = owner(pc, options.session, request, connection, capture) ?: return false
-        val current = { runCatching { currentNode(node) && node.mirrorCaptureCurrent(pc, accepted) }.getOrDefault(false) }
+        val current = {
+            runCatching {
+                currentNode(node) && node.mirrorCaptureCurrent(pc, accepted) &&
+                    (settingsOffer == null || (settingsWindowQualificationSupported() && settingsQualificationCurrent(node, pc, settingsOffer, accepted)))
+            }.getOrDefault(false)
+        }
         if (!current()) return false
         val maxSize = options.maxSize.toInt().coerceIn(320, 1920)
         val (width, height, dpi) = size(maxSize)
@@ -92,7 +133,7 @@ class AppWindows(
             pkg, width, height, dpi, options.bitrate.toInt(), options.fps.toInt(),
             stillCurrent = current,
             register = { socket ->
-                val window = Window(pc, options.session, socket, width, height, dpi, maxSize, node, accepted, current)
+                val window = Window(pc, options.session, socket, width, height, dpi, maxSize, node, accepted, settingsOffer, current)
                 val key = pc to options.session
                 var installed = false
                 var rejected = false
@@ -137,7 +178,7 @@ class AppWindows(
             close(window)
             return false
         }
-        power[pc] = options.stayAwake to options.screenOff
+        power[pc] = if (settingsOffer == null) options.stayAwake to options.screenOff else false to false
         changed()
         scope.launch(Dispatchers.IO) {
             if (!owns(window)) {
@@ -214,7 +255,10 @@ class AppWindows(
             runCatching { window.socket.close() }
             removed
         }
-        if (removed) changed()
+        if (removed) {
+            changed()
+            window.settingsOffer?.let { onSettingsQualificationEnded(window.pc, it) }
+        }
     }
 
     fun closeAll() {
@@ -222,12 +266,23 @@ class AppWindows(
     }
 
     fun keyframe(pc: String, session: UInt) {
-        windows[pc to session]?.let(::keyframe)
+        windows[pc to session]?.takeIf { it.settingsOffer == null }?.let(::keyframe)
     }
+
+    /** Qualified keyframes require the exact active Settings capture context. */
+    fun keyframeOwned(pc: String, owner: PhoneControlContext) {
+        val window = windows[pc to owner.session] ?: return
+        if (window.settingsOffer == null || !matches(window, owner) || !owns(window)) return
+        keyframe(window)
+    }
+
+    private fun matches(window: Window, owner: PhoneControlContext): Boolean =
+        window.owner.request == owner.request && window.owner.connection == owner.connection && window.owner.capture == owner.capture
 
     private fun keyframe(window: Window) {
         runCatching {
             synchronized(window) {
+                if (!owns(window) || window.socket.isClosed) return@synchronized
                 window.socket.getOutputStream().apply {
                     write("K\n".toByteArray())
                     flush()
@@ -266,9 +321,14 @@ class AppWindows(
     fun input(pc: String, owner: PhoneControlContext, event: MirrorInputEvent, admitted: () -> Boolean) {
         val window = windows[pc to owner.session] ?: return
         if (window.owner.request != owner.request || window.owner.connection != owner.connection || window.owner.capture != owner.capture) return
-        // Display-scoped app input cannot navigate the physical phone or use gamepad.
-        if (event is MirrorInputEvent.Gamepad) return
-        if (event is MirrorInputEvent.Key && event.key in listOf("home", "recents", "notifications", "keyboard_on", "keyboard_off")) return
+        // Settings qualification admits only a harmless scroll under the existing real grant.
+        if (window.settingsOffer != null) {
+            if (event !is MirrorInputEvent.Scroll) return
+        } else {
+            // Ordinary display-scoped app input cannot navigate the physical phone or use gamepad.
+            if (event is MirrorInputEvent.Gamepad) return
+            if (event is MirrorInputEvent.Key && event.key in listOf("home", "recents", "notifications", "keyboard_on", "keyboard_off")) return
+        }
         val current = { admitted() && owns(window) && window.display > 0 }
         if (!current()) return
         Elevated.handleOn(window.display, window.width.toFloat(), window.height.toFloat(), event, current)
@@ -298,8 +358,11 @@ class AppWindows(
     }
 
     /** The PC turned keeping the phone awake, or its screen off, on or off. */
+    fun hasSettingsQualification(pc: String): Boolean =
+        windows.values.any { it.pc == pc && it.settingsOffer != null }
+
     fun setPower(pc: String, stayAwake: Boolean, screenOff: Boolean) {
-        if (windows.values.none { it.pc == pc }) return
+        if (windows.values.none { it.pc == pc } || hasSettingsQualification(pc)) return
         power[pc] = stayAwake to screenOff
         applyPower()
     }
@@ -357,6 +420,7 @@ class AppWindows(
     companion object {
         private const val TAG = "AppWindows"
         private const val NOTIFICATION_ID = 7
+        private const val SETTINGS_PACKAGE = "com.android.settings"
         /** Packets from the helper, at most. */
         private const val MAX_PACKET = 8 shl 20
 
