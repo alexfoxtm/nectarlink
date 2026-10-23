@@ -2271,18 +2271,21 @@ Item {
                     // Missing registration routes an explicit click to extension setup.
                     // It never starts the phone camera as a substitute for setup.
                     title: qsTr("Phone as webcam")
+                    enabled: active || Webcam.outputTarget !== "obs" || Webcam.obsOutputAvailable
                     subtitle: (Webcam.phase === "streaming" || Webcam.phase === "asking")
                               && Webcam.activeDevice === home.deviceId
                               ? (Webcam.statusText.length > 0 ? Webcam.statusText : qsTr("Streaming"))
+                              : Webcam.outputTarget === "obs" && !Webcam.obsOutputAvailable
+                              ? qsTr("OBS Virtual Camera is not ready. Check Camera & Audio settings.")
                               : ""
                     iconPath: Icons.video
-                    feature: home.onMac && !Webcam.previewOnly && !Webcam.addonRegistered
+                    feature: home.onMac && Webcam.outputTarget === "native" && !Webcam.addonRegistered
                              ? ({ state: "locked", action: "enableAddon", target: "vcam" })
                              : home.feature("camera.webcam")
                     active: (Webcam.phase === "streaming" || Webcam.phase === "asking")
                             && Webcam.activeDevice === home.deviceId
                     onClicked: {
-                        if (home.onMac && !Webcam.previewOnly && !Webcam.addonRegistered
+                        if (home.onMac && Webcam.outputTarget === "native" && !Webcam.addonRegistered
                                 && Webcam.phase !== "streaming" && Webcam.phase !== "asking") {
                             if (Webcam.addonSetupAllowed && !Webcam.addonBusy)
                                 Webcam.setupAddon()
@@ -2291,7 +2294,7 @@ Item {
                         if ((Webcam.phase === "streaming" || Webcam.phase === "asking")
                             && Webcam.activeDevice === home.deviceId)
                             Webcam.stop()
-                        else
+                        else if (Webcam.outputTarget !== "obs" || Webcam.obsOutputAvailable)
                             Webcam.start(home.deviceId)
                     }
                 }

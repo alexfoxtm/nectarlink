@@ -78,6 +78,26 @@ pub enum OutputTarget {
     #[default]
     NativeCamera,
     PreviewOnly,
+    ObsVirtualCamera,
+}
+
+impl OutputTarget {
+    fn from_token(token: &str) -> Option<Self> {
+        match token {
+            "native" => Some(Self::NativeCamera),
+            "preview" => Some(Self::PreviewOnly),
+            "obs" => Some(Self::ObsVirtualCamera),
+            _ => None,
+        }
+    }
+
+    fn token(self) -> &'static str {
+        match self {
+            Self::NativeCamera => "native",
+            Self::PreviewOnly => "preview",
+            Self::ObsVirtualCamera => "obs",
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -391,6 +411,8 @@ pub fn init(settings: &Settings) {
         None
     };
     state(|s| {
+        #[cfg(target_os = "macos")]
+        s.select_output_target(OutputTarget::from_token(&settings.webcam_output_target).unwrap_or_default());
         s.preferred_phone = preferred;
         s.addon_registered = registered;
         s.vcam_handle = vcam_handle;
@@ -992,6 +1014,10 @@ pub fn start(device: Option<DeviceId>) {
             s.phase = Phase::Ended { reason: vcam::status_text() };
             return None;
         }
+        if s.output_target == OutputTarget::ObsVirtualCamera && !obs_output_ready() {
+            s.phase = Phase::Ended { reason: "OBS camera output is unavailable.".into() };
+            return None;
+        }
         s.begin_camera_request(device, false)
     });
     let Some(generation) = generation else {
@@ -1126,18 +1152,33 @@ pub fn preview_only() -> bool {
     state(|s| s.output_target == OutputTarget::PreviewOnly)
 }
 
-pub fn set_preview_only(on: bool) {
+pub fn output_target() -> &'static str {
+    state(|s| s.output_target.token())
+}
+
+pub fn obs_output_ready() -> bool {
+    #[cfg(target_os = "macos")]
+    { camera_output::obs_ready() }
+    #[cfg(not(target_os = "macos"))]
+    { false }
+}
+
+pub fn set_output_target(target: &str) {
+    let Some(target) = OutputTarget::from_token(target) else { return };
     if preview_window_open() {
         return;
     }
     #[cfg(target_os = "macos")]
-    if state(|s| {
-        s.select_output_target(if on { OutputTarget::PreviewOnly } else { OutputTarget::NativeCamera })
-    }) {
+    if state(|s| s.select_output_target(target)) {
+        save_settings(|s| s.webcam_output_target = target.token().to_owned());
         core_host::host().hub.changed(Changes::WEBCAM);
     }
     #[cfg(not(target_os = "macos"))]
-    let _ = on;
+    let _ = target;
+}
+
+pub fn set_preview_only(on: bool) {
+    set_output_target(if on { "preview" } else { "native" });
 }
 
 /// Requests a webcam stream from `device` (or the selected phone).
@@ -1247,6 +1288,7 @@ pub fn sink_owned(device: &DeviceId, view: &nectarlink_core::WebcamView) -> Opti
         if s.shutting_down
             || s.sink_generation.is_some()
             || (s.output_target == OutputTarget::NativeCamera && !vcam::is_registered())
+            || (s.output_target == OutputTarget::ObsVirtualCamera && !obs_output_ready())
         {
             return None;
         }
@@ -1259,7 +1301,12 @@ pub fn sink_owned(device: &DeviceId, view: &nectarlink_core::WebcamView) -> Opti
         let lease = if s.output_target == OutputTarget::PreviewOnly {
             None
         } else {
-            match camera_output::claim(*device, stopped.clone()) {
+            let claimed = match s.output_target {
+                OutputTarget::ObsVirtualCamera => camera_output::claim_obs(*device, stopped.clone()),
+                OutputTarget::NativeCamera => camera_output::claim(*device, stopped.clone()),
+                OutputTarget::PreviewOnly => unreachable!("preview has no output lease"),
+            };
+            match claimed {
                 Ok(lease) => Some(lease),
                 Err(reason) => {
                     s.cancel_camera_request();
@@ -1617,6 +1664,8 @@ mod tests {
         assert_eq!(s.output_target, OutputTarget::NativeCamera);
         s.sink_generation = Some(8);
         assert!(!s.select_output_target(OutputTarget::PreviewOnly));
+        assert!(!s.select_output_target(OutputTarget::ObsVirtualCamera));
+        assert_eq!(s.output_target.token(), "native");
         assert!(!s.finish_camera_sink(7, None, || panic!("stale sink cleared successor")));
         assert_eq!(s.sink_generation, Some(8));
         assert_eq!(s.output_target, OutputTarget::NativeCamera);

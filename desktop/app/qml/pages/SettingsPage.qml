@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import QtQuick
 import QtQuick.Dialogs
+import QtQuick.Controls as Controls
 import app.nectarlink
 
 // Settings: two-pane categorized layout for appearance, general behavior,
@@ -17,6 +18,10 @@ Item {
 
     // Rows whose backend this Mac build lacks stay listed, greyed, with this reason.
     readonly property bool onMac: Qt.platform.os === "osx" || Qt.platform.os === "macos"
+    readonly property bool webcamOutputReady: !page.onMac
+        || Webcam.outputTarget === "preview"
+        || (Webcam.outputTarget === "obs" && Webcam.obsOutputAvailable)
+        || (Webcam.outputTarget === "native" && Webcam.addonRegistered)
     readonly property string macGapText: qsTr("Not yet available on Mac.")
     // Device toggles that only arm a desktop capability this Mac build doesn't advertise.
     readonly property var macGapToggleNames: ["pc_mirror", "storage", "remote_input", "commands", "recordings", "mic", "remote_files"]
@@ -1756,21 +1761,38 @@ Item {
                         Divider { width: parent.width }
 
                         ListRow {
+                            id: cameraOutputRow
                             width: parent.width
+                            stackBelow: true
                             visible: page.onMac
                             enabled: !Webcam.previewWindowOpen && Webcam.phase !== "streaming" && Webcam.phase !== "asking"
                             iconPath: Icons.video
                             title: qsTr("Camera output")
-                            description: Webcam.previewOnly
+                            description: Webcam.outputTarget === "preview"
                                 ? qsTr("Camera preview only. Open the clean preview window for external OBS Window Capture. Close that window or press Escape to stop.")
+                                : Webcam.outputTarget === "obs"
+                                ? (Webcam.obsOutputAvailable
+                                   ? qsTr("Select OBS Virtual Camera in your video app. No preview window is needed.")
+                                   : qsTr("Free OBS Virtual Camera requires its camera extension to be installed, allowed in System Settings, and ready."))
                                 : qsTr("Requires the Waypair native camera extension to be installed and ready.")
-                            Segmented {
-                                options: [
+                            Controls.ComboBox {
+                                id: cameraOutputSelector
+                                width: Math.max(0, cameraOutputRow.width - parent.x)
+                                model: [
                                     { value: "native", label: qsTr("Native camera") },
+                                    { value: "obs", label: qsTr("OBS Virtual Camera") },
                                     { value: "preview", label: qsTr("Camera preview") }
                                 ]
-                                value: Webcam.previewOnly ? "preview" : "native"
-                                onPicked: (value) => Webcam.selectPreviewOnly(value === "preview")
+                                textRole: "label"
+                                currentIndex: ["native", "obs", "preview"].indexOf(Webcam.outputTarget)
+                                Accessible.name: qsTr("Camera output")
+                                contentItem: Txt {
+                                    text: cameraOutputSelector.displayText
+                                    role: "label"
+                                    verticalAlignment: Text.AlignVCenter
+                                    elide: Text.ElideRight
+                                }
+                                onActivated: (index) => Webcam.selectOutputTarget(model[index].value)
                             }
                         }
 
@@ -1780,6 +1802,7 @@ Item {
                             enabled: true
                             opacity: enabled ? 1.0 : 0.5
                             iconPath: Icons.video
+                            visible: !page.onMac || Webcam.outputTarget === "native"
                             title: qsTr("Virtual camera add-on")
                             description: page.onMac ? Webcam.addonStatusText : Webcam.addonRegistered
                                 ? qsTr("Registered for Zoom, Teams & Meet.")
@@ -1820,7 +1843,7 @@ Item {
                         ListRow {
                             width: parent.width
                             visible: DeviceList.count > 1
-                            enabled: !page.onMac || Webcam.previewOnly || Webcam.addonRegistered
+                            enabled: page.webcamOutputReady
                             opacity: enabled ? 1.0 : 0.5
                             iconPath: Icons.phone
                             title: qsTr("Phone")
@@ -1846,7 +1869,7 @@ Item {
                         Item {
                             id: camMirrorPairRow
                             width: parent.width
-                            enabled: !page.onMac || Webcam.previewOnly || Webcam.addonRegistered
+                            enabled: page.webcamOutputReady
                             opacity: enabled ? 1.0 : 0.5
                             readonly property bool splitCols: width >= 460
                             readonly property real colWidth: splitCols ? Math.floor((width - 37) / 2) : width
@@ -1906,7 +1929,7 @@ Item {
                         Divider { width: parent.width }
                         ListRow {
                             width: parent.width
-                            enabled: !page.onMac || Webcam.previewOnly || Webcam.addonRegistered
+                            enabled: page.webcamOutputReady
                             opacity: enabled ? 1.0 : 0.5
                             iconPath: Icons.camera
                             title: qsTr("Resolution")
@@ -1938,10 +1961,12 @@ Item {
                                     role: "bodySmall"
                                     muted: Webcam.phase !== "streaming"
                                     elide: Text.ElideRight
-                                    text: page.onMac && !Webcam.previewOnly && Webcam.phase !== "streaming" && Webcam.phase !== "asking"
+                                    text: page.onMac && Webcam.outputTarget === "native" && Webcam.phase !== "streaming" && Webcam.phase !== "asking"
                                         ? Webcam.addonStatusText
                                         : Webcam.statusText.length > 0
                                         ? Webcam.statusText
+                                        : Webcam.outputTarget === "obs" && !Webcam.obsOutputAvailable
+                                        ? qsTr("OBS Virtual Camera is not ready. Check its camera extension in System Settings.")
                                         : (Webcam.selectedPhoneName.length > 0
                                            ? qsTr("Preview · %1").arg(Webcam.selectedPhoneName)
                                            : qsTr("Pair a phone to use its camera as a webcam"))
@@ -1951,8 +1976,8 @@ Item {
                                     anchors.right: parent.right
                                     anchors.verticalCenter: parent.verticalCenter
                                     // A session already running still gets its Stop.
-                                    enabled: DeviceList.count > 0
-                                             && (!page.onMac || Webcam.previewOnly || Webcam.addonRegistered || Webcam.phase === "streaming" || Webcam.phase === "asking")
+                                    enabled: Webcam.phase === "streaming" || Webcam.phase === "asking"
+                                             || (DeviceList.count > 0 && page.webcamOutputReady)
                                     variant: Webcam.phase === "streaming" || Webcam.phase === "asking" ? "outline" : "tonal"
                                     size: "sm"
                                     iconPath: Webcam.phase === "streaming" || Webcam.phase === "asking" ? Icons.close : Icons.video

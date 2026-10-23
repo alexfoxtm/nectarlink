@@ -106,6 +106,7 @@ Item {
     onShouldOpenChanged: PhoneBrowser.close()
     onDeviceIdChanged: {
         nameFilter.clear()
+        sortChoice.currentIndex = 0
         page.cancelPendingSave()
         page.saveMessage = ""
         PhoneBrowser.close()
@@ -113,6 +114,7 @@ Item {
     onConsentedChanged: {
         if (!page.consented) {
             nameFilter.clear()
+            sortChoice.currentIndex = 0
             page.cancelPendingSave()
         }
     }
@@ -136,6 +138,7 @@ Item {
         }
         function onPathChanged() {
             nameFilter.clear()
+            sortChoice.currentIndex = 0
             page.cancelPendingSave()
             page.saveMessage = ""
             entryList.currentIndex = 0
@@ -310,14 +313,15 @@ Item {
         anchors.top: toolbar.bottom
         width: parent.width
         visible: page.consented && page.status === "ready" && PhoneBrowser.loadedCount > 0
-        height: visible ? 48 : 0
+        height: visible ? nameFilter.implicitHeight + sortChoice.implicitHeight + 18 : 0
 
         Controls.TextField {
             id: nameFilter
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.margins: 16
-            anchors.verticalCenter: parent.verticalCenter
+            anchors.top: parent.top
+            anchors.topMargin: 6
             placeholderText: qsTr("Filter loaded names…")
             Accessible.name: qsTr("Filter loaded file and folder names")
             selectByMouse: true
@@ -327,6 +331,23 @@ Item {
                 entryList.positionViewAtBeginning()
             }
             Keys.onEscapePressed: clear()
+        }
+
+        Controls.ComboBox {
+            id: sortChoice
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.margins: 16
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: 6
+            model: [qsTr("Loaded items: Original order"), qsTr("Loaded items: Name A–Z"),
+                qsTr("Loaded items: Largest first"), qsTr("Loaded items: Newest first")]
+            Accessible.name: qsTr("Sort loaded items")
+            onActivated: {
+                PhoneBrowser.setSortMode(currentIndex)
+                entryList.currentIndex = 0
+                entryList.positionViewAtBeginning()
+            }
         }
     }
 

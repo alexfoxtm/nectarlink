@@ -12,6 +12,8 @@ use std::{
 
 unsafe extern "C" {
     fn wp_camera_open(out: *mut *mut c_void) -> i32;
+    fn wp_obs_camera_is_registered() -> i32;
+    fn wp_obs_camera_open(out: *mut *mut c_void) -> i32;
     fn wp_camera_push_bgrx(
         producer: *mut c_void,
         bytes: *const u8,
@@ -47,6 +49,20 @@ static OUTPUT: Mutex<State> = Mutex::new(State { generation: 0, active: None });
 /// Call only after core webcam capability, toggle, and paired-session admission.
 /// A second stream is refused, including from the same phone, until teardown.
 pub fn claim(device: DeviceId, stopped: Arc<tokio::sync::Notify>) -> Result<Lease, String> {
+    claim_output(device, stopped, false)
+}
+
+/// Metadata-only query; never starts OBS or a camera stream.
+pub fn obs_ready() -> bool {
+    // SAFETY: native implementation only inspects public CMIO device metadata.
+    unsafe { wp_obs_camera_is_registered() == 1 }
+}
+
+pub fn claim_obs(device: DeviceId, stopped: Arc<tokio::sync::Notify>) -> Result<Lease, String> {
+    claim_output(device, stopped, true)
+}
+
+fn claim_output(device: DeviceId, stopped: Arc<tokio::sync::Notify>, obs: bool) -> Result<Lease, String> {
     let mut state = OUTPUT.lock().unwrap_or_else(|e| e.into_inner());
     if state.active.is_some() {
         return Err("Another phone camera stream owns the output.".into());
@@ -54,10 +70,12 @@ pub fn claim(device: DeviceId, stopped: Arc<tokio::sync::Notify>) -> Result<Leas
     let generation = state.generation.checked_add(1).ok_or("Camera generation exhausted.")?;
     let mut raw = std::ptr::null_mut();
     // SAFETY: initialized out pointer, native helper stores a unique handle.
-    let status = unsafe { wp_camera_open(&mut raw) };
+    let status = unsafe {
+        if obs { wp_obs_camera_open(&mut raw) } else { wp_camera_open(&mut raw) }
+    };
     let pointer = NonNull::new(raw)
         .filter(|_| status == 0)
-        .ok_or_else(|| format!("Camera extension output unavailable ({status})."))?;
+        .ok_or_else(|| format!("Camera output unavailable ({status})."))?;
     let lease = Lease { device, generation };
     state.generation = generation;
     state.active = Some((lease, Producer(pointer), stopped));

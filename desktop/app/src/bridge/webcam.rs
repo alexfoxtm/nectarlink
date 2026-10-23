@@ -27,6 +27,8 @@ pub mod qobject {
         #[qml_singleton]
         #[qproperty(bool, preview_window_open, cxx_name = "previewWindowOpen")]
         #[qproperty(bool, preview_only, cxx_name = "previewOnly")]
+        #[qproperty(QString, output_target, cxx_name = "outputTarget")]
+        #[qproperty(bool, obs_output_available, cxx_name = "obsOutputAvailable")]
         #[qproperty(bool, addon_registered, cxx_name = "addonRegistered")]
         #[qproperty(bool, addon_busy, cxx_name = "addonBusy")]
         #[qproperty(QString, addon_status_text, cxx_name = "addonStatusText")]
@@ -71,6 +73,9 @@ pub mod qobject {
         #[cxx_name = "selectPreviewOnly"]
         fn select_preview_only(self: &Webcam, on: bool);
         #[qinvokable]
+        #[cxx_name = "selectOutputTarget"]
+        fn select_output_target(self: &Webcam, target: &QString);
+        #[qinvokable]
         #[cxx_name = "setPreviewActive"]
         fn set_preview_active(self: &Webcam, active: bool);
         #[qinvokable]
@@ -82,6 +87,8 @@ pub mod qobject {
 #[derive(Default)]
 pub struct WebcamRust {
     preview_only: bool,
+    output_target: QString,
+    obs_output_available: bool,
     preview_window_open: bool,
     addon_registered: bool,
     addon_busy: bool,
@@ -121,6 +128,8 @@ impl qobject::Webcam {
     fn refresh(mut self: Pin<&mut Self>) {
         let hub = &crate::core_host::host().hub;
         self.as_mut().set_preview_only(webcam::preview_only());
+        self.as_mut().set_output_target(QString::from(webcam::output_target()));
+        self.as_mut().set_obs_output_available(webcam::obs_output_ready());
         self.as_mut().set_preview_window_open(webcam::preview_window_open());
         self.as_mut().set_addon_registered(webcam::addon_registered());
         self.as_mut().set_addon_busy(webcam::addon_busy());
@@ -193,6 +202,10 @@ impl qobject::Webcam {
 
     pub fn select_preview_only(&self, on: bool) {
         webcam::set_preview_only(on);
+    }
+
+    pub fn select_output_target(&self, target: &QString) {
+        webcam::set_output_target(&String::from(target));
     }
 
     pub fn stop(&self) {

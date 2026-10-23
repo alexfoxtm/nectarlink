@@ -504,6 +504,7 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Timeline", "Voice recording"), // desktop/app/src/bridge/timeline.rs
     QT_TRANSLATE_NOOP("Timeline", "With %1"), // desktop/app/src/bridge/timeline.rs
     QT_TRANSLATE_NOOP("Timeline", "device"), // desktop/app/src/bridge/timeline.rs
+    QT_TRANSLATE_NOOP("Transfers", "%1 queued item(s) ready to retry."), // desktop/app/src/transfers.rs
     QT_TRANSLATE_NOOP("Transfers", "Accept in Waypair Link to save to %1"), // desktop/app/src/transfers.rs
     QT_TRANSLATE_NOOP("Transfers", "Files are turned off for that device."), // desktop/app/src/transfers.rs
     QT_TRANSLATE_NOOP("Transfers", "From %1, opened from %2"), // desktop/app/src/transfers.rs

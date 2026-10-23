@@ -126,6 +126,10 @@ fn default_close_to_tray() -> bool {
     !cfg!(target_os = "macos")
 }
 
+fn default_webcam_output_target() -> String {
+    "native".into()
+}
+
 fn default_webcam_camera() -> String {
     "back".to_owned()
 }
@@ -396,6 +400,9 @@ pub struct Settings {
     /// Horizontally mirror the webcam video.
     #[serde(alias = "webcam_mirror")]
     pub webcam_mirror: bool,
+    /// Explicit macOS output choice; restoring it never starts capture.
+    #[serde(default = "default_webcam_output_target", alias = "webcam_output_target")]
+    pub webcam_output_target: String,
     /// Where a phone's microphone plays (an output endpoint ID; `None`: a
     /// virtual audio cable if there is one, else the default output).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -545,6 +552,7 @@ impl Default for Settings {
             webcam_phone: None,
             webcam_height: 720,
             webcam_mirror: false,
+            webcam_output_target: default_webcam_output_target(),
             webcam_camera: default_webcam_camera(),
             phone_mic_output: None,
             phone_mic_gain: crate::phone_mic::DEFAULT_GAIN,
@@ -710,6 +718,7 @@ mod tests {
         assert_eq!(def.close_to_tray, cfg!(not(target_os = "macos")));
         assert_eq!(def.command_palette_hotkey, "Ctrl+Alt+Space");
         assert_eq!(def.shelf_hotkey, "Ctrl+Alt+S");
+        assert_eq!(def.webcam_output_target, "native");
         assert!(!def.local_api_enabled);
         assert_eq!(def.local_api_port, 53320);
         def.apply_runtime();
@@ -744,6 +753,7 @@ mod tests {
             webcam_phone: Some("0101".repeat(16)),
             webcam_height: 2160,
             webcam_mirror: true,
+            webcam_output_target: "obs".into(),
             webcam_camera: "front".into(),
             phone_mic_output: Some("{0.0.0.00000000}.{cable}".into()),
             phone_mic_gain: 250,

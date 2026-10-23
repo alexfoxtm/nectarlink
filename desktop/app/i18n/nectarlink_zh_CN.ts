@@ -4584,6 +4584,10 @@ What it needs
         <source>Join phone hotspot</source>
         <translation>加入手机热点</translation>
     </message>
+    <message>
+        <source>OBS Virtual Camera is not ready. Check Camera &amp; Audio settings.</source>
+        <translation>OBS Virtual Camera尚未就绪。请检查摄像头与音频设置。</translation>
+    </message>
 </context>
 <context>
     <name>Hotspot</name>
@@ -6647,6 +6651,26 @@ What it needs
     <message>
         <source>Try another name. Only the loaded items in this folder are filtered.</source>
         <translation>请尝试其他名称。仅筛选此文件夹中已加载的项目。</translation>
+    </message>
+    <message>
+        <source>Loaded items: Original order</source>
+        <translation>已加载项目：原始顺序</translation>
+    </message>
+    <message>
+        <source>Loaded items: Name A–Z</source>
+        <translation>已加载项目：名称 A–Z</translation>
+    </message>
+    <message>
+        <source>Loaded items: Largest first</source>
+        <translation>已加载项目：最大优先</translation>
+    </message>
+    <message>
+        <source>Loaded items: Newest first</source>
+        <translation>已加载项目：最新优先</translation>
+    </message>
+    <message>
+        <source>Sort loaded items</source>
+        <translation>排序已加载项目</translation>
     </message>
 </context>
 <context>
@@ -8819,6 +8843,22 @@ What it needs
     <message>
         <source>Choose the phone's saved hotspot. macOS keeps its password in Keychain. Use Home &gt; Join hotspot to allow Wi-Fi discovery, then reopen this list.</source>
         <translation>选择手机已保存的热点。macOS 会将其密码保存在钥匙串中。请通过“主页”&gt;“加入热点”允许发现 Wi-Fi 网络，然后重新打开此列表。</translation>
+    </message>
+    <message>
+        <source>OBS Virtual Camera</source>
+        <translation>OBS Virtual Camera</translation>
+    </message>
+    <message>
+        <source>Select OBS Virtual Camera in your video app. No preview window is needed.</source>
+        <translation>在视频应用中选择 OBS Virtual Camera。无需打开预览窗口。</translation>
+    </message>
+    <message>
+        <source>Free OBS Virtual Camera requires its camera extension to be installed, allowed in System Settings, and ready.</source>
+        <translation>免费的 OBS Virtual Camera需要安装摄像头扩展，在系统设置中允许使用，并处于就绪状态。</translation>
+    </message>
+    <message>
+        <source>OBS Virtual Camera is not ready. Check its camera extension in System Settings.</source>
+        <translation>OBS Virtual Camera尚未就绪。请在系统设置中检查其摄像头扩展。</translation>
     </message>
 </context>
 <context>

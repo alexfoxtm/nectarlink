@@ -23,9 +23,13 @@ enum { WP_CAMERA_OK = 0, WP_CAMERA_DROPPED = 1, WP_CAMERA_INVALID = -1,
 // A published device UID alone is not proof of approved installation/signing.
 int32_t wp_camera_is_registered(void);
 int32_t wp_camera_open(WPCameraProducer **out);
+// Optional exact OBS public sink. Metadata query never starts or acquires a queue.
+// No installer/activation, physical-camera fallback, or display-name selection.
+int32_t wp_obs_camera_is_registered(void);
+int32_t wp_obs_camera_open(WPCameraProducer **out);
 // One serialized calling lane per handle. Tight BGRX comes directly from
 // webcam.rs's existing to_bgrx + optional mirror step. Copies before returning.
-// Letterboxes/scales to the extension's single 1280x720 BGRA format.
+// Aspect-fits to the handle's fixed format; mirror is applied only upstream.
 int32_t wp_camera_push_bgrx(WPCameraProducer *producer, const uint8_t *bytes,
                           size_t length, uint32_t width, uint32_t height);
 // Stop the sink before relinquishing the capture owner. Never keep a producer

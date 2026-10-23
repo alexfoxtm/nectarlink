@@ -4300,6 +4300,10 @@ What it needs
         <source>Join phone hotspot</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>OBS Virtual Camera is not ready. Check Camera &amp; Audio settings.</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>Hotspot</name>
@@ -6354,6 +6358,26 @@ What it needs
     </message>
     <message>
         <source>Try another name. Only the loaded items in this folder are filtered.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Loaded items: Original order</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Loaded items: Name A–Z</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Loaded items: Largest first</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Loaded items: Newest first</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Sort loaded items</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -8493,6 +8517,22 @@ What it needs
     </message>
     <message>
         <source>Choose the phone's saved hotspot. macOS keeps its password in Keychain. Use Home &gt; Join hotspot to allow Wi-Fi discovery, then reopen this list.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>OBS Virtual Camera</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Select OBS Virtual Camera in your video app. No preview window is needed.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Free OBS Virtual Camera requires its camera extension to be installed, allowed in System Settings, and ready.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>OBS Virtual Camera is not ready. Check its camera extension in System Settings.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

@@ -116,6 +116,10 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "setFilter"]
         fn set_filter(self: Pin<&mut PhoneBrowser>, query: &QString);
+        /// Sorts the current loaded rows only; no storage request.
+        #[qinvokable]
+        #[cxx_name = "setSortMode"]
+        fn set_sort_mode(self: Pin<&mut PhoneBrowser>, mode: i32);
         #[qinvokable]
         fn refresh(self: &PhoneBrowser);
         #[qinvokable]
@@ -144,6 +148,7 @@ pub struct PhoneBrowserRust {
     count: i32,
     loaded_count: i32,
     filter: String,
+    sort_mode: i32,
     can_up: bool,
     saving: bool,
     truncated: bool,
@@ -162,6 +167,30 @@ fn role_value(row: &PhoneBrowserRow, role: &str) -> QVariant {
         "modified" => QVariant::from(&(row.modified as f64)),
         _ => QVariant::default(),
     }
+}
+
+
+/// Stable local ordering; zero size is a valid empty file, not unknown metadata.
+/// Modified timestamps at or below zero are unknown and sort after known ones.
+fn sort_loaded_rows(rows: &mut [PhoneBrowserRow], mode: i32) {
+    if !(1..=3).contains(&mode) {
+        return;
+    }
+    rows.sort_by(|a, b| {
+        b.is_dir.cmp(&a.is_dir).then_with(|| {
+            if a.is_dir || mode == 1 {
+                a.name.to_lowercase().cmp(&b.name.to_lowercase())
+            } else if mode == 2 {
+                b.size.cmp(&a.size)
+            } else {
+                let a_known = a.modified > 0;
+                let b_known = b.modified > 0;
+                b_known.cmp(&a_known).then_with(|| {
+                    if a_known && b_known { b.modified.cmp(&a.modified) } else { std::cmp::Ordering::Equal }
+                })
+            }
+        })
+    });
 }
 
 /// The local folder a folder dialog chose, only as an absolute path: any other
@@ -195,12 +224,14 @@ impl qobject::PhoneBrowser {
         let device = QString::from(&view.device.map(|id| id.to_string()).unwrap_or_default());
         if self.device != device || String::from(&self.path) != view.path || view.device.is_none() {
             self.as_mut().rust_mut().filter.clear();
+            self.as_mut().rust_mut().sort_mode = 0;
         }
         self.as_mut().set_loaded_count(view.rows.len() as i32);
         let query = self.filter.to_lowercase();
         if !query.is_empty() {
             view.rows.retain(|row| row.name.to_lowercase().contains(&query));
         }
+        sort_loaded_rows(&mut view.rows, self.sort_mode);
         self.as_mut().set_enabled(view.enabled);
         self.as_mut().set_device(QString::from(&view.device.map(|id| id.to_string()).unwrap_or_default()));
         self.as_mut().set_path(QString::from(&view.path));
@@ -284,6 +315,14 @@ impl qobject::PhoneBrowser {
         self.update_view();
     }
 
+    pub fn set_sort_mode(mut self: Pin<&mut Self>, mode: i32) {
+        if !(0..=3).contains(&mode) {
+            return;
+        }
+        self.as_mut().rust_mut().sort_mode = mode;
+        self.update_view();
+    }
+
     pub fn refresh(&self) {
         phone_browser::refresh();
     }
@@ -294,5 +333,39 @@ impl qobject::PhoneBrowser {
 
     pub fn save_file(&self, path: &QString, folder_url: &QString) {
         phone_browser::save_file(&String::from(path), folder_from_url(folder_url));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn row(name: &str, is_dir: bool, size: u64, modified: i64) -> PhoneBrowserRow {
+        PhoneBrowserRow { name: name.into(), path: format!("folder/{name}"), is_dir, size, modified }
+    }
+
+    #[test]
+    fn loaded_sort_preserves_identity_and_original_default() {
+        let original = vec![row("z", false, 10, 30), row("Folder", true, 0, 0), row("A", false, 20, 10)];
+        let mut rows = original.clone();
+        sort_loaded_rows(&mut rows, 0);
+        assert!(rows == original);
+        sort_loaded_rows(&mut rows, 1);
+        assert_eq!(rows.iter().map(|r| r.path.as_str()).collect::<Vec<_>>(), ["folder/Folder", "folder/A", "folder/z"]);
+        sort_loaded_rows(&mut rows, 2);
+        assert_eq!(rows[1].path, "folder/A");
+        sort_loaded_rows(&mut rows, 3);
+        assert_eq!(rows[1].path, "folder/z");
+        assert!(rows.iter().all(|r| original.contains(r)));
+    }
+
+    #[test]
+    fn unknown_modified_last_stable_ties_and_invalid_mode_unchanged() {
+        let mut rows = vec![row("unknown", false, 0, 0), row("first", false, 0, 5), row("second", false, 0, 5), row("negative", false, 0, -1)];
+        sort_loaded_rows(&mut rows, 3);
+        assert_eq!(rows.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(), ["first", "second", "unknown", "negative"]);
+        let before = rows.clone();
+        sort_loaded_rows(&mut rows, 99);
+        assert!(rows == before);
     }
 }

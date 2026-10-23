@@ -136,6 +136,7 @@ import app.nectarlink.android.ui.theme.glassModalScrimColor
 import app.nectarlink.android.ui.theme.liquidGlassCard
 import app.nectarlink.android.update.AppUpdater
 import app.nectarlink.android.update.UpdateCard
+import app.nectarlink.android.webcam.WebcamService
 import app.nectarlink.android.webcam.WebcamSession
 import android.app.DownloadManager
 import android.content.Intent
@@ -1480,7 +1481,11 @@ private fun PcCard(
             val pcFilesUnavailableReason = stringResource(R.string.pc_files_unavailable)
             val controlPcEnabled = device.canControlPc()
             val deckEnabled = device.canOpenDeck()
-            val webcamEnabled = device.canOpenWebcam()
+            val ownedCameraPermissionMissing = device.online &&
+                !WebcamService.hasPermission(context) &&
+                (context.applicationContext as app.nectarlink.android.NectarlinkApplication)
+                    .core.webcamRequiresOwned(device.id)
+            val webcamEnabled = device.canOpenWebcam() || ownedCameraPermissionMissing
             val browsePcEnabled = device.canBrowsePcFiles()
             // Offline-greyed actions carry no reason; the status dot and wake UI explain those.
             val controlPcReason = unsupportedReason.takeIf { device.online && !controlPcEnabled }
@@ -1636,7 +1641,9 @@ private fun PcCard(
                                 modifier = Modifier.size(16.dp),
                             )
                             Spacer(Modifier.width(6.dp))
-                            ButtonLabel(stringResource(R.string.action_webcam_pc))
+                            ButtonLabel(stringResource(
+                                if (ownedCameraPermissionMissing) R.string.webcam_allow_camera else R.string.action_webcam_pc,
+                            ))
                         }
                     }
                 }
