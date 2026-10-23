@@ -35,6 +35,7 @@ data class WebcamSession(
     val active: Boolean = false,
     val connecting: Boolean = false,
     val pcId: String? = null,
+    val entryToken: String? = null,
     val width: Int = 1280,
     val height: Int = 720,
     val fps: Int = 30,
@@ -73,41 +74,40 @@ class WebcamService : LifecycleService() {
     private val main = Handler(Looper.getMainLooper())
     private var encoder: CameraEncoder? = null
     private var pcId: String? = null
+    private var entry: WebcamEntries.Entry? = null
+    private var opening: kotlinx.coroutines.Job? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
         when (intent?.action) {
             ACTION_STOP -> {
-                stopStreaming()
-                return START_NOT_STICKY
+                val token = intent.getStringExtra(EXTRA_ENTRY)
+                val original = entry
+                if (original != null && (original.token == token || (token == null && original.owner == null))) {
+                    WebcamEntries.stop(original)
+                }
             }
             ACTION_START -> {
-                val targetPc = intent.getStringExtra(EXTRA_PC)
-                if (targetPc == null || !hasPermission(this)) {
-                    stopStreaming()
-                    return START_NOT_STICKY
-                }
-                val height = intent.getIntExtra(EXTRA_HEIGHT, _session.value.height)
-                val fps = intent.getIntExtra(EXTRA_FPS, 30).coerceIn(15, 60)
-                val camera = intent.getStringExtra(EXTRA_CAMERA) ?: _session.value.camera
-                if (encoder != null && pcId == targetPc) {
-                    encoder?.setCamera(camera)
-                    encoder?.setResolutionHeight(height)
-                    return START_NOT_STICKY
-                }
-                startStreamingSession(targetPc, height, fps, camera)
+                val accepted = WebcamEntries.resolve(intent.getStringExtra(EXTRA_ENTRY)) ?: return START_NOT_STICKY
+                if (!hasPermission(this)) { WebcamEntries.stop(accepted); return START_NOT_STICKY }
+                if (entry === accepted && encoder != null) { accepted.serviceStartId = startId; configureEntry(accepted); return START_NOT_STICKY }
+                if (!WebcamEntries.begin(accepted, this, startId)) { WebcamEntries.stop(accepted); return START_NOT_STICKY }
+                startStreamingSession(accepted)
             }
         }
         return START_NOT_STICKY
     }
 
-    private fun startStreamingSession(targetPc: String, height: Int, fps: Int, camera: String) {
-        encoder?.stop()
-        encoder = null
+    private fun startStreamingSession(accepted: WebcamEntries.Entry) {
+        if (!WebcamEntries.owns(accepted)) return
+        val targetPc = accepted.pcId
+        val height = accepted.request.height
+        val fps = accepted.request.fps
+        val camera = accepted.request.camera
+        entry = accepted
         pcId = targetPc
         current = this
-        WebcamRequests.dismiss(this, targetPc)
-
+        if (accepted.owner == null) WebcamRequests.dismiss(this, targetPc)
         val normCamera = if (camera == "front") "front" else "back"
         val supports4k = CameraEncoder.supports4k(this, normCamera)
         val normHeight = CameraEncoder.normalizeHeight(height, supports4k)
@@ -120,6 +120,7 @@ class WebcamService : LifecycleService() {
             active = true,
             connecting = true,
             pcId = targetPc,
+            entryToken = accepted.token,
             width = normWidth,
             height = normHeight,
             fps = fps,
@@ -140,28 +141,30 @@ class WebcamService : LifecycleService() {
             ServiceCompat.startForeground(
                 this,
                 NOTIFICATION_ID,
-                buildNotification(targetPc, normWidth, normHeight, normCamera),
+                buildNotification(targetPc, normWidth, normHeight, normCamera, accepted.token),
                 type,
             )
         }.onFailure { e ->
             Log.w(TAG, "can't enter camera foreground service", e)
         }.isSuccess
         if (!startedFg) {
-            stopStreaming()
+            WebcamEntries.stop(accepted)
             return
         }
 
         val core = (application as NectarlinkApplication).core
-        core.clearWebcamRequest(targetPc)
+        core.clearWebcamRequest(targetPc, accepted.request.ownedEntryToken)
 
-        lifecycleScope.launch(Dispatchers.IO) {
-            val stream = core.webcamOpenOrMessage(targetPc)
+        opening = lifecycleScope.launch(Dispatchers.IO) {
+            val stream = if (accepted.owner != null) {
+                runCatching { accepted.owner.open() }.getOrNull()
+            } else core.webcamOpenOrMessage(targetPc)
             if (stream == null) {
-                main.post { stopStreaming() }
+                WebcamEntries.stop(accepted)
                 return@launch
             }
             main.post {
-                if (pcId != targetPc || current !== this@WebcamService) {
+                if (entry !== accepted || !WebcamEntries.owns(accepted)) {
                     runCatching { stream.end() }
                     return@post
                 }
@@ -173,7 +176,10 @@ class WebcamService : LifecycleService() {
                     fps = fps,
                     initialCamera = normCamera,
                     initialZoomRatio = _session.value.zoomRatio,
+                    ownedContext = accepted.owner,
+                    ownsEntry = { WebcamEntries.owns(accepted) },
                     onStateChanged = { live ->
+                        WebcamEntries.withCurrent(accepted) {
                         _session.update { s ->
                             s.copy(
                                 active = true,
@@ -191,12 +197,9 @@ class WebcamService : LifecycleService() {
                             )
                         }
                         updateNotification()
-                    },
-                    onEnded = {
-                        if (current === this@WebcamService) {
-                            stopStreaming()
                         }
                     },
+                    onEnded = { WebcamEntries.stop(accepted) },
                 )
                 camEncoder.setUiSurfaceProvider(uiSurfaceProvider)
                 encoder = camEncoder
@@ -209,10 +212,10 @@ class WebcamService : LifecycleService() {
         val s = _session.value
         val targetPc = s.pcId ?: return
         val nm = getSystemService(NotificationManager::class.java) ?: return
-        nm.notify(NOTIFICATION_ID, buildNotification(targetPc, s.width, s.height, s.camera))
+        nm.notify(NOTIFICATION_ID, buildNotification(targetPc, s.width, s.height, s.camera, s.entryToken))
     }
 
-    private fun buildNotification(targetPc: String, width: Int, height: Int, camera: String): Notification {
+    private fun buildNotification(targetPc: String, width: Int, height: Int, camera: String, entryToken: String?): Notification {
         val core = (application as NectarlinkApplication).core
         val pcName = core.state.value.nameOf(targetPc).orEmpty().ifEmpty { getString(R.string.your_pc) }
 
@@ -229,7 +232,9 @@ class WebcamService : LifecycleService() {
         val stopPending = PendingIntent.getService(
             this,
             11,
-            Intent(this, WebcamService::class.java).setAction(ACTION_STOP),
+            Intent(this, WebcamService::class.java).setAction(ACTION_STOP)
+                .setData(android.net.Uri.parse("waypair-webcam://stop/$entryToken"))
+                .putExtra(EXTRA_ENTRY, entryToken),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val camLabel = getString(
@@ -249,26 +254,53 @@ class WebcamService : LifecycleService() {
             .build()
     }
 
-    private fun stopStreaming() {
-        val runningEncoder = encoder
-        encoder = null
-        pcId = null
-        if (current === this) current = null
-        runningEncoder?.stop()
-        _session.update {
-            it.copy(
-                active = false,
-                connecting = false,
-                pcId = null,
-                torchOn = false,
-            )
+    internal fun stopEntry(original: WebcamEntries.Entry) {
+        main.post {
+            if (entry !== original) { WebcamEntries.complete(original); return@post }
+            opening?.cancel()
+            opening = null
+            val originalEncoder = encoder
+            encoder = null
+            // Keep the Entry/global capture slot until both encoder cleanup lanes finish.
+            val completed: (Boolean) -> Unit = { success ->
+                main.post {
+                    if (!success) {
+                        // Keep the exact slot reserved; no terminal ACK or replacement.
+                        if (entry === original) encoder = originalEncoder
+                        return@post
+                    }
+                    if (entry === original) {
+                        entry = null
+                        pcId = null
+                        if (current === this@WebcamService) current = null
+                        _session.update { state ->
+                            if (state.entryToken == original.token) state.copy(active = false,
+                                connecting = false, pcId = null, entryToken = null, torchOn = false) else state
+                        }
+                        ServiceCompat.stopForeground(this@WebcamService, ServiceCompat.STOP_FOREGROUND_REMOVE)
+                        stopSelfResult(original.serviceStartId)
+                    }
+                    WebcamEntries.complete(original)
+                }
+            }
+            if (originalEncoder != null) originalEncoder.stop(completed) else completed(true)
         }
-        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
-        stopSelf()
+    }
+
+    private fun configureEntry(original: WebcamEntries.Entry) {
+        WebcamEntries.withCurrent(original) {
+            if (entry === original) {
+                encoder?.setCamera(original.request.camera)
+                encoder?.setResolutionHeight(original.request.height)
+            }
+        }
+    }
+    internal fun keyframeEntry(original: WebcamEntries.Entry) {
+        main.post { WebcamEntries.withCurrent(original) { if (entry === original) encoder?.requestKeyframe() } }
     }
 
     override fun onDestroy() {
-        stopStreaming()
+        entry?.let(WebcamEntries::stop)
         super.onDestroy()
     }
 
@@ -279,6 +311,7 @@ class WebcamService : LifecycleService() {
 
         private const val ACTION_START = "app.nectarlink.android.webcam.START"
         private const val ACTION_STOP = "app.nectarlink.android.webcam.STOP"
+        private const val EXTRA_ENTRY = "entry"
         private const val EXTRA_PC = "pc"
         private const val EXTRA_HEIGHT = "height"
         private const val EXTRA_FPS = "fps"
@@ -302,33 +335,41 @@ class WebcamService : LifecycleService() {
             fps: Int = 30,
             camera: String = _session.value.camera,
         ) {
-            val intent = Intent(context, WebcamService::class.java)
-                .setAction(ACTION_START)
-                .putExtra(EXTRA_PC, pcId)
-                .putExtra(EXTRA_HEIGHT, height)
-                .putExtra(EXTRA_FPS, fps)
-                .putExtra(EXTRA_CAMERA, camera)
-            ContextCompat.startForegroundService(context, intent)
+            val core = (context.applicationContext as NectarlinkApplication).core
+            if (core.webcamRequiresOwned(pcId)) return
+            val accepted = WebcamEntries.legacy(pcId, height, fps, camera) ?: return
+            startEntry(context, accepted)
+        }
+
+        fun startOwned(context: Context, token: String) {
+            val accepted = WebcamEntries.resolve(token)?.takeIf { it.owner != null } ?: return
+            startEntry(context, accepted)
+        }
+        private fun startEntry(context: Context, accepted: WebcamEntries.Entry) {
+            runCatching {
+                ContextCompat.startForegroundService(context, Intent(context, WebcamService::class.java)
+                    .setAction(ACTION_START).putExtra(EXTRA_ENTRY, accepted.token))
+            }.onFailure { WebcamEntries.stop(accepted) }
+        }
+        internal fun configure(original: WebcamEntries.Entry) {
+            original.service?.let { service -> service.main.post { service.configureEntry(original) } }
         }
 
         fun stop(context: Context) {
-            val srv = current
-            if (srv != null) {
-                srv.main.post { srv.stopStreaming() }
-            } else {
-                runCatching { context.stopService(Intent(context, WebcamService::class.java)) }
-            }
+            val original = current?.entry ?: return
+            WebcamEntries.stop(original)
         }
-
+        fun stopForEntry(token: String?) {
+            token?.let(WebcamEntries::resolve)?.let(WebcamEntries::stop)
+        }
         fun stopForPc(context: Context, pcId: String) {
-            val srv = current ?: return
-            srv.main.post {
-                if (srv.pcId == pcId) srv.stopStreaming()
-            }
+            // Legacy callback snapshots its actual Entry now, before any post.
+            val original = current?.entry?.takeIf { it.pcId == pcId && it.owner == null } ?: return
+            WebcamEntries.stop(original)
         }
-
         fun keyframe(pcId: String) {
-            current?.takeIf { it.pcId == pcId }?.encoder?.requestKeyframe()
+            val original = current?.entry?.takeIf { it.pcId == pcId && it.owner == null } ?: return
+            original.service?.keyframeEntry(original)
         }
 
         fun refreshCapabilities(context: Context) {

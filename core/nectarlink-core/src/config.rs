@@ -473,6 +473,29 @@ pub trait Platform: Send + Sync + 'static {
         Err("this device has no phone toggles".into())
     }
 
+    /// Prepare Internet Wi-Fi tethering for this exact active request. The
+    /// platform rechecks Node::phone_hotspot_request_current before committing
+    /// an OS action and while waiting for actual tether interface readback.
+    fn prepare_phone_hotspot_owned(
+        &self,
+        _peer: &nectarlink_protocol::DeviceId,
+        _connection: u64,
+        _request: u64,
+        _network: &str,
+    ) -> crate::PhoneHotspotState {
+        crate::PhoneHotspotState::NeedsSettings
+    }
+
+    /// Cancel only this preparation workflow, rechecking its exact cancellation
+    /// gate. A submitted Android activation is never followed by tether stop.
+    fn cancel_phone_hotspot_owned(
+        &self,
+        _peer: &nectarlink_protocol::DeviceId,
+        _connection: u64,
+        _request: u64,
+    ) {
+    }
+
     /// Run a Deck tile's action on this PC (`deck.press`, `docs/protocol/deck.md`).
     /// `tile` has been validated against the current Deck layout and the
     /// required per-device toggles (`remote_input`, plus `commands` for
@@ -551,6 +574,28 @@ pub trait Platform: Send + Sync + 'static {
     ) -> Result<(), String> {
         Err("this device doesn't stream a camera".into())
     }
+
+    /// Additive owned webcam admission; unsupported platforms never fall back.
+    fn webcam_owned_sink(
+        &self,
+        _peer: &nectarlink_protocol::DeviceId,
+        _owner: &crate::WebcamView,
+    ) -> Option<std::sync::Arc<dyn crate::WebcamSink>> {
+        None
+    }
+    fn webcam_requested_owned(
+        &self,
+        _owner: crate::WebcamCaptureContext,
+        _options: &crate::WebcamStart,
+    ) -> Result<(), String> {
+        Err("owned camera is unsupported".into())
+    }
+    /// Success means exact original pending/capture cleanup is terminal.
+    fn webcam_stop_owned(&self, _owner: crate::WebcamCaptureContext) -> Result<(), String> {
+        Err("owned camera cleanup is unsupported".into())
+    }
+
+    fn webcam_keyframe_owned(&self, _owner: crate::WebcamCaptureContext) {}
 
     /// Where a phone's microphone goes on this PC when it starts streaming
     /// (`docs/protocol/mic.md`). `None` refuses the stream.

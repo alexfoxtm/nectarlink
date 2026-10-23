@@ -301,6 +301,24 @@ fn main() {
         println!("cargo:rustc-link-lib=user32");
     } else if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
         mac_objc_library("nectarlink_mac_hfp", &["src/mac/bt_hfp_provider.m", "src/mac/bt_hfp_support.m"]);
+        println!("cargo::rerun-if-changed=src/mac/camera_extension/WaypairCamera.h");
+        println!("cargo::rerun-if-changed=src/mac/camera_extension/WaypairCameraActivation.h");
+        mac_objc_library(
+            "waypair_camera_host",
+            &[
+                "src/mac/camera_extension/WaypairCameraProducer.m",
+                "src/mac/camera_extension/WaypairCameraActivation.m",
+            ],
+        );
+        println!("cargo:rustc-link-lib=framework=CoreMediaIO");
+        println!("cargo:rustc-link-lib=framework=CoreMedia");
+        println!("cargo:rustc-link-lib=framework=CoreVideo");
+        println!("cargo:rustc-link-lib=framework=Accelerate");
+        println!("cargo:rustc-link-lib=framework=Security");
+        println!("cargo:rustc-link-lib=framework=SystemExtensions");
+        mac_objc_library("nectarlink_mac_wifi", &["src/mac/wifi_support.m"]);
+        println!("cargo:rustc-link-lib=framework=CoreWLAN");
+        println!("cargo:rustc-link-lib=framework=CoreLocation");
         println!("cargo:rustc-link-arg=-Wl,-rpath,@executable_path/../Frameworks");
         println!("cargo:rustc-link-lib=framework=AppKit");
         println!("cargo:rustc-link-lib=framework=CoreGraphics");

@@ -1507,6 +1507,13 @@ pub(crate) async fn accept_stream(
         }
         Some(h)
             if h.svc == nectarlink_protocol::messages::webcam::SERVICE
+                && h.op == nectarlink_protocol::messages::webcam::OP_VIDEO_OWNED
+                && h.v == nectarlink_protocol::messages::webcam::VERSION =>
+        {
+            crate::webcam_owned::receive(shared, session, send, recv).await;
+        }
+        Some(h)
+            if h.svc == nectarlink_protocol::messages::webcam::SERVICE
                 && h.op == nectarlink_protocol::messages::webcam::OP_VIDEO
                 && h.v == nectarlink_protocol::messages::webcam::VERSION =>
         {

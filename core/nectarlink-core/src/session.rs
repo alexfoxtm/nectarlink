@@ -536,6 +536,33 @@ impl Session {
         result
     }
 
+    /// Owned camera RPC: reserve original outbox, then repeat exact admission.
+    pub(crate) async fn request_if_current(
+        &self,
+        env: Envelope,
+        timeout: Duration,
+        current: impl FnOnce() -> bool,
+    ) -> Result<Envelope> {
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let (tx, rx) = oneshot::channel();
+        self.pending.lock().unwrap_or_else(|error| error.into_inner()).insert(id, tx);
+        let result = match tokio::time::timeout(timeout, async {
+            let permit = self.reserve().await?;
+            if !current() {
+                return Err(Error::Denied);
+            }
+            permit.send(env.with_id(id));
+            rx.await.map_err(|_| Error::Offline)
+        })
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => Err(Error::Timeout),
+        };
+        self.pending.lock().unwrap_or_else(|error| error.into_inner()).remove(&id);
+        result
+    }
+
     /// Closes the connection with an application code.
     pub fn close(&self, code: u32, reason: &[u8]) {
         self.conn.close(VarInt::from_u32(code), reason);
@@ -726,6 +753,7 @@ async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: Envelope) -> 
         t if t.starts_with("camera.capture.")
             && crate::continuity_camera::handle(shared, session, &env).await? => {}
         t if t.starts_with("remote.") && crate::remote::handle(shared, session, &env).await? => {}
+        t if t.starts_with("phone.hotspot.") && crate::hotspot::handle(shared, session, &env).await? => {}
         t if t.starts_with("phone.toggle") && crate::toggles::handle(shared, session, &env).await? => {}
         t if (t.starts_with("deck.") || t == types::PC_AUDIO_SET)
             && crate::deck::handle(shared, session, &env).await? => {}

@@ -33,6 +33,13 @@ struct ScreenInput {
     generation: u64,
 }
 
+struct HotspotGate(Node);
+impl std::fmt::Debug for HotspotGate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("HotspotGate")
+    }
+}
+
 #[derive(Debug, Default)]
 struct RecordingPlatform {
     rings: Mutex<Vec<bool>>,
@@ -67,6 +74,10 @@ struct RecordingPlatform {
     /// What a PC got of a phone's screen.
     screen: Arc<ScreenSink>,
     webcam_asks: Mutex<Vec<String>>,
+    owned_webcam_contexts: Mutex<Vec<nectarlink_core::WebcamCaptureContext>>,
+    owned_webcam_stops: Mutex<Vec<nectarlink_core::WebcamCaptureContext>>,
+    owned_webcam_start_barrier: Mutex<Option<Arc<std::sync::Barrier>>>,
+    owned_webcam_stop_barrier: Mutex<Option<Arc<std::sync::Barrier>>>,
     webcam: Arc<TestWebcamSink>,
     camera_asks: Mutex<Vec<String>>,
     /// Photos `open_photo` finds, by ID.
@@ -75,6 +86,13 @@ struct RecordingPlatform {
     photo_barrier: Mutex<Option<Arc<std::sync::Barrier>>>,
     remote_inputs: Mutex<Vec<nectarlink_core::RemoteInput>>,
     phone_toggles: Mutex<Vec<(String, nectarlink_core::PhoneToggleValue)>>,
+    hotspot_gate: Mutex<Option<HotspotGate>>,
+    hotspot_hold: std::sync::atomic::AtomicBool,
+    hotspot_submit_before_hold: std::sync::atomic::AtomicBool,
+    hotspot_entered: std::sync::atomic::AtomicBool,
+    hotspot_commits: std::sync::atomic::AtomicUsize,
+    hotspot_cancels: std::sync::atomic::AtomicUsize,
+
     deck_presses: Mutex<Vec<String>>,
     pc_audio_changes: Mutex<Vec<(Option<u8>, Option<bool>)>>,
     tasks: Mutex<Vec<nectarlink_core::TaskNotify>>,
@@ -304,6 +322,35 @@ impl Platform for RecordingPlatform {
             .unwrap()
             .push(format!("start {} {}x{} @ {}", options.camera, options.width, options.height, options.fps));
         Ok(())
+    }
+    fn webcam_owned_sink(
+        &self,
+        _peer: &nectarlink_core::DeviceId,
+        owner: &nectarlink_core::WebcamView,
+    ) -> Option<Arc<dyn nectarlink_core::WebcamSink>> {
+        owner.is_current().then(|| self.webcam.clone() as Arc<dyn nectarlink_core::WebcamSink>)
+    }
+    fn webcam_requested_owned(
+        &self,
+        owner: nectarlink_core::WebcamCaptureContext,
+        _options: &nectarlink_core::WebcamStart,
+    ) -> Result<(), String> {
+        self.owned_webcam_contexts.lock().unwrap().push(owner.clone());
+        let barrier = self.owned_webcam_start_barrier.lock().unwrap().clone();
+        if let Some(barrier) = barrier {
+            barrier.wait();
+            barrier.wait();
+        }
+        if owner.is_current() { Ok(()) } else { Err("original owner retired".into()) }
+    }
+    fn webcam_stop_owned(&self, owner: nectarlink_core::WebcamCaptureContext) -> Result<(), String> {
+        let barrier = self.owned_webcam_stop_barrier.lock().unwrap().clone();
+        if let Some(barrier) = barrier {
+            barrier.wait();
+            barrier.wait();
+        }
+        self.owned_webcam_stops.lock().unwrap().push(owner);
+        Ok(()) // synthetic platform terminal boundary; not Android/OS evidence.
     }
     fn webcam_stop_requested(&self, _peer: &nectarlink_core::DeviceId) {
         self.webcam_asks.lock().unwrap().push("stop".into());
@@ -604,6 +651,54 @@ impl Platform for RecordingPlatform {
     fn set_phone_toggle(&self, id: &str, value: &nectarlink_core::PhoneToggleValue) -> Result<(), String> {
         self.phone_toggles.lock().unwrap().push((id.to_owned(), value.clone()));
         Ok(())
+    }
+    fn prepare_phone_hotspot_owned(
+        &self,
+        peer: &nectarlink_core::DeviceId,
+        connection: u64,
+        request: u64,
+        _network: &str,
+    ) -> nectarlink_core::PhoneHotspotState {
+        use std::sync::atomic::Ordering::SeqCst;
+        let current = || {
+            self.hotspot_gate
+                .lock()
+                .unwrap()
+                .as_ref()
+                .is_some_and(|gate| gate.0.phone_hotspot_request_current(*peer, connection, request))
+        };
+        let submitted = self.hotspot_submit_before_hold.load(SeqCst) && current();
+        if submitted {
+            self.hotspot_commits.fetch_add(1, SeqCst);
+        }
+        self.hotspot_entered.store(true, SeqCst);
+        let until = std::time::Instant::now() + Duration::from_secs(5);
+        while self.hotspot_hold.load(SeqCst) && current() && std::time::Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        if !current() {
+            return nectarlink_core::PhoneHotspotState::Cancelled;
+        }
+        if self.hotspot_hold.load(SeqCst) {
+            return nectarlink_core::PhoneHotspotState::Failed;
+        }
+        if !submitted {
+            self.hotspot_commits.fetch_add(1, SeqCst);
+        }
+        nectarlink_core::PhoneHotspotState::Active
+    }
+
+    fn cancel_phone_hotspot_owned(&self, peer: &nectarlink_core::DeviceId, connection: u64, request: u64) {
+        use std::sync::atomic::Ordering::SeqCst;
+        if self
+            .hotspot_gate
+            .lock()
+            .unwrap()
+            .as_ref()
+            .is_some_and(|gate| gate.0.phone_hotspot_cancellation_current(*peer, connection, request))
+        {
+            self.hotspot_cancels.fetch_add(1, SeqCst);
+        }
     }
     fn deck_press(&self, _from: &nectarlink_core::DeviceId, tile: &str) -> Result<(), String> {
         self.deck_presses.lock().unwrap().push(tile.to_owned());
@@ -8311,6 +8406,247 @@ async fn pending_app_open_holds_no_credit_on_exact_stop_while_credit_withheld() 
     if let Some(screen) = screen {
         screen.close();
     }
+    pc.node.shutdown().await;
+    phone.node.shutdown().await;
+}
+
+#[cfg(feature = "test-support")]
+#[tokio::test(flavor = "multi_thread")]
+async fn owned_webcam_uses_actual_session_request_echo_and_terminal_stop_ack() {
+    let mut pc = device_with(
+        "Desktop",
+        DeviceKind::Desktop,
+        &["camera.virtual", "addon.vcam", "camera.webcam.owned.v1"],
+    )
+    .await;
+    let mut phone =
+        device_with("Phone", DeviceKind::Phone, &["camera.stream", "camera.webcam.owned.v1"]).await;
+    pair_qr(&mut pc, &mut phone).await;
+    assert_eq!(
+        pc.node.capabilities(phone.node.device_id()).unwrap().state("camera.webcam"),
+        Some(FeatureState::Available)
+    );
+    let retained = Arc::new(Mutex::new(None));
+    let published = retained.clone();
+    pc.node
+        .webcam_start_owned(phone.node.device_id(), Default::default(), move |view| {
+            *published.lock().unwrap() = Some(view);
+            true
+        })
+        .await
+        .unwrap();
+    let view = retained.lock().unwrap().clone().unwrap();
+    let owner = phone.platform.owned_webcam_contexts.lock().unwrap()[0].clone();
+    assert!(owner.is_current() && view.is_current());
+    assert_eq!(owner.request(), view.request(), "actual durable Core request is echoed");
+    assert!(phone.node.owns_webcam_context(&owner));
+    assert!(!pc.node.owns_webcam_context(&owner), "opaque context cannot belong to a different Core");
+    let stream = Arc::new(owner.open().await.unwrap());
+    let config = nectarlink_core::WebcamOwnedConfig {
+        request: owner.request(),
+        config: nectarlink_core::WebcamConfig {
+            codec: "h264".into(),
+            width: 1280,
+            height: 720,
+            camera: "back".into(),
+            fps: 30,
+            max_height: 1080,
+        },
+    };
+    let sender = stream.clone();
+    let sent = tokio::task::spawn_blocking(move || {
+        sender.send(nectarlink_core::PacketKind::Config, 0, config.to_cbor())
+    })
+    .await
+    .unwrap();
+    assert_eq!(sent, nectarlink_core::MirrorSend::Queued);
+    with_timeout("owned video admitted", async {
+        while pc.platform.webcam.got.lock().unwrap().is_empty() {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await;
+    assert!(view.stop_if_current().await.unwrap());
+    assert!(!owner.is_current());
+    assert!(stream.is_closed());
+    assert!(
+        phone.platform.owned_webcam_stops.lock().unwrap().iter().any(|stopped| stopped.same_owner(&owner))
+    );
+    pc.node.shutdown().await;
+    phone.node.shutdown().await;
+}
+
+#[cfg(feature = "test-support")]
+#[tokio::test(flavor = "multi_thread")]
+async fn owned_webcam_held_cleanup_and_old_pending_start_cannot_target_reconnected_owner() {
+    let mut pc = device_with(
+        "Desktop",
+        DeviceKind::Desktop,
+        &["camera.virtual", "addon.vcam", "camera.webcam.owned.v1"],
+    )
+    .await;
+    let mut phone =
+        device_with("Phone", DeviceKind::Phone, &["camera.stream", "camera.webcam.owned.v1"]).await;
+    pair_qr(&mut pc, &mut phone).await;
+    let phone_id = phone.node.device_id();
+    let pc_id = pc.node.device_id();
+    assert_eq!(pc.node.capabilities(phone_id).unwrap().state("camera.webcam"), Some(FeatureState::Available));
+    let start_gate = Arc::new(std::sync::Barrier::new(2));
+    let stop_gate = Arc::new(std::sync::Barrier::new(2));
+    *phone.platform.owned_webcam_start_barrier.lock().unwrap() = Some(start_gate.clone());
+    *phone.platform.owned_webcam_stop_barrier.lock().unwrap() = Some(stop_gate.clone());
+    let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
+    let old_node = pc.node.clone();
+    let start = tokio::spawn(async move {
+        old_node
+            .webcam_start_owned(phone_id, Default::default(), move |view| ready_tx.send(view).is_ok())
+            .await
+    });
+    let old_view = with_timeout("original view published before reply", ready_rx).await.unwrap();
+    let gate = start_gate.clone();
+    tokio::task::spawn_blocking(move || gate.wait()).await.unwrap();
+    let entered_start = EnteredBarrier::new(start_gate.clone());
+    let old_owner = phone.platform.owned_webcam_contexts.lock().unwrap()[0].clone();
+    let stopping = old_view.clone();
+    let stop = tokio::spawn(async move { stopping.stop_if_current().await });
+    let gate = stop_gate.clone();
+    tokio::task::spawn_blocking(move || gate.wait()).await.unwrap();
+    let entered_stop = EnteredBarrier::new(stop_gate.clone());
+    assert!(!stop.is_finished(), "enqueue is not terminal platform cleanup acknowledgment");
+    assert!(!old_owner.is_current());
+    pc.node.shutdown().await;
+    let TestDevice { dir, .. } = pc;
+    pc = start_in(dir, "Desktop", DeviceKind::Desktop).await;
+    pc.node
+        .update_power(
+            PowerLevel::NotApplicable,
+            vec!["camera.virtual".into(), "addon.vcam".into(), "camera.webcam.owned.v1".into()],
+        )
+        .await;
+    pc.node.add_known_addrs(phone_id, &phone.node.direct_addrs().await);
+    phone.node.add_known_addrs(pc_id, &pc.node.direct_addrs().await);
+    if !pc
+        .node
+        .paired_devices()
+        .unwrap()
+        .iter()
+        .any(|peer| peer.id == phone_id && matches!(peer.link, LinkState::Online { .. }))
+    {
+        wait_online(&mut pc, phone_id).await;
+    }
+    if !phone
+        .node
+        .paired_devices()
+        .unwrap()
+        .iter()
+        .any(|peer| peer.id == pc_id && matches!(peer.link, LinkState::Online { .. }))
+    {
+        wait_online(&mut phone, pc_id).await;
+    }
+    assert_eq!(pc.node.capabilities(phone_id).unwrap().state("camera.webcam"), Some(FeatureState::Available));
+    // Release only original A's exact cleanup/start callbacks. Neither is given S2.
+    *phone.platform.owned_webcam_start_barrier.lock().unwrap() = None;
+    *phone.platform.owned_webcam_stop_barrier.lock().unwrap() = None;
+    entered_stop.release().await;
+    with_timeout("old cleanup reaches terminal", old_owner.wait_terminal()).await.unwrap();
+    entered_start.release().await;
+    assert!(with_timeout("original Start ends", start).await.unwrap().is_err());
+    let _ = with_timeout("original Stop ends", stop).await.unwrap();
+    let retained = Arc::new(Mutex::new(None));
+    let published = retained.clone();
+    pc.node
+        .webcam_start_owned(phone_id, Default::default(), move |view| {
+            *published.lock().unwrap() = Some(view);
+            true
+        })
+        .await
+        .unwrap();
+    let replacement = retained.lock().unwrap().clone().unwrap();
+    let current_owner = phone.platform.owned_webcam_contexts.lock().unwrap().last().unwrap().clone();
+    assert!(replacement.request() > old_view.request());
+    assert!(current_owner.is_current() && replacement.is_current());
+    assert!(!old_view.stop_if_current().await.unwrap(), "old Shared/Session cannot reacquire S2");
+    assert!(!current_owner.same_owner(&old_owner));
+    assert!(old_owner.open().await.is_err());
+    assert!(current_owner.is_current(), "old open/Stop cannot touch the replacement capture");
+    replacement.stop_if_current().await.unwrap();
+    pc.node.shutdown().await;
+    phone.node.shutdown().await;
+}
+
+// Synthetic only: real paired loopback protocol, no Wi-Fi/helper/OS actions.
+#[tokio::test(flavor = "multi_thread")]
+async fn hotspot_owned_prepare_returns_only_its_verified_platform_readback() {
+    use std::sync::atomic::Ordering::SeqCst;
+    let mut pc = device_with("Desktop", DeviceKind::Desktop, &[nectarlink_core::TOGGLES_SHOW]).await;
+    let mut phone = device_with("Phone", DeviceKind::Phone, &["phone.hotspot.v3"]).await;
+    *phone.platform.hotspot_gate.lock().unwrap() = Some(HotspotGate(phone.node.clone()));
+    pair_qr(&mut pc, &mut phone).await;
+    let owner = pc.node.create_phone_hotspot_request(phone.node.device_id()).unwrap();
+    let result = with_timeout(
+        "owned hotspot prepare",
+        pc.node.prepare_phone_hotspot(owner, "Synthetic phone hotspot".into()),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result, nectarlink_core::PhoneHotspotState::Active);
+    assert_eq!(phone.platform.hotspot_commits.load(SeqCst), 1);
+    assert_eq!(
+        phone.platform.hotspot_cancels.load(SeqCst),
+        0,
+        "a successful prepare must not send cancellation during retirement"
+    );
+    *phone.platform.hotspot_gate.lock().unwrap() = None;
+    pc.node.shutdown().await;
+    phone.node.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn hotspot_cancel_after_submission_preserves_activation_and_ignores_wrong_owner() {
+    use std::sync::atomic::Ordering::SeqCst;
+    let mut pc = device_with("Desktop", DeviceKind::Desktop, &[nectarlink_core::TOGGLES_SHOW]).await;
+    let mut phone = device_with("Phone", DeviceKind::Phone, &["phone.hotspot.v3"]).await;
+    *phone.platform.hotspot_gate.lock().unwrap() = Some(HotspotGate(phone.node.clone()));
+    phone.platform.hotspot_hold.store(true, SeqCst);
+    phone.platform.hotspot_submit_before_hold.store(true, SeqCst);
+    pair_qr(&mut pc, &mut phone).await;
+    let owner = pc.node.create_phone_hotspot_request(phone.node.device_id()).unwrap();
+    let sending = pc.node.clone();
+    let pending =
+        tokio::spawn(
+            async move { sending.prepare_phone_hotspot(owner, "Synthetic phone hotspot".into()).await },
+        );
+    with_timeout("platform entered", async {
+        while !phone.platform.hotspot_entered.load(SeqCst) {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await;
+    pc.node.cancel_phone_hotspot_request(nectarlink_core::PhoneHotspotOwner {
+        request: owner.request + 1,
+        ..owner
+    });
+    tokio::time::sleep(Duration::from_millis(30)).await;
+    assert!(!pending.is_finished(), "another request's cancellation must not retire this operation");
+    pc.node.cancel_phone_hotspot_request(owner);
+    let result = with_timeout("cancel reaches blocked platform", pending).await.unwrap().unwrap();
+    assert_eq!(result, nectarlink_core::PhoneHotspotState::Cancelled);
+    assert_eq!(
+        phone.platform.hotspot_commits.load(SeqCst),
+        1,
+        "cancelling the join does not undo an activation already submitted"
+    );
+    assert!(
+        phone.platform.phone_toggles.lock().unwrap().iter().all(|(id, _)| id != "hotspot"),
+        "no legacy phone-wide hotspot-off fallback"
+    );
+    with_timeout("owned cancellation callback", async {
+        while phone.platform.hotspot_cancels.load(SeqCst) != 1 {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await;
+    *phone.platform.hotspot_gate.lock().unwrap() = None;
     pc.node.shutdown().await;
     phone.node.shutdown().await;
 }

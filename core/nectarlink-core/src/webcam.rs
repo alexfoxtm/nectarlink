@@ -27,6 +27,10 @@ pub trait WebcamSink: Send + Sync {
     fn packet(&self, keyframe: bool, time_us: u64, data: Vec<u8>);
     /// The stream ended (the phone stopped, or the connection dropped).
     fn ended(&self);
+    /// Optional exact-sink failure/Stop signal; never a peer-wide delayed stop.
+    fn stop_signal(&self) -> Option<Arc<tokio::sync::Notify>> {
+        None
+    }
 }
 
 impl std::fmt::Debug for dyn WebcamSink {
@@ -63,7 +67,11 @@ pub(crate) async fn receive(shared: Arc<Shared>, peer: DeviceId, mut send: SendS
         let _ = send.reset(VarInt::from_u32(webcam::STOPPED));
         let _ = recv.stop(VarInt::from_u32(webcam::STOPPED));
     };
-    let supports = shared.local_capabilities().iter().any(|c| c == webcam::VIRTUAL);
+    let local = shared.local_capabilities();
+    if local.iter().any(|cap| cap == webcam::VIRTUAL) && local.iter().any(|cap| cap == webcam::OWNED_V1) {
+        return refuse(send, recv);
+    }
+    let supports = local.iter().any(|c| c == webcam::VIRTUAL);
     if !supports || !shared.toggle_on(&peer, TOGGLE) {
         return refuse(send, recv);
     }
@@ -97,9 +105,18 @@ pub(crate) async fn receive(shared: Arc<Shared>, peer: DeviceId, mut send: SendS
     });
     shared.emit(NodeEvent::Webcam { device: peer, on: true });
     sink.config(config);
+    let sink_stop = sink.stop_signal();
+    let sink_stopped = async move {
+        match sink_stop {
+            Some(signal) => signal.notified().await,
+            None => std::future::pending::<()>().await,
+        }
+    };
+    tokio::pin!(sink_stopped);
     loop {
         let packet = tokio::select! {
             _ = stopped.notified() => break,
+            _ = &mut sink_stopped => break,
             packet = read_video_packet(&mut recv) => packet,
         };
         match packet {
@@ -132,6 +149,9 @@ pub(crate) async fn receive(shared: Arc<Shared>, peer: DeviceId, mut send: SendS
 // ---- The phone ----
 
 pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &Envelope) -> Result<bool> {
+    if crate::webcam_owned::handle(shared, session, env).await? {
+        return Ok(true);
+    }
     let peer = session.peer;
     let platform = shared.platform.clone();
     match env.t.as_str() {
@@ -174,6 +194,11 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
 
 /// Opens a webcam video stream from this phone to a connected PC.
 pub(crate) async fn open(shared: &Arc<Shared>, session: &Session) -> Result<MirrorStream> {
+    if shared.peer_supports(&session.peer, webcam::OWNED_V1)
+        && shared.local_capabilities().iter().any(|cap| cap == webcam::OWNED_V1)
+    {
+        return Err(Error::Unsupported);
+    }
     if !shared.toggle_on(&session.peer, TOGGLE) {
         return Err(Error::Denied);
     }

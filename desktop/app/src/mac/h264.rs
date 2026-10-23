@@ -347,4 +347,45 @@ mod tests {
         annexb::access_unit(fixture, &mut sets).unwrap();
         assert!(sets.sets().is_some(), "the next complete keyframe restores both parameter sets");
     }
+    #[test]
+    fn padded_nv12_with_extra_luma_rows_converts_and_crops_to_tight_bgrx() {
+        // Real production converter, synthetic decoded-picture storage only.
+        // Odd visible width needs four UV bytes; luma storage has an extra row.
+        let mut nv12 = vec![0xa5; 48];
+        for (row, y) in [16, 235, 16].into_iter().enumerate() {
+            nv12[row * 8..row * 8 + 3].fill(y);
+        }
+        for row in 0..2 {
+            nv12[32 + row * 8..32 + row * 8 + 4].fill(128);
+        }
+        let picture =
+            Picture { width: 3, height: 3, stride: 8, plane_rows: 4, nv12, colors: Colors::default() };
+        let full = to_bgrx(&picture, 3, 3);
+        assert_eq!(full.len(), 3 * 3 * 4);
+        for (row, pixels) in full.as_chunks::<12>().0.iter().enumerate() {
+            let level = if row == 1 { 255 } else { 0 };
+            assert!(pixels.as_chunks::<4>().0.iter().all(|p| *p == [level, level, level, 255]));
+        }
+        let crop = to_bgrx(&picture, 2, 2);
+        assert_eq!(crop.len(), 2 * 2 * 4);
+        assert!(crop[..8].as_chunks::<4>().0.iter().all(|p| *p == [0, 0, 0, 255]));
+        assert!(crop[8..].as_chunks::<4>().0.iter().all(|p| *p == [255, 255, 255, 255]));
+    }
+
+    #[test]
+    fn malformed_nv12_layout_returns_black_without_reading_outside_input() {
+        let mut picture = Picture {
+            width: 3,
+            height: 3,
+            stride: 3,
+            plane_rows: 4,
+            nv12: vec![128; 48],
+            colors: Colors::default(),
+        };
+        // Three-byte stride cannot hold the odd-width interleaved UV pair.
+        assert_eq!(to_bgrx(&picture, 3, 3), vec![0; 3 * 3 * 4]);
+        picture.stride = 8;
+        picture.nv12.truncate(47); // Last chroma row is one byte short.
+        assert_eq!(to_bgrx(&picture, 3, 3), vec![0; 3 * 3 * 4]);
+    }
 }

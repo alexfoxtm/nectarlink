@@ -90,7 +90,10 @@ object Elevated {
     private var shell: AdbStream? = null
     private var rootProcess: Process? = null
     @Volatile private var input: Writer? = null
-    private var socket: java.net.Socket? = null
+    @Volatile private var socket: java.net.Socket? = null
+    /** Bound only by a fixed marker read on this exact authenticated H stream;
+     * helper liveness or an old helper version must never admit unknown verbs. */
+    @Volatile private var hotspotProtocolOwner: java.net.Socket? = null
     /** Where the helper listens, and the token it wants, while it runs. */
     @Volatile private var helper: Pair<Int, String>? = null
     @Volatile private var screenOffRequested = false
@@ -504,6 +507,7 @@ object Elevated {
         helper = port to token
         val local = java.net.Socket(java.net.InetAddress.getLoopbackAddress(), port).apply { tcpNoDelay = true }
         socket = local
+        hotspotProtocolOwner = null
         val writer = OutputStreamWriter(local.outputStream, Charsets.UTF_8)
         writer.write("$token\nH\n")
         writer.flush()
@@ -513,7 +517,14 @@ object Elevated {
         Thread {
             runCatching {
                 local.inputStream.bufferedReader().lineSequence().forEach { line ->
-                    if (line.startsWith("CLIP\t")) {
+                    if (line == "HOTSPOT_PROTOCOL\t2") {
+                        if (socket === local && input != null) {
+                            hotspotProtocolOwner = local
+                            // Feature refresh must not tear down a healthy
+                            // input/clipboard channel if an observer fails.
+                            runCatching { onChange() }
+                        }
+                    } else if (line.startsWith("CLIP\t")) {
                         val parts = line.split('\t')
                         val b64Text = parts.getOrNull(1).orEmpty()
                         val b64Html = parts.getOrNull(2).orEmpty()
@@ -544,6 +555,7 @@ object Elevated {
                 }
             }
             if (socket === local) {
+                hotspotProtocolOwner = null
                 input = null
                 runCatching { local.close() }
                 if (_state.value == State.Running) _state.value = if (paired()) State.Waiting else State.NotSetUp
@@ -719,6 +731,59 @@ object Elevated {
 
     /** Lets NectarLink see which app is in front (for Pause for banking apps); false if Elevated isn't running. */
     fun grantUsageAccess(): Boolean = runCommand("appops set ${context.packageName} GET_USAGE_STATS allow")
+
+    /** Read-only typed-service capability probe on the exact current helper. */
+    internal fun hotspotCapability(): ShellHotspot.Result = hotspotExchange("PROBE", null, null) { true }
+
+    internal fun prepareHotspotOwned(peer: String, connection: ULong, request: ULong, network: String, stillCurrent: () -> Boolean): ShellHotspot.Result =
+        hotspotExchange("PREPARE", ShellHotspot.Owner(peer, connection, request), network, stillCurrent)
+
+    internal fun cancelHotspotOwned(peer: String, connection: ULong, request: ULong, stillCurrent: () -> Boolean): ShellHotspot.Result =
+        hotspotExchange("CANCEL_JOIN", ShellHotspot.Owner(peer, connection, request), null, stillCurrent)
+
+    private fun hotspotExchange(action: String, remoteOwner: ShellHotspot.Owner?, network: String?, stillCurrent: () -> Boolean): ShellHotspot.Result {
+        if (action !in setOf("PROBE", "PREPARE", "CANCEL_JOIN")) return ShellHotspot.Result.FAILED
+        if (action != "PROBE" && (remoteOwner == null || !remoteOwner.valid())) return ShellHotspot.Result.FAILED
+        val owner = socket ?: return ShellHotspot.Result.UNSUPPORTED
+        if (hotspotProtocolOwner !== owner) return ShellHotspot.Result.UNSUPPORTED
+        val endpoint = helper ?: return ShellHotspot.Result.UNSUPPORTED
+        if (input == null || !stillCurrent()) return ShellHotspot.Result.CANCELLED
+        return runCatching {
+            java.net.Socket().use { query ->
+                query.connect(java.net.InetSocketAddress(InetAddress.getLoopbackAddress(), endpoint.first), 2000)
+                query.soTimeout = if (action == "PREPARE") 40000 else 5000
+                val out = OutputStreamWriter(query.getOutputStream(), Charsets.UTF_8)
+                if (socket !== owner || hotspotProtocolOwner !== owner || helper != endpoint || input == null || !stillCurrent()) return@use ShellHotspot.Result.CANCELLED
+                val command = if (remoteOwner == null) "HOTSPOT PROBE" else {
+                    val json = org.json.JSONObject().put("peer", remoteOwner.peer).put("connection", remoteOwner.connection.toString()).put("request", remoteOwner.request.toString())
+                    if (network != null) json.put("network", network)
+                    "HOTSPOT $action " + android.util.Base64.encodeToString(json.toString().toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP)
+                }
+                // The expected SSID is private socket data, never argv/logs.
+                out.write("${endpoint.second}\n$command\n")
+                out.flush()
+                val reader = query.inputStream.reader(Charsets.UTF_8)
+                fun readReply(): String {
+                    val response = StringBuilder()
+                    while (response.length < 64) {
+                        val next = reader.read()
+                        if (next < 0 || next == '\n'.code) return response.toString()
+                        response.append(next.toChar())
+                    }
+                    return ""
+                }
+                var response = readReply()
+                if (response == "READY") {
+                    if (socket !== owner || hotspotProtocolOwner !== owner || helper != endpoint || input == null || !stillCurrent()) return@use ShellHotspot.Result.CANCELLED
+                    out.write("GO\n")
+                    out.flush()
+                    response = readReply()
+                }
+                if (socket !== owner || hotspotProtocolOwner !== owner || helper != endpoint || input == null || !stillCurrent()) return@use ShellHotspot.Result.CANCELLED
+                ShellHotspot.Result.entries.firstOrNull { it.name == response } ?: ShellHotspot.Result.FAILED
+            }
+        }.getOrDefault(ShellHotspot.Result.FAILED)
+    }
 
     /** Runs an allowed shell command through the Elevated helper. */
     fun runCommand(command: String): Boolean {

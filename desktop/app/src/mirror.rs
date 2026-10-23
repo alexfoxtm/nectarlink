@@ -1268,27 +1268,29 @@ const APP_START_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15
 /// stream is open.
 const SCREEN_FIRST_FRAME_TIMEOUT: Duration = Duration::from_secs(15);
 
-/// Holds the screen's newly opened stream to a first frame: when none
+/// Holds a newly opened view stream to a first frame: when none
 /// arrives in time, the request still showing ends with a reason and its
 /// stream stops, leaving Try again.
-fn expect_first_frame(window: Window) {
+fn expect_first_frame(window: Window, request: u64, stream: Option<u64>) {
     let deadline = NEXT_DEADLINE.fetch_add(1, Ordering::Relaxed);
-    let armed = state(|s| {
-        let request = *s.requests.get(&window)?;
-        let node = s.request_nodes.get(&window)?.node.clone();
+    let owner = state(|s| {
+        if !s.owns_request(&window, request) || stream.is_some_and(|id| !s.shows(&window, id)) {
+            return None;
+        }
+        let owner = s.request_nodes.get(&window)?.clone();
         s.first_frames.insert(window, deadline);
-        Some((request, node))
+        Some(owner)
     });
-    let Some((request, node)) = armed else { return };
+    let Some(owner) = owner else { return };
     core_host::spawn(async move {
         tokio::time::sleep(SCREEN_FIRST_FRAME_TIMEOUT).await;
         let _turn = TURN.lock().await;
         if !state(|s| s.end_without_first_frame(window, request, deadline)) {
             return;
         }
-        tracing::warn!("the phone's screen never sent a picture");
+        tracing::warn!(session = window.session, "the phone never sent a picture");
         core_host::host().hub.changed(Changes::MIRROR);
-        node.mirror_stop(window.device, window.session).await;
+        owner.stop(window).await;
     });
 }
 
@@ -1329,7 +1331,9 @@ pub fn on_event(event: &NodeEvent) {
             }
             let window = Window { device: *device, session: *session };
             set_phase(window, Phase::Showing);
-            expect_first_frame(window);
+            if let Some(request) = state(|s| s.requests.get(&window).copied()) {
+                expect_first_frame(window, request, None);
+            }
         }
         // Closed here: nothing to say. Stopped on the phone: say so.
         NodeEvent::Mirroring { device, session, on: false } => {
@@ -2072,6 +2076,11 @@ impl Video {
                 s.streams.insert(window, stream);
             }
         });
+        if window.session != MIRROR_SCREEN {
+            // One deadline per actual app stream, armed with this exact local
+            // request/stream before any queued config can outlive its window.
+            expect_first_frame(window, request, Some(stream));
+        }
         let started = std::thread::Builder::new().name("mirror-decoder".into()).spawn(move || {
             decode(window, stream, &items, &counter);
             #[cfg(test)]
@@ -4225,11 +4234,15 @@ mod mac_receive_fixture {
                 return Err(format!("the phone heard a STOP for another request: {stop:?}"));
             }
 
-            let gone = wait_for_mirroring_event(&mut events, phone_id, false).await?;
-            super::on_event(&gone);
-            if super::phase(&window) != Some(Phase::Ended(reason)) {
-                return Err("the stream's end replaced the deadline's reason".into());
-            }
+            // Local Stop retires the outgoing request before the reader ends,
+            // so Core intentionally suppresses that retired request's generic off event.
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while !stream.is_closed() {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .map_err(|_| "the exact stopped phone stream did not close within 5 seconds".to_owned())?;
 
             let sinks = receiver_platform.sinks.lock().unwrap_or_else(|e| e.into_inner()).clone();
             if sinks.is_empty() {
@@ -4252,6 +4265,12 @@ mod mac_receive_fixture {
             })
             .await
             .map_err(|_| "the let-go decoder did not exit".to_owned())?;
+            // Exercise a queued peer-only UI completion separately from the
+            // real exact Stop, sender stream closure and decoder exit proved above.
+            super::on_event(&NodeEvent::Mirroring { device: phone_id, session: MIRROR_SCREEN, on: false });
+            if super::phase(&window) != Some(Phase::Ended(reason)) {
+                return Err("the stream's end replaced the deadline's reason".into());
+            }
             if super::latest_bitmap(&window).is_some() {
                 return Err("a packet after the deadline published a picture".into());
             }

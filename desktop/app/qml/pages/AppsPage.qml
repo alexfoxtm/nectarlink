@@ -11,14 +11,13 @@ Item {
     property string deviceId
     property string deviceName
 
-    // Keep the host qualification gate distinct from negotiated phone support.
-    // Old/no-bit phones retain the matrix's Update phone action.
+    // A known host qualification gap takes precedence over phone setup advice.
+    // Keep the negotiated matrix intact; it cannot qualify this host build.
     readonly property var negotiatedFeature: AppController.capsRevision >= 0 && deviceId.length > 0
         ? AppController.featureState(deviceId, "mirroring.app_windows") : ({})
-    readonly property bool macGap: !Mirror.appWindowsSupported && negotiatedFeature.state === "available"
-    readonly property var feature: macGap
-        ? ({ state: "locked", action: "updateApp", target: "desktop" }) : negotiatedFeature
-    readonly property bool available: feature.state === "available" || feature.state === "partial"
+    readonly property bool macGap: !Mirror.appWindowsSupported
+    readonly property var feature: negotiatedFeature
+    readonly property bool available: !macGap && (feature.state === "available" || feature.state === "partial")
 
     readonly property var apps: {
         if (Mirror.appsDevice !== deviceId)
@@ -97,7 +96,7 @@ Item {
         }
         LockChip {
             anchors.horizontalCenter: parent.horizontalCenter
-            visible: page.deviceId.length > 0 && label.length > 0
+            visible: !page.macGap && page.deviceId.length > 0 && label.length > 0
             feature: page.feature
         }
     }

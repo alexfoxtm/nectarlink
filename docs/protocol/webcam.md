@@ -93,3 +93,58 @@ Followed by a sequence of framed video packets (`core/nectarlink-protocol/src/vi
 The phone's sender bounds its outgoing queue to a few frames (`QUEUE_FRAMES = 4`):
 if the network falls behind, queued frames are dropped and the encoder is asked
 for a fresh keyframe rather than building up latency.
+
+## 4. Owned webcam operation (additive v1)
+
+Both endpoints advertise `camera.webcam.owned.v1` when they implement the owned
+control, stream, and terminal-cleanup contract below. New macOS webcam uses this
+contract exclusively; it does not fall back to uncorrelated legacy Start, Stop,
+or video. The existing Windows contract above remains available to legacy peers.
+The capability is implementation support, not proof of virtual-camera readiness:
+the desktop must also actually offer `camera.virtual` and `addon.vcam`, and the
+phone still needs `camera.stream` and the per-device webcam toggle.
+
+`webcam.start.owned` is an RPC with body
+`{ request: uint, options: WebcamStart }`, answered by `webcam.ok` or an error.
+`request` is a nonzero durable sender-local capture allocation from Core, distinct
+from the control envelope's RPC `id`. The caller retains an opaque `WebcamView`
+containing the original Shared, Arc<Session>, request and operation authority;
+Core publishes that view before the Start await. Reconfiguration uses the same
+retained view/request and original Session.
+
+`webcam.stop.owned` is an RPC with body `{ request: uint }`. It addresses only
+that request on the actual original Session. The sender reserves its original
+outbox and repeats ownership/session admission after waiting. A replaced Session
+fails closed; it is never selected through a fresh peer lookup. A failed cleanup
+keeps the original operation closing, instead of silently admitting a successor.
+`webcam.keyframe.owned` uses the same request body on the retained Session and
+does not grant new capture authority.
+
+Owned admission and retirement happen in reader order before detached platform
+work. A Stop for a not-yet-admitted request fences a later Start for that same
+request. A retired request cannot become current again after OFF/ON or reconnect.
+Legacy Stop operates only on legacy streams/captures and cannot revoke an owned
+entry. The owned receiver retains its actual Core, Session and operation token
+through Platform and UniFFI; a pcId-only callback is insufficient.
+
+An owned phone video stream uses
+`{ svc: "webcam", op: "video.owned", v: 1 }`. Each Config payload is
+`{ request: uint, config: WebcamConfig }`; ordinary Frame/Keyframe payloads and
+framing are unchanged. Admission requires the actual receiving Session and exact
+live outgoing request. Missing/mismatched request, legacy config, stale Session,
+duplicate stream, disabled toggle, or revoked permission is refused.
+
+On Android, pending UI, notification token, user acceptance, stream open, capture,
+queued callbacks and cleanup retain one exact in-memory Entry and original
+NectarlinkNode/context. An old callback must not fetch whichever Node, pcId
+capture, foreground service or request replaced it. Notification launch/cancel
+and Stop actions bind the full Entry token; stale tokens never auto-start a new
+entry. Owned cleanup unbinds the original CameraX UseCases and waits for both
+main-thread and encoder/surface cleanup, including drain/codec release. Success
+`ok` is sent only after terminal platform cleanup, not after enqueue/post. A
+timeout or failed cleanup is an error and keeps camera admission fail-closed.
+Phone decline/natural Stop also retires the corresponding original desktop view.
+
+This contract does not install or approve any macOS Camera Extension, grant camera
+permission, or establish real-phone/conferencing acceptance. Those are separate
+explicit OS and runtime gates.

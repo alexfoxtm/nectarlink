@@ -27,6 +27,9 @@ pub mod qobject {
         #[qml_singleton]
         #[qproperty(bool, addon_registered, cxx_name = "addonRegistered")]
         #[qproperty(bool, addon_busy, cxx_name = "addonBusy")]
+        #[qproperty(QString, addon_status_text, cxx_name = "addonStatusText")]
+        #[qproperty(QString, addon_action_text, cxx_name = "addonActionText")]
+        #[qproperty(bool, addon_setup_allowed, cxx_name = "addonSetupAllowed")]
         #[qproperty(QString, selected_phone, cxx_name = "selectedPhone")]
         #[qproperty(QString, selected_phone_name, cxx_name = "selectedPhoneName")]
         #[qproperty(i32, height)]
@@ -72,6 +75,9 @@ pub mod qobject {
 pub struct WebcamRust {
     addon_registered: bool,
     addon_busy: bool,
+    addon_status_text: QString,
+    addon_action_text: QString,
+    addon_setup_allowed: bool,
     selected_phone: QString,
     selected_phone_name: QString,
     height: i32,
@@ -106,6 +112,9 @@ impl qobject::Webcam {
         let hub = &crate::core_host::host().hub;
         self.as_mut().set_addon_registered(webcam::addon_registered());
         self.as_mut().set_addon_busy(webcam::addon_busy());
+        self.as_mut().set_addon_status_text(QString::from(&webcam::addon_status_text()));
+        self.as_mut().set_addon_action_text(QString::from(&webcam::addon_action_text()));
+        self.as_mut().set_addon_setup_allowed(webcam::addon_setup_allowed());
         self.as_mut().set_height(webcam::height() as i32);
         self.as_mut().set_uhd(webcam::uhd());
         self.as_mut().set_camera(QString::from(webcam::camera()));
@@ -121,7 +130,13 @@ impl qobject::Webcam {
             Phase::Idle => ("idle", String::new(), String::new()),
             Phase::Asking { device } => {
                 let name = hub.read(|s| s.name_of(&device)).unwrap_or_else(|| "phone".into());
-                ("asking", device.to_string(), tr!("Webcam", "Starting camera on %1…", name))
+                let status = if webcam::cancelling() {
+                    webcam::cancellation_error()
+                        .unwrap_or_else(|| tr!("Webcam", "Stopping camera on %1…", name))
+                } else {
+                    tr!("Webcam", "Starting camera on %1…", name)
+                };
+                ("asking", device.to_string(), status)
             }
             Phase::Streaming { device, width, height, fps } => {
                 let name = hub.read(|s| s.name_of(&device)).unwrap_or_else(|| "phone".into());

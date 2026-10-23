@@ -1275,4 +1275,5 @@
     <string name="phone_control_pc_toggle">允许控制此手机</string>
     <string name="phone_control_pc_toggle_hint">仅在共享此手机屏幕时，允许这台受信任的电脑点击、滚动和输入文字。默认关闭。此开关不会解除“停止控制”。</string>
     <string name="mirror_request_text_control">它还可以在这部手机上点按、滚动和输入。点按即可共享，随时可以停止。</string>
+    <string name="webcam_start_on_pc">请从电脑启动摄像头</string>
 </resources>

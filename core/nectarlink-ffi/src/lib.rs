@@ -24,6 +24,15 @@ const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 // ---- Records and enums ----
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum PhoneHotspotOutcome {
+    Active,
+    NeedsSettings,
+    ConfigChanged,
+    Failed,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum DeviceKind {
     Phone,
     Tablet,
@@ -1048,6 +1057,28 @@ impl NotificationActionContext {
     }
 }
 
+/// Opaque original webcam Core/Session/request owner; the app cannot mint one.
+#[derive(Debug, uniffi::Object)]
+pub struct WebcamCaptureContext(core::WebcamCaptureContext);
+#[uniffi::export]
+impl WebcamCaptureContext {
+    pub fn belongs_to_node(&self, node: Arc<NectarlinkNode>) -> bool {
+        node.node.owns_webcam_context(&self.0)
+    }
+    pub fn is_current(&self) -> bool {
+        self.0.is_current()
+    }
+    pub fn same_owner(&self, other: Arc<WebcamCaptureContext>) -> bool {
+        self.0.same_owner(&other.0)
+    }
+    pub fn finish(&self) {
+        self.0.finish();
+    }
+    pub async fn open(&self) -> Result<Arc<MirrorStream>, NectarlinkError> {
+        self.0.open().await.map(|stream| Arc::new(MirrorStream(stream))).map_err(Into::into)
+    }
+}
+
 /// Exact original phone input admission, retained through Android posting.
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct PhoneControlContext {
@@ -1230,6 +1261,26 @@ impl MirrorStream {
 #[uniffi::export]
 pub fn mirror_config(width: u32, height: u32, session: u32, request: Option<u64>) -> Vec<u8> {
     core::MirrorConfig { codec: "h264".into(), width, height, session, request }.to_cbor()
+}
+
+/// Owned config always echoes the actual opaque Core authority's request.
+#[uniffi::export]
+pub fn webcam_owned_config(
+    owner: Arc<WebcamCaptureContext>,
+    width: u32,
+    height: u32,
+    camera: String,
+    fps: u32,
+    max_height: u32,
+) -> Vec<u8> {
+    if !owner.0.is_current() {
+        return Vec::new();
+    }
+    core::WebcamOwnedConfig {
+        request: owner.0.request(),
+        config: core::WebcamConfig { codec: "h264".into(), width, height, camera, fps, max_height },
+    }
+    .to_cbor()
 }
 
 /// The bytes of a config packet for a stream of `codec` (`"h264"`, `"h265"`, or `"av1"`).
@@ -2816,6 +2867,15 @@ pub trait Platform: Send + Sync {
     fn webcam_requested(&self, pc_id: String, options: WebcamOptions) -> bool;
     /// The PC stopped watching the webcam stream.
     fn webcam_stop_requested(&self, pc_id: String);
+    fn webcam_requested_owned(
+        &self,
+        pc_id: String,
+        options: WebcamOptions,
+        context: Arc<WebcamCaptureContext>,
+    ) -> bool;
+    /// True only after original Entry/main/surface cleanup reaches terminal state.
+    fn webcam_stop_owned(&self, pc_id: String, context: Arc<WebcamCaptureContext>) -> bool;
+    fn webcam_keyframe_owned(&self, pc_id: String, context: Arc<WebcamCaptureContext>);
     /// A PC asked for this phone's microphone (`docs/protocol/mic.md`): ask
     /// the user, then stream with `mic_open`. False if it couldn't ask.
     fn mic_requested(&self, pc_id: String) -> bool;
@@ -2852,6 +2912,17 @@ pub trait Platform: Send + Sync {
     /// `"ringer"`, `"flashlight"`, `"volume"`, `"brightness"`, `"wifi"`,
     /// `"bluetooth"`). False if the phone couldn't.
     fn set_phone_toggle(&self, id: String, value: PhoneToggleValue) -> bool;
+    /// Owned hotspot preparation; a delayed callback must keep checking the
+    /// exact originating Node/peer/connection/request before its final OS GO.
+    fn prepare_phone_hotspot_owned(
+        &self,
+        device: String,
+        connection: u64,
+        request: u64,
+        network: String,
+    ) -> PhoneHotspotOutcome;
+
+    fn cancel_phone_hotspot_owned(&self, device: String, connection: u64, request: u64);
     /// A PC asked to list a folder in this phone's storage (`""` is root).
     fn storage_list(&self, path: String) -> Result<Vec<StorageEntry>, StorageFailure>;
     /// A PC asked to open a file in this phone's storage for ranged reading.
@@ -3089,6 +3160,36 @@ impl core::Platform for PlatformAdapter {
             Err("the phone couldn't".into())
         }
     }
+    fn webcam_requested_owned(
+        &self,
+        owner: core::WebcamCaptureContext,
+        options: &core::WebcamStart,
+    ) -> Result<(), String> {
+        let pc_id = owner.peer().to_string();
+        let options = WebcamOptions {
+            camera: options.camera.clone(),
+            width: options.width,
+            height: options.height,
+            fps: options.fps,
+            bitrate: options.bitrate,
+        };
+        if self.0.webcam_requested_owned(pc_id, options, Arc::new(WebcamCaptureContext(owner))) {
+            Ok(())
+        } else {
+            Err("original webcam request was not admitted".into())
+        }
+    }
+    fn webcam_stop_owned(&self, owner: core::WebcamCaptureContext) -> Result<(), String> {
+        let pc_id = owner.peer().to_string();
+        if self.0.webcam_stop_owned(pc_id, Arc::new(WebcamCaptureContext(owner))) {
+            Ok(())
+        } else {
+            Err("original webcam cleanup has not completed".into())
+        }
+    }
+    fn webcam_keyframe_owned(&self, owner: core::WebcamCaptureContext) {
+        self.0.webcam_keyframe_owned(owner.peer().to_string(), Arc::new(WebcamCaptureContext(owner)));
+    }
     fn webcam_stop_requested(&self, peer: &DeviceId) {
         self.0.webcam_stop_requested(peer.to_string());
     }
@@ -3293,6 +3394,24 @@ impl core::Platform for PlatformAdapter {
             core::PhoneToggleValue::Mode(mode) => PhoneToggleValue::Mode { mode: mode.clone() },
         };
         if self.0.set_phone_toggle(id.to_owned(), value) { Ok(()) } else { Err("the phone couldn't".into()) }
+    }
+    fn prepare_phone_hotspot_owned(
+        &self,
+        peer: &core::DeviceId,
+        connection: u64,
+        request: u64,
+        network: &str,
+    ) -> core::PhoneHotspotState {
+        match self.0.prepare_phone_hotspot_owned(peer.to_string(), connection, request, network.to_owned()) {
+            PhoneHotspotOutcome::Active => core::PhoneHotspotState::Active,
+            PhoneHotspotOutcome::NeedsSettings => core::PhoneHotspotState::NeedsSettings,
+            PhoneHotspotOutcome::ConfigChanged => core::PhoneHotspotState::ConfigChanged,
+            PhoneHotspotOutcome::Failed => core::PhoneHotspotState::Failed,
+            PhoneHotspotOutcome::Cancelled => core::PhoneHotspotState::Cancelled,
+        }
+    }
+    fn cancel_phone_hotspot_owned(&self, peer: &core::DeviceId, connection: u64, request: u64) {
+        self.0.cancel_phone_hotspot_owned(peer.to_string(), connection, request);
     }
     fn storage_list(&self, path: &str) -> Result<Vec<core::StorageEntry>, core::StorageError> {
         let items = self.0.storage_list(path.to_owned())?;
@@ -4385,6 +4504,9 @@ impl NectarlinkNode {
     }
 
     /// Stops this phone's webcam stream to a paired PC and tells the PC.
+    pub fn webcam_owned_required(&self, pc_id: String) -> bool {
+        pc_id.parse().ok().is_some_and(|peer| self.node.webcam_owned_required(peer))
+    }
     pub async fn webcam_stop(&self, pc_id: String) -> Result<()> {
         let id = parse_id(&pc_id)?;
         let node = self.node.clone();
@@ -4482,6 +4604,20 @@ impl NectarlinkNode {
         let node = self.node.clone();
         let toggles: core::PhoneToggles = toggles.into();
         self.run(async move { Ok(node.toggles_changed(toggles).await?) }).await
+    }
+
+    pub fn phone_hotspot_request_current(&self, device: String, connection: u64, request: u64) -> bool {
+        device
+            .parse()
+            .ok()
+            .is_some_and(|device| self.node.phone_hotspot_request_current(device, connection, request))
+    }
+
+    pub fn phone_hotspot_cancellation_current(&self, device: String, connection: u64, request: u64) -> bool {
+        device
+            .parse()
+            .ok()
+            .is_some_and(|device| self.node.phone_hotspot_cancellation_current(device, connection, request))
     }
 
     // ---- Continuity Camera ----

@@ -81,8 +81,8 @@ Window {
     title: info.app ? qsTr("%1 · %2").arg(info.title).arg(deviceName)
          : deviceName.length > 0 ? qsTr("%1 · Waypair Link").arg(deviceName) : qsTr("Phone screen · Waypair Link")
     color: "black"
-    minimumWidth: 240
-    minimumHeight: 240
+    minimumWidth: Math.max(0, Math.min(240, availableArea.width * 0.95))
+    minimumHeight: Math.max(0, Math.min(240, availableArea.height * 0.95))
 
     // A phone-shaped window the first time a picture arrives (portrait or
     // landscape), within the screen, or restored to where the user left it.

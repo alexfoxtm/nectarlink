@@ -358,9 +358,53 @@ object InputServer {
             val first = runCatching { reader.nextLine() }.getOrNull()
             if (first != null && first.startsWith("V ")) return appWindow(client, first, reader)
             if (first == "A") return streamDeviceAudio(client.getOutputStream())
+            if (first != null && first.startsWith("HOTSPOT ")) {
+                val output = client.getOutputStream()
+                fun reply(value: String) { output.write((value + "\n").toByteArray(Charsets.UTF_8)); output.flush() }
+                var ticket: ShellHotspot.Ticket? = null
+                try {
+                    if (first == "HOTSPOT PROBE") {
+                        reply(ShellHotspot.probe().name)
+                        return
+                    }
+                    val command = first.split(' ', limit = 3)
+                    if (command.size != 3 || command[1] !in setOf("PREPARE", "CANCEL_JOIN") || command[2].length > 4096) {
+                        reply(ShellHotspot.Result.FAILED.name)
+                        return
+                    }
+                    val json = org.json.JSONObject(String(android.util.Base64.decode(command[2], android.util.Base64.NO_WRAP), Charsets.UTF_8))
+                    val owner = ShellHotspot.Owner(json.getString("peer"), json.getString("connection").toULong(), json.getString("request").toULong())
+                    if (!owner.valid()) { reply(ShellHotspot.Result.FAILED.name); return }
+                    ticket = if (command[1] == "PREPARE") ShellHotspot.ticket(owner, json.getString("network")) else ShellHotspot.cancel(owner)
+                    val admitted = ticket
+                    if (admitted == null) {
+                        val capability = ShellHotspot.probe()
+                        reply(if (capability == ShellHotspot.Result.CAPABILITY_VERIFIED) ShellHotspot.Result.CONFIG_CHANGED.name else capability.name)
+                        return
+                    }
+                    // Snapshot/permission probe precedes READY. The app must
+                    // recheck the original owned Node/peer/request before GO.
+                    reply("READY")
+                    client.soTimeout = 2500
+                    if (runCatching { reader.nextLine() }.getOrNull() == "GO") reply(admitted.run().name)
+                } catch (_: LinkageError) {
+                    runCatching { reply(ShellHotspot.Result.UNSUPPORTED.name) }
+                } catch (_: Exception) {
+                    // No exception/configuration string can enter diagnostics.
+                    runCatching { reply(ShellHotspot.Result.FAILED.name) }
+                } finally { ticket?.abandon?.invoke() }
+                // Never replace controlOut or shut down the source connection.
+                return
+            }
             val writer = java.io.OutputStreamWriter(client.getOutputStream(), Charsets.UTF_8)
             controlOut = writer
             try {
+                if (first == "H") {
+                    synchronized(writer) {
+                        writer.write("HOTSPOT_PROTOCOL\t2\n")
+                        writer.flush()
+                    }
+                }
                 var line: String? = if (first == "H") runCatching { reader.nextLine() }.getOrNull() else first
                 while (line != null) {
                     val input = line
@@ -580,10 +624,6 @@ object InputServer {
         "svc wifi disable",
         "svc bluetooth enable",
         "svc bluetooth disable",
-        "hotspot on",
-        "hotspot off",
-        "cmd wifi start-softap",
-        "cmd wifi stop-softap",
         // Pause for banking apps: seeing which app is in front. Only this APK's own package.
         "appops set $PKG GET_USAGE_STATS allow",
     )
@@ -639,11 +679,7 @@ object InputServer {
                 "T" -> type(rest)
                 "G" -> gamepad(rest)
                 "C" -> if (allowedCommand(rest) && display < 0) {
-                    when (rest) {
-                        "hotspot on" -> setHotspot(true)
-                        "hotspot off" -> setHotspot(false)
-                        else -> Runtime.getRuntime().exec(rest.split(' ').toTypedArray()).waitFor()
-                    }
+                    Runtime.getRuntime().exec(rest.split(' ').toTypedArray()).waitFor()
                 }
                 "P" -> if (display < 0) setDisplayPower(rest.trim() != "0")
                 "B" -> if (display < 0) setClipboard(rest)
@@ -804,29 +840,6 @@ object InputServer {
             )
             send(motion)
             motion.recycle()
-        }
-
-        private fun setHotspot(enable: Boolean) {
-            val candidates = if (enable) {
-                listOf(
-                    arrayOf("cmd", "connectivity", "start-tethering", "wifi"),
-                    arrayOf("cmd", "wifi", "start-softap"),
-                    arrayOf("svc", "wifi", "tether", "enable"),
-                )
-            } else {
-                listOf(
-                    arrayOf("cmd", "connectivity", "stop-tethering", "wifi"),
-                    arrayOf("cmd", "wifi", "stop-softap"),
-                    arrayOf("svc", "wifi", "tether", "disable"),
-                )
-            }
-            for (cmd in candidates) {
-                val ok = runCatching {
-                    val proc = Runtime.getRuntime().exec(cmd)
-                    proc.waitFor() == 0
-                }.getOrDefault(false)
-                if (ok) break
-            }
         }
 
         private companion object {

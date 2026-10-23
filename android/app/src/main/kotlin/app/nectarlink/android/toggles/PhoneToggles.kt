@@ -41,6 +41,7 @@ class PhoneToggles(
     private val camera = this.context.getSystemService(CameraManager::class.java)
     private val wifi = this.context.getSystemService(WifiManager::class.java)
     private val bluetooth = this.context.getSystemService(BluetoothManager::class.java)
+    private val hotspot = PhoneHotspot(this.context, onCapabilitiesChanged)
 
     private val torchCameraId: String? by lazy { findTorchCamera() }
     @Volatile private var torchOn: Boolean = false
@@ -75,8 +76,9 @@ class PhoneToggles(
     }
 
     fun start() {
-        if (started) return
+        if (started) { hotspot.refreshCapability(); return }
         started = true
+        hotspot.start()
         if (torchCameraId != null) {
             runCatching { camera?.registerTorchCallback(torchCallback, mainHandler) }
                 .onFailure { Log.w(TAG, "torch callback failed", it) }
@@ -109,6 +111,7 @@ class PhoneToggles(
     fun stop() {
         if (!started) return
         started = false
+        hotspot.stop()
         mainHandler.removeCallbacks(emitRunnable)
         mainHandler.removeCallbacks(followUpRunnable)
         if (torchCameraId != null) {
@@ -125,6 +128,7 @@ class PhoneToggles(
         add("toggles.volume")
         if (torchCameraId != null) add("toggles.flashlight")
         if (canChangeDnd(context)) add("toggles.dnd")
+        if (hotspot.canEnableOrJoin()) add("phone.hotspot.v3")
         if (canChangeBrightness(context)) add("toggles.brightness")
         if (Elevated.running) {
             add("toggles.wifi")
@@ -146,9 +150,17 @@ class PhoneToggles(
     /** Forces an immediate snapshot push to `nectarlink-core`. */
     @Synchronized
     fun pushNow() {
+        hotspot.refreshCapability()
         val current = snapshot()
         lastSent = current
         onChanged(current)
+    }
+
+    internal fun prepareHotspot(peer: String, connection: ULong, request: ULong, network: String, stillCurrent: () -> Boolean): app.nectarlink.core.PhoneHotspotOutcome =
+        hotspot.prepare(peer, connection, request, network, stillCurrent)
+
+    internal fun cancelHotspot(peer: String, connection: ULong, request: ULong, stillCurrent: () -> Boolean) {
+        hotspot.cancel(peer, connection, request, stillCurrent)
     }
 
     /** Changes one quick setting on the phone (`phone.toggle.set`). */
@@ -185,7 +197,9 @@ class PhoneToggles(
                 }
                 "hotspot" -> {
                     val on = (value as? PhoneToggleValue.Bool)?.on ?: return false
-                    Elevated.runCommand(if (on) "hotspot on" else "hotspot off")
+                    // Hotspot changes require peer/session/request ownership;
+                    // the legacy id/value callback cannot supply that proof.
+                    false
                 }
                 "pc_active" -> {
                     val on = (value as? PhoneToggleValue.Bool)?.on ?: return false

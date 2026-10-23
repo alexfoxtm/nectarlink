@@ -250,6 +250,19 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "setHotspotNetwork"]
         fn set_hotspot_network(self: &AppController, device: &QString, network: &QString);
+        /// Explicit, correlated user request; no optimistic hotspot state.
+        #[qinvokable]
+        #[cxx_name = "joinPhoneHotspot"]
+        fn join_phone_hotspot(self: &AppController, device: &QString);
+        #[qinvokable]
+        #[cxx_name = "cancelPhoneHotspotJoin"]
+        fn cancel_phone_hotspot_join(self: &AppController, device: &QString);
+        #[qinvokable]
+        #[cxx_name = "phoneHotspotJoining"]
+        fn phone_hotspot_joining(self: &AppController, device: &QString) -> bool;
+        #[qinvokable]
+        #[cxx_name = "requestWifiDiscoveryPermission"]
+        fn request_wifi_discovery_permission(self: &AppController);
         #[qinvokable]
         fn set_device_toggle(self: Pin<&mut AppController>, device: &QString, name: &QString, on: bool);
         /// Latest quick settings toggles for a phone as JSON (`""` when unknown).
@@ -1688,6 +1701,34 @@ impl qobject::AppController {
     pub fn hotspot_network(&self, device: &QString) -> QString {
         let network = super::parse_device(device).and_then(crate::hotspot::network_for);
         QString::from(network.as_deref().unwrap_or(""))
+    }
+
+    pub fn join_phone_hotspot(&self, device: &QString) {
+        if let Some(device) = super::parse_device(device) {
+            crate::hotspot::join_phone(device);
+        }
+    }
+
+    pub fn cancel_phone_hotspot_join(&self, device: &QString) {
+        if let Some(device) = super::parse_device(device)
+            && crate::hotspot::is_joining(device)
+        {
+            crate::hotspot::cancel(device);
+            show_message(
+                "Join cancelled. If hotspot activation has already been submitted, the phone hotspot stays on. Turn it off manually on the phone.",
+            );
+        }
+    }
+
+    pub fn phone_hotspot_joining(&self, device: &QString) -> bool {
+        super::parse_device(device).is_some_and(crate::hotspot::is_joining)
+    }
+
+    pub fn request_wifi_discovery_permission(&self) {
+        #[cfg(target_os = "macos")]
+        if let Err(reason) = crate::win::wifi::request_discovery_permission() {
+            show_message(reason);
+        }
     }
 
     pub fn set_hotspot_network(&self, device: &QString, network: &QString) {

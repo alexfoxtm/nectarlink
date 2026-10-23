@@ -230,6 +230,7 @@ pub(crate) struct Shared {
     pub(crate) calls: crate::calls::Current,
     /// This phone's quick settings state (docs/protocol/toggles.md).
     pub(crate) toggles: crate::toggles::Current,
+    pub(crate) hotspot: crate::hotspot::Current,
     /// This PC's Wake-on-LAN adapter addresses (docs/protocol/actions.md).
     pub(crate) wake_info: crate::actions::CurrentWakeInfo,
     /// Active watched tasks on this PC (`task.notify`, `docs/protocol/actions.md`).
@@ -260,6 +261,7 @@ pub(crate) struct Shared {
     pub(crate) watch_offers: Mutex<HashMap<DeviceId, crate::media::WatchOffer>>,
     /// Stop signals for phone webcam streams arriving here, by phone.
     pub(crate) webcam_stops: Mutex<HashMap<DeviceId, Arc<tokio::sync::Notify>>>,
+    pub(crate) webcam_owned: crate::webcam_owned::State,
     /// Stop signals for phone microphone streams arriving here, by phone.
     pub(crate) mic_stops: Mutex<HashMap<DeviceId, Arc<tokio::sync::Notify>>>,
     /// Per-peer rate limiters and prompt state for remote input.
@@ -700,6 +702,23 @@ impl Shared {
 
     pub fn session(&self, peer: &DeviceId) -> Option<Arc<Session>> {
         lock(&self.sessions).get(peer).filter(|s| s.is_alive()).cloned()
+    }
+
+    /// Camera registry admission follows the existing Session -> owner lock order.
+    pub(crate) fn with_webcam_session<T>(
+        &self,
+        original: &Arc<Session>,
+        apply: impl FnOnce() -> T,
+    ) -> Option<T> {
+        let sessions = lock(&self.sessions);
+        if self.cancel.is_cancelled()
+            || !sessions
+                .get(&original.peer)
+                .is_some_and(|live| live.is_alive() && Arc::ptr_eq(live, original))
+        {
+            return None;
+        }
+        Some(apply())
     }
 
     /// Session -> outgoing -> reader lock order matches on_session_end.
@@ -1477,17 +1496,19 @@ impl Shared {
             transfer::cleanup_staging_id(self, id);
         }
 
-        let existed = {
+        let (existed, camera_owners) = {
             let mut actions = self.notifications.action_authority();
             actions.revoke_peer(peer);
             let existed = self.store.remove_peer(peer)?;
             if let Some(sup) = lock(&self.supervisors).remove(peer) {
                 sup.cancel.cancel();
             }
-            if let Some(session) = lock(&self.sessions).remove(peer) {
+            let mut sessions = lock(&self.sessions);
+            if let Some(session) = sessions.remove(peer) {
                 session.close(CLOSE_NORMAL, b"unpaired");
             }
-            existed
+            let camera_owners = self.webcam_owned.revoke_peer(peer);
+            (existed, camera_owners)
         };
         lock(&self.links).remove(peer);
         lock(&self.published_mediums).remove(peer);
@@ -1501,6 +1522,9 @@ impl Shared {
         self.toggles.remove_peer(peer);
         self.deck.remove_peer(peer);
         self.stop_webcam(peer);
+        for owner in camera_owners {
+            crate::webcam_owned::request_cleanup(owner);
+        }
         let owners = self.clear_mirror_peer(peer);
         self.dispatch_mirror_stops(*peer, owners);
         let typing_fence_error = self.forget_mirror_typing(peer).err();
@@ -1551,6 +1575,8 @@ impl Shared {
             existing.close(CLOSE_DUPLICATE, b"duplicate");
         }
 
+        // Replacing a connection cannot inherit camera capture authority.
+        let camera_owners = self.webcam_owned.revoke_peer(&peer);
         // Replacing a connection cannot inherit its prior mirror requests.
         let mirror_owners = self.clear_mirror_peer(&peer);
         let remote_device = remote.device.sanitized();
@@ -1574,6 +1600,9 @@ impl Shared {
         sessions.insert(peer, session.clone());
         drop(sessions);
         self.dispatch_mirror_stops(peer, mirror_owners);
+        for owner in camera_owners {
+            crate::webcam_owned::request_cleanup(owner);
+        }
         self.correct_hello_caps(&peer, &sent_caps);
         lock(&self.dial_failures).remove(&peer);
 
@@ -1639,6 +1668,7 @@ impl Shared {
         if current {
             sessions.remove(&ended.peer);
             let mirror_owners = self.clear_mirror_peer(&ended.peer);
+            let camera_owners = self.webcam_owned.revoke_peer(&ended.peer);
             lock(&self.pc_mirror_sessions).remove(&ended.peer);
             lock(&self.watch_offers).remove(&ended.peer);
             lock(&self.storage).remove_peer(&ended.peer);
@@ -1655,6 +1685,9 @@ impl Shared {
             }
             drop(sessions);
             self.dispatch_mirror_stops(ended.peer, mirror_owners);
+            for owner in camera_owners {
+                crate::webcam_owned::request_cleanup(owner);
+            }
             let _ = self.store.clear_send_queue_retry_delays(&ended.peer);
             self.queue_notify.notify_waiters();
         }
@@ -2034,6 +2067,7 @@ impl Node {
             players: Default::default(),
             calls: Default::default(),
             toggles: Default::default(),
+            hotspot: Default::default(),
             wake_info: Default::default(),
             tasks: Default::default(),
             deck: Default::default(),
@@ -2045,6 +2079,7 @@ impl Node {
             pc_mirror_sessions: Mutex::new(std::collections::HashSet::new()),
             watch_offers: Mutex::new(HashMap::new()),
             webcam_stops: Mutex::new(HashMap::new()),
+            webcam_owned: Default::default(),
             mic_stops: Mutex::new(HashMap::new()),
             remote: Mutex::new(Default::default()),
             storage: Mutex::new(Default::default()),
@@ -2170,6 +2205,9 @@ impl Node {
     /// Stops all sessions and networking.
     pub async fn shutdown(&self) {
         self.shared.cancel.cancel();
+        for owner in self.shared.webcam_owned.revoke_all() {
+            crate::webcam_owned::request_cleanup(owner);
+        }
         self.shared.localsend.stop(&self.shared);
         let sessions: Vec<_> = lock(&self.shared.sessions).drain().map(|(_, s)| s).collect();
         for session in sessions {
@@ -2492,15 +2530,20 @@ impl Node {
             toggle == crate::storage::TOGGLE || toggle == crate::storage::REMOTE_FILES_TOGGLE;
         let storage_changed =
             storage_toggle && self.shared.store.toggles(&peer)?.get(toggle).copied() != Some(enabled);
-        if toggle == notifications::TOGGLE {
-            let mut actions = self.shared.notifications.action_authority();
-            if !enabled {
-                actions.revoke_peer(&peer);
-            }
-            self.shared.store.set_toggle(&peer, toggle, enabled)?;
+        let camera_revoked = if toggle == crate::webcam::TOGGLE {
+            Some(self.shared.webcam_owned.write_toggle(&self.shared, &peer, enabled)?)
         } else {
-            self.shared.store.set_toggle(&peer, toggle, enabled)?;
-        }
+            if toggle == notifications::TOGGLE {
+                let mut actions = self.shared.notifications.action_authority();
+                if !enabled {
+                    actions.revoke_peer(&peer);
+                }
+                self.shared.store.set_toggle(&peer, toggle, enabled)?;
+            } else {
+                self.shared.store.set_toggle(&peer, toggle, enabled)?;
+            }
+            None
+        };
         if storage_toggle {
             // Reads already admitted end before anyone hears access changed.
             let mut st = lock(&self.shared.storage);
@@ -2599,13 +2642,26 @@ impl Node {
             }
         }
         if toggle == crate::webcam::TOGGLE && !enabled {
-            self.shared.stop_webcam(&peer);
-            let platform = self.shared.platform.clone();
-            drop(self.shared.runtime.spawn_blocking(move || platform.webcam_stop_requested(&peer)));
-            if let Some(session) = self.shared.session(&peer) {
+            let (view, capture) = camera_revoked.unwrap_or((None, None));
+            if let Some(capture) = capture {
+                crate::webcam_owned::request_cleanup(capture);
+            }
+            if let Some(view) = view {
                 self.shared.runtime.spawn(async move {
-                    let _ = crate::webcam::stop(&session).await;
+                    let _ = view.stop_if_current().await;
                 });
+            }
+            if !(self.shared.peer_supports(&peer, "camera.webcam.owned.v1")
+                && self.shared.local_capabilities().iter().any(|cap| cap == "camera.webcam.owned.v1"))
+            {
+                self.shared.stop_webcam(&peer);
+                let platform = self.shared.platform.clone();
+                drop(self.shared.runtime.spawn_blocking(move || platform.webcam_stop_requested(&peer)));
+                if let Some(session) = self.shared.session(&peer) {
+                    self.shared.runtime.spawn(async move {
+                        let _ = crate::webcam::stop(&session).await;
+                    });
+                }
             }
         }
         Ok(())
@@ -3477,12 +3533,41 @@ impl Node {
     /// Asks a paired phone to start streaming its camera as a webcam.
     /// Video then arrives through [`Platform::webcam_sink`](crate::Platform::webcam_sink).
     pub async fn webcam_start(&self, peer: DeviceId, options: crate::WebcamStart) -> Result<()> {
+        if cfg!(target_os = "macos")
+            && self.shared.local_capabilities().iter().any(|cap| cap == "camera.webcam.owned.v1")
+        {
+            return Err(Error::Unsupported);
+        }
         let session = self.connected(&peer)?;
         crate::webcam::start(&self.shared, &session, options).await
     }
 
+    pub fn owns_webcam_context(&self, context: &crate::WebcamCaptureContext) -> bool {
+        context.belongs_to(&self.shared)
+    }
+    pub fn webcam_owned_required(&self, peer: DeviceId) -> bool {
+        self.shared.peer_supports(&peer, "camera.webcam.owned.v1")
+            && self.shared.local_capabilities().iter().any(|cap| cap == "camera.webcam.owned.v1")
+    }
+
+    /// Publishes the actual original Session/capture owner before awaiting Start.
+    pub async fn webcam_start_owned(
+        &self,
+        peer: DeviceId,
+        options: crate::WebcamStart,
+        ready: impl FnOnce(crate::WebcamView) -> bool,
+    ) -> Result<()> {
+        let session = self.connected(&peer)?;
+        crate::webcam_owned::start(&self.shared, &session, options, ready).await
+    }
+
     /// Stops a webcam stream with `peer` (either direction) and tells `peer`.
     pub async fn webcam_stop(&self, peer: DeviceId) {
+        if cfg!(target_os = "macos")
+            && self.shared.local_capabilities().iter().any(|cap| cap == "camera.webcam.owned.v1")
+        {
+            return;
+        }
         self.shared.stop_webcam(&peer);
         if let Ok(session) = self.connected(&peer) {
             let _ = crate::webcam::stop(&session).await;
@@ -3491,6 +3576,11 @@ impl Node {
 
     /// Asks a phone for a fresh H.264 keyframe on the webcam stream.
     pub async fn webcam_keyframe(&self, peer: DeviceId) {
+        if cfg!(target_os = "macos")
+            && self.shared.local_capabilities().iter().any(|cap| cap == "camera.webcam.owned.v1")
+        {
+            return;
+        }
         if let Ok(session) = self.connected(&peer) {
             crate::webcam::request_keyframe(&session).await;
         }
@@ -4072,6 +4162,50 @@ impl Node {
         crate::toggles::set(&self.shared, &session, id, value).await
     }
 
+    /// Exact paired protocol connection admitted for an explicit hotspot join.
+    /// The numeric session identity is never a new authorization grant.
+    pub fn phone_hotspot_connection(&self, peer: DeviceId) -> Option<u64> {
+        if self.shared.cancel.is_cancelled()
+            || !self.shared.store.is_paired(&peer).ok()?
+            || !self.shared.toggle_on(&peer, "toggles")
+        {
+            return None;
+        }
+        self.shared.session(&peer).map(|session| session.mirror_control_id).filter(|id| *id != 0)
+    }
+
+    pub fn phone_hotspot_connection_current(&self, peer: DeviceId, connection: u64) -> bool {
+        connection != 0 && self.phone_hotspot_connection(peer) == Some(connection)
+    }
+
+    pub fn create_phone_hotspot_request(&self, peer: DeviceId) -> Result<crate::PhoneHotspotOwner> {
+        let session = self.connected(&peer)?;
+        crate::hotspot::create(&self.shared, &session)
+    }
+
+    pub async fn prepare_phone_hotspot(
+        &self,
+        owner: crate::PhoneHotspotOwner,
+        network: String,
+    ) -> Result<crate::PhoneHotspotState> {
+        crate::hotspot::prepare(&self.shared, owner, network).await
+    }
+
+    pub fn cancel_phone_hotspot_request(&self, owner: crate::PhoneHotspotOwner) {
+        crate::hotspot::cancel(&self.shared, owner);
+    }
+
+    pub fn phone_hotspot_request_current(&self, peer: DeviceId, connection: u64, request: u64) -> bool {
+        crate::hotspot::incoming_current(&self.shared, crate::PhoneHotspotOwner { peer, connection, request })
+    }
+
+    pub fn phone_hotspot_cancellation_current(&self, peer: DeviceId, connection: u64, request: u64) -> bool {
+        crate::hotspot::cancellation_current(
+            &self.shared,
+            crate::PhoneHotspotOwner { peer, connection, request },
+        )
+    }
+
     // ---- Deck (docs/protocol/deck.md) ----
 
     /// The latest Deck layout reported by a connected PC, if any.
@@ -4349,25 +4483,45 @@ impl Node {
     /// Updates this device's power level and the capabilities it offers
     /// beyond the built-in ones (they depend on permissions and add-ons).
     pub async fn update_power(&self, power: PowerLevel, extra_capabilities: Vec<String>) {
-        let (read_lost, input_changed) = {
-            // Same authority-before-local order as notification action admission.
+        // Notification authority -> camera authority -> local matches admission;
+        // snapshots retain old owners through OFF/ON instead of looking up a successor.
+        let ((read_lost, input_changed), camera_views, camera_owners) = {
             let mut actions = self.shared.notifications.action_authority();
-            let mut local = self.shared.local.write().unwrap_or_else(|e| e.into_inner());
-            let before = local.capabilities();
-            let offered_read = before.iter().any(|c| c == crate::storage::STORAGE_READ);
-            local.power = power;
-            local.extra_capabilities = extra_capabilities;
-            let caps = local.capabilities();
-            if before.iter().any(|cap| cap == "notify.reply") && !caps.iter().any(|cap| cap == "notify.reply")
-            {
-                actions.revoke_all();
-            }
-            let input_changed = (before.iter().any(|cap| cap == crate::MIRROR_INPUT_REQUEST)
-                || caps.iter().any(|cap| cap == crate::MIRROR_INPUT_REQUEST))
-                && (before.iter().any(|cap| cap == crate::MIRROR_INPUT)
-                    != caps.iter().any(|cap| cap == crate::MIRROR_INPUT));
-            (offered_read && !caps.iter().any(|c| c == crate::storage::STORAGE_READ), input_changed)
+            self.shared.webcam_owned.capability_update(|| {
+                let mut local = self.shared.local.write().unwrap_or_else(|e| e.into_inner());
+                let before = local.capabilities();
+                let offered_read = before.iter().any(|c| c == crate::storage::STORAGE_READ);
+                local.power = power;
+                local.extra_capabilities = extra_capabilities;
+                let caps = local.capabilities();
+                if before.iter().any(|cap| cap == "notify.reply")
+                    && !caps.iter().any(|cap| cap == "notify.reply")
+                {
+                    actions.revoke_all();
+                }
+                let input_changed = (before.iter().any(|cap| cap == crate::MIRROR_INPUT_REQUEST)
+                    || caps.iter().any(|cap| cap == crate::MIRROR_INPUT_REQUEST))
+                    && (before.iter().any(|cap| cap == crate::MIRROR_INPUT)
+                        != caps.iter().any(|cap| cap == crate::MIRROR_INPUT));
+                let camera_lost =
+                    ["camera.stream", "camera.virtual", "camera.webcam.owned.v1"].iter().any(|name| {
+                        before.iter().any(|cap| cap.as_str() == *name)
+                            && !caps.iter().any(|cap| cap.as_str() == *name)
+                    });
+                (
+                    camera_lost,
+                    (offered_read && !caps.iter().any(|c| c == crate::storage::STORAGE_READ), input_changed),
+                )
+            })
         };
+        for owner in camera_owners {
+            crate::webcam_owned::request_cleanup(owner);
+        }
+        for view in camera_views {
+            self.shared.runtime.spawn(async move {
+                let _ = view.stop_if_current().await;
+            });
+        }
         if read_lost {
             lock(&self.shared.storage).cancel_all_reads();
         }

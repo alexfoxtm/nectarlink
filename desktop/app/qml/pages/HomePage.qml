@@ -78,7 +78,11 @@ Item {
         if (AppController.currentDevice !== current)
             AppController.currentDevice = current
     }
-    onCurrentDeviceIdChanged: AppController.watchHomeSummary(visible ? currentDeviceId : "")
+    onCurrentDeviceIdChanged: {
+        AppController.watchHomeSummary(visible ? currentDeviceId : "")
+        if (phoneHotspotSheet.opened && phoneHotspotSheet.deviceId !== currentDeviceId)
+            phoneHotspotSheet.close()
+    }
     onVisibleChanged: AppController.watchHomeSummary(visible ? currentDeviceId : "")
     Component.onDestruction: AppController.watchHomeSummary("")
     Connections {
@@ -1916,7 +1920,6 @@ Item {
                 visible: home.online && state !== null
                 property bool expanded: false
                 property bool confirmWifiOff: false
-                property bool hotspotActive: false
                 property var hoveredLockedFeature: null
                 readonly property var state: {
                     if (AppController.phoneTogglesRevision < 0)
@@ -2030,18 +2033,14 @@ Item {
                             onLockedClicked: phoneControls.hoveredLockedFeature = (phoneControls.hoveredLockedFeature === feature ? ({}) : feature)
                             onClicked: AppController.setPhoneToggle(home.deviceId, "bluetooth", String(!active))
                         }
-                        QuickToggleButton {
+                        Button {
                             width: toggleRow.buttonWidth
-                            iconPath: Icons.globe
-                            shortTitle: qsTr("Hotspot")
-                            label: qsTr("Instant Hotspot")
-                            active: phoneControls.hotspotActive
-                            feature: phoneControls.wifiFeature
-                            onLockedClicked: phoneControls.hoveredLockedFeature = (phoneControls.hoveredLockedFeature === feature ? ({}) : feature)
-                            onClicked: {
-                                phoneControls.hotspotActive = !phoneControls.hotspotActive
-                                AppController.setPhoneToggle(home.deviceId, "hotspot", String(phoneControls.hotspotActive))
-                            }
+                            height: 52
+                            variant: "tonal"
+                            iconPath: Icons.wifi
+                            text: qsTr("Join hotspot")
+                            Accessible.name: qsTr("Join phone hotspot")
+                            onClicked: phoneHotspotSheet.openFor(home.deviceId, home.name)
                         }
                     }
 
@@ -2214,18 +2213,26 @@ Item {
                     width: sideCameraGrid.tileWidth
                     deviceOnline: home.online
                     playableWhenAddonMissing: true
-                    // camera.virtual is advertised on Windows only; mac/vcam.rs is a stub.
-                    macPortGap: true
+                    // Missing registration routes an explicit click to extension setup.
+                    // It never starts the phone camera as a substitute for setup.
                     title: qsTr("Phone as webcam")
                     subtitle: (Webcam.phase === "streaming" || Webcam.phase === "asking")
                               && Webcam.activeDevice === home.deviceId
                               ? (Webcam.statusText.length > 0 ? Webcam.statusText : qsTr("Streaming"))
                               : ""
                     iconPath: Icons.video
-                    feature: home.feature("camera.webcam")
+                    feature: home.onMac && !Webcam.addonRegistered
+                             ? ({ state: "locked", action: "enableAddon", target: "vcam" })
+                             : home.feature("camera.webcam")
                     active: (Webcam.phase === "streaming" || Webcam.phase === "asking")
                             && Webcam.activeDevice === home.deviceId
                     onClicked: {
+                        if (home.onMac && !Webcam.addonRegistered
+                                && Webcam.phase !== "streaming" && Webcam.phase !== "asking") {
+                            if (Webcam.addonSetupAllowed && !Webcam.addonBusy)
+                                Webcam.setupAddon()
+                            return
+                        }
                         if ((Webcam.phase === "streaming" || Webcam.phase === "asking")
                             && Webcam.activeDevice === home.deviceId)
                             Webcam.stop()
@@ -2554,6 +2561,102 @@ Item {
                             TapHandler { onTapped: AppController.currentPage = "timeline" }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    Sheet {
+        id: phoneHotspotSheet
+        property string deviceId: ""
+        property string deviceName: ""
+        property string network: ""
+        property var networks: []
+        property bool joining: false
+        cardWidth: 500
+        function refreshNetworks() { networks = JSON.parse(AppController.wifiNetworks() || "[]") }
+        function openFor(device, name) {
+            deviceId = device
+            deviceName = name
+            network = AppController.hotspotNetwork(device)
+            refreshNetworks()
+            open()
+            if (network.length > 0) AppController.joinPhoneHotspot(device)
+        }
+        onOpenedChanged: {
+            if (!opened && deviceId.length > 0) AppController.cancelPhoneHotspotJoin(deviceId)
+        }
+        Timer {
+            interval: 250
+            repeat: true
+            triggeredOnStart: true
+            running: phoneHotspotSheet.opened
+            onTriggered: phoneHotspotSheet.joining = AppController.phoneHotspotJoining(phoneHotspotSheet.deviceId)
+        }
+        Column {
+            width: parent.width
+            spacing: 12
+            Txt { width: parent.width; text: qsTr("Join phone hotspot"); role: "headline"; wrapMode: Text.WordWrap }
+            Txt {
+                width: parent.width
+                wrapMode: Text.WordWrap
+                text: qsTr("Waypair asks %1 to turn on its hotspot, then joins the saved Wi-Fi network you choose.").arg(phoneHotspotSheet.deviceName)
+            }
+            Txt {
+                width: parent.width
+                wrapMode: Text.WordWrap
+                muted: true
+                text: page.macTidy
+                    ? qsTr("On Galaxy, you can turn it on in Settings > Connections > Mobile Hotspot and Tethering > Mobile Hotspot. If it is not listed below, join it once in macOS Wi-Fi settings, then refresh.")
+                    : qsTr("On Galaxy, turn on Settings > Connections > Mobile Hotspot and Tethering > Mobile Hotspot. If it is not listed below, join it once in Windows Wi-Fi settings, then refresh.")
+            }
+            Row {
+                spacing: 8
+                Button { visible: page.macTidy; variant: "outline"; text: qsTr("Allow hotspot discovery"); enabled: !phoneHotspotSheet.joining; onClicked: AppController.requestWifiDiscoveryPermission() }
+                Button { variant: "text"; text: qsTr("Refresh"); enabled: !phoneHotspotSheet.joining; onClicked: phoneHotspotSheet.refreshNetworks() }
+            }
+            Txt {
+                width: parent.width
+                wrapMode: Text.WordWrap
+                text: phoneHotspotSheet.network.length > 0 ? qsTr("Saved hotspot: %1").arg(phoneHotspotSheet.network) : qsTr("Choose this phone's saved hotspot:")
+            }
+            ListView {
+                width: parent.width
+                height: Math.min(contentHeight, 200)
+                clip: true
+                spacing: 4
+                model: phoneHotspotSheet.networks
+                delegate: Button {
+                    required property string modelData
+                    width: ListView.view.width
+                    enabled: !phoneHotspotSheet.joining
+                    variant: phoneHotspotSheet.network === modelData ? "tonal" : "text"
+                    iconPath: phoneHotspotSheet.network === modelData ? Icons.check : Icons.wifi
+                    text: modelData
+                    onClicked: {
+                        AppController.setHotspotNetwork(phoneHotspotSheet.deviceId, modelData)
+                        phoneHotspotSheet.network = AppController.hotspotNetwork(phoneHotspotSheet.deviceId)
+                    }
+                }
+            }
+            Txt {
+                width: parent.width
+                wrapMode: Text.WordWrap
+                muted: true
+                text: qsTr("Joining changes this computer's Wi-Fi network. Cancel join leaves the phone hotspot on once activation has been submitted. Turn it off manually in the phone's Settings. A Wi-Fi switch already submitted may still finish.")
+            }
+            Row {
+                anchors.right: parent.right
+                spacing: 8
+                Button {
+                    variant: "text"
+                    text: phoneHotspotSheet.joining ? qsTr("Cancel join") : qsTr("Close")
+                    onClicked: phoneHotspotSheet.close()
+                }
+                Button {
+                    text: phoneHotspotSheet.joining ? qsTr("Joining…") : qsTr("Start and join")
+                    enabled: !phoneHotspotSheet.joining && phoneHotspotSheet.network.length > 0
+                    onClicked: AppController.joinPhoneHotspot(phoneHotspotSheet.deviceId)
                 }
             }
         }

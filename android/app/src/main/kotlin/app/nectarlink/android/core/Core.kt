@@ -40,6 +40,7 @@ import app.nectarlink.android.storage.PhoneStorage
 import app.nectarlink.android.toggles.PhoneToggles
 import app.nectarlink.android.webcam.WebcamRequests
 import app.nectarlink.android.webcam.WebcamService
+import app.nectarlink.android.webcam.WebcamEntries
 import app.nectarlink.core.FfiQueueStatus
 import app.nectarlink.core.Event
 import app.nectarlink.core.EventListener
@@ -143,7 +144,9 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
         },
         onWebcam = { pc, request ->
             val session = WebcamService.session.value
-            if (session.active && session.pcId == pc && WebcamService.hasPermission(this.context)) {
+            if (WebcamEntries.ownedFor(pc)) {
+                false
+            } else if (session.active && session.pcId == pc && WebcamService.hasPermission(this.context)) {
                 WebcamService.start(this.context, pc, request.height, request.fps, request.camera)
                 true
             } else {
@@ -152,6 +155,16 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
                 true
             }
         },
+        onOwnedWebcam = { pc, request, owner ->
+            val receivingNode = node
+            receivingNode != null && WebcamEntries.offer(this.context, pc, request, receivingNode, owner,
+                nodeCurrent = { node === receivingNode }, pcName = _state.value.nameOf(pc).orEmpty(),
+                show = { admitted -> _state.update { it.copy(webcamRequest = admitted) } },
+                hide = { token -> _state.update { state ->
+                    if (state.webcamRequest?.ownedEntryToken == token) state.copy(webcamRequest = null) else state
+                } })
+        },
+        onOwnedWebcamStop = { _, owner -> WebcamEntries.stopOwned(owner) },
         appWindows = AppWindows(
             this.context, scope,
             owner = { pc, session, request, connection, capture ->
@@ -167,6 +180,22 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
         nameOf = { pc -> _state.value.nameOf(pc).orEmpty() },
         onKeyboardFromPc = { pc, on -> setKeyboardFromPc(pc, on) },
         typingCurrent = { pc, generation -> node?.mirrorTypingCurrent(pc, generation) == true },
+        hotspotCancellationCurrent = { pc, connection, request ->
+            val receivingNode = node
+            val current: () -> Boolean = {
+                receivingNode != null && node === receivingNode &&
+                    receivingNode.phoneHotspotCancellationCurrent(pc, connection, request)
+            }
+            current
+        },
+        hotspotCurrent = { pc, connection, request ->
+            val receivingNode = node
+            val current: () -> Boolean = {
+                receivingNode != null && node === receivingNode &&
+                    receivingNode.phoneHotspotRequestCurrent(pc, connection, request)
+            }
+            current
+        },
         controlCurrent = { pc, owner ->
             // Capture the receiving Node once; a posted check must never bind
             // the old event to whichever Node replaced it in the meantime.
@@ -717,6 +746,7 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
     }
 
     private suspend fun shutdownAndCloseNode(node: NectarlinkNode) {
+        withContext(Dispatchers.IO) { WebcamEntries.stopForNode(node) }
         try {
             node.shutdown()
         } finally {
@@ -1183,6 +1213,8 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
     }
 
     /** Opens this phone's camera stream to a PC (`webcam`), or emits a message on failure. */
+    fun webcamRequiresOwned(pcId: String): Boolean = runCatching { node?.webcamOwnedRequired(pcId) == true }.getOrDefault(false)
+
     suspend fun webcamOpenOrMessage(pcId: String): MirrorStream? {
         startJob?.join()
         val node = node ?: return null
@@ -1275,10 +1307,12 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
         return PerPcToggles(storage, micOff, mirroringOff, phoneControlAllowed)
     }
 
-    fun clearWebcamRequest(pcId: String? = null) {
+    fun clearWebcamRequest(pcId: String? = null, ownedEntryToken: String? = null) {
         if (pcId != null) WebcamRequests.dismiss(context, pcId)
         _state.update { s ->
-            if (pcId == null || s.webcamRequest?.pcId == pcId) s.copy(webcamRequest = null) else s
+            if (s.webcamRequest?.ownedEntryToken != null) {
+                if (s.webcamRequest.ownedEntryToken == ownedEntryToken) s.copy(webcamRequest = null) else s
+            } else if (pcId == null || s.webcamRequest?.pcId == pcId) s.copy(webcamRequest = null) else s
         }
     }
 
@@ -2001,6 +2035,7 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
             (if (PhoneSms.canSend(context)) listOf("sms.send") else emptyList()) +
             PhoneStorage.capabilities(context) +
             (if (WebcamService.hasPermission(context)) listOf("camera.stream") else emptyList()) +
+            (if (context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)) listOf("camera.webcam.owned.v1") else emptyList()) +
             (if (context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)) listOf("camera.capture") else emptyList()) +
             (if (InputService.running || Elevated.running) listOf("mirror.input") else emptyList()) +
             (if (Elevated.running) listOf("clip.read.auto") else emptyList()) +

@@ -67,6 +67,8 @@ internal class CameraEncoder(
     initialZoomRatio: Float = 1f,
     private val onStateChanged: (CameraLiveState) -> Unit,
     private val onEnded: () -> Unit,
+    private val ownedContext: app.nectarlink.core.WebcamCaptureContext? = null,
+    private val ownsEntry: () -> Boolean = { true },
 ) {
     private val context = context.applicationContext
     private val main = Handler(Looper.getMainLooper())
@@ -86,6 +88,11 @@ internal class CameraEncoder(
     }
     private val displayManager = this.context.getSystemService(DisplayManager::class.java)
 
+    private val stopLock = Any()
+    private var stopped = false
+    private val stopCallbacks = mutableListOf<(Boolean) -> Unit>()
+    private var stopSucceeded = false
+    private var boundUseCases = emptyList<androidx.camera.core.UseCase>()
     @Volatile private var running = true
     @Volatile private var keyframeWanted = false
     @Volatile private var cameraFacing: String = if (initialCamera == "front") "front" else "back"
@@ -95,6 +102,9 @@ internal class CameraEncoder(
         private set
     @Volatile private var targetHeight: Int = normalizeHeight(initialHeight, supports4k)
     @Volatile private var activeCodec: ActiveCodec? = null
+    // Surface work is serialized. An unproven original cleanup keeps this Entry reserved.
+    private var codecCleanupFailed = false
+    private val failedCodecs = mutableListOf<ActiveCodec>()
     @Volatile private var currentSurfaceRotation: Int = readDisplayRotation()
     @Volatile private var currentSensorRotation: Int = 0
     @Volatile private var currentDisplayRotation: Int = surfaceRotationToDegrees(currentSurfaceRotation)
@@ -158,14 +168,14 @@ internal class CameraEncoder(
 
     fun start() {
         main.post {
-            if (!running) return@post
+            if (!running || !ownsEntry()) return@post
             currentSurfaceRotation = readDisplayRotation()
             currentDisplayRotation = surfaceRotationToDegrees(currentSurfaceRotation)
             runCatching { displayManager?.registerDisplayListener(displayListener, main) }
             runCatching { if (orientationListener.canDetectOrientation()) orientationListener.enable() }
             val future = ProcessCameraProvider.getInstance(context)
             future.addListener({
-                if (!running) return@addListener
+                if (!running || !ownsEntry()) return@addListener
                 val provider = runCatching { future.get() }.getOrElse { e ->
                     Log.w(TAG, "can't get ProcessCameraProvider", e)
                     stop()
@@ -177,22 +187,54 @@ internal class CameraEncoder(
         }
     }
 
-    fun stop() {
-        if (!running) return
-        running = false
-        main.post {
-            runCatching { displayManager?.unregisterDisplayListener(displayListener) }
-            runCatching { orientationListener.disable() }
-            runCatching { cameraProvider?.unbindAll() }
-            boundCamera = null
-            encoderPreview = null
-            uiPreview = null
+    fun stop(onStopped: (Boolean) -> Unit = {}) {
+        var alreadyStopped = false
+        val first = synchronized(stopLock) {
+            if (stopped) { alreadyStopped = true; false }
+            else {
+                stopCallbacks += onStopped
+                if (running) { running = false; true } else false
+            }
         }
-        surfaceExecutor.execute {
-            activeCodec?.stop()
-            activeCodec = null
-            runCatching { stream.end() }
-            main.post { onEnded() }
+        if (alreadyStopped) { onStopped(stopSucceeded); return }
+        if (!first) return
+        val remaining = java.util.concurrent.atomic.AtomicInteger(2)
+        val failed = java.util.concurrent.atomic.AtomicBoolean(false)
+        val completedPart: (Boolean) -> Unit = { success ->
+            if (!success) failed.set(true)
+            if (remaining.decrementAndGet() == 0) {
+                val callbacks = synchronized(stopLock) {
+                    stopped = true
+                    stopSucceeded = !failed.get()
+                    stopCallbacks.toList().also { stopCallbacks.clear() }
+                }
+                main.post { onEnded(); callbacks.forEach { it(stopSucceeded) } }
+            }
+        }
+        main.post {
+            var success = true
+            try {
+                runCatching { displayManager?.unregisterDisplayListener(displayListener) }
+                runCatching { orientationListener.disable() }
+                // These exact original UseCases cannot unbind a replacement Entry.
+                cameraProvider?.unbind(*boundUseCases.toTypedArray())
+                boundUseCases = emptyList()
+                boundCamera = null
+                encoderPreview = null
+                uiPreview = null
+            } catch (error: Exception) {
+                success = false
+                Log.w(TAG, "original camera use-case cleanup failed", error)
+            } finally { completedPart(success) }
+        }
+        surfaceThread.execute {
+            var success = false
+            try {
+                val codecStopped = activeCodec?.let(::retireCodec) ?: true
+                val streamEnded = runCatching { stream.end() }.isSuccess
+                success = codecStopped && !codecCleanupFailed && streamEnded
+                if (success) activeCodec = null
+            } finally { completedPart(success) }
         }
         surfaceThread.shutdown()
     }
@@ -204,7 +246,7 @@ internal class CameraEncoder(
     fun setCamera(camera: String) {
         val normalized = if (camera == "front") "front" else "back"
         main.post {
-            if (!running || cameraFacing == normalized) return@post
+            if (!running || !ownsEntry() || cameraFacing == normalized) return@post
             cameraFacing = normalized
             // The other camera may not do 4K (front cameras often don't).
             supports4k = supports4k(context, normalized)
@@ -217,7 +259,7 @@ internal class CameraEncoder(
         main.post {
             // After any camera switch queued before it, which can change what 4K means.
             val normalized = normalizeHeight(height, supports4k)
-            if (!running || targetHeight == normalized) return@post
+            if (!running || !ownsEntry() || targetHeight == normalized) return@post
             targetHeight = normalized
             bindCamera()
         }
@@ -257,7 +299,7 @@ internal class CameraEncoder(
 
     private fun bindCamera() {
         val provider = cameraProvider ?: return
-        if (!running) return
+        if (!running || !ownsEntry()) return
 
         val desiredHeight = targetHeight
         val desiredWidth = widthForHeight(desiredHeight)
@@ -281,12 +323,24 @@ internal class CameraEncoder(
 
         val facingForRequest = cameraFacing
         encPreview.setSurfaceProvider(surfaceExecutor) { request ->
-            if (!running) {
+            if (!running || !ownsEntry()) {
                 request.willNotProvideSurface()
                 return@setSurfaceProvider
             }
-            activeCodec?.stop()
-            activeCodec = null
+            val previous = activeCodec
+            if (previous != null) {
+                if (!retireCodec(previous)) {
+                    request.willNotProvideSurface()
+                    stop()
+                    return@setSurfaceProvider
+                }
+                activeCodec = null
+            }
+            if (codecCleanupFailed) {
+                request.willNotProvideSurface()
+                stop()
+                return@setSurfaceProvider
+            }
 
             val srcW = request.resolution.width
             val srcH = request.resolution.height
@@ -295,9 +349,9 @@ internal class CameraEncoder(
             val started = startCodecForResolution(srcW, srcH, outW, outH, facingForRequest)
             val inputSurface = started?.pipe?.inputSurface
             if (started == null || inputSurface == null) {
-                started?.stop()
+                val cleaned = started?.let(::retireCodec) ?: !codecCleanupFailed
                 request.willNotProvideSurface()
-                if (targetHeight > 1080) {
+                if (cleaned && targetHeight > 1080) {
                     // Fall back from 4K to 1080p if the codec rejected 4K.
                     main.post { setResolutionHeight(1080) }
                 } else {
@@ -317,10 +371,11 @@ internal class CameraEncoder(
             }
             request.provideSurface(inputSurface, surfaceExecutor) {
                 request.clearTransformationInfoListener()
-                if (activeCodec === started) {
+                val cleaned = retireCodec(started)
+                if (cleaned && activeCodec === started) {
                     activeCodec = null
                 }
-                started.stop()
+                if (!cleaned) stop()
             }
         }
 
@@ -350,10 +405,15 @@ internal class CameraEncoder(
             CameraSelector.DEFAULT_FRONT_CAMERA
         }
 
-        provider.unbindAll()
+        provider.unbind(*boundUseCases.toTypedArray())
+        boundUseCases = emptyList()
+        var acceptedUseCases: List<androidx.camera.core.UseCase> = listOf(encPreview, previewForUi)
         val camera = runCatching {
             provider.bindToLifecycle(lifecycleOwner, selector, encPreview, previewForUi)
         }.getOrElse {
+            // Clear only this attempted pair before the same Entry's fallback.
+            provider.unbind(encPreview, previewForUi)
+            acceptedUseCases = listOf(encPreview)
             // Fallback for single-stream legacy cameras: bind encPreview alone.
             runCatching {
                 provider.bindToLifecycle(lifecycleOwner, selector, encPreview)
@@ -365,6 +425,7 @@ internal class CameraEncoder(
             stop()
             return
         }
+        boundUseCases = acceptedUseCases
         boundCamera = camera
         val zoomState = camera.cameraInfo.zoomState.value
         val minZ = zoomState?.minZoomRatio ?: 1f
@@ -387,6 +448,15 @@ internal class CameraEncoder(
         }
     }
 
+    private fun retireCodec(codec: ActiveCodec): Boolean {
+        val cleaned = codec.stop()
+        if (!cleaned) {
+            codecCleanupFailed = true
+            if (failedCodecs.none { it === codec }) failedCodecs += codec
+        }
+        return cleaned
+    }
+
     private fun startCodecForResolution(
         srcWidth: Int,
         srcHeight: Int,
@@ -395,6 +465,11 @@ internal class CameraEncoder(
         camera: String,
     ): ActiveCodec? {
         val bitrate = bitrateForHeight(outHeight)
+        var allocatedCodec: MediaCodec? = null
+        var allocatedSurface: Surface? = null
+        var allocatedPipe: GlSurfacePipe? = null
+        var startedCodec: ActiveCodec? = null
+        var codecStarted = false
         return runCatching {
             val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, outWidth, outHeight).apply {
                 setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
@@ -415,9 +490,12 @@ internal class CameraEncoder(
                 setInteger(MediaFormat.KEY_COLOR_TRANSFER, MediaFormat.COLOR_TRANSFER_SDR_VIDEO)
             }
             val codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
+            allocatedCodec = codec
             codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
             val codecSurface = codec.createInputSurface()
+            allocatedSurface = codecSurface
             codec.start()
+            codecStarted = true
             val pipe = GlSurfacePipe(
                 srcWidth = srcWidth,
                 srcHeight = srcHeight,
@@ -427,10 +505,25 @@ internal class CameraEncoder(
                 initialRotationDegrees = currentSensorRotation,
                 initialMirror = false,
             ).also {
+                allocatedPipe = it
                 it.setTransform(currentSensorRotation, currentDisplayRotation)
             }
-            ActiveCodec(codec, codecSurface, pipe, outWidth, outHeight, camera).also { it.startDrain() }
+            ActiveCodec(codec, codecSurface, pipe, outWidth, outHeight, camera).also {
+                startedCodec = it
+                it.startDrain()
+            }
         }.onFailure { e ->
+            val original = startedCodec
+            if (original != null) {
+                retireCodec(original)
+            } else {
+                // No ActiveCodec exists yet: attempt every allocated resource rollback.
+                val pipeReleased = allocatedPipe?.let { runCatching { it.release() }.getOrDefault(false) } ?: true
+                val codecStopped = !codecStarted || runCatching { allocatedCodec?.stop() }.isSuccess
+                val codecReleased = runCatching { allocatedCodec?.release() }.isSuccess
+                val surfaceReleased = runCatching { allocatedSurface?.release() }.isSuccess
+                if (!pipeReleased || !codecStopped || !codecReleased || !surfaceReleased) codecCleanupFailed = true
+            }
             Log.w(TAG, "can't start H.264 encoder for ${outWidth}x${outHeight}", e)
         }.getOrNull()
     }
@@ -450,18 +543,24 @@ internal class CameraEncoder(
             drainThread = Thread(::drainLoop, "webcam-encoder-${width}x${height}").also { it.start() }
         }
 
-        fun stop() {
-            if (!active.compareAndSet(true, false)) return
-            runCatching { pipe.release() }
+        @Volatile private var stopResult: Boolean? = null
+        fun stop(): Boolean {
+            if (!active.compareAndSet(true, false)) return stopResult == true
+            val pipeReleased = runCatching { pipe.release() }.getOrDefault(false)
             drainThread?.let { runCatching { it.join(500) } }
-            runCatching { codec.stop() }
-            runCatching { codec.release() }
-            runCatching { codecSurface.release() }
+            val drained = drainThread?.isAlive != true
+            val codecStopped = runCatching { codec.stop() }.isSuccess
+            val codecReleased = runCatching { codec.release() }.isSuccess
+            val surfaceReleased = runCatching { codecSurface.release() }.isSuccess
+            return (pipeReleased && drained && codecStopped && codecReleased && surfaceReleased).also { stopResult = it }
         }
 
         private fun drainLoop() {
             val maxHeight = if (supports4k) 2160u else 1080u
-            val cfgBytes = webcamConfig(width.toUInt(), height.toUInt(), camera, fps.toUInt(), maxHeight)
+            val cfgBytes = ownedContext?.let {
+                app.nectarlink.core.webcamOwnedConfig(it, width.toUInt(), height.toUInt(), camera, fps.toUInt(), maxHeight)
+            } ?: webcamConfig(width.toUInt(), height.toUInt(), camera, fps.toUInt(), maxHeight)
+            if (cfgBytes.isEmpty() || !ownsEntry()) { this@CameraEncoder.stop(); return }
             if (stream.send(VideoPacketKind.CONFIG, 0u, cfgBytes) == MirrorSendResult.CLOSED) {
                 this@CameraEncoder.stop()
                 return
@@ -469,7 +568,7 @@ internal class CameraEncoder(
             val info = MediaCodec.BufferInfo()
             var parameters = ByteArray(0)
             try {
-                while (active.get() && running) {
+                while (active.get() && running && ownsEntry()) {
                     if (keyframeWanted) {
                         keyframeWanted = false
                         runCatching {
@@ -512,6 +611,8 @@ internal class CameraEncoder(
                 if (active.get() && running) {
                     Log.w(TAG, "webcam encoder drain interrupted", e)
                 }
+            } finally {
+                if (!ownsEntry()) this@CameraEncoder.stop()
             }
         }
     }

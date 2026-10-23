@@ -159,6 +159,14 @@ impl Platform for DesktopPlatform {
     ) -> Option<std::sync::Arc<dyn nectarlink_core::MicSink>> {
         phone_mic::sink(peer)
     }
+    #[cfg(target_os = "macos")]
+    fn webcam_owned_sink(
+        &self,
+        peer: &nectarlink_core::DeviceId,
+        owner: &nectarlink_core::WebcamView,
+    ) -> Option<Arc<dyn nectarlink_core::WebcamSink>> {
+        webcam::sink_owned(peer, owner)
+    }
     fn webcam_sink(
         &self,
         peer: &nectarlink_core::DeviceId,

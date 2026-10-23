@@ -43,6 +43,7 @@ internal class GlSurfacePipe(
     @Volatile private var displayRotationDegrees: Int = 0
     @Volatile private var mirrorHorizontally: Boolean = initialMirror
     @Volatile private var released = false
+    @Volatile private var releaseResult: Boolean? = null
 
     private var eglDisplay: EGLDisplay = EGL14.EGL_NO_DISPLAY
     private var eglContext: EGLContext = EGL14.EGL_NO_CONTEXT
@@ -68,11 +69,18 @@ internal class GlSurfacePipe(
         handler.post {
             try {
                 initGl()
+            } catch (_: Exception) {
+                // Return the partially initialized pipe so its caller can roll it back.
             } finally {
                 ready.countDown()
             }
         }
-        ready.await(3, TimeUnit.SECONDS)
+        try {
+            ready.await(3, TimeUnit.SECONDS)
+        } catch (_: InterruptedException) {
+            // Do not throw away this partially allocated object's cleanup handle.
+            Thread.currentThread().interrupt()
+        }
     }
 
     fun setTransform(sensorRotationDegrees: Int, displayRotationDegrees: Int) {
@@ -94,19 +102,33 @@ internal class GlSurfacePipe(
         handler.post { drawFrame() }
     }
 
-    fun release() {
-        if (released) return
+    fun release(): Boolean {
+        if (released) return releaseResult == true
         released = true
         val done = CountDownLatch(1)
-        handler.post {
+        var cleaned = false
+        val posted = handler.post {
             try {
-                releaseGl()
+                cleaned = releaseGl()
             } finally {
                 done.countDown()
             }
         }
-        done.await(1, TimeUnit.SECONDS)
-        thread.quitSafely()
+        val completed = try {
+            posted && done.await(1, TimeUnit.SECONDS)
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            false
+        }
+        val quitting = thread.quitSafely()
+        val joined = try {
+            thread.join(1_000)
+            !thread.isAlive
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            false
+        }
+        return (completed && cleaned && quitting && joined).also { releaseResult = it }
     }
 
     private fun initGl() {
@@ -275,17 +297,16 @@ internal class GlSurfacePipe(
         quadBuffer.position(0)
     }
 
-    private fun releaseGl() {
-        runCatching { inputSurface?.release() }
+    private fun releaseGl(): Boolean {
+        var success = runCatching { inputSurface?.release() }.isSuccess
         inputSurface = null
-        runCatching {
+        if (runCatching {
             surfaceTexture?.setOnFrameAvailableListener(null)
             surfaceTexture?.release()
-        }
+        }.isFailure) success = false
         surfaceTexture = null
 
         if (eglDisplay !== EGL14.EGL_NO_DISPLAY) {
-            EGL14.eglMakeCurrent(eglDisplay, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
             if (oesTexId != 0) {
                 GLES20.glDeleteTextures(1, intArrayOf(oesTexId), 0)
                 oesTexId = 0
@@ -294,17 +315,20 @@ internal class GlSurfacePipe(
                 GLES20.glDeleteProgram(program)
                 program = 0
             }
+            if (GLES20.glGetError() != GLES20.GL_NO_ERROR) success = false
+            if (!EGL14.eglMakeCurrent(eglDisplay, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)) success = false
             if (eglSurface !== EGL14.EGL_NO_SURFACE) {
-                EGL14.eglDestroySurface(eglDisplay, eglSurface)
+                if (!EGL14.eglDestroySurface(eglDisplay, eglSurface)) success = false
                 eglSurface = EGL14.EGL_NO_SURFACE
             }
             if (eglContext !== EGL14.EGL_NO_CONTEXT) {
-                EGL14.eglDestroyContext(eglDisplay, eglContext)
+                if (!EGL14.eglDestroyContext(eglDisplay, eglContext)) success = false
                 eglContext = EGL14.EGL_NO_CONTEXT
             }
-            EGL14.eglTerminate(eglDisplay)
+            if (!EGL14.eglTerminate(eglDisplay)) success = false
             eglDisplay = EGL14.EGL_NO_DISPLAY
         }
+        return success
     }
 
     companion object {

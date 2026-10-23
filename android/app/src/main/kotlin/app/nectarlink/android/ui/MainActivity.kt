@@ -115,6 +115,7 @@ class MainActivity : ComponentActivity() {
     private var pendingPairingLink by mutableStateOf<String?>(null)
     private var requestedWebcamPc by mutableStateOf<String?>(null)
     private var requestedWebcamAutoStart by mutableStateOf(false)
+    private var requestedWebcamEntryToken by mutableStateOf<String?>(null)
     private var requestedWebcamHeight by mutableStateOf<Int?>(null)
     private var requestedWebcamCamera by mutableStateOf<String?>(null)
 
@@ -180,11 +181,13 @@ class MainActivity : ComponentActivity() {
                         onRecordConsumed = { requestedRecordPc = null },
                         requestedWebcamPc = requestedWebcamPc,
                         requestedWebcamAutoStart = requestedWebcamAutoStart,
+                        requestedWebcamEntryToken = requestedWebcamEntryToken,
                         requestedWebcamHeight = requestedWebcamHeight,
                         requestedWebcamCamera = requestedWebcamCamera,
                         onWebcamConsumed = {
                             requestedWebcamPc = null
                             requestedWebcamAutoStart = false
+                            requestedWebcamEntryToken = null
                             requestedWebcamHeight = null
                             requestedWebcamCamera = null
                         },
@@ -295,8 +298,13 @@ class MainActivity : ComponentActivity() {
     private fun handleWebcamIntent(intent: Intent?) {
         val pc = intent?.getStringExtra("webcam_pc") ?: return
         // Auto-start only for our own request notification (see WebcamRequests).
+        val owned = intent.getStringExtra("webcam_owned_entry")
+        requestedWebcamEntryToken = if (owned != null)
+            app.nectarlink.android.webcam.WebcamRequests.consumeOwnedAutoStartToken(intent.getStringExtra("webcam_token"), pc)
+                ?.takeIf { it == owned } else null
         requestedWebcamAutoStart = intent.getBooleanExtra("webcam_auto_start", false) &&
-            app.nectarlink.android.webcam.WebcamRequests.consumeAutoStartToken(intent.getStringExtra("webcam_token"))
+            if (owned != null) requestedWebcamEntryToken != null else
+                app.nectarlink.android.webcam.WebcamRequests.consumeAutoStartToken(intent.getStringExtra("webcam_token"))
         requestedWebcamHeight = intent.getIntExtra("webcam_height", 0).takeIf { it > 0 }
         requestedWebcamCamera = intent.getStringExtra("webcam_camera")
         requestedWebcamPc = pc
@@ -348,6 +356,7 @@ private fun App(
     onRecordConsumed: () -> Unit,
     requestedWebcamPc: String?,
     requestedWebcamAutoStart: Boolean,
+    requestedWebcamEntryToken: String?,
     requestedWebcamHeight: Int?,
     requestedWebcamCamera: String?,
     onWebcamConsumed: () -> Unit,
@@ -365,6 +374,7 @@ private fun App(
     var recordPcId by rememberSaveable { mutableStateOf<String?>(null) }
     var webcamPcId by rememberSaveable { mutableStateOf<String?>(null) }
     var webcamAutoStart by rememberSaveable { mutableStateOf(false) }
+    var webcamEntryToken by remember { mutableStateOf<String?>(null) }
     var webcamInitialHeight by rememberSaveable { mutableStateOf<Int?>(null) }
     var webcamInitialCamera by rememberSaveable { mutableStateOf<String?>(null) }
     val walkthroughPersistence by preferences.walkthrough.collectAsStateWithLifecycle()
@@ -460,6 +470,7 @@ private fun App(
             deskPcId = null
             recordPcId = null
             webcamAutoStart = requestedWebcamAutoStart
+            webcamEntryToken = requestedWebcamEntryToken
             webcamInitialHeight = requestedWebcamHeight
             webcamInitialCamera = requestedWebcamCamera
             webcamPcId = target
@@ -664,10 +675,12 @@ private fun App(
                     WebcamScreen(
                         device = dev,
                         autoStart = webcamAutoStart,
+                        ownedEntryToken = webcamEntryToken,
                         initialHeight = webcamInitialHeight,
                         initialCamera = webcamInitialCamera,
                         onAutoStartConsumed = {
                             webcamAutoStart = false
+                            webcamEntryToken = null
                             webcamInitialHeight = null
                             webcamInitialCamera = null
                         },
@@ -860,13 +873,19 @@ private fun App(
                                     onAllowStorage = { pcId -> core.setStorageEnabled(pcId, true) },
                                     onDismissStorageRequest = core::dismissStorageRequest,
                                     onAcceptWebcamRequest = { req ->
-                                        core.clearWebcamRequest(req.pcId)
+                                        core.clearWebcamRequest(req.pcId, req.ownedEntryToken)
+                                        webcamEntryToken = req.ownedEntryToken
                                         webcamInitialHeight = req.height
                                         webcamInitialCamera = req.camera
                                         webcamAutoStart = true
                                         webcamPcId = req.pcId
                                     },
-                                    onDismissWebcamRequest = { core.clearWebcamRequest() },
+                                    onDismissWebcamRequest = { req ->
+                                        req.ownedEntryToken?.let { token ->
+                                            app.nectarlink.android.webcam.WebcamEntries.resolve(token)?.let(app.nectarlink.android.webcam.WebcamEntries::stop)
+                                        }
+                                        core.clearWebcamRequest(req.pcId, req.ownedEntryToken)
+                                    },
                                     onCopyClipboardHistory = core::copyClipboardHistory,
                                     onPinClipboardHistory = core::pinClipboardHistory,
                                     onDeleteClipboardHistory = core::deleteClipboardHistory,

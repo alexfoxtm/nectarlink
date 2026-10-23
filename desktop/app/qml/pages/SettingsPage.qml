@@ -19,7 +19,7 @@ Item {
     readonly property bool onMac: Qt.platform.os === "osx" || Qt.platform.os === "macos"
     readonly property string macGapText: qsTr("Not yet available on Mac.")
     // Device toggles that only arm a desktop capability this Mac build doesn't advertise.
-    readonly property var macGapToggleNames: ["pc_mirror", "webcam", "storage", "remote_input", "commands", "recordings", "mic", "remote_files"]
+    readonly property var macGapToggleNames: ["pc_mirror", "storage", "remote_input", "commands", "recordings", "mic", "remote_files"]
     function macGapToggle(item) {
         return page.onMac && item !== null && page.macGapToggleNames.indexOf(item.name) >= 0
     }
@@ -1424,27 +1424,23 @@ Item {
                                 }
                             }
                             // Instant Hotspot: the saved Wi-Fi network the PC joins
-                            // after this phone turns its hotspot on. The Mac has no
-                            // Wi-Fi backend (mac/wifi.rs), so the row stays listed, greyed.
+                            // after verified phone hotspot preparation. macOS keeps
+                            // the per-phone profile choice in the user's Keychain.
                             ListRow {
                                 id: hotspotRow
                                 width: parent.width
                                 property string network: AppController.hotspotNetwork(deviceCard.deviceId)
-                                enabled: !page.onMac
-                                opacity: enabled ? 1.0 : 0.5
                                 iconPath: Icons.wifi
                                 title: qsTr("Join this phone's hotspot")
-                                description: page.onMac ? page.macGapText : hotspotRow.network.length > 0
-                                    ? qsTr("When Instant Hotspot turns it on, this PC joins %1.").arg(hotspotRow.network)
+                                description: hotspotRow.network.length > 0
+                                    ? qsTr("Join %1 from Home > Join hotspot.").arg(hotspotRow.network)
+                                    : page.onMac ? qsTr("Join the phone hotspot once in macOS Wi-Fi settings, then choose the saved network here.")
                                     : qsTr("Join the phone's hotspot once from Windows' Wi-Fi list, then choose it here.")
                                 Button {
                                     variant: "tonal"
                                     size: "sm"
-                                    enabled: !page.onMac
                                     text: qsTr("Choose network")
                                     onClicked: {
-                                        if (page.onMac)
-                                            return
                                         hotspotSheet.deviceId = deviceCard.deviceId
                                         hotspotSheet.row = hotspotRow
                                         hotspotSheet.networks = JSON.parse(AppController.wifiNetworks() || "[]")
@@ -1759,14 +1755,14 @@ Item {
 
                         Divider { width: parent.width }
 
-                        // Row 2: Virtual camera add-on (mac/vcam.rs is a stub).
+                        // Row 2: Actual virtual camera setup/readiness.
                         ListRow {
                             width: parent.width
-                            enabled: !page.onMac
+                            enabled: true
                             opacity: enabled ? 1.0 : 0.5
                             iconPath: Icons.video
                             title: qsTr("Virtual camera add-on")
-                            description: page.onMac ? page.macGapText : Webcam.addonRegistered
+                            description: page.onMac ? Webcam.addonStatusText : Webcam.addonRegistered
                                 ? qsTr("Registered for Zoom, Teams & Meet.")
                                 : qsTr("One-time setup (admin required) for Zoom, Teams & Meet.")
                             Row {
@@ -1794,8 +1790,8 @@ Item {
                                     anchors.verticalCenter: parent.verticalCenter
                                     variant: Webcam.addonRegistered ? "outline" : "tonal"
                                     size: "sm"
-                                    enabled: !Webcam.addonBusy
-                                    text: Webcam.addonRegistered ? qsTr("Remove") : qsTr("Set up")
+                                    enabled: !Webcam.addonBusy && (!page.onMac || Webcam.addonRegistered || Webcam.addonSetupAllowed)
+                                    text: Webcam.addonRegistered ? qsTr("Remove") : page.onMac ? Webcam.addonActionText : qsTr("Set up")
                                     onClicked: Webcam.addonRegistered ? Webcam.removeAddon() : Webcam.setupAddon()
                                 }
                             }
@@ -1805,7 +1801,7 @@ Item {
                         ListRow {
                             width: parent.width
                             visible: DeviceList.count > 1
-                            enabled: !page.onMac
+                            enabled: !page.onMac || Webcam.addonRegistered
                             opacity: enabled ? 1.0 : 0.5
                             iconPath: Icons.phone
                             title: qsTr("Phone")
@@ -1831,7 +1827,7 @@ Item {
                         Item {
                             id: camMirrorPairRow
                             width: parent.width
-                            enabled: !page.onMac
+                            enabled: !page.onMac || Webcam.addonRegistered
                             opacity: enabled ? 1.0 : 0.5
                             readonly property bool splitCols: width >= 460
                             readonly property real colWidth: splitCols ? Math.floor((width - 37) / 2) : width
@@ -1891,7 +1887,7 @@ Item {
                         Divider { width: parent.width }
                         ListRow {
                             width: parent.width
-                            enabled: !page.onMac
+                            enabled: !page.onMac || Webcam.addonRegistered
                             opacity: enabled ? 1.0 : 0.5
                             iconPath: Icons.camera
                             title: qsTr("Resolution")
@@ -1924,7 +1920,7 @@ Item {
                                     muted: Webcam.phase !== "streaming"
                                     elide: Text.ElideRight
                                     text: page.onMac && Webcam.phase !== "streaming" && Webcam.phase !== "asking"
-                                        ? page.macGapText
+                                        ? Webcam.addonStatusText
                                         : Webcam.statusText.length > 0
                                         ? Webcam.statusText
                                         : (Webcam.selectedPhoneName.length > 0
@@ -1937,7 +1933,7 @@ Item {
                                     anchors.verticalCenter: parent.verticalCenter
                                     // A session already running still gets its Stop.
                                     enabled: DeviceList.count > 0
-                                             && (!page.onMac || Webcam.phase === "streaming" || Webcam.phase === "asking")
+                                             && (!page.onMac || Webcam.addonRegistered || Webcam.phase === "streaming" || Webcam.phase === "asking")
                                     variant: Webcam.phase === "streaming" || Webcam.phase === "asking" ? "outline" : "tonal"
                                     size: "sm"
                                     iconPath: Webcam.phase === "streaming" || Webcam.phase === "asking" ? Icons.close : Icons.video
@@ -3551,9 +3547,11 @@ Item {
                 wrapMode: Text.WordWrap
                 role: "body"
                 muted: true
-                text: hotspotSheet.networks.length > 0
-                    ? qsTr("Wi-Fi networks this PC has joined before. Windows keeps their passwords; Waypair Link never sees them.")
-                    : qsTr("This PC hasn't saved any Wi-Fi networks yet. Join the phone's hotspot once from Windows' Wi-Fi list first.")
+                text: page.onMac
+                    ? qsTr("Choose the phone's saved hotspot. macOS keeps its password in Keychain. Use Home > Join hotspot to allow Wi-Fi discovery, then reopen this list.")
+                    : hotspotSheet.networks.length > 0
+                      ? qsTr("Wi-Fi networks this PC has joined before. Windows keeps their passwords; Waypair Link never sees them.")
+                      : qsTr("This PC hasn't saved any Wi-Fi networks yet. Join the phone's hotspot once from Windows' Wi-Fi list first.")
             }
             // A PC can have saved dozens of networks: the list scrolls.
             ListView {

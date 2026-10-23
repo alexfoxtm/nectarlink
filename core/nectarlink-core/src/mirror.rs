@@ -1454,7 +1454,7 @@ impl MirrorStream {
         Self::spawn_stream_with_lifetime(send, recv, audio, on_end, Arc::default(), Arc::default())
     }
 
-    fn spawn_stream_with_lifetime(
+    pub(crate) fn spawn_stream_with_lifetime(
         mut send: SendStream,
         mut recv: RecvStream,
         audio: bool,

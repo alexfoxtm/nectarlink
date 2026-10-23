@@ -35,6 +35,8 @@ class AppDisplay(
     @Volatile private var running = true
     @Volatile private var nextSize: Triple<Int, Int, Int>? = null
     private var display: VirtualDisplay? = null
+    /** The exact package-resolver or launcher child for this display's request. */
+    private var commandProcess: Process? = null
 
     /** The display's ID, once made. */
     var displayId: Int = -1
@@ -76,6 +78,7 @@ class AppDisplay(
             data.flush()
             if (!fullScreen) {
                 launch(pkg, displayId)
+                if (!running) return
                 watchActivities(displayId)
                 keepActive(displayId)
             }
@@ -121,6 +124,9 @@ class AppDisplay(
     @Synchronized
     fun stop() {
         running = false
+        // InputServer calls stop on this exact AppDisplay when its owner socket ends.
+        // Do not leave a shell `am start` running past that request's lifetime.
+        runCatching { commandProcess?.destroyForcibly() }
     }
 
     fun resize(w: Int, h: Int, newDpi: Int) {
@@ -287,32 +293,89 @@ class AppDisplay(
     private fun launch(pkg: String, display: Int) {
         // By its launcher activity's name: a package-only launcher intent isn't resolved on some
         // phones (Samsung's One UI answers "intent not resolved"), and nothing would open.
-        val target = launcherActivity(pkg)?.let { arrayOf("-n", it) }
+        val resolved = launcherActivity(pkg)
+        // The resolver may have been canceled with this window; don't run a fallback launch.
+        if (!running || Thread.currentThread().isInterrupted) return
+        val target = resolved?.let { arrayOf("-n", it) }
             ?: arrayOf("-a", "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER", "-p", pkg)
-        val command = arrayOf("am", "start", "--display", display.toString(), "--windowingMode", "1") + target +
+        val command = arrayOf("am", "start", "--user", "0", "--display", display.toString(), "--windowingMode", "1") + target +
             arrayOf("-f", (FLAG_NEW_TASK or FLAG_MULTIPLE_TASK).toString())
-        val process = synchronized(this) {
-            if (!running) return
-            Runtime.getRuntime().exec(command)
-        }
-        val said = process.inputStream.bufferedReader().readText() + process.errorStream.bufferedReader().readText()
-        process.waitFor()
+        val said = runCommand(command) ?: return
         if (said.contains("Error", ignoreCase = true) || said.contains("Warning", ignoreCase = true)) {
             System.err.println("launching $pkg: ${said.trim().lines().joinToString(" | ")}")
         }
     }
 
+    /** Run one shell child owned by this display request; stop() cancels its exact process. */
+    private fun runCommand(command: Array<String>): String? {
+        val process = synchronized(this) {
+            if (!running) return null
+            ProcessBuilder(*command).redirectErrorStream(true).start().also { commandProcess = it }
+        }
+        var interrupted = false
+        try {
+            val output = readCommandOutputBounded(process)
+            process.waitFor()
+            return output.takeIf { running }
+        } catch (e: InterruptedException) {
+            interrupted = true
+            throw e
+        } finally {
+            try {
+                // Keep this exact process owned until its termination is observed.
+                ensureCommandExited(process)
+            } finally {
+                synchronized(this) {
+                    if (commandProcess === process) commandProcess = null
+                }
+                if (interrupted) Thread.currentThread().interrupt()
+            }
+        }
+    }
+
+    /** Drain merged output fully but retain only a bounded tail for resolver parsing and diagnostics. */
+    private fun readCommandOutputBounded(process: Process): String {
+        val retained = StringBuilder()
+        val buffer = CharArray(1024)
+        process.inputStream.bufferedReader().use { reader ->
+            while (true) {
+                val read = reader.read(buffer)
+                if (read < 0) break
+                val overflow = retained.length + read - MAX_COMMAND_OUTPUT_CHARS
+                if (overflow > 0) retained.delete(0, overflow)
+                retained.append(buffer, 0, read)
+            }
+        }
+        return retained.toString()
+    }
+
+    /** Destroy on failure/stop and wait uninterruptibly before dropping this process owner. */
+    private fun ensureCommandExited(process: Process) {
+        var interrupted = Thread.interrupted()
+        try {
+            if (process.isAlive) runCatching { process.destroyForcibly() }
+            while (process.isAlive) {
+                try {
+                    process.waitFor()
+                } catch (_: InterruptedException) {
+                    interrupted = true
+                    runCatching { process.destroyForcibly() }
+                }
+            }
+        } finally {
+            if (interrupted) Thread.currentThread().interrupt()
+        }
+    }
+
     /** `pkg/.Activity` for the package's launcher activity, or null. */
     private fun launcherActivity(pkg: String): String? = runCatching {
-        val process = Runtime.getRuntime().exec(
+        val output = runCommand(
             arrayOf(
                 "cmd", "package", "resolve-activity", "--brief", "--user", "0",
                 "-a", "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER", pkg,
             ),
-        )
-        val last = process.inputStream.bufferedReader().readLines().lastOrNull { it.isNotBlank() }?.trim()
-        process.waitFor()
-        last?.takeIf { it.startsWith("$pkg/") }
+        ) ?: return@runCatching null
+        output.lineSequence().lastOrNull { it.isNotBlank() }?.trim()?.takeIf { it.startsWith("$pkg/") }
     }.getOrNull()
 
     /**
@@ -413,6 +476,7 @@ class AppDisplay(
 
         private const val FLAG_NEW_TASK = 0x10000000
         private const val FLAG_MULTIPLE_TASK = 0x08000000
+        private const val MAX_COMMAND_OUTPUT_CHARS = 8 * 1024
     }
 }
 

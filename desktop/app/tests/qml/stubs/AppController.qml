@@ -23,4 +23,11 @@ QtObject {
     function searchCommandPalette(query) {}
     function runDoctor() {}
     function doctorFix(id) {}
+    function wifiNetworks() { return "[]" }
+    function hotspotNetwork(device) { return "" }
+    function setHotspotNetwork(device, network) {}
+    function joinPhoneHotspot(device) {}
+    function cancelPhoneHotspotJoin(device) {}
+    function phoneHotspotJoining(device) { return false }
+    function requestWifiDiscoveryPermission() {}
 }

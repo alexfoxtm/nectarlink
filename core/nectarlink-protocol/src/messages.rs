@@ -79,6 +79,9 @@ pub mod types {
     pub const REMOTE_INPUT: &str = "remote.input";
     pub const PHONE_TOGGLES: &str = "phone.toggles";
     pub const PHONE_TOGGLE_SET: &str = "phone.toggle.set";
+    pub const PHONE_HOTSPOT_PREPARE: &str = "phone.hotspot.prepare";
+    pub const PHONE_HOTSPOT_CANCEL: &str = "phone.hotspot.cancel";
+    pub const PHONE_HOTSPOT_RESULT: &str = "phone.hotspot.result";
     pub const DECK_LAYOUT: &str = "deck.layout";
     pub const DECK_STATE: &str = "deck.state";
     pub const DECK_PRESS: &str = "deck.press";
@@ -100,6 +103,9 @@ pub mod types {
     pub const WEBCAM_STOP: &str = "webcam.stop";
     pub const WEBCAM_KEYFRAME: &str = "webcam.keyframe";
     pub const WEBCAM_OK: &str = "webcam.ok";
+    pub const WEBCAM_START_OWNED: &str = "webcam.start.owned";
+    pub const WEBCAM_STOP_OWNED: &str = "webcam.stop.owned";
+    pub const WEBCAM_KEYFRAME_OWNED: &str = "webcam.keyframe.owned";
     pub const CAMERA_CAPTURE_REQUEST: &str = "camera.capture.request";
     pub const CAMERA_CAPTURE_OK: &str = "camera.capture.ok";
     pub const CAMERA_CAPTURE_CANCEL: &str = "camera.capture.cancel";
@@ -1824,12 +1830,14 @@ pub mod mic {
 pub mod webcam {
     /// Offered by phones that stream their camera as a webcam.
     pub const STREAM: &str = "camera.stream";
+    pub const OWNED_V1: &str = "camera.webcam.owned.v1";
     /// Offered by PCs that receive and decode a phone's webcam stream.
     pub const VIRTUAL: &str = "camera.virtual";
     /// Offered by PCs where the Windows virtual camera COM add-on is registered.
     pub const ADDON_VCAM: &str = "addon.vcam";
     pub const SERVICE: &str = "webcam";
     pub const OP_VIDEO: &str = "video";
+    pub const OP_VIDEO_OWNED: &str = "video.owned";
     pub const VERSION: u32 = 1;
     /// Stream reset code: webcam stopped.
     pub const STOPPED: u32 = 12;
@@ -1888,6 +1896,32 @@ impl WebcamStart {
             && (240..=2160).contains(&self.height)
             && (1..=60).contains(&self.fps)
             && (100_000..=50_000_000).contains(&self.bitrate)
+    }
+}
+
+/// Additive owned forms; legacy webcam messages/configs remain unchanged.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WebcamOwnedStart {
+    pub request: u64,
+    pub options: WebcamStart,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WebcamOwnedStop {
+    pub request: u64,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WebcamOwnedConfig {
+    pub request: u64,
+    pub config: WebcamConfig,
+}
+impl WebcamOwnedConfig {
+    pub fn to_cbor(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        let _ = ciborium::into_writer(self, &mut out);
+        out
+    }
+    pub fn from_cbor(bytes: &[u8]) -> Result<Self, crate::ProtocolError> {
+        ciborium::from_reader(bytes).map_err(|error| crate::ProtocolError::BadMessage(error.to_string()))
     }
 }
 
@@ -3520,6 +3554,45 @@ impl RemoteInput {
     }
 }
 
+/// Capability for the owned, readback-verified hotspot preparation RPC.
+pub const PHONE_HOTSPOT_V3: &str = "phone.hotspot.v3";
+
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PhoneHotspotPrepare {
+    pub request: u64,
+    pub network: String,
+}
+
+impl std::fmt::Debug for PhoneHotspotPrepare {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PhoneHotspotPrepare")
+            .field("request", &self.request)
+            .field("network", &"[private]")
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PhoneHotspotCancel {
+    pub request: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PhoneHotspotState {
+    Active,
+    NeedsSettings,
+    ConfigChanged,
+    Failed,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PhoneHotspotResult {
+    pub request: u64,
+    pub state: PhoneHotspotState,
+}
+
 // ---- Phone toggles (docs/protocol/toggles.md) ----
 
 /// Capability IDs for `phone.toggles` and `phone.toggle.set`.
@@ -3531,6 +3604,8 @@ pub mod toggles {
     pub const DND: &str = "toggles.dnd";
     pub const BRIGHTNESS: &str = "toggles.brightness";
     pub const WIFI: &str = "toggles.wifi";
+    /// Actual verified Internet-tether control or already-active Wi-Fi tether.
+    pub const HOTSPOT: &str = "toggles.hotspot";
     pub const BLUETOOTH: &str = "toggles.bluetooth";
     pub const SHOW: &str = "toggles.show";
 }

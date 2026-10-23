@@ -643,6 +643,10 @@ cat > "$APP_PATH/Contents/Info.plist" <<EOF
          starts it during a call, the Mac serves an already-paired phone as
          a Bluetooth hands-free unit. Without these keys the app never
          touches Bluetooth and reports call audio unavailable. -->
+    <key>NSLocationUsageDescription</key>
+    <string>Waypair Link uses Wi-Fi discovery to find and join the phone hotspot you choose. Your location is not sent to the phone or a server.</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>Waypair Link uses Wi-Fi discovery to find and join the phone hotspot you choose. Your location is not sent to the phone or a server.</string>
     <key>NSBluetoothAlwaysUsageDescription</key>
     <string>$PLIST_APP_NAME uses Bluetooth to bring a phone call's audio to this Mac when you ask it to.</string>
     <key>NSMicrophoneUsageDescription</key>

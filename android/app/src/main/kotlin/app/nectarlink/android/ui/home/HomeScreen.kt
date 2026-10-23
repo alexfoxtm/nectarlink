@@ -207,7 +207,7 @@ fun HomeScreen(
     onAllowStorage: (pcId: String) -> Unit = {},
     onDismissStorageRequest: () -> Unit = {},
     onAcceptWebcamRequest: (app.nectarlink.android.webcam.WebcamRequest) -> Unit = {},
-    onDismissWebcamRequest: () -> Unit = {},
+    onDismissWebcamRequest: (app.nectarlink.android.webcam.WebcamRequest) -> Unit = {},
     onDeclineMicRequest: (pcId: String) -> Unit = {},
     onStartMic: (pcId: String) -> Unit = {},
     onStopMic: () -> Unit = {},
@@ -508,7 +508,7 @@ fun HomeScreen(
                             Button(onClick = { onAcceptWebcamRequest(req) }) {
                                 Text(stringResource(R.string.webcam_start))
                             }
-                            OutlinedButton(onClick = onDismissWebcamRequest) {
+                            OutlinedButton(onClick = { onDismissWebcamRequest(req) }) {
                                 Text(stringResource(R.string.action_not_now))
                             }
                         }

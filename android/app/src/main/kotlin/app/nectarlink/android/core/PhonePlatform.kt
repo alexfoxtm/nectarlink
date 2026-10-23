@@ -83,6 +83,8 @@ internal class PhonePlatform(
     private val onMirror: (String, MirrorRequest, ULong) -> Boolean,
     /** Asks the user to stream the camera as a webcam to a PC: (PC's ID, request) → asked. */
     private val onWebcam: (String, WebcamRequest) -> Boolean,
+    private val onOwnedWebcam: (String, WebcamRequest, app.nectarlink.core.WebcamCaptureContext) -> Boolean,
+    private val onOwnedWebcamStop: (String, app.nectarlink.core.WebcamCaptureContext) -> Boolean,
     /** Apps in windows of their own on PCs (Elevated). */
     private val appWindows: AppWindows,
     /** Resolves a paired PC's display name by ID. */
@@ -93,6 +95,8 @@ internal class PhonePlatform(
     private val typingCurrent: (String, ULong) -> Boolean = { _, _ -> false },
     /** Required real Node-bound guard retained across any posted input. */
     private val controlCurrent: (String, app.nectarlink.core.PhoneControlContext) -> (() -> Boolean),
+    private val hotspotCurrent: (String, ULong, ULong) -> (() -> Boolean),
+    private val hotspotCancellationCurrent: (String, ULong, ULong) -> (() -> Boolean),
 ) : Platform {
     private val context = context.applicationContext
 
@@ -267,6 +271,17 @@ internal class PhonePlatform(
         app.nectarlink.android.mic.MicService.stop(context)
     }
 
+    override fun webcamRequestedOwned(pcId: String, options: WebcamOptions,
+        context: app.nectarlink.core.WebcamCaptureContext): Boolean =
+        onOwnedWebcam(pcId, WebcamRequest(pcId, options.width.toInt(), options.height.toInt(),
+            options.fps.toInt(), options.bitrate.toInt(), options.camera), context)
+
+    override fun webcamStopOwned(pcId: String, context: app.nectarlink.core.WebcamCaptureContext): Boolean =
+        onOwnedWebcamStop(pcId, context)
+
+    override fun webcamKeyframeOwned(pcId: String, context: app.nectarlink.core.WebcamCaptureContext) {
+        app.nectarlink.android.webcam.WebcamEntries.keyframeOwned(context)
+    }
     override fun webcamStopRequested(pcId: String) {
         WebcamRequests.dismiss(context, pcId)
         WebcamService.stopForPc(context, pcId)
@@ -298,6 +313,12 @@ internal class PhonePlatform(
 
     override fun setPhoneToggle(id: String, value: PhoneToggleValue): Boolean =
         toggles().set(id, value)
+
+    override fun preparePhoneHotspotOwned(device: String, connection: ULong, request: ULong, network: String): app.nectarlink.core.PhoneHotspotOutcome =
+        toggles().prepareHotspot(device, connection, request, network, hotspotCurrent(device, connection, request))
+
+    override fun cancelPhoneHotspotOwned(device: String, connection: ULong, request: ULong) =
+        toggles().cancelHotspot(device, connection, request, hotspotCancellationCurrent(device, connection, request))
 
     override fun storageList(path: String): List<StorageEntry> = storage().list(path)
 

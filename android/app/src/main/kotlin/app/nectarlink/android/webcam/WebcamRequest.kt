@@ -22,6 +22,7 @@ data class WebcamRequest(
     val fps: Int = 30,
     val bitrate: Int = 4_000_000,
     val camera: String = "back",
+    val ownedEntryToken: String? = null,
 )
 
 /**
@@ -33,6 +34,19 @@ data class WebcamRequest(
 object WebcamRequests {
     private const val CHANNEL = "webcam_requests"
     private const val TAG = "webcam_req"
+    private const val OWNED_TAG = "webcam_owned_req"
+    private val ownedTokens = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private val ownedNotifications = java.util.concurrent.ConcurrentHashMap<String, Pair<Context, Int>>()
+    internal fun consumeOwnedAutoStartToken(token: String?, pcId: String): String? {
+        val entryToken = token?.let(ownedTokens::remove) ?: return null
+        return entryToken.takeIf { WebcamEntries.resolve(it)?.pcId == pcId }
+    }
+    internal fun dismissOwned(entryToken: String) {
+        ownedTokens.entries.removeIf { it.value == entryToken }
+        ownedNotifications.remove(entryToken)?.let { (context, id) ->
+            NotificationManagerCompat.from(context).cancel("$OWNED_TAG:$entryToken", id)
+        }
+    }
     private const val REQUEST_TIMEOUT_MS = 2 * 60 * 1000L
 
     /**
@@ -71,12 +85,17 @@ object WebcamRequests {
             putExtra("webcam_height", request.height)
             putExtra("webcam_camera", request.camera)
             putExtra("webcam_auto_start", true)
-            putExtra("webcam_token", issueAutoStartToken())
+            val entry = request.ownedEntryToken
+            val token = if (entry != null) java.util.UUID.randomUUID().toString().also { ownedTokens[it] = entry }
+                else issueAutoStartToken()
+            putExtra("webcam_token", token)
+            putExtra("webcam_owned_entry", entry)
+            if (entry != null) data = android.net.Uri.parse("waypair-webcam://request/$entry")
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
         val open = PendingIntent.getActivity(
             context,
-            request.pcId.hashCode(),
+            (request.ownedEntryToken ?: request.pcId).hashCode(),
             openIntent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
@@ -95,7 +114,10 @@ object WebcamRequests {
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .build()
         return runCatching {
-            NotificationManagerCompat.from(context).notify(TAG, request.pcId.hashCode(), notification)
+            val entry = request.ownedEntryToken
+            val id = (entry ?: request.pcId).hashCode()
+            if (entry != null) ownedNotifications[entry] = context.applicationContext to id
+            NotificationManagerCompat.from(context).notify(if (entry != null) "$OWNED_TAG:$entry" else TAG, id, notification)
         }.isSuccess
     }
 

@@ -140,6 +140,10 @@ TestCase {
         verify(Math.abs(mirrorWindow.width / mirrorWindow.height - 1) < 0.02,
                "restored dimensions keep their saved aspect ratio")
         verify(mirrorWindow.width <= area.width * 0.95 + 1)
+        verify(mirrorWindow.minimumWidth <= area.width * 0.95 + 1,
+               "minimum width must allow the restored window to fit the owning screen")
+        verify(mirrorWindow.minimumHeight <= area.height * 0.95 + 1,
+               "minimum height must allow the restored window to fit the owning screen")
         verify(mirrorWindow.height <= area.height * 0.95 + 1)
         verify(mirrorWindow.x + mirrorWindow.width <= area.x + area.width + 1,
                "stale right-edge position is clamped")

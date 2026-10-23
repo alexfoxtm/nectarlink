@@ -67,6 +67,7 @@ import java.util.Locale
 fun WebcamScreen(
     device: Device,
     autoStart: Boolean = false,
+    ownedEntryToken: String? = null,
     initialHeight: Int? = null,
     initialCamera: String? = null,
     onAutoStartConsumed: () -> Unit = {},
@@ -76,6 +77,9 @@ fun WebcamScreen(
 ) {
     val context = LocalContext.current
     val view = LocalView.current
+    val core = (context.applicationContext as app.nectarlink.android.NectarlinkApplication).core
+    val requiresOwned = core.webcamRequiresOwned(device.id)
+    var permissionEntryToken by remember { mutableStateOf<String?>(null) }
     val session by WebcamService.session.collectAsStateWithLifecycle()
 
     // Keep the phone's screen on while the webcam viewfinder/controls are open.
@@ -93,12 +97,12 @@ fun WebcamScreen(
         onAccessChanged()
         if (granted && startAfterGrant) {
             startAfterGrant = false
-            WebcamService.start(
-                context = context,
-                pcId = device.id,
-                height = initialHeight ?: session.height,
-                camera = initialCamera ?: session.camera,
-            )
+            val original = permissionEntryToken
+            permissionEntryToken = null
+            if (original != null) WebcamService.startOwned(context, original)
+            else if (!requiresOwned) WebcamService.start(
+                context = context, pcId = device.id, height = initialHeight ?: session.height,
+                camera = initialCamera ?: session.camera)
         } else {
             startAfterGrant = false
         }
@@ -109,22 +113,25 @@ fun WebcamScreen(
     }
 
     LaunchedEffect(initialHeight, initialCamera) {
-        if (initialHeight != null) WebcamService.setResolutionHeight(initialHeight)
-        if (initialCamera != null) WebcamService.setCamera(initialCamera, context)
+        // Owned admission uses the original Entry's Core options in the service.
+        // A delayed notification must not configure whichever capture is current.
+        if (!requiresOwned && ownedEntryToken == null) {
+            if (initialHeight != null) WebcamService.setResolutionHeight(initialHeight)
+            if (initialCamera != null) WebcamService.setCamera(initialCamera, context)
+        }
     }
 
     LaunchedEffect(autoStart, hasCameraPermission, device.online) {
         if (autoStart) {
             onAutoStartConsumed()
             if (hasCameraPermission && device.online) {
-                WebcamService.start(
-                    context = context,
-                    pcId = device.id,
-                    height = initialHeight ?: session.height,
-                    camera = initialCamera ?: session.camera,
-                )
+                if (ownedEntryToken != null) WebcamService.startOwned(context, ownedEntryToken)
+                else if (!requiresOwned) WebcamService.start(
+                    context = context, pcId = device.id, height = initialHeight ?: session.height,
+                    camera = initialCamera ?: session.camera)
             } else if (!hasCameraPermission) {
                 startAfterGrant = true
+                permissionEntryToken = ownedEntryToken
                 askCamera.launch(Manifest.permission.CAMERA)
             }
         }
@@ -320,7 +327,7 @@ fun WebcamScreen(
                     ) {
                         if (isStreamingHere) {
                             Button(
-                                onClick = { WebcamService.stop(context) },
+                                onClick = { WebcamService.stopForEntry(session.entryToken) },
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = MaterialTheme.colorScheme.error,
                                     contentColor = MaterialTheme.colorScheme.onError,
@@ -330,22 +337,21 @@ fun WebcamScreen(
                             }
                         } else {
                             Button(
-                                enabled = device.online,
+                                enabled = device.online && (!requiresOwned || ownedEntryToken != null),
                                 onClick = {
                                     if (!hasCameraPermission) {
                                         startAfterGrant = true
+                                        permissionEntryToken = ownedEntryToken
                                         askCamera.launch(Manifest.permission.CAMERA)
                                     } else {
-                                        WebcamService.start(
-                                            context = context,
-                                            pcId = device.id,
-                                            height = session.height,
-                                            camera = session.camera,
-                                        )
+                                        if (ownedEntryToken != null) WebcamService.startOwned(context, ownedEntryToken)
+                                        else if (!requiresOwned) WebcamService.start(
+                                            context = context, pcId = device.id,
+                                            height = session.height, camera = session.camera)
                                     }
                                 },
                             ) {
-                                Text(stringResource(R.string.webcam_start))
+                                Text(stringResource(if (requiresOwned && ownedEntryToken == null) R.string.webcam_start_on_pc else R.string.webcam_start))
                             }
                         }
 

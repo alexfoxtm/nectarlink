@@ -89,6 +89,8 @@ pub enum Requirement {
     AndroidAtLeast(u32),
     /// The desktop runs this Windows build or newer.
     WindowsBuildAtLeast(u32),
+    /// Only desktops advertising owned camera require the peer to implement it.
+    WebcamOwnedIfAdvertised,
     /// This connection path is enabled (e.g. Away mode for relays).
     Path(ConnectionPath),
     /// The user allows this for the device (see [`DEVICE_TOGGLES`]).
@@ -567,6 +569,15 @@ fn check(req: &Requirement, ctx: &Context<'_>) -> Check {
             }
             _ => Check::Met,
         },
+        Requirement::WebcamOwnedIfAdvertised => {
+            if !ctx.desktop.caps.contains("camera.webcam.owned.v1")
+                || ctx.phone.caps.contains("camera.webcam.owned.v1")
+            {
+                Check::Met
+            } else {
+                Check::Unlockable(Upgrade::new(UpgradeAction::UpdateApp(Role::Phone)))
+            }
+        }
         Requirement::Path(path) => {
             if ctx.paths.contains(&path) {
                 Check::Met
@@ -832,6 +843,17 @@ pub const FEATURES: &[FeatureDef] = &[
         partial: None,
     },
     FeatureDef {
+        id: "toggles.hotspot",
+        group: FeatureGroup::Device,
+        requires: &[
+            // An arbitrary Elevated Wi-Fi grant does not grant tether control.
+            phone("phone.hotspot.v3", Unlock::Unavailable),
+            desktop("toggles.show", UPDATE),
+            DeviceToggle("toggles"),
+        ],
+        partial: None,
+    },
+    FeatureDef {
         id: "toggles.bluetooth",
         group: FeatureGroup::Device,
         requires: &[
@@ -1061,6 +1083,7 @@ pub const FEATURES: &[FeatureDef] = &[
             phone("camera.stream", Unlock::Permission(Permission::Camera)),
             desktop("camera.virtual", UPDATE),
             desktop("addon.vcam", Unlock::Addon("vcam")),
+            Requirement::WebcamOwnedIfAdvertised,
             WindowsBuildAtLeast(22000),
             DeviceToggle("webcam"),
         ],
