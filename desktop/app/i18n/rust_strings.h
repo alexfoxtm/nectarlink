@@ -535,16 +535,24 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Webcam", "Allow the Waypair camera extension in System Settings, then return here."), // desktop/app/src/mac/vcam.rs
     QT_TRANSLATE_NOOP("Webcam", "Camera extension is disabled."), // desktop/app/src/mac/vcam.rs
     QT_TRANSLATE_NOOP("Webcam", "Camera extension request failed (OS error %1)."), // desktop/app/src/mac/vcam.rs
+    QT_TRANSLATE_NOOP("Webcam", "Camera is not ready yet. If macOS setup is approved, choose Set up camera to finish its name."), // desktop/app/src/webcam.rs
+    QT_TRANSLATE_NOOP("Webcam", "Camera name requested. Wait briefly, then choose Check again."), // desktop/app/src/webcam.rs
+    QT_TRANSLATE_NOOP("Webcam", "Camera setup could not finish. Check its status before trying again."), // desktop/app/src/webcam.rs
+    QT_TRANSLATE_NOOP("Webcam", "Camera setup could not start."), // desktop/app/src/webcam.rs
+    QT_TRANSLATE_NOOP("Webcam", "Camera setup opened. Complete setup and approve the camera extension in System Settings. Then choose Check again."), // desktop/app/src/webcam.rs
+    QT_TRANSLATE_NOOP("Webcam", "Camera setup stopped because Waypair Link is closing."), // desktop/app/src/webcam.rs
     QT_TRANSLATE_NOOP("Webcam", "Check camera"), // desktop/app/src/mac/vcam.rs
     QT_TRANSLATE_NOOP("Webcam", "Enable camera extension"), // desktop/app/src/mac/vcam.rs
     QT_TRANSLATE_NOOP("Webcam", "Enable the camera extension to use your phone in video apps."), // desktop/app/src/mac/vcam.rs
     QT_TRANSLATE_NOOP("Webcam", "Not included"), // desktop/app/src/mac/vcam.rs
+    QT_TRANSLATE_NOOP("Webcam", "Preparing camera setup…"), // desktop/app/src/webcam.rs
     QT_TRANSLATE_NOOP("Webcam", "Requesting camera extension activation…"), // desktop/app/src/mac/vcam.rs
     QT_TRANSLATE_NOOP("Webcam", "Restart macOS to finish the camera extension request."), // desktop/app/src/mac/vcam.rs
     QT_TRANSLATE_NOOP("Webcam", "Starting camera on %1…"), // desktop/app/src/bridge/webcam.rs
     QT_TRANSLATE_NOOP("Webcam", "Stopping camera on %1…"), // desktop/app/src/bridge/webcam.rs
     QT_TRANSLATE_NOOP("Webcam", "Streaming %1 × %2 · %3 fps from %4"), // desktop/app/src/bridge/webcam.rs
     QT_TRANSLATE_NOOP("Webcam", "The camera extension is not included in this app. Setup is unavailable."), // desktop/app/src/mac/vcam.rs
+    QT_TRANSLATE_NOOP("Webcam", "Waypair Camera is not ready. Use Set up camera, then Check again."), // desktop/app/src/webcam.rs
     QT_TRANSLATE_NOOP("Webcam", "Waypair Camera is ready · 720p at 30 fps."), // desktop/app/src/mac/vcam.rs
     QT_TRANSLATE_NOOP("Widget", "No phone connected"), // desktop/app/src/win/widget.rs
     QT_TRANSLATE_NOOP("Widget", "No recent clipboard items"), // desktop/app/src/win/widget.rs

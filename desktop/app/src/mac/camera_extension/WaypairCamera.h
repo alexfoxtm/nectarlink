@@ -16,7 +16,8 @@ extern "C" {
 #endif
 typedef struct WPCameraProducer WPCameraProducer;
 enum { WP_CAMERA_OK = 0, WP_CAMERA_DROPPED = 1, WP_CAMERA_INVALID = -1,
-       WP_CAMERA_NOT_INSTALLED = -2, WP_CAMERA_OS_ERROR = -3 };
+       WP_CAMERA_NOT_INSTALLED = -2, WP_CAMERA_OS_ERROR = -3,
+       WP_CAMERA_BUSY = -4, WP_CAMERA_NAME_PENDING = 2 };
 
 // Open only after a local Start/phone-accepted session has an exclusive
 // (device ID, stream generation) owner. No phone/permission/activation side effects.
@@ -27,6 +28,16 @@ int32_t wp_camera_open(WPCameraProducer **out);
 // No installer/activation, physical-camera fallback, or display-name selection.
 int32_t wp_obs_camera_is_registered(void);
 int32_t wp_obs_camera_open(WPCameraProducer **out);
+// Separate LiveLoop 1.3.4 public sink; no install/activation or implicit rename.
+// Registered requires exact metadata and the confirmed Waypair Camera name.
+// Setup only: 1 unique exact UID, 0 confirmed absence, negative error on
+// unreadable/failed/ambiguous enumeration. Never use as Start readiness.
+int32_t wp_liveloop_camera_is_present(void);
+int32_t wp_liveloop_camera_is_registered(void);
+// Explicit local idle setup: OK means name already confirmed; NAME_PENDING
+// means the property write was accepted, not that device republish completed.
+int32_t wp_liveloop_camera_prepare_name(void);
+int32_t wp_liveloop_camera_open(WPCameraProducer **out);
 // One serialized calling lane per handle. Tight BGRX comes directly from
 // webcam.rs's existing to_bgrx + optional mirror step. Copies before returning.
 // Aspect-fits to the handle's fixed format; mirror is applied only upstream.

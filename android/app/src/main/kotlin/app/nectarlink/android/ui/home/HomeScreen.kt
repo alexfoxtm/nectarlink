@@ -3074,16 +3074,31 @@ private fun TimelineDialog(
     var pagedEntries by remember { mutableStateOf<List<TimelineEntry>>(state.timeline) }
     var hasMore by remember { mutableStateOf(state.timelineHasMore) }
     val scope = rememberCoroutineScope()
+    val pageOwner = remember { TimelinePageOwner() }
+    var loadingMore by remember { mutableStateOf(false) }
+
+    fun invalidatePages() {
+        pageOwner.reset()
+        loadingMore = false
+        pagedEntries = emptyList()
+        hasMore = false
+    }
 
     LaunchedEffect(state.timeline, search, kindFilter, deviceFilter) {
+        val generation = pageOwner.reset()
+        loadingMore = false
         val trimmed = search.trim().takeIf { it.isNotEmpty() }
         if (trimmed == null && kindFilter == null && deviceFilter == null) {
             pagedEntries = state.timeline
             hasMore = state.timelineHasMore
+            pageOwner.markReady(generation)
         } else {
+            hasMore = false
             val page = queryPage(kindFilter, deviceFilter, trimmed, 0u)
-            pagedEntries = page?.items ?: emptyList()
-            hasMore = page?.hasMore ?: false
+            if (pageOwner.markReady(generation)) {
+                pagedEntries = page?.items ?: emptyList()
+                hasMore = page?.hasMore ?: false
+            }
         }
     }
 
@@ -3116,7 +3131,7 @@ private fun TimelineDialog(
                 val searchLabel = stringResource(R.string.timeline_search)
                 OutlinedTextField(
                     value = search,
-                    onValueChange = { search = it },
+                    onValueChange = { if (search != it) { invalidatePages(); search = it } },
                     placeholder = { Text(searchLabel) },
                     singleLine = true,
                     modifier = Modifier
@@ -3130,7 +3145,7 @@ private fun TimelineDialog(
                     kindChips.forEach { (kind, label) ->
                         FilterChip(
                             selected = kindFilter == kind,
-                            onClick = { kindFilter = kind },
+                            onClick = { if (kindFilter != kind) { invalidatePages(); kindFilter = kind } },
                             label = { Text(label) },
                         )
                     }
@@ -3142,13 +3157,13 @@ private fun TimelineDialog(
                     ) {
                         FilterChip(
                             selected = deviceFilter == null,
-                            onClick = { deviceFilter = null },
+                            onClick = { if (deviceFilter != null) { invalidatePages(); deviceFilter = null } },
                             label = { Text(stringResource(R.string.timeline_filter_all)) },
                         )
                         state.devices.forEach { dev ->
                             FilterChip(
                                 selected = deviceFilter == dev.id,
-                                onClick = { deviceFilter = dev.id },
+                                onClick = { if (deviceFilter != dev.id) { invalidatePages(); deviceFilter = dev.id } },
                                 label = { Text(dev.name) },
                             )
                         }
@@ -3202,16 +3217,25 @@ private fun TimelineDialog(
                             if (hasMore) {
                                 item(key = "load_more") {
                                     OutlinedButton(
-                                        onClick = {
+                                        onClick = loadMore@ {
+                                            val request = pageOwner.beginMore(pagedEntries.size.toUInt()) ?: return@loadMore
+                                            val trimmed = search.trim().takeIf { it.isNotEmpty() }
+                                            val requestedKind = kindFilter
+                                            val requestedDevice = deviceFilter
+                                            loadingMore = true
                                             scope.launch {
-                                                val trimmed = search.trim().takeIf { it.isNotEmpty() }
-                                                val next = queryPage(kindFilter, deviceFilter, trimmed, pagedEntries.size.toUInt())
-                                                if (next != null) {
-                                                    pagedEntries = pagedEntries + next.items
-                                                    hasMore = next.hasMore
+                                                try {
+                                                    val next = queryPage(requestedKind, requestedDevice, trimmed, request.offset)
+                                                    if (next != null && pageOwner.isCurrent(request)) {
+                                                        pagedEntries = (pagedEntries + next.items).distinctBy { it.id }
+                                                        hasMore = next.hasMore
+                                                    }
+                                                } finally {
+                                                    if (pageOwner.completeMore(request)) loadingMore = false
                                                 }
                                             }
                                         },
+                                        enabled = !loadingMore,
                                         modifier = Modifier.fillMaxWidth(),
                                     ) {
                                         Text(stringResource(R.string.timeline_action_load_more))

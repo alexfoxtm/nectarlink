@@ -18,7 +18,7 @@ struct WPCameraProducer {
     int64_t lastPTS;
     uint32_t width, height;
     BOOL started;
-    BOOL obs;
+    CFStringRef providerUID;
 };
 
 static CMIOObjectPropertyAddress address(CMIOObjectPropertySelector selector,
@@ -121,6 +121,8 @@ int32_t wp_camera_open(WPCameraProducer **out) {
 
 // Exact OBS public metadata observed by Root; never select by display name.
 #define WP_OBS_DEVICE_UID "7626645E-4425-469E-9D8B-97E0FA59AC75"
+#define WP_LIVELOOP_DEVICE_UID "5C0B4E2A-1F3D-4A6B-9C7E-1D2E3F4A5B6C"
+#define WP_LIVELOOP_NAME_SELECTOR UINT32_C(0x6c6c636e)
 #define WP_OBS_WIDTH 1920
 #define WP_OBS_HEIGHT 1080
 #define WP_OBS_PIXEL_FORMAT kCVPixelFormatType_32BGRA
@@ -167,7 +169,31 @@ static BOOL obsStreamMatches(CMIOStreamID stream, UInt32 expectedDirection) {
     return YES;
 }
 
-static BOOL obsSink(CMIODeviceID *outDevice, CMIOStreamID *outSink) {
+// Setup routing only: 0 means confirmed absence, 1 one exact UID;
+// failed/ambiguous metadata is an error, never permission to install.
+int32_t wp_liveloop_camera_is_present(void) {
+    CMIOObjectPropertyAddress a = address(kCMIOHardwarePropertyDevices, kCMIOObjectPropertyScopeGlobal);
+    UInt32 size = 0, used = 0;
+    if (CMIOObjectGetPropertyDataSize(kCMIOObjectSystemObject, &a, 0, NULL, &size) != noErr ||
+        size > 65536 || size % sizeof(UInt32) != 0) return WP_CAMERA_OS_ERROR;
+    if (size == 0) return 0;
+    UInt32 *devices = calloc(1, size);
+    if (!devices) return WP_CAMERA_OS_ERROR;
+    if (CMIOObjectGetPropertyData(kCMIOObjectSystemObject, &a, 0, NULL, size, &used, devices) != noErr ||
+        used != size) { free(devices); return WP_CAMERA_OS_ERROR; }
+    UInt32 matches = 0;
+    for (UInt32 i = 0; i < used / sizeof(UInt32); ++i) {
+        CFStringRef uid = (CFStringRef)copyProperty(devices[i], kCMIODevicePropertyDeviceUID,
+                                                  CFStringGetTypeID());
+        if (!uid) { free(devices); return WP_CAMERA_OS_ERROR; }
+        if (CFEqual(uid, CFSTR(WP_LIVELOOP_DEVICE_UID))) ++matches;
+        CFRelease(uid);
+    }
+    free(devices);
+    return matches <= 1 ? (int32_t)matches : WP_CAMERA_INVALID;
+}
+
+static BOOL providerSink(CFStringRef expectedUID, CMIODeviceID *outDevice, CMIOStreamID *outSink) {
     *outDevice = 0; *outSink = 0;
     UInt32 *devices = NULL, count = 0, matches = 0;
     CMIODeviceID device = 0;
@@ -177,7 +203,7 @@ static BOOL obsSink(CMIODeviceID *outDevice, CMIOStreamID *outSink) {
     for (UInt32 i = 0; i < count; ++i) {
         CFStringRef uid = (CFStringRef)copyProperty(devices[i], kCMIODevicePropertyDeviceUID,
                                                   CFStringGetTypeID());
-        if (uid && CFEqual(uid, CFSTR(WP_OBS_DEVICE_UID))) { device = devices[i]; ++matches; }
+        if (uid && CFEqual(uid, expectedUID)) { device = devices[i]; ++matches; }
         if (uid) CFRelease(uid);
     }
     free(devices);
@@ -195,6 +221,17 @@ static BOOL obsSink(CMIODeviceID *outDevice, CMIOStreamID *outSink) {
     free(streams);
     if (!sink) return NO;
     if (!obsStreamMatches(sink, 0)) return NO;
+    if (CFEqual(expectedUID, CFSTR(WP_LIVELOOP_DEVICE_UID))) {
+        CFStringRef sourceName = (CFStringRef)copyProperty(source, kCMIOObjectPropertyName, CFStringGetTypeID());
+        CFStringRef sinkName = (CFStringRef)copyProperty(sink, kCMIOObjectPropertyName, CFStringGetTypeID());
+        BOOL matches = sourceName && sinkName && CFEqual(sourceName, CFSTR("LiveLoop.Video.Source")) &&
+            CFEqual(sinkName, CFSTR("LiveLoop.Video.Sink"));
+        if (sourceName) CFRelease(sourceName);
+        if (sinkName) CFRelease(sinkName);
+        CMIOObjectPropertyAddress nameAddress = address(WP_LIVELOOP_NAME_SELECTOR, kCMIOObjectPropertyScopeGlobal);
+        Boolean settable = false;
+        if (!matches || CMIOObjectIsPropertySettable(device, &nameAddress, &settable) != noErr || !settable) return NO;
+    }
     *outDevice = device; *outSink = sink;
     return YES;
 }
@@ -202,7 +239,42 @@ static BOOL obsSink(CMIODeviceID *outDevice, CMIOStreamID *outSink) {
 int32_t wp_obs_camera_is_registered(void) {
     CMIODeviceID device;
     CMIOStreamID sink;
-    return obsSink(&device, &sink) ? 1 : 0;
+    return providerSink(CFSTR(WP_OBS_DEVICE_UID), &device, &sink) ? 1 : 0;
+}
+
+static BOOL liveLoopNameMatches(CMIODeviceID device) {
+    CFStringRef name = (CFStringRef)copyProperty(device, kCMIOObjectPropertyName, CFStringGetTypeID());
+    BOOL matches = name && CFEqual(name, CFSTR("Waypair Camera"));
+    if (name) CFRelease(name);
+    return matches;
+}
+
+int32_t wp_liveloop_camera_is_registered(void) {
+    CMIODeviceID device;
+    CMIOStreamID sink;
+    return providerSink(CFSTR(WP_LIVELOOP_DEVICE_UID), &device, &sink) && liveLoopNameMatches(device) ? 1 : 0;
+}
+
+// Explicit idle preparation only. A successful write republishes asynchronously;
+// callers must observe the new device/name before claiming a producer.
+int32_t wp_liveloop_camera_prepare_name(void) {
+    CMIODeviceID device;
+    CMIOStreamID sink;
+    if (!providerSink(CFSTR(WP_LIVELOOP_DEVICE_UID), &device, &sink)) return WP_CAMERA_NOT_INSTALLED;
+    if (liveLoopNameMatches(device)) return WP_CAMERA_OK;
+    UInt32 running = UINT32_MAX, used = 0;
+    CMIOObjectPropertyAddress a = address(kCMIODevicePropertyDeviceIsRunningSomewhere, kCMIOObjectPropertyScopeGlobal);
+    if (CMIOObjectGetPropertyData(device, &a, 0, NULL, sizeof(running), &used, &running) != noErr ||
+        used != sizeof(running)) return WP_CAMERA_OS_ERROR;
+    if (running != 0) return WP_CAMERA_BUSY;
+    CMIODeviceID currentDevice;
+    CMIOStreamID currentSink;
+    if (!providerSink(CFSTR(WP_LIVELOOP_DEVICE_UID), &currentDevice, &currentSink) ||
+        currentDevice != device || currentSink != sink) return WP_CAMERA_NOT_INSTALLED;
+    a = address(WP_LIVELOOP_NAME_SELECTOR, kCMIOObjectPropertyScopeGlobal);
+    CFStringRef name = CFSTR("Waypair Camera");
+    OSStatus status = CMIOObjectSetPropertyData(device, &a, 0, NULL, sizeof(name), &name);
+    return status == noErr ? WP_CAMERA_NAME_PENDING : WP_CAMERA_OS_ERROR;
 }
 
 // CMIO's callback has no producer context and remains safe after handle close.
@@ -212,17 +284,19 @@ static void obsQueueAltered(CMIOStreamID stream, void *token, void *refCon) {
     (void)refCon;
 }
 
-int32_t wp_obs_camera_open(WPCameraProducer **out) {
+static int32_t providerOpen(CFStringRef expectedUID, WPCameraProducer **out) {
     if (!out) return WP_CAMERA_INVALID;
     *out = NULL;
     CMIODeviceID device;
     CMIOStreamID sink;
-    if (!obsSink(&device, &sink)) return WP_CAMERA_NOT_INSTALLED;
+    if (!providerSink(expectedUID, &device, &sink)) return WP_CAMERA_NOT_INSTALLED;
+    if (CFEqual(expectedUID, CFSTR(WP_LIVELOOP_DEVICE_UID)) && !liveLoopNameMatches(device))
+        return WP_CAMERA_NAME_PENDING;
     WPCameraProducer *p = calloc(1, sizeof(*p));
     if (!p) return WP_CAMERA_OS_ERROR;
     p->device = device; p->sink = sink; p->lastPTS = -1;
     p->width = WP_OBS_WIDTH; p->height = WP_OBS_HEIGHT;
-    p->obs = YES;
+    p->providerUID = expectedUID;
     NSDictionary *attrs = @{
         (id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA),
         (id)kCVPixelBufferWidthKey: @(p->width),
@@ -235,7 +309,7 @@ int32_t wp_obs_camera_open(WPCameraProducer **out) {
         kCVPixelFormatType_32BGRA, p->width, p->height, NULL, &p->format);
     CMIODeviceID currentDevice = 0;
     CMIOStreamID currentSink = 0;
-    if (status == noErr && (!obsSink(&currentDevice, &currentSink) ||
+    if (status == noErr && (!providerSink(expectedUID, &currentDevice, &currentSink) ||
         currentDevice != device || currentSink != sink)) status = -1;
     if (status == noErr) status = CMIOStreamCopyBufferQueue(sink, obsQueueAltered, NULL, &p->queue);
     if (status == noErr && p->queue && CMSimpleQueueGetCapacity(p->queue) > 0)
@@ -252,13 +326,22 @@ int32_t wp_obs_camera_open(WPCameraProducer **out) {
     return WP_CAMERA_OK;
 }
 
+int32_t wp_obs_camera_open(WPCameraProducer **out) {
+    return providerOpen(CFSTR(WP_OBS_DEVICE_UID), out);
+}
+
+int32_t wp_liveloop_camera_open(WPCameraProducer **out) {
+    return providerOpen(CFSTR(WP_LIVELOOP_DEVICE_UID), out);
+}
+
 // Re-discover the selected provider without reopening it. A replacement with
 // the same UID but different live IDs does not inherit this producer's owner.
 static BOOL producerTargetCurrent(WPCameraProducer *p) {
-    if (!p->obs) return YES;
+    if (!p->providerUID) return YES;
     CMIODeviceID device = 0;
     CMIOStreamID sink = 0;
-    return obsSink(&device, &sink) && device == p->device && sink == p->sink;
+    return providerSink(p->providerUID, &device, &sink) && device == p->device && sink == p->sink &&
+        (!CFEqual(p->providerUID, CFSTR(WP_LIVELOOP_DEVICE_UID)) || liveLoopNameMatches(device));
 }
 
 static int32_t producerDropResult(WPCameraProducer *p) {

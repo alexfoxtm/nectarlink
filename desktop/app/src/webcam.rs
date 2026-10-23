@@ -41,6 +41,7 @@ use std::time::{Duration, Instant};
 use crate::{
     bridge::{app::describe, native::ffi},
     core_host,
+    i18n::tr,
     settings::Settings,
     state::Changes,
     win::{
@@ -79,6 +80,7 @@ pub enum OutputTarget {
     NativeCamera,
     PreviewOnly,
     ObsVirtualCamera,
+    WaypairCamera,
 }
 
 impl OutputTarget {
@@ -87,6 +89,7 @@ impl OutputTarget {
             "native" => Some(Self::NativeCamera),
             "preview" => Some(Self::PreviewOnly),
             "obs" => Some(Self::ObsVirtualCamera),
+            "liveloop" => Some(Self::WaypairCamera),
             _ => None,
         }
     }
@@ -96,6 +99,7 @@ impl OutputTarget {
             Self::NativeCamera => "native",
             Self::PreviewOnly => "preview",
             Self::ObsVirtualCamera => "obs",
+            Self::WaypairCamera => "liveloop",
         }
     }
 }
@@ -103,6 +107,10 @@ impl OutputTarget {
 #[derive(Debug, Default)]
 struct State {
     output_target: OutputTarget,
+    #[cfg(target_os = "macos")]
+    liveloop_setup_busy: bool,
+    #[cfg(target_os = "macos")]
+    liveloop_setup_status: String,
     #[cfg(target_os = "macos")]
     sink_stopped: Option<Arc<tokio::sync::Notify>>,
     phase: Phase,
@@ -147,8 +155,20 @@ struct CameraRequest {
 
 #[cfg(target_os = "macos")]
 impl State {
+    fn can_prepare_liveloop(&self) -> bool {
+        self.output_target == OutputTarget::WaypairCamera
+            && matches!(self.phase, Phase::Idle | Phase::Ended { .. })
+            && !self.addon_busy
+            && !self.liveloop_setup_busy
+            && !self.shutting_down
+            && self.request.is_none()
+            && self.sink_generation.is_none()
+            && self.capture_view.is_none()
+    }
+
     fn select_output_target(&mut self, target: OutputTarget) -> bool {
         if self.shutting_down
+            || self.liveloop_setup_busy
             || self.request.is_some()
             || self.sink_generation.is_some()
             || self.capture_view.is_some()
@@ -171,6 +191,7 @@ impl State {
 
     fn begin_camera_request(&mut self, device: DeviceId, reconfigure: bool) -> Option<u64> {
         if self.shutting_down
+            || self.liveloop_setup_busy
             || self.request.is_some()
             || (!reconfigure && (self.sink_generation.is_some() || self.capture_view.is_some()))
             || (reconfigure && self.sink_generation.is_none())
@@ -1007,7 +1028,7 @@ pub fn start(device: Option<DeviceId>) {
         return;
     };
     let generation = state(|s| {
-        if s.shutting_down || s.request.is_some() || s.sink_generation.is_some() {
+        if s.shutting_down || s.liveloop_setup_busy || s.request.is_some() || s.sink_generation.is_some() {
             return None;
         }
         if s.output_target == OutputTarget::NativeCamera && !vcam::is_registered() {
@@ -1016,6 +1037,12 @@ pub fn start(device: Option<DeviceId>) {
         }
         if s.output_target == OutputTarget::ObsVirtualCamera && !obs_output_ready() {
             s.phase = Phase::Ended { reason: "OBS camera output is unavailable.".into() };
+            return None;
+        }
+        if s.output_target == OutputTarget::WaypairCamera && !liveloop_output_ready() {
+            s.phase = Phase::Ended {
+                reason: tr!("Webcam", "Waypair Camera is not ready. Use Set up camera, then Check again."),
+            };
             return None;
         }
         s.begin_camera_request(device, false)
@@ -1158,9 +1185,142 @@ pub fn output_target() -> &'static str {
 
 pub fn obs_output_ready() -> bool {
     #[cfg(target_os = "macos")]
-    { camera_output::obs_ready() }
+    {
+        camera_output::obs_ready()
+    }
     #[cfg(not(target_os = "macos"))]
-    { false }
+    {
+        false
+    }
+}
+
+pub fn liveloop_output_ready() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        camera_output::liveloop_ready()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        false
+    }
+}
+
+pub fn liveloop_setup_allowed() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        !preview_window_open() && state(|s| s.can_prepare_liveloop())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        false
+    }
+}
+
+/// Explicit idle setup only: opens helper setup if absent, otherwise prepares the name.
+/// Blocking helper work runs off the UI thread; neither route starts capture.
+pub fn prepare_liveloop_output() {
+    #[cfg(target_os = "macos")]
+    {
+        if preview_window_open() {
+            return;
+        }
+        let admitted = state(|s| {
+            if !s.can_prepare_liveloop() {
+                return false;
+            }
+            s.liveloop_setup_busy = true;
+            s.liveloop_setup_status = tr!("Webcam", "Preparing camera setup…");
+            true
+        });
+        if !admitted {
+            return;
+        }
+        core_host::host().hub.changed(Changes::WEBCAM);
+        let spawned = std::thread::Builder::new().name("camera-setup".into()).spawn(|| {
+            let result = std::panic::catch_unwind(|| -> Result<String, String> {
+                if state(|s| s.shutting_down) {
+                    return Err(tr!("Webcam", "Camera setup stopped because Waypair Link is closing."));
+                }
+                match camera_output::liveloop_present()? {
+                    true => camera_output::prepare_liveloop_name().map(|ready| {
+                        if ready {
+                            String::new()
+                        } else {
+                            tr!("Webcam", "Camera name requested. Wait briefly, then choose Check again.")
+                        }
+                    }),
+                    false => crate::win::camera_helper::ensure_installed_and_open_setup().map(|outcome| {
+                        match outcome {
+                            crate::win::camera_helper::SetupOutcome::SetupOpened => tr!(
+                                "Webcam",
+                                "Camera setup opened. Complete setup and approve the camera extension in System Settings. Then choose Check again."
+                            ),
+                        }
+                    }),
+                }
+            }).unwrap_or_else(|_| Err(tr!("Webcam", "Camera setup could not finish. Check its status before trying again.")));
+            finish_liveloop_setup(result);
+        });
+        if spawned.is_err() {
+            finish_liveloop_setup(Err(tr!("Webcam", "Camera setup could not start.")));
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn finish_liveloop_setup(result: Result<String, String>) {
+    state(|s| {
+        s.liveloop_setup_busy = false;
+        if !s.shutting_down {
+            s.liveloop_setup_status = result.unwrap_or_else(|reason| reason);
+        }
+    });
+    core_host::host().hub.changed(Changes::WEBCAM);
+}
+
+pub fn liveloop_setup_busy() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        state(|s| s.liveloop_setup_busy)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        false
+    }
+}
+
+pub fn liveloop_setup_status() -> String {
+    #[cfg(target_os = "macos")]
+    {
+        state(|s| s.liveloop_setup_status.clone())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        String::new()
+    }
+}
+
+/// Metadata-only recheck; never installs, opens setup, renames, or starts a stream.
+pub fn recheck_liveloop_output() {
+    #[cfg(target_os = "macos")]
+    {
+        if preview_window_open() {
+            return;
+        }
+        state(|s| {
+            if s.can_prepare_liveloop() {
+                s.liveloop_setup_status = if camera_output::liveloop_ready() {
+                    String::new()
+                } else {
+                    tr!(
+                        "Webcam",
+                        "Camera is not ready yet. If macOS setup is approved, choose Set up camera to finish its name."
+                    )
+                };
+            }
+        });
+        core_host::host().hub.changed(Changes::WEBCAM);
+    }
 }
 
 pub fn set_output_target(target: &str) {
@@ -1286,9 +1446,11 @@ pub fn sink_owned(device: &DeviceId, view: &nectarlink_core::WebcamView) -> Opti
             return None;
         }
         if s.shutting_down
+            || s.liveloop_setup_busy
             || s.sink_generation.is_some()
             || (s.output_target == OutputTarget::NativeCamera && !vcam::is_registered())
             || (s.output_target == OutputTarget::ObsVirtualCamera && !obs_output_ready())
+            || (s.output_target == OutputTarget::WaypairCamera && !liveloop_output_ready())
         {
             return None;
         }
@@ -1303,6 +1465,7 @@ pub fn sink_owned(device: &DeviceId, view: &nectarlink_core::WebcamView) -> Opti
         } else {
             let claimed = match s.output_target {
                 OutputTarget::ObsVirtualCamera => camera_output::claim_obs(*device, stopped.clone()),
+                OutputTarget::WaypairCamera => camera_output::claim_liveloop(*device, stopped.clone()),
                 OutputTarget::NativeCamera => camera_output::claim(*device, stopped.clone()),
                 OutputTarget::PreviewOnly => unreachable!("preview has no output lease"),
             };
@@ -1665,10 +1828,32 @@ mod tests {
         s.sink_generation = Some(8);
         assert!(!s.select_output_target(OutputTarget::PreviewOnly));
         assert!(!s.select_output_target(OutputTarget::ObsVirtualCamera));
+        assert!(!s.select_output_target(OutputTarget::WaypairCamera));
+        assert!(!s.can_prepare_liveloop());
         assert_eq!(s.output_target.token(), "native");
         assert!(!s.finish_camera_sink(7, None, || panic!("stale sink cleared successor")));
         assert_eq!(s.sink_generation, Some(8));
         assert_eq!(s.output_target, OutputTarget::NativeCamera);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn waypair_camera_selection_only_arms_idle_setup() {
+        let mut s = State::default();
+        assert_eq!(OutputTarget::from_token("liveloop"), Some(OutputTarget::WaypairCamera));
+        assert!(s.select_output_target(OutputTarget::WaypairCamera));
+        assert_eq!(s.output_target.token(), "liveloop");
+        assert!(s.can_prepare_liveloop());
+        assert!(s.request.is_none());
+        assert!(s.capture_view.is_none());
+        assert!(s.sink_generation.is_none());
+        s.liveloop_setup_busy = true;
+        assert!(!s.can_prepare_liveloop());
+        assert!(!s.select_output_target(OutputTarget::PreviewOnly));
+        assert!(s.begin_camera_request(DeviceId([1; 32]), false).is_none());
+        s.liveloop_setup_busy = false;
+        s.shutting_down = true;
+        assert!(!s.can_prepare_liveloop());
     }
 
     #[test]

@@ -21,6 +21,7 @@ Item {
     readonly property bool webcamOutputReady: !page.onMac
         || Webcam.outputTarget === "preview"
         || (Webcam.outputTarget === "obs" && Webcam.obsOutputAvailable)
+        || (Webcam.outputTarget === "liveloop" && Webcam.liveloopOutputAvailable)
         || (Webcam.outputTarget === "native" && Webcam.addonRegistered)
     readonly property string macGapText: qsTr("Not yet available on Mac.")
     // Device toggles that only arm a desktop capability this Mac build doesn't advertise.
@@ -1765,11 +1766,15 @@ Item {
                             width: parent.width
                             stackBelow: true
                             visible: page.onMac
-                            enabled: !Webcam.previewWindowOpen && Webcam.phase !== "streaming" && Webcam.phase !== "asking"
+                            enabled: !Webcam.previewWindowOpen && !Webcam.liveloopSetupBusy && Webcam.phase !== "streaming" && Webcam.phase !== "asking"
                             iconPath: Icons.video
                             title: qsTr("Camera output")
                             description: Webcam.outputTarget === "preview"
                                 ? qsTr("Camera preview only. Open the clean preview window for external OBS Window Capture. Close that window or press Escape to stop.")
+                                : Webcam.outputTarget === "liveloop"
+                                ? (Webcam.liveloopOutputAvailable
+                                   ? qsTr("Waypair Camera is ready. Start the phone camera, then select Waypair Camera in your video app.")
+                                   : qsTr("Choose Set up camera to install or open the bundled camera helper. Camera approval remains in your control."))
                                 : Webcam.outputTarget === "obs"
                                 ? (Webcam.obsOutputAvailable
                                    ? qsTr("Select OBS Virtual Camera in your video app. No preview window is needed.")
@@ -1781,10 +1786,11 @@ Item {
                                 model: [
                                     { value: "native", label: qsTr("Native camera") },
                                     { value: "obs", label: qsTr("OBS Virtual Camera") },
+                                    { value: "liveloop", label: qsTr("Waypair Camera") },
                                     { value: "preview", label: qsTr("Camera preview") }
                                 ]
                                 textRole: "label"
-                                currentIndex: ["native", "obs", "preview"].indexOf(Webcam.outputTarget)
+                                currentIndex: ["native", "obs", "liveloop", "preview"].indexOf(Webcam.outputTarget)
                                 Accessible.name: qsTr("Camera output")
                                 contentItem: Txt {
                                     text: cameraOutputSelector.displayText
@@ -1793,6 +1799,36 @@ Item {
                                     elide: Text.ElideRight
                                 }
                                 onActivated: (index) => Webcam.selectOutputTarget(model[index].value)
+                            }
+                        }
+
+                        ListRow {
+                            width: parent.width
+                            visible: page.onMac && Webcam.outputTarget === "liveloop"
+                            stackBelow: true
+                            iconPath: Icons.video
+                            title: qsTr("Waypair Camera setup")
+                            description: Webcam.liveloopSetupBusy ? Webcam.liveloopSetupStatus
+                                : Webcam.liveloopOutputAvailable
+                                ? qsTr("Ready. Setup does not start the phone camera.")
+                                : Webcam.liveloopSetupStatus.length > 0 ? Webcam.liveloopSetupStatus
+                                : qsTr("Close apps using the camera before setup. Installation and macOS approval are separate steps.")
+                            Row {
+                                spacing: 8
+                                Button {
+                                    size: "sm"
+                                    text: qsTr("Set up camera")
+                                    busy: Webcam.liveloopSetupBusy
+                                    enabled: Webcam.liveloopSetupAllowed && !Webcam.liveloopOutputAvailable
+                                    onClicked: Webcam.prepareLiveloopOutput()
+                                }
+                                Button {
+                                    size: "sm"
+                                    variant: "text"
+                                    text: qsTr("Check again")
+                                    enabled: Webcam.liveloopSetupAllowed
+                                    onClicked: Webcam.recheckLiveloopOutput()
+                                }
                             }
                         }
 
@@ -1965,6 +2001,8 @@ Item {
                                         ? Webcam.addonStatusText
                                         : Webcam.statusText.length > 0
                                         ? Webcam.statusText
+                                        : Webcam.outputTarget === "liveloop" && !Webcam.liveloopOutputAvailable
+                                        ? qsTr("Waypair Camera is not ready. Use Set up camera, then Check again.")
                                         : Webcam.outputTarget === "obs" && !Webcam.obsOutputAvailable
                                         ? qsTr("OBS Virtual Camera is not ready. Check its camera extension in System Settings.")
                                         : (Webcam.selectedPhoneName.length > 0

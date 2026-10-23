@@ -9,6 +9,7 @@ pub mod ble_beacon;
 pub mod browser;
 pub mod browser_handoff;
 pub mod bt_hfp;
+pub mod camera_helper;
 pub mod camera_output;
 pub mod clipboard;
 pub mod doctor;

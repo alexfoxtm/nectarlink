@@ -14,6 +14,10 @@ unsafe extern "C" {
     fn wp_camera_open(out: *mut *mut c_void) -> i32;
     fn wp_obs_camera_is_registered() -> i32;
     fn wp_obs_camera_open(out: *mut *mut c_void) -> i32;
+    fn wp_liveloop_camera_is_present() -> i32;
+    fn wp_liveloop_camera_is_registered() -> i32;
+    fn wp_liveloop_camera_prepare_name() -> i32;
+    fn wp_liveloop_camera_open(out: *mut *mut c_void) -> i32;
     fn wp_camera_push_bgrx(
         producer: *mut c_void,
         bytes: *const u8,
@@ -49,7 +53,7 @@ static OUTPUT: Mutex<State> = Mutex::new(State { generation: 0, active: None });
 /// Call only after core webcam capability, toggle, and paired-session admission.
 /// A second stream is refused, including from the same phone, until teardown.
 pub fn claim(device: DeviceId, stopped: Arc<tokio::sync::Notify>) -> Result<Lease, String> {
-    claim_output(device, stopped, false)
+    claim_output(device, stopped, wp_camera_open)
 }
 
 /// Metadata-only query; never starts OBS or a camera stream.
@@ -59,10 +63,52 @@ pub fn obs_ready() -> bool {
 }
 
 pub fn claim_obs(device: DeviceId, stopped: Arc<tokio::sync::Notify>) -> Result<Lease, String> {
-    claim_output(device, stopped, true)
+    claim_output(device, stopped, wp_obs_camera_open)
 }
 
-fn claim_output(device: DeviceId, stopped: Arc<tokio::sync::Notify>, obs: bool) -> Result<Lease, String> {
+/// Setup only: confirmed absence may open helper setup; errors must not.
+/// Presence does not admit Start or frames.
+pub fn liveloop_present() -> Result<bool, String> {
+    // SAFETY: native helper enumerates device UIDs only, with no side effects.
+    match unsafe { wp_liveloop_camera_is_present() } {
+        0 => Ok(false),
+        1 => Ok(true),
+        status => Err(format!("Camera presence could not be determined ({status}).")),
+    }
+}
+
+/// Metadata-only; readiness includes confirmed Waypair Camera display name.
+pub fn liveloop_ready() -> bool {
+    // SAFETY: native helper only reads public device and stream metadata.
+    unsafe { wp_liveloop_camera_is_registered() == 1 }
+}
+
+/// Explicit setup action only. Never invoke from refresh or camera start.
+/// Ok(false) requires a later readiness observation after device republish.
+pub fn prepare_liveloop_name() -> Result<bool, String> {
+    let state = OUTPUT.lock().unwrap_or_else(|e| e.into_inner());
+    if state.active.is_some() {
+        return Err("Stop the active camera output before changing its name.".into());
+    }
+    // SAFETY: OUTPUT excludes our producers; native helper checks external use
+    // and only writes LiveLoop's public name property. It never opens a stream.
+    match unsafe { wp_liveloop_camera_prepare_name() } {
+        0 => Ok(true),
+        2 => Ok(false),
+        -4 => Err("Close apps using the camera before changing its name.".into()),
+        status => Err(format!("Camera name setup unavailable ({status}).")),
+    }
+}
+
+pub fn claim_liveloop(device: DeviceId, stopped: Arc<tokio::sync::Notify>) -> Result<Lease, String> {
+    claim_output(device, stopped, wp_liveloop_camera_open)
+}
+
+fn claim_output(
+    device: DeviceId,
+    stopped: Arc<tokio::sync::Notify>,
+    open: unsafe extern "C" fn(*mut *mut c_void) -> i32,
+) -> Result<Lease, String> {
     let mut state = OUTPUT.lock().unwrap_or_else(|e| e.into_inner());
     if state.active.is_some() {
         return Err("Another phone camera stream owns the output.".into());
@@ -70,9 +116,7 @@ fn claim_output(device: DeviceId, stopped: Arc<tokio::sync::Notify>, obs: bool) 
     let generation = state.generation.checked_add(1).ok_or("Camera generation exhausted.")?;
     let mut raw = std::ptr::null_mut();
     // SAFETY: initialized out pointer, native helper stores a unique handle.
-    let status = unsafe {
-        if obs { wp_obs_camera_open(&mut raw) } else { wp_camera_open(&mut raw) }
-    };
+    let status = unsafe { open(&mut raw) };
     let pointer = NonNull::new(raw)
         .filter(|_| status == 0)
         .ok_or_else(|| format!("Camera output unavailable ({status})."))?;

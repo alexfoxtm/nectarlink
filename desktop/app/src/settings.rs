@@ -695,6 +695,8 @@ impl Settings {
 
     /// Saves atomically: a crash mid-write never leaves a half-written file.
     pub fn save(&self, dir: &Path) -> std::io::Result<()> {
+        static SAVE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _guard = SAVE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let path = Self::path(dir);
         let tmp = path.with_extension("json.tmp");
         {

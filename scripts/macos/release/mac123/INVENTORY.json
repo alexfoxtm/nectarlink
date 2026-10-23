@@ -1,0 +1,21 @@
+{
+  "status": "MISSING_HOLD",
+  "build": 123,
+  "channel": "0.2.4",
+  "source": null,
+  "tree": null,
+  "parent": null,
+  "cameraReady": false,
+  "includesCameraExtension": false,
+  "genericAppFlags": false,
+  "files": {
+    "BUILD-RECIPE-ADDENDUM.md": "4b79233a4acbb2957dbcbad3277937170acd70a4865ec417dbc4d33f4503e566",
+    "build-mac123-candidate.py": "1de74d810109f08a584917a44dae93f2b58a98e247f96e4400fb886f64e131e4",
+    "dmg-mac123.py": "9a97d53dae414056a0ae2bd216d11882f1d4c9a449f2d95c0d0f7ae340459d43",
+    "mac123_guard.py": "19d32a43a7f5590752b8024d864d5055ad06ad7da042d1080b8d39068bd1119e",
+    "macho_probe.py": "f22ec508cf701b4cb81b5ac962a30c31747da0457efaa3eacfbf8701bc581986",
+    "package-app.sh": "99bdb960cc71e7cd8cd418b3d0630a67437993b96ec17dddfd6ce16a137af285",
+    "record-minimum-os.py": "db0c54c75bb3e424d0b3935521e845efaadbd92ec457abe60ab9f07af78f5449",
+    "CAMERA-HELPER-RESOURCES.md": "a54b8d89624bef01ac5874dee0ab88d348883446bae20430397d4b312bd0ac44"
+  }
+}

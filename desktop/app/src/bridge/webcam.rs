@@ -29,6 +29,10 @@ pub mod qobject {
         #[qproperty(bool, preview_only, cxx_name = "previewOnly")]
         #[qproperty(QString, output_target, cxx_name = "outputTarget")]
         #[qproperty(bool, obs_output_available, cxx_name = "obsOutputAvailable")]
+        #[qproperty(bool, liveloop_output_available, cxx_name = "liveloopOutputAvailable")]
+        #[qproperty(bool, liveloop_setup_allowed, cxx_name = "liveloopSetupAllowed")]
+        #[qproperty(bool, liveloop_setup_busy, cxx_name = "liveloopSetupBusy")]
+        #[qproperty(QString, liveloop_setup_status, cxx_name = "liveloopSetupStatus")]
         #[qproperty(bool, addon_registered, cxx_name = "addonRegistered")]
         #[qproperty(bool, addon_busy, cxx_name = "addonBusy")]
         #[qproperty(QString, addon_status_text, cxx_name = "addonStatusText")]
@@ -76,6 +80,12 @@ pub mod qobject {
         #[cxx_name = "selectOutputTarget"]
         fn select_output_target(self: &Webcam, target: &QString);
         #[qinvokable]
+        #[cxx_name = "prepareLiveloopOutput"]
+        fn prepare_liveloop_output(self: Pin<&mut Webcam>);
+        #[qinvokable]
+        #[cxx_name = "recheckLiveloopOutput"]
+        fn recheck_liveloop_output(self: Pin<&mut Webcam>);
+        #[qinvokable]
         #[cxx_name = "setPreviewActive"]
         fn set_preview_active(self: &Webcam, active: bool);
         #[qinvokable]
@@ -89,6 +99,10 @@ pub struct WebcamRust {
     preview_only: bool,
     output_target: QString,
     obs_output_available: bool,
+    liveloop_output_available: bool,
+    liveloop_setup_allowed: bool,
+    liveloop_setup_busy: bool,
+    liveloop_setup_status: QString,
     preview_window_open: bool,
     addon_registered: bool,
     addon_busy: bool,
@@ -130,6 +144,10 @@ impl qobject::Webcam {
         self.as_mut().set_preview_only(webcam::preview_only());
         self.as_mut().set_output_target(QString::from(webcam::output_target()));
         self.as_mut().set_obs_output_available(webcam::obs_output_ready());
+        self.as_mut().set_liveloop_output_available(webcam::liveloop_output_ready());
+        self.as_mut().set_liveloop_setup_allowed(webcam::liveloop_setup_allowed());
+        self.as_mut().set_liveloop_setup_busy(webcam::liveloop_setup_busy());
+        self.as_mut().set_liveloop_setup_status(QString::from(&webcam::liveloop_setup_status()));
         self.as_mut().set_preview_window_open(webcam::preview_window_open());
         self.as_mut().set_addon_registered(webcam::addon_registered());
         self.as_mut().set_addon_busy(webcam::addon_busy());
@@ -206,6 +224,16 @@ impl qobject::Webcam {
 
     pub fn select_output_target(&self, target: &QString) {
         webcam::set_output_target(&String::from(target));
+    }
+
+    pub fn prepare_liveloop_output(self: Pin<&mut Self>) {
+        webcam::prepare_liveloop_output();
+        self.refresh();
+    }
+
+    pub fn recheck_liveloop_output(self: Pin<&mut Self>) {
+        webcam::recheck_liveloop_output();
+        self.refresh();
     }
 
     pub fn stop(&self) {

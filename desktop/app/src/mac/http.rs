@@ -15,12 +15,49 @@ fn validate_https(url: &str) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(Debug)]
+struct TransferFailure {
+    message: String,
+    retryable: bool,
+}
+
+impl From<String> for TransferFailure {
+    fn from(message: String) -> Self {
+        Self { message, retryable: false }
+    }
+}
+impl From<&str> for TransferFailure {
+    fn from(message: &str) -> Self {
+        message.to_owned().into()
+    }
+}
+
+fn curl_retryable(exit: Option<i32>, http_status: Option<u16>) -> bool {
+    match exit {
+        Some(22) => http_status.is_some_and(|status| status == 429 || (500..=599).contains(&status)),
+        // Name resolution, connection, partial response, timeout, TLS handshake,
+        // empty reply, send/receive, and HTTP/2 transport failures. Certificate
+        // validation, local I/O, redirect/protocol refusal and unknown exits fail closed.
+        Some(5 | 6 | 7 | 16 | 18 | 28 | 35 | 52 | 55 | 56 | 92) => true,
+        _ => false,
+    }
+}
+
 fn transfer(
     url: &str,
     limit: u64,
     output: &mut impl Write,
-    mut progress: impl FnMut(u64, u64),
+    progress: impl FnMut(u64, u64),
 ) -> Result<u64, String> {
+    transfer_once(url, limit, output, progress).map_err(|error| error.message)
+}
+
+fn transfer_once(
+    url: &str,
+    limit: u64,
+    output: &mut impl Write,
+    mut progress: impl FnMut(u64, u64),
+) -> Result<u64, TransferFailure> {
     validate_https(url)?;
     let mut child = Command::new("/usr/bin/curl")
         .args([
@@ -32,6 +69,9 @@ fn transfer(
             "=https",
             "--proto-redir",
             "=https",
+            // Curl writes only the final numeric HTTP status to stderr.
+            "--write-out",
+            "%{stderr}%{http_code}",
             "--max-time",
             "300",
             "--",
@@ -39,10 +79,10 @@ fn transfer(
         ])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| e.to_string())?;
-    let result = (|| {
+    let result = (|| -> Result<u64, TransferFailure> {
         let mut stdout = child.stdout.take().ok_or("missing downloader stdout")?;
         let mut received = 0u64;
         let mut buffer = [0u8; 64 * 1024];
@@ -59,9 +99,25 @@ fn transfer(
             progress(received, 0);
         }
         output.flush().map_err(|e| e.to_string())?;
+        // Quiet curl plus our fixed write-out emits three status digits, not
+        // response headers/body. Bound and validate this private control channel.
+        let mut metadata = Vec::new();
+        child
+            .stderr
+            .take()
+            .ok_or("missing downloader status")?
+            .take(16)
+            .read_to_end(&mut metadata)
+            .map_err(|e| e.to_string())?;
+        let http_status = (metadata.len() == 3 && metadata.iter().all(u8::is_ascii_digit))
+            .then(|| std::str::from_utf8(&metadata).ok()?.parse::<u16>().ok())
+            .flatten();
         let status = child.wait().map_err(|e| e.to_string())?;
         if !status.success() {
-            return Err(format!("curl error: {status}"));
+            return Err(TransferFailure {
+                message: format!("curl error: {status}"),
+                retryable: curl_retryable(status.code(), http_status),
+            });
         }
         Ok(received)
     })();
@@ -72,21 +128,29 @@ fn transfer(
     result
 }
 
-pub fn get(url: &str, limit: usize) -> Result<Vec<u8>, String> {
+fn get_once(url: &str, limit: usize) -> Result<Vec<u8>, TransferFailure> {
     let mut bytes = Vec::new();
-    transfer(url, limit as u64, &mut bytes, |_, _| {})?;
+    transfer_once(url, limit as u64, &mut bytes, |_, _| {})?;
     Ok(bytes)
+}
+
+pub fn get(url: &str, limit: usize) -> Result<Vec<u8>, String> {
+    get_once(url, limit).map_err(|error| error.message)
 }
 
 pub fn get_retrying(url: &str, limit: usize) -> Result<Vec<u8>, String> {
     validate_https(url)?;
-    for _ in 0..3 {
-        if let Ok(data) = get(url, limit) {
-            return Ok(data);
+    // Preserve the existing maximum of four attempts and three one-second waits.
+    for attempt in 0..4 {
+        match get_once(url, limit) {
+            Ok(bytes) => return Ok(bytes),
+            Err(error) if error.retryable && attempt < 3 => {
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
+            Err(error) => return Err(error.message),
         }
-        std::thread::sleep(std::time::Duration::from_secs(1));
     }
-    get(url, limit)
+    unreachable!("the final attempt always returns")
 }
 
 pub fn download(
@@ -145,5 +209,28 @@ mod tests {
         }
         assert_eq!(std::fs::read(&destination).unwrap(), b"keep");
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+    #[test]
+    fn retries_transient_http_and_transport_failures() {
+        for code in [429, 500, 503, 599] {
+            assert!(curl_retryable(Some(22), Some(code)));
+        }
+        for exit in [5, 6, 7, 16, 18, 28, 35, 52, 55, 56, 92] {
+            assert!(curl_retryable(Some(exit), None));
+        }
+    }
+
+    #[test]
+    fn permanent_and_unknown_failures_do_not_retry() {
+        for code in [400, 401, 403, 404, 408] {
+            assert!(!curl_retryable(Some(22), Some(code)));
+        }
+        for exit in [1, 3, 23, 47, 60, 77] {
+            assert!(!curl_retryable(Some(exit), None));
+        }
+        assert!(!curl_retryable(Some(22), None));
+        assert!(!curl_retryable(None, Some(503)));
+        assert!(!TransferFailure::from("too large").retryable);
+        assert!(!TransferFailure::from("local write failed".to_owned()).retryable);
     }
 }
