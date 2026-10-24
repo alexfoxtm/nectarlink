@@ -4463,6 +4463,17 @@ impl NectarlinkNode {
         Ok(self.node.set_phone_control_enabled(parse_id(&pc_id)?, enabled)?)
     }
 
+    /// Persistent phone-owner Way Mode for one exact paired PC. DEFAULT OFF.
+    pub fn set_phone_app_windows_enabled(&self, pc_id: String, enabled: bool) -> Result<()> {
+        Ok(self.node.set_phone_app_windows_enabled(parse_id(&pc_id)?, enabled)?)
+    }
+
+    /// Exact paired-PC Way Mode state; unknown, unpaired, non-PC, or store
+    /// error is false. Capability is implementation support, never this grant.
+    pub fn phone_app_windows_enabled(&self, pc_id: String) -> bool {
+        parse_id(&pc_id).is_ok_and(|id| self.node.phone_app_windows_enabled(id))
+    }
+
     pub fn mirror_connection_current(&self, pc_id: String, connection: u64) -> bool {
         parse_id(&pc_id).is_ok_and(|id| self.node.mirror_connection_current(id, connection))
     }

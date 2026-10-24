@@ -155,6 +155,8 @@ data class Device(
     val mirroringEnabled: Boolean = true,
     /** Explicit phone-owner grant for this trusted PC, independent of viewing and Stop. */
     val phoneControlEnabled: Boolean = false,
+    /** Persistent phone-owner permission for independently controlled Way Mode on this exact PC. */
+    val wayModeEnabled: Boolean = false,
 ) {
     /** A paired phone or tablet rather than a PC. */
     val isAndroid: Boolean
@@ -277,6 +279,7 @@ data class CoreState(
         micOff: Set<String> = emptySet(),
         mirroringOff: Set<String> = emptySet(),
         phoneControlAllowed: Set<String> = emptySet(),
+        wayModeAllowed: Set<String> = emptySet(),
     ): CoreState {
         val prevById = devices.associateBy { it.id }
         return copy(
@@ -289,6 +292,7 @@ data class CoreState(
                     micEnabled = p.id !in micOff,
                     mirroringEnabled = p.id !in mirroringOff,
                     phoneControlEnabled = p.id in phoneControlAllowed,
+                    wayModeEnabled = p.id in wayModeAllowed,
                 )
             }.sortedWith(deviceOrder),
         )
@@ -336,6 +340,9 @@ data class CoreState(
 
     fun withPhoneControlEnabled(id: String, enabled: Boolean): CoreState =
         update(id) { it.copy(phoneControlEnabled = enabled) }
+
+    fun withWayModeEnabled(id: String, enabled: Boolean): CoreState =
+        update(id) { it.copy(wayModeEnabled = enabled) }
 
     fun withTypingStopped(id: String, stopped: Boolean): CoreState =
         copy(typingStoppedPcIds = if (stopped) typingStoppedPcIds + id else typingStoppedPcIds - id)

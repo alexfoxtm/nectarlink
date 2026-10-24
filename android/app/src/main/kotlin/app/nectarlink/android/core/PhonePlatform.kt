@@ -201,8 +201,12 @@ internal class PhonePlatform(
         MirrorService.stop(pcId, request, connection)
     }
 
-    override fun mirrorKeyframeRequested(pcId: String, session: UInt) =
-        if (session == SCREEN) MirrorService.keyframe(pcId) else appWindows.keyframe(pcId, session)
+    override fun mirrorKeyframeRequested(pcId: String, session: UInt) {
+        if (session == SCREEN) MirrorService.keyframe(pcId)
+        // Nonzero keyframes must carry their accepted owner context through
+        // mirrorKeyframeRequestedOwned. A stale unowned callback has no request
+        // identity and must never select a window by (PC, session).
+    }
 
     override fun mirrorKeyframeRequestedOwned(pcId: String, context: app.nectarlink.core.PhoneControlContext) {
         if (context.session != SCREEN) appWindows.keyframeOwned(pcId, context)

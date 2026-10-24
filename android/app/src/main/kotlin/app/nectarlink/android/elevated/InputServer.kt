@@ -436,13 +436,24 @@ object InputServer {
                         writer.flush()
                     }
                 }
-                var line: String? = if (first == "H") runCatching { reader.nextLine() }.getOrNull() else first
+                val readyLines = ReadyLines(reader)
+                var line: String? = if (first == "H") runCatching { readyLines.blockingLine() }.getOrNull() else first
                 while (line != null) {
                     val input = line
-                    if (input != "H") {
-                        runCatching { injector.handle(input) }.onFailure { System.err.println("input failed: $it") }
+                    val held = if (input == "H") {
+                        null
+                    } else {
+                        // Notches already buffered for this display are one injection.
+                        // Do not wait for more, and do not take a later touch or key.
+                        val folded = coalesceReadyScrolls(input) {
+                            runCatching { readyLines.pollLine() }.getOrNull()
+                        }
+                        runCatching { injector.handle(folded.line) }.onFailure {
+                            System.err.println("input failed: $it")
+                        }
+                        folded.held
                     }
-                    line = runCatching { reader.nextLine() }.getOrNull()
+                    line = held ?: runCatching { readyLines.blockingLine() }.getOrNull()
                 }
             } finally {
                 if (controlOut === writer) controlOut = null
@@ -666,6 +677,141 @@ object InputServer {
             return v != null && v in 0..255
         }
         return false
+    }
+
+    /**
+     * Already-buffered wheel lines folded into one injection, at most.
+     * One more than this stays for the next pass.
+     */
+    internal const val SCROLL_MERGE_LIMIT = 32
+
+    /** Largest mirror wheel step, in notches, on either axis. */
+    internal const val SCROLL_NOTCH_LIMIT = 100f
+
+    internal data class FoldedInput(val line: String, val held: String?)
+
+    /**
+     * Folds wheel lines [nextReady] can already return into [first] when they
+     * name the same display and the same point. A different point is held in
+     * order, so a later pane does not take this backlog. A touch, key, other
+     * display, non-finite value, or sum past [SCROLL_NOTCH_LIMIT] is likewise
+     * returned as [FoldedInput.held]. [nextReady] is not called for a line that
+     * is not a wheel, and it is not called again after [SCROLL_MERGE_LIMIT] lines.
+     */
+    internal fun coalesceReadyScrolls(first: String, nextReady: () -> String?): FoldedInput {
+        val base = parseScrollLine(first) ?: return FoldedInput(first, null)
+        if (!base.dx.isFinite() || !base.dy.isFinite()) return FoldedInput(first, null)
+        var dx = base.dx
+        var dy = base.dy
+        var merged = 0
+        while (merged + 1 < SCROLL_MERGE_LIMIT) {
+            val peeked = nextReady() ?: return foldedScroll(first, base, dx, dy, merged, null)
+            val next = parseScrollLine(peeked)
+            if (next == null || next.display != base.display || next.xPoint != base.xPoint || next.yPoint != base.yPoint ||
+                !next.dx.isFinite() || !next.dy.isFinite()
+            ) {
+                return foldedScroll(first, base, dx, dy, merged, peeked)
+            }
+            val sumDx = dx + next.dx
+            val sumDy = dy + next.dy
+            if (!sumDx.isFinite() || !sumDy.isFinite() || !withinNotchLimit(sumDx) || !withinNotchLimit(sumDy)) {
+                return foldedScroll(first, base, dx, dy, merged, peeked)
+            }
+            dx = sumDx
+            dy = sumDy
+            merged += 1
+        }
+        return foldedScroll(first, base, dx, dy, merged, null)
+    }
+
+    private fun withinNotchLimit(value: Float): Boolean =
+        value <= SCROLL_NOTCH_LIMIT && value >= -SCROLL_NOTCH_LIMIT
+
+    private data class ScrollParts(
+        val display: Int?,
+        val x: String,
+        val y: String,
+        val xPoint: Float,
+        val yPoint: Float,
+        val dx: Float,
+        val dy: Float,
+    )
+
+    /** The `S` line [Injector.handle] already accepts, or null when it is not one. */
+    private fun parseScrollLine(line: String): ScrollParts? {
+        var body = line
+        var display: Int? = null
+        if (body.startsWith("@")) {
+            val space = body.indexOf(' ')
+            if (space <= 1) return null
+            display = body.substring(1, space).toIntOrNull() ?: return null
+            body = body.substring(space + 1)
+        }
+        val parts = body.split(' ')
+        if (parts.size != 5 || parts[0] != "S") return null
+        val x = parts[1].toFloatOrNull() ?: return null
+        val y = parts[2].toFloatOrNull() ?: return null
+        if (!x.isFinite() || !y.isFinite()) return null
+        val dx = parts[3].toFloatOrNull() ?: return null
+        val dy = parts[4].toFloatOrNull() ?: return null
+        return ScrollParts(display, parts[1], parts[2], x, y, dx, dy)
+    }
+
+    private fun foldedScroll(
+        original: String,
+        base: ScrollParts,
+        dx: Float,
+        dy: Float,
+        merged: Int,
+        held: String?,
+    ): FoldedInput {
+        if (merged == 0) return FoldedInput(original, held)
+        val head = if (base.display == null) "S" else "@${base.display} S"
+        return FoldedInput("$head ${base.x} ${base.y} $dx $dy", held)
+    }
+
+    /**
+     * Lines already sitting in the helper's socket buffer. A partial line stays
+     * here so the blocking read finishes it. This never waits for the peer.
+     */
+    private class ReadyLines(private val reader: java.io.BufferedReader) {
+        private val pending = StringBuilder()
+        private var pendingChars = 0
+
+        fun blockingLine(): String? {
+            while (true) {
+                val ch = reader.read()
+                if (ch < 0) return if (pending.isEmpty()) null else drain()
+                if (append(ch)) return drain()
+            }
+        }
+
+        fun pollLine(): String? {
+            while (pendingChars < MAX_PENDING && reader.ready()) {
+                val ch = reader.read()
+                if (ch < 0) return if (pending.isEmpty()) null else drain()
+                if (append(ch)) return drain()
+            }
+            return null
+        }
+
+        private fun append(ch: Int): Boolean {
+            pendingChars += 1
+            if (ch == '\n'.code) return true
+            if (ch != '\r'.code) pending.append(ch.toChar())
+            return false
+        }
+
+        private fun drain(): String {
+            val line = pending.toString()
+            pending.setLength(0)
+            pendingChars = 0
+            return line
+        }
+
+        private companion object {
+            const val MAX_PENDING = 16 * 1024
+        }
     }
 
     private class Injector {

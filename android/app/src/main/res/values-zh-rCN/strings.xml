@@ -1277,6 +1277,8 @@
     <string name="profile_other">第二资料</string>
     <string name="phone_control_pc_toggle">允许控制此手机</string>
     <string name="phone_control_pc_toggle_hint">仅在共享此手机屏幕时，允许这台受信任的电脑点击、滚动和输入文字。默认关闭。此开关不会解除“停止控制”。</string>
+    <string name="way_mode_toggle">Way 模式</string>
+    <string name="way_mode_toggle_hint">为此受信任的电脑保存权限，以便使用独立控制的应用窗口。仍需允许控制此手机并遵守“停止控制”。正常重新连接时不会再次要求一次性设置窗口批准。</string>
     <string name="settings_window_access_title">设置窗口</string>
     <string name="settings_window_access_hint">允许这台电脑在独立窗口中打开一次 Android 设置。滚动操作仍遵循现有的手机控制设置。</string>
     <string name="settings_window_allow_once">允许打开设置窗口一次</string>

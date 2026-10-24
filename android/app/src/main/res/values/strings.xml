@@ -1418,6 +1418,8 @@
     <string name="profile_other">Second profile</string>
     <string name="phone_control_pc_toggle">Allow phone control</string>
     <string name="phone_control_pc_toggle_hint">Allow this trusted computer to tap, scroll and type only while this phone’s screen is shared. Off by default. This switch does not undo Stop.</string>
+    <string name="way_mode_toggle">Way Mode</string>
+    <string name="way_mode_toggle_hint">Save permission for this trusted PC to use its own independently controlled app windows. Allow phone control and Stop still apply. Normal reconnect does not ask for the one-time Settings approval again.</string>
     <string name="settings_window_access_title">Settings window</string>
     <string name="settings_window_access_hint">Allow this computer to open Android Settings once in its own window. Scrolling follows your existing phone-control settings.</string>
     <string name="settings_window_allow_once">Allow a Settings window once</string>

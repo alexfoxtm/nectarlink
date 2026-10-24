@@ -263,6 +263,10 @@ pub(crate) struct Shared {
     /// across a revocation observes the bump even if the toggle was
     /// re-enabled since.
     pub(crate) mirror_revoke_epoch: Mutex<HashMap<DeviceId, u64>>,
+    /// Owned-app-only revocation epoch. Way Mode OFF cannot invalidate a
+    /// concurrent screen request merely because both share a peer.
+    /// Initialized nonzero so an app start always has a stable generation.
+    pub(crate) phone_app_revoke_epoch: Mutex<HashMap<DeviceId, u64>>,
     /// Peers granted one-time reverse-mirror consent for the current session.
     pub(crate) pc_mirror_sessions: Mutex<std::collections::HashSet<DeviceId>>,
     /// Play on phone offers this PC made, by phone: the player and when.
@@ -356,15 +360,19 @@ impl Shared {
         mirroring: u32,
         request: u64,
         epoch: u64,
+        app_epoch: u64,
     ) -> Option<u64> {
         let sessions = lock(&self.sessions);
         if !sessions.get(&session.peer).is_some_and(|live| Arc::ptr_eq(live, session)) {
             return None;
         }
         let epochs = lock(&self.mirror_revoke_epoch);
+        let app_epochs = lock(&self.phone_app_revoke_epoch);
         if epochs.get(&session.peer).copied().unwrap_or(0) != epoch
+            || app_epochs.get(&session.peer).copied().unwrap_or(0) != app_epoch
             || self.cancel.is_cancelled()
             || !self.toggle_on(&session.peer, crate::mirror::TOGGLE)
+            || !self.phone_app_windows_admissible(&session.peer)
         {
             return None;
         }
@@ -2127,6 +2135,7 @@ impl Node {
             mirror_incoming: Mutex::new(HashMap::new()),
             mirror_live_out: Mutex::new(HashMap::new()),
             mirror_revoke_epoch: Mutex::new(HashMap::new()),
+            phone_app_revoke_epoch: Mutex::new(HashMap::new()),
             pc_mirror_sessions: Mutex::new(std::collections::HashSet::new()),
             watch_offers: Mutex::new(HashMap::new()),
             webcam_stops: Mutex::new(HashMap::new()),
@@ -2683,7 +2692,10 @@ impl Node {
         Ok(features::DEVICE_TOGGLES
             .iter()
             .filter(|(name, _)| {
-                *name != crate::mirror::PHONE_CONTROL_TOGGLE || crate::mirror::is_local_phone(&self.shared)
+                (!matches!(
+                    *name,
+                    crate::mirror::PHONE_CONTROL_TOGGLE | crate::mirror::PHONE_APP_WINDOWS_TOGGLE
+                )) || crate::mirror::is_local_phone(&self.shared)
             })
             .map(|(name, default)| (*name, set.get(*name).copied().unwrap_or(*default)))
             .collect())
@@ -2694,7 +2706,7 @@ impl Node {
         if features::toggle_default(toggle).is_none() {
             return Err(Error::Unsupported);
         }
-        if toggle == crate::mirror::PHONE_CONTROL_TOGGLE {
+        if matches!(toggle, crate::mirror::PHONE_CONTROL_TOGGLE | crate::mirror::PHONE_APP_WINDOWS_TOGGLE) {
             return Err(Error::Denied);
         }
         if !self.shared.store.is_paired(&peer)? {
@@ -3516,9 +3528,32 @@ impl Node {
 
     /// Local phone-owner UI only. Never changes the durable Stop's stopped bit.
     pub fn set_phone_control_enabled(&self, peer: DeviceId, enabled: bool) -> Result<()> {
-        let result = self.shared.set_phone_control_grant(&peer, enabled);
+        let result = self
+            .shared
+            .set_phone_grant(&peer, crate::mirror::PHONE_CONTROL_TOGGLE, enabled);
         self.shared.announce_phone_control(&peer);
         result
+    }
+
+    /// Phone-owner local UI only: persist Way Mode for one exact paired PC.
+    /// DEFAULT OFF. Enabling never rearms an explicit Stop; OFF retires only
+    /// ordinary owned app captures and leaves the screen and clipboard alone.
+    pub fn set_phone_app_windows_enabled(&self, peer: DeviceId, enabled: bool) -> Result<()> {
+        let result = self.shared.set_phone_grant(&peer, crate::mirror::PHONE_APP_WINDOWS_TOGGLE, enabled);
+        // An explicit OFF or an uncertain write retires admitted app work. An
+        // uncertain write retains its app-only denial even if the saved getter
+        // still reports the previous enabled row.
+        if !enabled || result.is_err() {
+            let owners = self.shared.clear_phone_app_peer(&peer);
+            self.shared.dispatch_mirror_stops(peer, owners);
+        }
+        self.shared.announce_phone_control(&peer);
+        result
+    }
+
+    /// The persistent local Way Mode allowance for one exact paired PC.
+    pub fn phone_app_windows_enabled(&self, peer: DeviceId) -> bool {
+        self.shared.phone_app_windows_enabled(&peer)
     }
 
     /// Validate an original receiving connection without granting capture/input.
@@ -3697,7 +3732,15 @@ impl Node {
         {
             return Err(Error::Denied);
         }
-        crate::mirror::open(&self.shared, &session, false, Some(owner)).await
+        // A Settings capture keeps its receiver-armed one-shot scope. Ordinary
+        // app windows use the independent persistent Way Mode allowance.
+        let scope = self
+            .shared
+            .incoming_settings_offer(&peer, owner.session)
+            .map_or(crate::mirror::MirrorScope::Ordinary, |offer| {
+                crate::mirror::MirrorScope::SettingsQualification { offer }
+            });
+        crate::mirror::open(&self.shared, &session, false, Some(owner), scope).await
     }
 
     /// Opens this phone's sound stream to a PC that asked for the screen
@@ -3712,13 +3755,27 @@ impl Node {
     /// back, and retries once on a new one.
     async fn open_mirror_stream(&self, peer: DeviceId, audio: bool) -> Result<crate::MirrorStream> {
         let first = self.connected_soon(&peer).await?;
-        match crate::mirror::open(&self.shared, &first, audio, None).await {
+        match crate::mirror::open(
+            &self.shared,
+            &first,
+            audio,
+            None,
+            crate::mirror::MirrorScope::Ordinary,
+        )
+        .await {
             Err(err @ (Error::Offline | Error::Network(_))) => {
                 let next = self.connected_soon(&peer).await?;
                 if Arc::ptr_eq(&next, &first) {
                     return Err(err);
                 }
-                crate::mirror::open(&self.shared, &next, audio, None).await
+                crate::mirror::open(
+            &self.shared,
+            &next,
+            audio,
+            None,
+            crate::mirror::MirrorScope::Ordinary,
+        )
+        .await
             }
             other => other,
         }
@@ -4755,7 +4812,9 @@ impl Node {
             for peer in peers {
                 if matches!(peer.info.kind, DeviceKind::Desktop | DeviceKind::Laptop) {
                     let granted = self.shared.phone_control_granted(&peer.id);
-                    if let Err(error) = self.shared.set_phone_control_grant(&peer.id, granted) {
+                    if let Err(error) =
+                        self.shared.set_phone_grant(&peer.id, crate::mirror::PHONE_CONTROL_TOGGLE, granted)
+                    {
                         tracing::warn!(%error, "phone input availability invalidation failed closed");
                     }
                 }

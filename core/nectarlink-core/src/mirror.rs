@@ -66,6 +66,8 @@ pub(crate) const TOGGLE: &str = "mirroring";
 pub const PC_MIRROR_TOGGLE: &str = "pc_mirror";
 /// A local phone-owner grant for exactly one trusted PC; viewing stays separate.
 pub const PHONE_CONTROL_TOGGLE: &str = "phone_control";
+/// A durable local phone-owner allowance for ordinary owned app windows on one PC.
+pub const PHONE_APP_WINDOWS_TOGGLE: &str = "phone_app_windows";
 
 /// The existing accepted-request map also owns its live video stream.
 #[derive(Debug)]
@@ -694,6 +696,10 @@ pub(crate) struct TypingFence {
 struct Typing {
     generation: u64,
     stopped: bool,
+    /// A failed Way Mode persistence transition could not prove its committed
+    /// setting. This blocks app viewing independently of the user's input Stop.
+    #[serde(default)]
+    app_uncertain: bool,
     /// The epoch the phone owner's last mirroring "off" was tapped at
     /// ([`Shared::mirror_typing_epoch`]). Only an off tapped after the Stop
     /// carries the Stop's own generation; a Stop clears it.
@@ -733,6 +739,7 @@ impl TypingFence {
         self.peers.get(peer).copied().unwrap_or(Typing {
             generation: self.floor,
             stopped: false,
+            app_uncertain: false,
             owner_off: None,
         })
     }
@@ -788,7 +795,10 @@ impl TypingFence {
         self.peers.retain(|peer, _| paired.contains(peer));
         for peer in paired_peers {
             let generation = self.advance();
-            self.peers.insert(*peer, Typing { generation, stopped: true, owner_off: None });
+            self.peers.insert(
+                *peer,
+                Typing { generation, stopped: true, app_uncertain: true, owner_off: None },
+            );
         }
         self.node_running = false;
         self.persist(store)
@@ -803,6 +813,8 @@ impl TypingFence {
             let generation = self.advance();
             if let Some(typing) = self.peers.get_mut(&peer) {
                 typing.generation = generation;
+                // app_uncertain deliberately survives clean restart until an
+                // explicit successful Way Mode write resolves the stale row.
                 typing.owner_off = None;
             }
         }
@@ -871,10 +883,11 @@ impl Shared {
     pub(crate) fn stop_mirror_typing(&self, peer: &DeviceId) -> Result<u64> {
         let mut fence = self.typing_fence();
         let generation = fence.advance();
-        fence.peers.insert(*peer, Typing { generation, stopped: true, owner_off: None });
-        // Keep the in-memory denial even when persistence fails. The durable
-        // running marker makes the next Node start recover all paired peers
-        // fail-closed instead of trusting the old allow-on value.
+        let uncertain = fence.current(peer).app_uncertain;
+        fence.peers.insert(*peer, Typing { generation, stopped: true, app_uncertain: uncertain, owner_off: None });
+        // Keep the in-memory input denial even when persistence fails. An
+        // unclean restart recovers all paired peers' input as stopped; app
+        // viewing keeps only its separate Way Mode uncertainty state.
         fence.persist(&self.store)?;
         Ok(generation)
     }
@@ -906,7 +919,11 @@ impl Shared {
         }
         let mut resumed = fence.clone();
         let generation = resumed.advance();
-        resumed.peers.insert(*peer, Typing { generation, stopped: false, owner_off: None });
+        let app_uncertain = resumed.current(peer).app_uncertain;
+        resumed.peers.insert(
+            *peer,
+            Typing { generation, stopped: false, app_uncertain, owner_off: None },
+        );
         resumed.persist(&self.store)?;
         *fence = resumed;
         Ok(true)
@@ -1275,6 +1292,9 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
         }
         types::MIRROR_START => {
             let admission_epoch = shared.mirror_epoch(&peer);
+            // Frozen beside the admission epoch so OFF/ON during capability or
+            // callback work cannot admit a pre-revoke ordinary app request.
+            let admission_app_epoch = shared.phone_app_epoch(&peer);
             if !shared.session(&peer).is_some_and(|live| Arc::ptr_eq(&live, session)) {
                 return Ok(true);
             }
@@ -1292,6 +1312,11 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
                 Some(player) if desktop => crate::media::watch_allowed(shared, &peer, player),
                 Some(_) => false,
                 None if desktop => pc_mirror_allowed(shared, &peer),
+                // Ordinary owned app windows are explicitly per-PC Way Mode.
+                // Settings qualification takes its separate one-shot path.
+                None if options.app.is_some() => {
+                    shared.toggle_on(&peer, TOGGLE) && shared.phone_app_windows_admissible(&peer)
+                }
                 None => shared.toggle_on(&peer, TOGGLE),
             };
             let reply = if !options.is_valid() {
@@ -1312,7 +1337,13 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
                 let accepted_request = options.request;
                 let registered = match accepted_request {
                     Some(request) if options.app.is_some() => {
-                        shared.admit_mirror_app(session, accepted_session, request, admission_epoch)
+                        shared.admit_mirror_app(
+                            session,
+                            accepted_session,
+                            request,
+                            admission_epoch,
+                            admission_app_epoch,
+                        )
                     }
                     Some(request) => shared.note_mirror_incoming(
                         &peer,
@@ -1453,8 +1484,23 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
                         }
                     });
                 }
-            } else {
+            } else if mirroring == mirror::SCREEN {
                 tokio::task::spawn_blocking(move || platform.mirror_keyframe_requested(&peer, mirroring));
+            } else if let Some(request) = request
+                && let Some(context) = shared.mirror_capture_context(&peer, mirroring, request)
+                && context.connection == session.mirror_control_id
+                && shared.phone_app_windows_admissible(&peer)
+            {
+                let shared = shared.clone();
+                tokio::task::spawn_blocking(move || {
+                    // Recheck the original Node/session/request/connection/capture
+                    // after queueing; ordinary apps never fall back to peer/session.
+                    if shared.mirror_capture_current(&peer, context)
+                        && shared.phone_app_windows_admissible(&peer)
+                    {
+                        platform.mirror_keyframe_requested_owned(&peer, context);
+                    }
+                });
             }
         }
         types::MIRROR_RESIZE => {
@@ -1466,6 +1512,9 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
             if allowed
                 && resize.is_valid()
                 && shared.session(&peer).is_some_and(|live| Arc::ptr_eq(&live, session))
+                && (resize.session == mirror::SCREEN
+                    || shared.incoming_settings_offer(&peer, resize.session).is_some()
+                    || shared.phone_app_windows_admissible(&peer))
                 && let Some(request) = resize.request.filter(|request| *request != 0)
                 && let Some(context) = shared.mirror_capture_context(&peer, resize.session, request)
                 && context.connection == session.mirror_control_id
@@ -1749,20 +1798,27 @@ pub(crate) async fn open(
     session: &Session,
     audio: bool,
     owner: Option<MirrorControlContext>,
+    scope: MirrorScope,
 ) -> Result<MirrorStream> {
     // Sampled first: any revocation after this point must be observed by
     // the re-check below, even across an off/on race.
     let epoch = shared.mirror_epoch(&session.peer);
+    let needs_way_mode = scope == MirrorScope::Ordinary
+        && owner.is_some_and(|owner| owner.session != mirror::SCREEN);
+    let app_epoch = needs_way_mode.then(|| shared.phone_app_epoch(&session.peer));
     if !mirror_open_allowed(shared, &session.peer)
         || owner.is_some_and(|owner| !shared.mirror_capture_current(&session.peer, owner))
+        || (needs_way_mode && !shared.phone_app_windows_admissible(&session.peer))
     {
         return Err(Error::Denied);
     }
     let mut pending = PendingMirrorOpen::new(shared, session.peer, owner);
     if shared.mirror_epoch(&session.peer) != epoch
+        || app_epoch.is_some_and(|epoch| shared.phone_app_epoch(&session.peer) != epoch)
         || pending.live.closed.load(Ordering::Acquire)
         || !mirror_open_allowed(shared, &session.peer)
         || owner.is_some_and(|owner| !shared.mirror_capture_current(&session.peer, owner))
+        || (needs_way_mode && !shared.phone_app_windows_admissible(&session.peer))
     {
         return Err(Error::Denied);
     }
@@ -1838,10 +1894,9 @@ pub(crate) async fn open(
     if !audio && !is_local_desktop(shared) {
         stream.control_owner = Some((shared.clone(), session.peer, session.mirror_control_id, owner));
     }
-    // Phone-side lifetime: revoking per-peer mirroring must finish even
-    // app-window output when the peer keeps reading (see
-    // `Shared::clear_mirror_peer`). The next `send` then reports
-    // `Closed` so the encoder stops too.
+    // Phone-side lifetime: per-peer mirroring and Way Mode each close only
+    // their exact retired owners. The next `send` reports `Closed` so the
+    // corresponding encoder stops too.
     // The pending entry already owns these same handles before open_bi.
     // Authoritative re-check after registration: the toggle may have been
     // revoked (and even re-enabled) while opening. A bare toggle reread is
@@ -1849,8 +1904,10 @@ pub(crate) async fn open(
     // decides too; either way the just-opened stream is closed and denied.
     // A cancelled pending open drops its own handles; a live writer finishes.
     if shared.mirror_epoch(&session.peer) != epoch
+        || app_epoch.is_some_and(|epoch| shared.phone_app_epoch(&session.peer) != epoch)
         || !mirror_open_allowed(shared, &session.peer)
         || owner.is_some_and(|owner| !shared.mirror_capture_current(&session.peer, owner))
+        || (needs_way_mode && !shared.phone_app_windows_admissible(&session.peer))
     {
         stream.close();
         return Err(Error::Denied);
@@ -2037,6 +2094,8 @@ impl Shared {
                 .is_some_and(|toggles| toggles.get(PHONE_CONTROL_TOGGLE) == Some(&true))
     }
 
+    /// The existing input-admission generation. Way Mode never creates this
+    /// evidence; ordinary app input therefore requires phone_control separately.
     pub(crate) fn phone_control_epoch_for(&self, peer: &DeviceId) -> Option<u64> {
         let caps = self.local_capabilities();
         if !caps.iter().any(|cap| cap == mirror::INPUT_REQUEST)
@@ -2206,6 +2265,10 @@ impl Shared {
 
     pub(crate) fn phone_control_current(&self, peer: &DeviceId, context: MirrorControlContext) -> bool {
         if context.connection == 0
+            || !self.phone_control_granted(peer)
+            || (context.session != mirror::SCREEN
+                && self.incoming_settings_offer(peer, context.session).is_none()
+                && !self.phone_app_windows_admissible(peer))
             || !self.mirror_capture_current(peer, context)
             || self.cancel.is_cancelled()
             || !self.session(peer).is_some_and(|session| session.mirror_control_id == context.connection)
@@ -2234,9 +2297,31 @@ impl Shared {
             })
     }
 
-    /// Commit grant and its invalidating epoch atomically under the existing
-    /// durable fence's CAS. A grant change never clears a prior Stop.
-    pub(crate) fn set_phone_control_grant(&self, peer: &DeviceId, enabled: bool) -> Result<()> {
+    /// Whether this exact paired PC has the durable local Way Mode allowance.
+    /// Capabilities never grant this permission. This reports the saved setting;
+    /// live admission also checks the independent explicit Stop fence.
+    pub(crate) fn phone_app_windows_enabled(&self, peer: &DeviceId) -> bool {
+        is_local_phone(self)
+            && self.store.get_peer(peer).ok().flatten().is_some_and(|record| {
+                matches!(record.info.kind, crate::DeviceKind::Desktop | crate::DeviceKind::Laptop)
+            })
+            && self
+                .store
+                .toggles(peer)
+                .ok()
+                .is_some_and(|toggles| toggles.get(PHONE_APP_WINDOWS_TOGGLE) == Some(&true))
+    }
+
+    /// Effective app-view allowance: saved Way Mode plus no app persistence
+    /// uncertainty. Explicit input Stop is deliberately not part of this gate.
+    pub(crate) fn phone_app_windows_admissible(&self, peer: &DeviceId) -> bool {
+        self.phone_app_windows_enabled(peer) && !self.typing_fence().current(peer).app_uncertain
+    }
+
+    /// Commit a local phone-owner grant and its invalidating epoch atomically
+    /// under the existing durable fence's CAS. A grant change never clears a
+    /// prior Stop. Generic/wire toggles cannot reach this method.
+    pub(crate) fn set_phone_grant(&self, peer: &DeviceId, toggle: &str, enabled: bool) -> Result<()> {
         if self.cancel.is_cancelled()
             || !is_local_phone(self)
             || !self.store.get_peer(peer)?.is_some_and(|record| {
@@ -2245,15 +2330,38 @@ impl Shared {
         {
             return Err(Error::Denied);
         }
+        if !matches!(toggle, PHONE_CONTROL_TOGGLE | PHONE_APP_WINDOWS_TOGGLE) {
+            return Err(Error::Unsupported);
+        }
         let mut fence = self.typing_fence();
         let mut changed = fence.clone();
         let previous = changed.current(peer);
         let generation = changed.advance();
-        changed.peers.insert(*peer, Typing { generation, stopped: previous.stopped, owner_off: None });
-        // Any serialization, transaction or CAS error retains live denial;
-        // only a successful atomic commit restores the previous stopped bit.
+        let app_transition = toggle == PHONE_APP_WINDOWS_TOGGLE;
+        changed.peers.insert(
+            *peer,
+            Typing {
+                generation,
+                stopped: previous.stopped,
+                // A successful explicit Way Mode transition is the only action
+                // that resolves persistence uncertainty.
+                app_uncertain: if app_transition { false } else { previous.app_uncertain },
+                owner_off: None,
+            },
+        );
+        // Existing phone-control failure keeps its legacy input denial. A Way
+        // Mode failure keeps input Stop and grant untouched while denying app
+        // viewing through its own uncertainty bit.
         let mut denied = changed.clone();
-        denied.peers.insert(*peer, Typing { generation, stopped: true, owner_off: None });
+        denied.peers.insert(
+            *peer,
+            Typing {
+                generation,
+                stopped: if app_transition { previous.stopped } else { true },
+                app_uncertain: if app_transition { true } else { previous.app_uncertain },
+                owner_off: None,
+            },
+        );
         *fence = denied;
         let stored = StoredTypingFence {
             version: 2,
@@ -2264,12 +2372,14 @@ impl Shared {
         };
         let value = serde_json::to_string(&stored)
             .map_err(|error| Error::Internal(format!("can't encode mirror typing fence: {error}")))?;
-        // On error, the live denial above and existing durable running marker
-        // force recovery instead of trusting the old allow row.
-        self.store.compare_and_set_phone_control_grant(
+        // Denial is installed before this fallible transaction. On error it may
+        // be only in memory; Node shutdown still persists it, and an unclean
+        // exit recovers paired peers fail-closed.
+        self.store.compare_and_set_phone_grant(
             changed.persisted_value.as_deref(),
             &value,
             peer,
+            toggle,
             enabled,
         )?;
         changed.persisted_value = Some(value);
@@ -2469,6 +2579,50 @@ impl Shared {
         }
     }
 
+    /// Invalidate only ordinary owned app requests for a peer while preserving
+    /// the peer's screen. Returns exact app capture owners for platform teardown.
+    pub(crate) fn clear_phone_app_peer(&self, peer: &DeviceId) -> Vec<(u32, Option<u64>, u64, u64)> {
+        let mut epochs = self.phone_app_revoke_epoch.lock().unwrap_or_else(|e| e.into_inner());
+        let next = epochs.get(peer).copied().unwrap_or(0).saturating_add(1);
+        epochs.insert(*peer, next);
+        let mut incoming = self.mirror_incoming.lock().unwrap_or_else(|e| e.into_inner());
+        let mut owners: Vec<_> = incoming
+            .iter()
+            .filter(|((p, session), owner)| {
+                p == peer && *session != mirror::SCREEN && owner.scope == MirrorScope::Ordinary
+            })
+            .map(|((_, session), owner)| (*session, Some(owner.request), owner.connection, owner.capture))
+            .collect();
+        incoming.retain(|(p, session), owner| {
+            p != peer || *session == mirror::SCREEN || owner.scope != MirrorScope::Ordinary
+        });
+        drop(incoming);
+        let revoked: std::collections::HashSet<_> = owners
+            .iter()
+            .map(|(session, request, connection, capture)| (*session, *request, *connection, *capture))
+            .collect();
+        let mut all = self.mirror_live_out.lock().unwrap_or_else(|e| e.into_inner());
+        let empty = if let Some(streams) = all.get_mut(peer) {
+            for stream in streams.iter() {
+                if stream.owner.is_some_and(|owner| {
+                    revoked.contains(&(owner.session, Some(owner.request), owner.connection, owner.capture))
+                }) {
+                    stream.closed.store(true, Ordering::Release);
+                    stream.stop.notify_one();
+                }
+            }
+            streams.retain(|stream| !stream.closed.load(Ordering::Acquire));
+            streams.is_empty()
+        } else {
+            false
+        };
+        if empty {
+            all.remove(peer);
+        }
+        owners.sort_unstable();
+        owners
+    }
+
     /// Invalidate a peer's accepted requests and output handles together.
     /// Returns exact platform capture owners for a later owned teardown.
     /// Admission holds this same epoch lock, so an old start cannot insert
@@ -2499,11 +2653,20 @@ impl Shared {
 
     /// The per-peer mirroring revocation epoch: bumped by every
     /// [`Self::clear_mirror_peer`] on revocation or connection replacement.
-    /// A stream opened across a
-    /// revocation observes the bump even if the toggle was re-enabled
-    /// since, so off/on cannot escape the re-check in [`open`].
+    /// A stream opened across a revocation observes the bump even if the
+    /// toggle was re-enabled since, so off/on cannot escape the re-check in
+    /// [`open`]. Owned-app Way Mode has its own epoch below.
     pub(crate) fn mirror_epoch(&self, peer: &DeviceId) -> u64 {
         self.mirror_revoke_epoch.lock().unwrap_or_else(|e| e.into_inner()).get(peer).copied().unwrap_or(0)
+    }
+
+    pub(crate) fn phone_app_epoch(&self, peer: &DeviceId) -> u64 {
+        self.phone_app_revoke_epoch
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(peer)
+            .copied()
+            .unwrap_or(0)
     }
 
     /// Remembers a newly opened outgoing mirror stream of `peer` (screen,

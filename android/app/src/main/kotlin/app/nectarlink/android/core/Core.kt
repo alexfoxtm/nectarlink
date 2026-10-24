@@ -124,6 +124,12 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
             }.getOrDefault(false)
         },
         onSettingsQualificationEnded = ::settingsQualificationEnded,
+        wayModeCurrent = { original, pc, accepted ->
+            // A positive durable row is still checked against the exact Node and capture.
+            node === original && runCatching {
+                original.phoneAppWindowsEnabled(pc) && original.mirrorCaptureCurrent(pc, accepted)
+            }.getOrDefault(false)
+        },
     )
     private val platform = PhonePlatform(
         this.context,
@@ -550,8 +556,14 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
                     pruneOldTempCaches()
                     _state.update { state ->
                         val deviceState = if (devicesResult.isSuccess) {
-                            state.withDevices(devices, pcToggles.storageAllowed, pcToggles.micOff, pcToggles.mirroringOff, pcToggles.phoneControlAllowed)
-                                .withSessionDisplays(initialDisplays)
+                            state.withDevices(
+                                devices,
+                                pcToggles.storageAllowed,
+                                pcToggles.micOff,
+                                pcToggles.mirroringOff,
+                                pcToggles.phoneControlAllowed,
+                                pcToggles.wayModeAllowed,
+                            ).withSessionDisplays(initialDisplays)
                         } else state
                         deviceState.copy(
                             status = CoreStatus.Ready(started.deviceId()),
@@ -871,6 +883,7 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
                                         micEnabled = d.id !in pcToggles.micOff,
                                         mirroringEnabled = d.id !in pcToggles.mirroringOff,
                                         phoneControlEnabled = d.id in pcToggles.phoneControlAllowed,
+                                        wayModeEnabled = d.id in pcToggles.wayModeAllowed,
                                     )
                                 }
                             } else {
@@ -1310,21 +1323,29 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
      * Which PCs may browse this phone's storage, which may not ask for its microphone, and
      * which may not mirror its screen (only read here; nothing is turned on).
      */
-    private class PerPcToggles(val storageAllowed: Set<String>, val micOff: Set<String>, val mirroringOff: Set<String>, val phoneControlAllowed: Set<String>)
+    private class PerPcToggles(
+        val storageAllowed: Set<String>,
+        val micOff: Set<String>,
+        val mirroringOff: Set<String>,
+        val phoneControlAllowed: Set<String>,
+        val wayModeAllowed: Set<String>,
+    )
 
     private fun perPcToggles(node: NectarlinkNode, ids: List<String>): PerPcToggles {
         val storage = mutableSetOf<String>()
         val micOff = mutableSetOf<String>()
         val mirroringOff = mutableSetOf<String>()
         val phoneControlAllowed = mutableSetOf<String>()
+        val wayModeAllowed = mutableSetOf<String>()
         for (id in ids) {
             val toggles = runCatching { node.deviceToggles(id) }.getOrNull() ?: continue
             if (toggles.any { it.name == PhoneStorage.TOGGLE_NAME && it.enabled }) storage += id
             if (toggles.any { it.name == app.nectarlink.android.mic.MicService.TOGGLE_NAME && !it.enabled }) micOff += id
             if (toggles.any { it.name == MIRRORING_TOGGLE && !it.enabled }) mirroringOff += id
             if (toggles.any { it.name == PHONE_CONTROL_TOGGLE && it.enabled }) phoneControlAllowed += id
+            if (runCatching { node.phoneAppWindowsEnabled(id) }.getOrDefault(false)) wayModeAllowed += id
         }
-        return PerPcToggles(storage, micOff, mirroringOff, phoneControlAllowed)
+        return PerPcToggles(storage, micOff, mirroringOff, phoneControlAllowed, wayModeAllowed)
     }
 
     fun clearWebcamRequest(pcId: String? = null, ownedEntryToken: String? = null) {
@@ -2856,6 +2877,22 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
         }
     }
 
+    /** Persistent Way Mode owner setting. Disabling retires this PC's owned app windows before the durable write. */
+    fun setWayModeEnabled(pcId: String, enabled: Boolean) {
+        val tappedNode = node ?: return
+        synchronized(opsLock) {
+            if (node !== tappedNode) return
+            val device = _state.value.device(pcId) ?: return
+            if (device.isAndroid) return
+            if (!enabled) appWindows.closeForPc(pcId)
+            val result = runCatching { tappedNode.setPhoneAppWindowsEnabled(pcId, enabled) }
+            // The durable write is the source of truth; a read failure means no UI allow.
+            val actual = runCatching { tappedNode.phoneAppWindowsEnabled(pcId) }.getOrDefault(false)
+            _state.update { it.withWayModeEnabled(pcId, actual) }
+            result.onFailure { _messages.tryEmit(describe(it as? NectarlinkException ?: throw it)) }
+        }
+    }
+
     /** The owner's mirroring switch writes, one at a time in tap order. */
     private val mirroringSwitch = Mutex()
 
@@ -2888,7 +2925,7 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
         /** The core's per-PC view toggle and the existing phone-owner Stop rearm. */
         // Root flips this build gate only after the paired native/helper contract
         // and ABI are qualified; this is never a permission or a runtime setting.
-        private const val OWNED_APP_WINDOWS_QUALIFIED = false
+        private const val OWNED_APP_WINDOWS_QUALIFIED = true
         const val MIRRORING_TOGGLE = "mirroring"
         const val PHONE_CONTROL_TOGGLE = "phone_control"
         /** Offered while notification access is granted (docs/protocol/capabilities.md). */

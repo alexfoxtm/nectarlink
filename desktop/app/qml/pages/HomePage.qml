@@ -1298,7 +1298,7 @@ Item {
                         }
                     }
                     onClicked: Mirror.start(home.deviceId)
-                    sideIcon: !home.onMac && home.feature("mirroring.app_windows").state === "available" ? Icons.apps : ""
+                    sideIcon: Mirror.appWindowsSupported && home.feature("mirroring.app_windows").state === "available" ? Icons.apps : ""
                     sideLabel: qsTr("Open an app")
                     onSideClicked: appsSheet.openFor(home.deviceId, home.name)
                 }
@@ -1787,7 +1787,7 @@ Item {
                                 clock: feedClock.minutes
                                 visible: deviceId === home.deviceId
                                 height: visible ? implicitHeight : 0
-                                canOpenApp: !home.onMac && home.feature("mirroring.app_windows").state === "available" && app.length > 0
+                                canOpenApp: Mirror.appWindowsSupported && home.feature("mirroring.app_windows").state === "available" && app.length > 0
                                 onOpenAppRequested: Mirror.startApp(deviceId, app, appName.length > 0 ? appName : app)
                                 onOptionsRequested: appSheet.openFor(app, appName)
                                 onImageClicked: (url) => imagePreviewSheet.openFor(url, title.length > 0 ? title : appName)
@@ -2913,7 +2913,7 @@ Item {
                             required property string app
                             width: historyColumn.width
                             visible: deviceId === page.currentDeviceId && historySearch.matches([app, appName, title, text, sub])
-                            canOpenApp: (Qt.platform.os !== "osx" && Qt.platform.os !== "macos") && (AppController.capsRevision >= 0
+                            canOpenApp: Mirror.appWindowsSupported && (AppController.capsRevision >= 0
                                 && AppController.featureState(deviceId, "mirroring.app_windows").state === "available")
                                 && app.length > 0
                             onOpenAppRequested: {

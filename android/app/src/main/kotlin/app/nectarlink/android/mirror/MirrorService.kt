@@ -282,42 +282,56 @@ class MirrorService : Service() {
                 return@post
             }
             elevatedSocket = socket
-            watchDisplay(socket, request, initW, initH)
+            watchDisplay(socket, request, initW, initH, initDpi)
             scope.launch { streamElevated(core, myPc, pcName, request, socket, codec, myEpoch, originalConnection) }
         }
     }
 
     /** Resizes the helper's picture when the phone's screen turns. */
-    private fun watchDisplay(socket: java.net.Socket, request: MirrorRequest, initW: Int, initH: Int) {
+    private fun watchDisplay(
+        socket: java.net.Socket,
+        request: MirrorRequest,
+        initW: Int,
+        initH: Int,
+        initDpi: Int,
+    ) {
         if (elevatedSocket !== socket) return
         var curW = initW
         var curH = initH
+        var curDpi = initDpi
+        val updates = CaptureGeometryGate()
         val displays = getSystemService(android.hardware.display.DisplayManager::class.java)
+        fun refresh() {
+            val (nw, nh, ndpi) = ScreenEncoder.computeScreenSize(this@MirrorService, request.maxSize)
+            if (nw == curW && nh == curH && ndpi == curDpi) return
+            curW = nw
+            curH = nh
+            curDpi = ndpi
+            val update = updates.submit(nw, nh, ndpi)
+            Thread {
+                runCatching {
+                    updates.publish(update, socket) {
+                        if (elevatedSocket !== socket) return@publish
+                        socket.getOutputStream().apply {
+                            write("R ${it.width} ${it.height} ${it.dpi}\n".toByteArray())
+                            flush()
+                        }
+                    }
+                }
+            }.start()
+        }
         val listener = object : android.hardware.display.DisplayManager.DisplayListener {
             override fun onDisplayChanged(displayId: Int) {
                 if (displayId != android.view.Display.DEFAULT_DISPLAY) return
-                val (nw, nh, ndpi) = ScreenEncoder.computeScreenSize(this@MirrorService, request.maxSize)
-                if (nw != curW || nh != curH) {
-                    curW = nw
-                    curH = nh
-                    val sock = elevatedSocket ?: return
-                    Thread {
-                        runCatching {
-                            synchronized(sock) {
-                                sock.getOutputStream().apply {
-                                    write("R $nw $nh $ndpi\n".toByteArray())
-                                    flush()
-                                }
-                            }
-                        }
-                    }.start()
-                }
+                refresh()
             }
             override fun onDisplayAdded(displayId: Int) {}
             override fun onDisplayRemoved(displayId: Int) {}
         }
         elevatedDisplayListener = listener
         displays?.registerDisplayListener(listener, main)
+        // Registration does not replay a change that happened while the helper started.
+        refresh()
         applyPower()
     }
 

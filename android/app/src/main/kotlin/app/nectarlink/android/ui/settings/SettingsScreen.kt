@@ -108,6 +108,7 @@ fun SettingsScreen(
     onAccessChanged: () -> Unit,
     updater: AppUpdater,
     onSetPhoneControlEnabled: (pcId: String, enabled: Boolean) -> Unit,
+    onSetWayModeEnabled: (pcId: String, enabled: Boolean) -> Unit,
     settingsQualificationPcIds: Set<String> = emptySet(),
     onAllowSettingsWindowOnce: (pcId: String) -> Unit = {},
     onRevokeSettingsWindowAccess: (pcId: String) -> Unit = {},
@@ -594,27 +595,49 @@ fun SettingsScreen(
                                     }
                                 }
                                 if (device.kind == app.nectarlink.core.DeviceKind.DESKTOP || device.kind == app.nectarlink.core.DeviceKind.LAPTOP) {
-                                    val settingsWindowActive = device.id in settingsQualificationPcIds
-                                    val canArmSettingsWindow = state.status is app.nectarlink.android.core.CoreStatus.Ready &&
-                                        device.online && device.mirroringEnabled && state.elevated &&
-                                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
-                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                                        Text(stringResource(R.string.settings_window_access_title), style = MaterialTheme.typography.bodyMedium)
-                                        Text(
-                                            stringResource(R.string.settings_window_access_hint),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    val wayModeToggleTitle = stringResource(R.string.way_mode_toggle)
+                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                                            Text(wayModeToggleTitle, style = MaterialTheme.typography.bodyMedium)
+                                            Text(
+                                                stringResource(R.string.way_mode_toggle_hint),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                        Switch(
+                                            checked = device.wayModeEnabled,
+                                            enabled = state.status is app.nectarlink.android.core.CoreStatus.Ready,
+                                            onCheckedChange = { enabled -> onSetWayModeEnabled(device.id, enabled) },
+                                            colors = app.nectarlink.android.ui.theme.nectarSwitchColors(),
+                                            modifier = Modifier.semantics { contentDescription = wayModeToggleTitle },
                                         )
-                                        if (settingsWindowActive) {
-                                            OutlinedButton(onClick = { onRevokeSettingsWindowAccess(device.id) }) {
-                                                Text(stringResource(R.string.settings_window_revoke))
-                                            }
-                                        } else {
-                                            FilledTonalButton(
-                                                enabled = canArmSettingsWindow,
-                                                onClick = { onAllowSettingsWindowOnce(device.id) },
-                                            ) {
-                                                Text(stringResource(R.string.settings_window_allow_once))
+                                    }
+                                }
+                                if (device.kind == app.nectarlink.core.DeviceKind.DESKTOP || device.kind == app.nectarlink.core.DeviceKind.LAPTOP) {
+                                    val settingsWindowActive = device.id in settingsQualificationPcIds
+                                    if (!device.wayModeEnabled || settingsWindowActive) {
+                                        val canArmSettingsWindow = state.status is app.nectarlink.android.core.CoreStatus.Ready &&
+                                            device.online && device.mirroringEnabled && state.elevated &&
+                                            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+                                        Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                            Text(stringResource(R.string.settings_window_access_title), style = MaterialTheme.typography.bodyMedium)
+                                            Text(
+                                                stringResource(R.string.settings_window_access_hint),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                            if (settingsWindowActive) {
+                                                OutlinedButton(onClick = { onRevokeSettingsWindowAccess(device.id) }) {
+                                                    Text(stringResource(R.string.settings_window_revoke))
+                                                }
+                                            } else {
+                                                FilledTonalButton(
+                                                    enabled = canArmSettingsWindow,
+                                                    onClick = { onAllowSettingsWindowOnce(device.id) },
+                                                ) {
+                                                    Text(stringResource(R.string.settings_window_allow_once))
+                                                }
                                             }
                                         }
                                     }

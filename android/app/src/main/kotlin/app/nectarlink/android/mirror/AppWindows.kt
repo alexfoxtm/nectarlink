@@ -103,6 +103,8 @@ class AppWindows(
     private val onSettingsQualificationEnded: (String, ULong) -> Unit = { _, _ -> },
     /** Rechecks the exact live Node, capture owner, and phone-owned offer. */
     private val settingsQualificationCurrent: (NectarlinkNode, String, ULong, PhoneControlContext) -> Boolean = { _, _, _, _ -> false },
+    /** Persistent owner allowance for ordinary owned apps on this exact Node and peer. */
+    private val wayModeCurrent: (NectarlinkNode, String, PhoneControlContext) -> Boolean = { _, _, _ -> false },
 ) {
     private val context = context.applicationContext
 
@@ -181,7 +183,8 @@ class AppWindows(
         val current = {
             runCatching {
                 currentNode(node) && node.mirrorCaptureCurrent(pc, accepted) &&
-                    (settingsOffer == null || (settingsWindowQualificationSupported() && settingsQualificationCurrent(node, pc, settingsOffer, accepted)))
+                    (settingsOffer?.let { settingsWindowQualificationSupported() && settingsQualificationCurrent(node, pc, it, accepted) }
+                        ?: wayModeCurrent(node, pc, accepted))
             }.getOrDefault(false)
         }
         if (!current()) return false
@@ -300,8 +303,8 @@ class AppWindows(
     /** The PC closed a window. */
     fun close(pc: String, session: UInt, request: ULong, connection: ULong, capture: ULong) {
         val window = windows[pc to session] ?: return
-        if (window.owner.request == request && window.owner.connection == connection && window.owner.capture == capture) {
-            if (window.settingsOffer != null) appWindowAdmission({ window }, ::close) else close(window)
+        appWindowAdmission({ window }) { selected ->
+            if (matches(selected, request, connection, capture)) close(selected)
         }
     }
 
@@ -327,21 +330,24 @@ class AppWindows(
         windows.values.toList().forEach(::close)
     }
 
-    fun keyframe(pc: String, session: UInt) {
-        windows[pc to session]?.takeIf { it.settingsOffer == null }?.let(::keyframe)
+    /** An explicit Way Mode OFF closes only ordinary owned app windows for this PC. */
+    fun closeForPc(pc: String) {
+        windows.values.filter { it.pc == pc && it.settingsOffer == null }.forEach(::close)
     }
 
-    /** Qualified keyframes require the exact active Settings capture context. */
+    /** Owned keyframes require the exact accepted capture context. */
     fun keyframeOwned(pc: String, owner: PhoneControlContext) {
         val window = windows[pc to owner.session] ?: return
-        if (window.settingsOffer == null) return
         appWindowAdmission({ window }) { selected ->
             if (matches(selected, owner) && owns(selected)) keyframe(selected)
         }
     }
 
     private fun matches(window: Window, owner: PhoneControlContext): Boolean =
-        window.owner.request == owner.request && window.owner.connection == owner.connection && window.owner.capture == owner.capture
+        matches(window, owner.request, owner.connection, owner.capture)
+
+    private fun matches(window: Window, request: ULong, connection: ULong, capture: ULong): Boolean =
+        window.owner.request == request && window.owner.connection == connection && window.owner.capture == capture
 
     private fun keyframe(window: Window) {
         runCatching {
@@ -358,12 +364,7 @@ class AppWindows(
     /** The PC resized an app window: fit to encoder limits and tell the helper. */
     fun resize(pc: String, owner: PhoneControlContext, width: Int, height: Int) {
         val window = windows[pc to owner.session] ?: return
-        if (window.settingsOffer != null) {
-            appWindowAdmission({ window }) { selected -> resizeOwned(selected, owner, width, height) }
-            return
-        }
-        if (window.owner.request != owner.request || window.owner.connection != owner.connection || window.owner.capture != owner.capture) return
-        resizeOwned(window, owner, width, height)
+        appWindowAdmission({ window }) { selected -> resizeOwned(selected, owner, width, height) }
     }
 
     private fun resizeOwned(window: Window, owner: PhoneControlContext, width: Int, height: Int) {
@@ -393,11 +394,7 @@ class AppWindows(
     /** The PC's mouse and keyboard on a window. */
     fun input(pc: String, owner: PhoneControlContext, event: MirrorInputEvent, admitted: () -> Boolean) {
         val window = windows[pc to owner.session] ?: return
-        if (window.settingsOffer != null) {
-            appWindowAdmission({ window }) { selected -> inputOwned(selected, owner, event, admitted) }
-            return
-        }
-        inputOwned(window, owner, event, admitted)
+        appWindowAdmission({ window }) { selected -> inputOwned(selected, owner, event, admitted) }
     }
 
     private fun inputOwned(
@@ -407,7 +404,9 @@ class AppWindows(
         admitted: () -> Boolean,
     ) {
         if (window.owner.request != owner.request || window.owner.connection != owner.connection || window.owner.capture != owner.capture) return
-        // Settings qualification admits only a harmless scroll under the existing real grant.
+        // Every owned app callback runs on the managed admission worker. The
+        // legacy Settings qualification keeps its scroll-only restriction;
+        // ordinary Way Mode permits tap/scroll/text on this owned display.
         if (window.settingsOffer != null) {
             if (event !is MirrorInputEvent.Scroll) return
         } else {

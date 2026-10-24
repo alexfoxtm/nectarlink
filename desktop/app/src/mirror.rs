@@ -54,13 +54,13 @@ const OPTIONS: MirrorStart = MirrorStart {
     // Placeholder: core `mirror::start` stamps the live generation.
     request: None,
 };
-/// Mac app windows, automatic clipboard/Flow and reverse host control stay
-/// unavailable. Phone-screen input has separate negotiated owner/request guards.
+/// Mac OS integration remains view-only: no host capture, automatic Flow, or
+/// reverse host control. Phone-screen input has separate negotiated owner/request
+/// guards.
 pub(crate) const VIEW_ONLY: bool = cfg!(target_os = "macos");
-/// Keep Mac app windows unavailable until Root qualifies the Android115
-/// native successor and this host. The owned-app compatibility discriminator
-/// is separate from the phone owner's grant and durable Stop.
-pub(crate) const APP_WINDOWS: bool = !cfg!(target_os = "macos");
+/// This host implements owned app windows. Actual control remains a phone-owned
+/// decision evaluated against the exact session by Core, never by this constant.
+pub(crate) const APP_WINDOWS: bool = true;
 /// Packets waiting for the decoder, at most (about two seconds).
 const BACKLOG: usize = 120;
 /// Packets in a row that may fail to decode, each retried from a fresh
@@ -441,7 +441,9 @@ pub fn set_stay_awake(window: Window, on: bool) {
 /// screen or app windows). The notice says the request was made; whether the
 /// phone's panel changed is not known here (no remote acknowledgement).
 pub fn set_screen_off(window: Window, on: bool) {
-    if state(|s| s.windows.get(&window).is_none_or(|shown| shown.settings_qualification)) {
+    if VIEW_ONLY
+        || state(|s| s.windows.get(&window).is_none_or(|shown| shown.settings_qualification))
+    {
         return;
     }
     let stay_awake = state(|s| {
@@ -1234,27 +1236,34 @@ fn request(window: Window, options: MirrorStart) {
 // None is the private Settings route, not caller-controlled MirrorStart flags.
 fn request_window(window: Window, options: Option<MirrorStart>) {
     let settings_qualification = options.is_none();
+    let app = settings_qualification || options.as_ref().is_some_and(|options| options.app.is_some());
     let node = core_host::node();
+    let Some(node) = node else {
+        if app {
+            state(|s| {
+                s.requests.remove(&window);
+                s.request_nodes.remove(&window);
+                s.control_requests.remove(&window);
+                s.first_frames.remove(&window);
+                s.streams.remove(&window);
+                clear_window_buffers(&window);
+                ffi::video_clear(&window.key());
+            });
+            set_phase(window, Phase::Ended(Some(tr!("Mirror", "The phone isn't connected."))));
+        }
+        return;
+    };
     let request = NEXT_REQUEST.fetch_add(1, Ordering::Relaxed);
     state(|s| {
         s.requests.insert(window, request);
         s.request_nodes.remove(&window);
         s.control_requests.remove(&window);
-        if let Some(node) = &node {
-            s.request_nodes.insert(window, RequestNode { node: node.clone(), app_view: None });
-        }
+        s.request_nodes.insert(window, RequestNode { node: node.clone(), app_view: None });
         s.streams.remove(&window);
         clear_window_buffers(&window);
         ffi::video_clear(&window.key());
     });
     core_host::host().hub.changed(Changes::MIRROR);
-    let Some(node) = node else {
-        if settings_qualification {
-            set_phase(window, Phase::Ended(Some(tr!("Mirror", "The phone isn't connected."))));
-        }
-        return;
-    };
-    let app = settings_qualification || options.as_ref().is_some_and(|options| options.app.is_some());
     core_host::spawn(async move {
         let started = {
             let _turn = TURN.lock().await;
@@ -1736,6 +1745,9 @@ pub fn scroll_reason(window: Window) -> &'static str {
     view.map_or("notShowing", |view| view.control_reason())
 }
 
+#[path = "mirror_scroll.rs"]
+mod mirror_scroll;
+
 /// Ordered queue reuses the existing MirrorInput handlers. Every phone event
 /// captures its original Node/connection/request/epoch before entering the queue.
 pub fn input(window: Window, input: nectarlink_core::MirrorInput) {
@@ -1774,13 +1786,19 @@ pub fn input(window: Window, input: nectarlink_core::MirrorInput) {
         node.mirror_control_for_session(window.device, window.session, wire_request)
     };
     let Ok(control) = control else { return };
-    type QueuedMirrorInput = (Window, nectarlink_core::MirrorControl, u64, u64, nectarlink_core::MirrorInput);
-    static QUEUE: std::sync::OnceLock<tokio::sync::mpsc::UnboundedSender<QueuedMirrorInput>> =
-        std::sync::OnceLock::new();
+    static QUEUE: OnceLock<mirror_scroll::Inputs<nectarlink_core::MirrorControl>> = OnceLock::new();
+    let mut started = false;
     let queue = QUEUE.get_or_init(|| {
-        let (queue, mut inputs) = tokio::sync::mpsc::unbounded_channel::<QueuedMirrorInput>();
+        started = true;
+        mirror_scroll::Inputs::new()
+    });
+    if started {
         core_host::spawn(async move {
-            while let Some((window, control, request, stream, input)) = inputs.recv().await {
+            loop {
+                let mirror_scroll::Queued { window, control, request, stream, input } = queue.next().await;
+                if !control.is_current() {
+                    continue;
+                }
                 let result = control
                     .send_if_current(input, move || {
                         state(|s| {
@@ -1796,9 +1814,11 @@ pub fn input(window: Window, input: nectarlink_core::MirrorInput) {
                 }
             }
         });
-        queue
-    });
-    let _ = queue.send((window, control, local_request, stream, input));
+    }
+    let queued = mirror_scroll::Queued { window, control, request: local_request, stream, input };
+    if !queue.push(queued, nectarlink_core::MirrorControl::is_current) {
+        tracing::debug!("no room for this input; the phone is behind");
+    }
 }
 
 /// Resolves the currently active or showing mirror window.
@@ -4468,15 +4488,35 @@ mod mac_receive_fixture {
         fixture_host();
         // The Mac receive seam is present; capture and audio stay refused.
         const {
-            assert!(super::VIEW_ONLY, "Mac app-window and automatic Flow fences remain enabled");
+            assert!(super::VIEW_ONLY, "Mac automatic Flow and screen-off fences remain enabled");
+            assert!(super::APP_WINDOWS, "Mac implements owned app windows");
             assert!(!super::OPTIONS.audio, "mac never asks for the phone's sound");
         }
 
-        // This fixture has no owner grant or control Node: no app windows or outbound input.
+        // This fixture has no owner grant or control Node. The app request must
+        // remain visible as a refused row, without a node-backed request or sink.
         let device = DeviceId([0x4D; 32]);
         super::start_app(device, "com.example.app".into(), "App".into());
-        assert!(super::windows().iter().all(|(w, _)| w.session == MIRROR_SCREEN), "mac opens no app windows");
+        let app_window = super::windows()
+            .into_iter()
+            .find_map(|(window, shown)| {
+                (window.device == device && shown.pkg.as_deref() == Some("com.example.app"))
+                    .then_some(window)
+            })
+            .expect("mac keeps the refused app row for cleanup");
+        assert!(matches!(super::phase(&app_window), Some(Phase::Ended(Some(reason))) if !reason.is_empty()));
+        assert!(super::state(|s| !s.requests.contains_key(&app_window)), "refused app row owns no request");
+        assert!(super::state(|s| !s.request_nodes.contains_key(&app_window)), "refused app row owns no Node");
+        assert!(super::sink(&device, app_window.session).is_none());
+        super::stop(app_window);
+        assert!(!super::windows().iter().any(|(window, _)| *window == app_window));
         let window = live_screen_request(device, 0x9E3779B9_7F4A7C15);
+        super::set_stay_awake(window, true);
+        assert!(super::stay_awake(&device), "Mac keep-awake remains available");
+        super::set_stay_awake(window, false);
+        assert!(!super::stay_awake(&device), "Mac keep-awake request clears");
+        super::set_screen_off(window, true);
+        assert!(!super::screen_off(&device), "Mac screen-off remains unavailable");
         super::input(window, MirrorInput::Key { key: "a".into() });
         super::request_control(&window.key());
 

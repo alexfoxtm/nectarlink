@@ -822,11 +822,13 @@ impl Store {
 
     /// One phone-owner grant transition and its invalidating typing epoch.
     /// The same CAS protects retained old Nodes; neither row commits alone.
-    pub(crate) fn compare_and_set_phone_control_grant(
+    /// The caller chooses the explicit local permission toggle.
+    pub(crate) fn compare_and_set_phone_grant(
         &self,
         expected: Option<&str>,
         value: &str,
         peer: &DeviceId,
+        toggle: &str,
         enabled: bool,
     ) -> Result<()> {
         let committed = self.with(|c| {
@@ -845,9 +847,9 @@ impl Store {
                 return Ok(false);
             }
             tx.execute(
-                "INSERT INTO peer_toggles (peer, toggle, enabled) VALUES (?1, 'phone_control', ?2)
+                "INSERT INTO peer_toggles (peer, toggle, enabled) VALUES (?1, ?2, ?3)
                  ON CONFLICT(peer, toggle) DO UPDATE SET enabled = excluded.enabled",
-                params![peer.as_bytes().as_slice(), i64::from(enabled)],
+                params![peer.as_bytes().as_slice(), toggle, i64::from(enabled)],
             )?;
             tx.commit()?;
             Ok(true)

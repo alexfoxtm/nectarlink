@@ -72,4 +72,75 @@ class InputServerTest {
         assertFalse(InputServer.linkMimeTypesAllowed(listOf("text/plain", "application/octet-stream")))
     }
 
+
+    @Test
+    fun aBufferedSameDisplayWheelFoldsOnceAndStopsBeforeTouch() {
+        val ready = mutableListOf(
+            "@7 S 4.0 5.0 0.0 1.5",
+            "@7 D 1 2",
+            "@7 S 4 5 0.0 4.0",
+        )
+        val folded = InputServer.coalesceReadyScrolls("@7 S 4 5 0.0 1.0") {
+            if (ready.isEmpty()) null else ready.removeAt(0)
+        }
+        assertEquals("@7 S 4 5 0.0 2.5", folded.line)
+        assertEquals("@7 D 1 2", folded.held)
+        assertEquals(listOf("@7 S 4 5 0.0 4.0"), ready)
+
+        val more = MutableList(InputServer.SCROLL_MERGE_LIMIT) { "@7 S 1 2 0.0 1.0" }
+        val capped = InputServer.coalesceReadyScrolls("@7 S 1 2 0.0 1.0") {
+            if (more.isEmpty()) null else more.removeAt(0)
+        }
+        assertEquals("@7 S 1 2 0.0 ${InputServer.SCROLL_MERGE_LIMIT.toFloat()}", capped.line)
+        assertEquals(null, capped.held)
+        assertEquals(1, more.size)
+    }
+
+    @Test
+    fun aDifferentDisplayOrAnOutOfBoundsWheelIsNotFolded() {
+        val moved = mutableListOf("@7 S 9 8 0.0 1.5", "@7 S 9 8 0.0 1.0")
+        val barrier = InputServer.coalesceReadyScrolls("@7 S 4 5 0.0 1.0") {
+            if (moved.isEmpty()) null else moved.removeAt(0)
+        }
+        assertEquals("@7 S 4 5 0.0 1.0", barrier.line)
+        assertEquals("@7 S 9 8 0.0 1.5", barrier.held)
+        assertEquals(listOf("@7 S 9 8 0.0 1.0"), moved)
+
+        val replaced = mutableListOf("@8 S 4 5 0.0 1.0", "@7 S 4 5 0.0 1.0")
+        val other = InputServer.coalesceReadyScrolls("@7 S 4 5 0.0 2.0") {
+            if (replaced.isEmpty()) null else replaced.removeAt(0)
+        }
+        assertEquals("@7 S 4 5 0.0 2.0", other.line)
+        assertEquals("@8 S 4 5 0.0 1.0", other.held)
+        assertEquals(listOf("@7 S 4 5 0.0 1.0"), replaced)
+
+        val over = mutableListOf("@7 S 4 5 0.0 40.0", "@7 S 4 5 0.0 NaN")
+        val bounded = InputServer.coalesceReadyScrolls("@7 S 4 5 0.0 80.0") {
+            if (over.isEmpty()) null else over.removeAt(0)
+        }
+        assertEquals("@7 S 4 5 0.0 80.0", bounded.line)
+        assertEquals("@7 S 4 5 0.0 40.0", bounded.held)
+        val nanHeld = InputServer.coalesceReadyScrolls(checkNotNull(bounded.held)) {
+            if (over.isEmpty()) null else over.removeAt(0)
+        }
+        assertEquals("@7 S 4 5 0.0 40.0", nanHeld.line)
+        assertEquals("@7 S 4 5 0.0 NaN", nanHeld.held)
+
+        var pulled = false
+        val typed = InputServer.coalesceReadyScrolls("D 1 2") {
+            pulled = true
+            null
+        }
+        assertEquals("D 1 2", typed.line)
+        assertEquals(null, typed.held)
+        assertFalse(pulled)
+
+        val screen = mutableListOf("S 4 5 0.0 1.0")
+        val windowOnly = InputServer.coalesceReadyScrolls("@7 S 4 5 0.0 1.0") {
+            if (screen.isEmpty()) null else screen.removeAt(0)
+        }
+        assertEquals("@7 S 4 5 0.0 1.0", windowOnly.line)
+        assertEquals("S 4 5 0.0 1.0", windowOnly.held)
+    }
+
 }

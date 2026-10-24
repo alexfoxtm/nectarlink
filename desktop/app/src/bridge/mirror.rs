@@ -219,7 +219,7 @@ impl qobject::Mirror {
                     let matrix = s.matrices.get(&window.device);
                     let control = !scoped && (window.session == MIRROR_SCREEN || mirror::APP_WINDOWS)
                         && control_reason == "available";
-                    let can_screen_off = !scoped && mirror::APP_WINDOWS
+                    let can_screen_off = !scoped && !mirror::VIEW_ONLY && mirror::APP_WINDOWS
                         && matrix.and_then(|m| m.state("mirroring.app_windows"))
                             == Some(FeatureState::Available);
                     (control, can_screen_off, s.name_of(&window.device).unwrap_or_default())

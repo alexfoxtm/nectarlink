@@ -381,6 +381,8 @@ pub const DEVICE_TOGGLES: &[(&str, bool)] = &[
     ("mirroring", true),
     // Only an explicit owner action on this phone grants control to one PC.
     ("phone_control", false),
+    // Persistent per-PC Way Mode app-window control; local phone-owner UI only.
+    ("phone_app_windows", false),
     ("webcam", true),
     // The phone asks its user each time a PC wants its microphone.
     ("mic", true),
