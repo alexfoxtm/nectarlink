@@ -1472,6 +1472,23 @@ pub(crate) async fn accept_stream(
     mut send: SendStream,
     mut recv: RecvStream,
 ) {
+    #[cfg(feature = "test-support")]
+    {
+        let probe = shared.mirror_prelude_probe.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        if let Some(probe) = probe.filter(|probe| probe.reader && probe.peer == session.peer
+            && probe.session.upgrade().is_some_and(|pinned| Arc::ptr_eq(&pinned, &session))
+            && shared.session(&session.peer).is_some_and(|live| Arc::ptr_eq(&live, &session))
+            && shared.mirror_outgoing.lock().unwrap_or_else(|e| e.into_inner())
+                .get(&(session.peer, probe.owner.session)).map(|outgoing| outgoing.request) == Some(probe.owner.request)
+            && *probe.stream.lock().unwrap_or_else(|e| e.into_inner()) == Some(VarInt::from(recv.id()).into_inner()))
+        {
+            probe.held.notify_one();
+            tokio::select! {
+                _ = probe.release.notified() => {},
+                _ = shared.cancel.cancelled() => return,
+            }
+        }
+    }
     let header = match tokio::time::timeout(REPLY_TIMEOUT, read_frame(&mut recv)).await {
         Ok(Ok(Some(bytes))) => {
             Envelope::from_cbor(&bytes).ok().and_then(|e| e.expect_body::<StreamHeader>(types::STREAM).ok())

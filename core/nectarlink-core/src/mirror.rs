@@ -45,6 +45,21 @@ pub(crate) struct MirrorFlowProbe {
     pub(crate) exited: Arc<tokio::sync::Notify>,
 }
 
+
+#[cfg(feature = "test-support")]
+#[derive(Debug)]
+pub(crate) struct MirrorPreludeProbe {
+    pub(crate) peer: DeviceId,
+    pub(crate) owner: MirrorControlContext,
+    pub(crate) reader: bool,
+    pub(crate) session: Weak<Session>,
+    pub(crate) stream: Arc<Mutex<Option<u64>>>,
+    pub(crate) held: Arc<tokio::sync::Notify>,
+    pub(crate) release: Arc<tokio::sync::Notify>,
+    pub(crate) pending: Arc<tokio::sync::Notify>,
+    pub(crate) exited: Arc<tokio::sync::Notify>,
+}
+
 /// The device toggle that allows phone-to-PC mirroring for a device.
 pub(crate) const TOGGLE: &str = "mirroring";
 /// The per-device toggle that allows PC-to-phone reverse mirroring (off by default).
@@ -1759,13 +1774,37 @@ pub(crate) async fn open(
     let op = if audio { mirror::OP_AUDIO } else { mirror::OP_VIDEO };
     let header = StreamHeader { svc: mirror::SERVICE.into(), op: op.into(), v: mirror::VERSION };
     let prelude = Envelope::new(types::STREAM, &header)?.to_cbor();
+    #[cfg(feature = "test-support")]
+    let prelude_probe = shared.mirror_prelude_probe.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        .filter(|probe| !probe.reader && probe.peer == session.peer && Some(probe.owner) == owner
+            && probe.session.upgrade().is_some_and(|pinned| std::ptr::eq(pinned.as_ref(), session))
+            && shared.mirror_capture_current(&session.peer, probe.owner));
+    #[cfg(feature = "test-support")]
+    if let Some(probe) = &prelude_probe {
+        *probe.stream.lock().unwrap_or_else(|e| e.into_inner()) = Some(VarInt::from(send.id()).into_inner());
+    }
+    let writing = write_frame(&mut send, &prelude);
+    #[cfg(feature = "test-support")]
+    let writing = async {
+        let mut writing = Box::pin(writing);
+        std::future::poll_fn(|cx| {
+            let result = std::future::Future::poll(writing.as_mut(), cx);
+            if result.is_pending() {
+                if let Some(probe) = &prelude_probe { probe.pending.notify_one(); }
+            }
+            result
+        }).await
+    };
     let written: Result<()> = tokio::select! {
         biased;
         _ = pending.live.stop.notified() => Err(Error::Denied),
-        result = write_frame(&mut send, &prelude) => result.map_err(Error::from),
+        result = writing => result.map_err(Error::from),
     };
     if let Err(error) = written {
         let _ = send.finish();
+        drop(pending);
+        #[cfg(feature = "test-support")]
+        if let Some(probe) = prelude_probe { probe.exited.notify_one(); }
         return Err(error);
     }
     let on_end = if !audio {

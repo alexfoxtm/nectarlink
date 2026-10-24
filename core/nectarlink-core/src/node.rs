@@ -221,6 +221,8 @@ pub(crate) struct Shared {
     mirror_retire_barrier: Mutex<Option<Arc<std::sync::Barrier>>>,
     #[cfg(feature = "test-support")]
     pub(crate) mirror_flow_probe: Mutex<Option<Arc<crate::mirror::MirrorFlowProbe>>>,
+    #[cfg(feature = "test-support")]
+    pub(crate) mirror_prelude_probe: Mutex<Option<Arc<crate::mirror::MirrorPreludeProbe>>>,
     memory: MemoryLookup,
     /// This device's notifications, when it mirrors them (phones).
     pub notifications: Feed,
@@ -2105,6 +2107,8 @@ impl Node {
             mirror_retire_barrier: Mutex::new(None),
             #[cfg(feature = "test-support")]
             mirror_flow_probe: Mutex::new(None),
+            #[cfg(feature = "test-support")]
+            mirror_prelude_probe: Mutex::new(None),
             memory,
             notifications: Feed::default(),
             notification_history: Mutex::new(Vec::new()),
@@ -2528,6 +2532,43 @@ impl Node {
             (probe.held.clone(), probe.release.clone(), probe.pending.clone(), probe.exited.clone());
         *lock(&self.shared.mirror_flow_probe) = Some(probe);
         Ok(signals)
+    }
+
+    /// Pins both actual loopback sessions before observing an owned STREAM prelude.
+    #[cfg(feature = "test-support")]
+    pub fn test_mirror_prelude_probe(
+        &self,
+        sender: &Node,
+        owner: crate::MirrorControlContext,
+    ) -> Result<(Arc<Notify>, Arc<Notify>, Arc<Notify>, Arc<Notify>)> {
+        let receiver_id = self.device_id();
+        let sender_id = sender.device_id();
+        if !self.shared.test_support_loopback_mirror_fixture
+            || !sender.shared.test_support_loopback_mirror_fixture
+            || owner.session == 0
+            || owner.capture == 0
+            || !sender.shared.mirror_capture_current(&receiver_id, owner)
+            || lock(&self.shared.mirror_outgoing).get(&(sender_id, owner.session)).map(|outgoing| outgoing.request) != Some(owner.request)
+        {
+            return Err(Error::Denied);
+        }
+        let receiving = self.shared.session(&sender_id).ok_or(Error::Offline)?;
+        let sending = sender.shared.session(&receiver_id).ok_or(Error::Offline)?;
+        let stream = Arc::new(Mutex::new(None));
+        let held = Arc::new(Notify::new());
+        let release = Arc::new(Notify::new());
+        let pending = Arc::new(Notify::new());
+        let exited = Arc::new(Notify::new());
+        for (shared, peer, session, reader) in [
+            (&self.shared, sender_id, receiving, true),
+            (&sender.shared, receiver_id, sending, false),
+        ] {
+            *lock(&shared.mirror_prelude_probe) = Some(Arc::new(crate::mirror::MirrorPreludeProbe {
+                peer, owner, reader, session: Arc::downgrade(&session), stream: stream.clone(),
+                held: held.clone(), release: release.clone(), pending: pending.clone(), exited: exited.clone(),
+            }));
+        }
+        Ok((held, release, pending, exited))
     }
 
     /// Test-only readback of the live session's QUIC dialer, to guard the
@@ -3510,6 +3551,26 @@ impl Node {
 
     pub fn mirror_capture_current(&self, peer: DeviceId, context: crate::MirrorControlContext) -> bool {
         self.shared.mirror_capture_current(&peer, context)
+    }
+
+    /// The exact app helper ended, even before its network stream opened.
+    /// Local retirement is synchronous and never grants input or ends a screen.
+    pub fn mirror_app_capture_ended(&self, peer: DeviceId, context: crate::MirrorControlContext) -> bool {
+        if !crate::mirror::is_local_phone(&self.shared)
+            || context.session == crate::MIRROR_SCREEN
+            || context.request == 0
+            || context.connection == 0
+            || context.capture == 0
+        {
+            return false;
+        }
+        self.shared.take_mirror_incoming_request(
+            &peer,
+            context.session,
+            context.request,
+            context.connection,
+            context.capture,
+        )
     }
 
     /// Exact live request/connection/owner generation for posted Android input.

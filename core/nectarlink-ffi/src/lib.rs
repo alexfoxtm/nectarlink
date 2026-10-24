@@ -4532,6 +4532,12 @@ impl NectarlinkNode {
         parse_id(&pc_id).is_ok_and(|id| self.node.mirror_capture_current(id, context.into()))
     }
 
+    /// Ends only the original app capture after local helper EOF/failure.
+    /// This does not wait for network credit or affect another app or screen.
+    pub fn mirror_app_capture_ended(&self, pc_id: String, context: PhoneControlContext) -> bool {
+        parse_id(&pc_id).is_ok_and(|id| self.node.mirror_app_capture_ended(id, context.into()))
+    }
+
     pub async fn mirror_open_owned(
         &self,
         pc_id: String,

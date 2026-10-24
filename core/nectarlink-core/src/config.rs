@@ -94,8 +94,8 @@ impl NodeConfig {
     /// Limits only per-stream receive credit in the isolated loopback fixture.
     #[cfg(feature = "test-support")]
     pub fn set_test_mirror_stream_window(&mut self, bytes: u32) -> Result<(), String> {
-        if !self.test_support_loopback_mirror_fixture || !(1024..=65536).contains(&bytes) {
-            return Err("mirror stream window is loopback-fixture only (1024..=65536)".into());
+        if !self.test_support_loopback_mirror_fixture || !(1..=65536).contains(&bytes) {
+            return Err("mirror stream window is loopback-fixture only (1..=65536)".into());
         }
         self.test_mirror_stream_window = Some(bytes);
         Ok(())

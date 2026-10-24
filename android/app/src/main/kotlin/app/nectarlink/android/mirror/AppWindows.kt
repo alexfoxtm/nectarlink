@@ -26,8 +26,6 @@ import app.nectarlink.core.PhoneApp
 import app.nectarlink.core.VideoPacketKind
 import app.nectarlink.core.mirrorConfig
 import java.io.ByteArrayOutputStream
-import java.io.DataInputStream
-import java.io.EOFException
 import java.net.Socket
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineScope
@@ -71,6 +69,7 @@ class AppWindows(
     ) {
         @Volatile var display: Int = -1
         var resizeRevision: Long = 0
+        lateinit var pump: AppWindowPacketPump
     }
 
     private val windows = ConcurrentHashMap<Pair<String, UInt>, Window>()
@@ -134,7 +133,15 @@ class AppWindows(
             stillCurrent = current,
             register = { socket ->
                 val window = Window(pc, options.session, socket, width, height, dpi, maxSize, node, accepted, settingsOffer, current)
+                window.pump = AppWindowPacketPump(socket, { owns(window) }) {
+                    try {
+                        window.node.mirrorAppCaptureEnded(window.pc, window.owner)
+                    } finally {
+                        removeWindow(window)
+                    }
+                }
                 val key = pc to options.session
+                var displaced: Window? = null
                 var installed = false
                 var rejected = false
                 // Never hold a shared map monitor while waiting for a window:
@@ -160,12 +167,15 @@ class AppWindows(
                                     // Revocation and socket close are ordered
                                     // against the old window's final resize write.
                                     runCatching { previous.socket.close() }
+                                    displaced = previous
                                 }
                             }
                         }
                     }
                 }
+                displaced?.pump?.finish()
                 if (!installed) return@openApp false
+                window.pump.start()
                 true
             },
         )
@@ -205,40 +215,26 @@ class AppWindows(
 
     /** The helper's packets to the PC, until either side closes. */
     private fun forward(window: Window, stream: MirrorStream) {
-        try {
-            val input = DataInputStream(window.socket.getInputStream().buffered(1 shl 16))
-            while (owns(window)) {
-                val length = input.readInt()
-                if (length < 9 || length > MAX_PACKET) return
-                val kind = input.readUnsignedByte()
-                val time = input.readLong().toULong()
-                val data = ByteArray(length - 9).also { input.readFully(it) }
-                if (!owns(window)) return
-                val result = when (kind) {
-                    AppDisplay.KIND_CONFIG -> {
-                        val fields = java.nio.ByteBuffer.wrap(data)
-                        val (w, h) = fields.int to fields.int
-                        window.width = w
-                        window.height = h
-                        window.display = fields.int
-                        stream.send(VideoPacketKind.CONFIG, 0u, mirrorConfig(w.toUInt(), h.toUInt(), window.session, window.owner.request))
-                    }
-                    AppDisplay.KIND_KEYFRAME -> stream.send(VideoPacketKind.KEYFRAME, time, data)
-                    else -> stream.send(VideoPacketKind.FRAME, time, data)
+        window.pump.forward(send = sendPacket@ { packet ->
+            if (!owns(window)) return@sendPacket false
+            val result = when (packet.kind) {
+                AppDisplay.KIND_CONFIG -> {
+                    val fields = java.nio.ByteBuffer.wrap(packet.data)
+                    val (w, h) = fields.int to fields.int
+                    window.width = w
+                    window.height = h
+                    window.display = fields.int
+                    stream.send(VideoPacketKind.CONFIG, 0u, mirrorConfig(w.toUInt(), h.toUInt(), window.session, window.owner.request))
                 }
-                when (result) {
-                    MirrorSendResult.CLOSED -> return
-                    MirrorSendResult.NEED_KEYFRAME, MirrorSendResult.DROPPED -> keyframe(window)
-                    MirrorSendResult.QUEUED -> {}
-                }
+                AppDisplay.KIND_KEYFRAME -> stream.send(VideoPacketKind.KEYFRAME, packet.time, packet.data)
+                else -> stream.send(VideoPacketKind.FRAME, packet.time, packet.data)
             }
-        } catch (_: EOFException) {
-        } catch (e: java.io.IOException) {
-            Log.d(TAG, "an app window ended", e)
-        } finally {
-            stream.end()
-            close(window)
-        }
+            when (result) {
+                MirrorSendResult.CLOSED -> false
+                MirrorSendResult.NEED_KEYFRAME, MirrorSendResult.DROPPED -> { keyframe(window); true }
+                MirrorSendResult.QUEUED -> true
+            }
+        }, end = { stream.end() })
     }
 
     /** The PC closed a window. */
@@ -248,6 +244,10 @@ class AppWindows(
     }
 
     private fun close(window: Window) {
+        window.pump.finish()
+    }
+
+    private fun removeWindow(window: Window) {
         val removed = synchronized(window) {
             // Exact-owner revocation and socket closure share the monitor used
             // by resize's final ownership check and command write.
@@ -421,8 +421,6 @@ class AppWindows(
         private const val TAG = "AppWindows"
         private const val NOTIFICATION_ID = 7
         private const val SETTINGS_PACKAGE = "com.android.settings"
-        /** Packets from the helper, at most. */
-        private const val MAX_PACKET = 8 shl 20
 
         @Volatile private var instance: AppWindows? = null
 
