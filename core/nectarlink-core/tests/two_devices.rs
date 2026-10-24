@@ -805,12 +805,16 @@ impl Platform for RecordingPlatform {
 #[derive(Debug, Default)]
 struct ScreenSink {
     got: Mutex<Vec<String>>,
+    #[cfg(feature = "test-support")]
+    configs: Mutex<Vec<nectarlink_core::MirrorConfig>>,
     ended_barrier: Mutex<Option<Arc<std::sync::Barrier>>>,
 }
 
 impl nectarlink_core::MirrorSink for ScreenSink {
     fn config(&self, config: nectarlink_core::MirrorConfig) {
         self.got.lock().unwrap().push(format!("config {}x{}", config.width, config.height));
+        #[cfg(feature = "test-support")]
+        self.configs.lock().unwrap().push(config);
     }
     fn packet(&self, keyframe: bool, time_us: u64, data: Vec<u8>) {
         self.got.lock().unwrap().push(format!(
@@ -8681,6 +8685,11 @@ async fn app_control_denies_legacy_grant_off_stop_and_reused_capture_owners() {
 
 #[cfg(feature = "test-support")]
 async fn request_control_pair_with_pc_initial_credit() -> (TestDevice, TestDevice) {
+    request_control_pair_with_pc_transport(false).await
+}
+
+#[cfg(feature = "test-support")]
+async fn request_control_pair_with_pc_transport(flow_control: bool) -> (TestDevice, TestDevice) {
     use nectarlink_core::{
         MIRROR_CAPTURE, MIRROR_CORRELATION, MIRROR_INPUT, MIRROR_INPUT_REQUEST, MIRROR_VIEW,
     };
@@ -8692,7 +8701,13 @@ async fn request_control_pair_with_pc_initial_credit() -> (TestDevice, TestDevic
     pc_config.key_protector = Some(Arc::new(PlainKeyProtector));
     pc_config.capabilities = vec!["media.control".into()];
     pc_config.enable_loopback_mirror_fixture();
-    pc_config.set_test_initial_max_concurrent_bi_streams(1).expect("loopback fixture permits initial credit");
+    if flow_control {
+        pc_config.set_test_mirror_stream_window(4096).unwrap();
+    } else {
+        pc_config
+            .set_test_initial_max_concurrent_bi_streams(1)
+            .expect("loopback fixture permits initial credit");
+    }
     init_logging();
     let pc_node = Node::start(pc_config, pc_platform.clone()).await.expect("node starts");
     let pc_events = pc_node.events();
@@ -9167,4 +9182,144 @@ async fn hotspot_auto_cancel_discards_credentials_and_ignores_wrong_owner() {
     *phone.platform.hotspot_gate.lock().unwrap() = None;
     pc.node.shutdown().await;
     phone.node.shutdown().await;
+}
+
+/// Real packet-body flow control: the app reader stays held until exact Stop
+/// has ended the actual writer; queue fullness alone cannot satisfy the gate.
+#[cfg(feature = "test-support")]
+#[tokio::test(flavor = "multi_thread")]
+async fn owned_app_packet_writer_cancels_under_real_flow_control() {
+    use nectarlink_core::{
+        MIRROR_APP_WINDOWS_OWNED_V1, MIRROR_CAPTURE, MIRROR_CORRELATION, MIRROR_INPUT, MIRROR_INPUT_REQUEST,
+        MIRROR_VIRTUAL_DISPLAY, MirrorConfig, MirrorSend, MirrorStart, PacketKind,
+    };
+    let (mut pc, mut phone) = request_control_pair_with_pc_transport(true).await;
+    let (pc_id, phone_id) = (pc.node.device_id(), phone.node.device_id());
+    let pc_shutdown = pc.node.clone();
+    let phone_shutdown = phone.node.clone();
+    let mut task = tokio::spawn(async move {
+        phone
+            .node
+            .update_power(
+                PowerLevel::Elevated,
+                vec![
+                    MIRROR_CAPTURE.into(),
+                    MIRROR_CORRELATION.into(),
+                    MIRROR_INPUT.into(),
+                    MIRROR_INPUT_REQUEST.into(),
+                    MIRROR_VIRTUAL_DISPLAY.into(),
+                    MIRROR_APP_WINDOWS_OWNED_V1.into(),
+                ],
+            )
+            .await;
+        wait_feature(&mut pc, phone_id, "mirroring.app_windows", |s| *s == FeatureState::Available).await;
+        let (screen, _) = request_control_session(&mut pc, &mut phone, 0).await;
+        pc.node
+            .mirror_start_owned(
+                phone_id,
+                MirrorStart {
+                    max_size: 128,
+                    fps: 30,
+                    bitrate: 1_000_000,
+                    audio: false,
+                    session: 7,
+                    app: Some("com.example.chat".into()),
+                    stay_awake: false,
+                    screen_off: false,
+                    watch: None,
+                    request: None,
+                },
+                |view| view.is_current(),
+            )
+            .await
+            .unwrap();
+        let request = phone.platform.mirror_requests.lock().unwrap().last().unwrap().request.unwrap();
+        let owner = phone.node.mirror_capture_context_for_session(pc_id, 7, request).unwrap();
+        let (held, release, _, _) = pc.node.test_mirror_flow_probe(phone_id, owner, true).unwrap();
+        let (_, _, pending, exited) = phone.node.test_mirror_flow_probe(pc_id, owner, false).unwrap();
+        let stream = Arc::new(phone.node.mirror_open_owned(pc_id, owner).await.unwrap());
+        let sending = stream.clone();
+        tokio::task::spawn_blocking(move || {
+            assert_eq!(
+                sending.send(
+                    PacketKind::Config,
+                    0,
+                    MirrorConfig {
+                        codec: "h264".into(),
+                        width: 128,
+                        height: 128,
+                        session: 7,
+                        request: Some(request),
+                    }
+                    .to_cbor()
+                ),
+                MirrorSend::Queued
+            );
+        })
+        .await
+        .unwrap();
+        with_timeout("exact app reader held after CONFIG", held.notified()).await;
+        let sending = stream.clone();
+        tokio::task::spawn_blocking(move || {
+            assert_eq!(sending.send(PacketKind::Keyframe, 1, vec![0x65; 65536]), MirrorSend::Queued);
+        })
+        .await
+        .unwrap();
+        with_timeout("actual production body write_all Pending", pending.notified()).await;
+        control_barrier(&pc, &phone).await;
+        assert!(!screen.is_closed(), "screen survives app stream credit pressure");
+        let viewer = pc.node.mirror_resize_target(phone_id, 7, request).unwrap();
+        assert!(viewer.stop_if_current().await.unwrap());
+        with_timeout("writer exits before explicit reader release", exited.notified()).await;
+        wait_owned_app_stop(&phone, pc_id, owner).await;
+        assert!(!phone.node.mirror_capture_current(pc_id, owner));
+        assert!(phone.node.mirror_open_owned(pc_id, owner).await.is_err());
+        assert!(!screen.is_closed());
+        control_barrier(&pc, &phone).await;
+        release.notify_one();
+        let (successor, next_request) = request_control_session(&mut pc, &mut phone, 7).await;
+        let next = phone.node.mirror_capture_context_for_session(pc_id, 7, next_request).unwrap();
+        assert_ne!(next.capture, owner.capture);
+        assert_ne!(next_request, request);
+        // The helper's session-only event could be the old queued CONFIG event.
+        // Require the actual sink to receive the fresh correlated request too.
+        with_timeout("successor exact correlated CONFIG reached sink", async {
+            loop {
+                if pc
+                    .platform
+                    .screen
+                    .configs
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|config| config.session == 7 && config.request == Some(next_request))
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await;
+        assert!(!viewer.stop_if_current().await.unwrap(), "old Stop cannot end successor");
+        assert!(phone.node.mirror_capture_current(pc_id, next));
+        assert!(!successor.is_closed(), "fresh CONFIG admitted on same connection");
+        successor.close();
+        screen.close();
+        stream.close();
+    });
+    let result = tokio::time::timeout(Duration::from_secs(80), &mut task).await;
+    if result.is_err() {
+        task.abort();
+        let _ = (&mut task).await;
+    }
+    // Node cancellation wakes any held reader via the normal Stop path.
+    with_timeout("flow fixture PC shutdown", pc_shutdown.shutdown()).await;
+    with_timeout("flow fixture phone shutdown", phone_shutdown.shutdown()).await;
+    let result = result.expect("flow fixture exceeded 80 seconds after bounded cleanup");
+    if let Err(error) = result {
+        if error.is_panic() {
+            std::panic::resume_unwind(error.into_panic());
+        }
+        panic!("flow fixture task cancelled: {error}");
+    }
 }

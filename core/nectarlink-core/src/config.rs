@@ -52,6 +52,8 @@ pub struct NodeConfig {
     /// transport default. Set only on the loopback fixture endpoint.
     #[cfg(feature = "test-support")]
     pub(crate) test_initial_max_concurrent_bi_streams: Option<u32>,
+    #[cfg(feature = "test-support")]
+    pub(crate) test_mirror_stream_window: Option<u32>,
 }
 
 impl NodeConfig {
@@ -78,6 +80,8 @@ impl NodeConfig {
             test_support_loopback_mirror_fixture: false,
             #[cfg(feature = "test-support")]
             test_initial_max_concurrent_bi_streams: None,
+            #[cfg(feature = "test-support")]
+            test_mirror_stream_window: None,
         }
     }
 
@@ -85,6 +89,16 @@ impl NodeConfig {
     #[cfg(feature = "test-support")]
     pub fn enable_loopback_mirror_fixture(&mut self) {
         self.test_support_loopback_mirror_fixture = true;
+    }
+
+    /// Limits only per-stream receive credit in the isolated loopback fixture.
+    #[cfg(feature = "test-support")]
+    pub fn set_test_mirror_stream_window(&mut self, bytes: u32) -> Result<(), String> {
+        if !self.test_support_loopback_mirror_fixture || !(1024..=65536).contains(&bytes) {
+            return Err("mirror stream window is loopback-fixture only (1024..=65536)".into());
+        }
+        self.test_mirror_stream_window = Some(bytes);
+        Ok(())
     }
 
     /// Sets the initial bidirectional-stream credit this endpoint advertises

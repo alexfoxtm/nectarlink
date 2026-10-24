@@ -32,6 +32,19 @@ use tokio::sync::mpsc;
 
 use crate::{Error, Result, events::NodeEvent, node::Shared, session::Session};
 
+#[cfg(feature = "test-support")]
+#[derive(Debug)]
+pub(crate) struct MirrorFlowProbe {
+    pub(crate) peer: DeviceId,
+    pub(crate) owner: MirrorControlContext,
+    pub(crate) reader: bool,
+    pub(crate) session: Weak<Session>,
+    pub(crate) held: Arc<tokio::sync::Notify>,
+    pub(crate) release: Arc<tokio::sync::Notify>,
+    pub(crate) pending: Arc<tokio::sync::Notify>,
+    pub(crate) exited: Arc<tokio::sync::Notify>,
+}
+
 /// The device toggle that allows phone-to-PC mirroring for a device.
 pub(crate) const TOGGLE: &str = "mirroring";
 /// The per-device toggle that allows PC-to-phone reverse mirroring (off by default).
@@ -1057,6 +1070,25 @@ pub(crate) async fn receive(
     });
     shared.emit(NodeEvent::Mirroring { device: peer, session: mirroring, on: true });
     sink.config(config);
+    #[cfg(feature = "test-support")]
+    {
+        let probe = shared.mirror_flow_probe.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        if let Some(probe) = probe.filter(|p| {
+            p.reader
+                && p.peer == peer
+                && p.owner.session == mirroring
+                && Some(p.owner.request) == request
+                && p.session.upgrade().is_some_and(|s| Arc::ptr_eq(&s, &session))
+        }) {
+            probe.held.notify_one();
+            tokio::select! {
+                biased;
+                _ = stopped.notified() => { stopped.notify_one(); },
+                _ = probe.release.notified() => {},
+                _ = shared.cancel.cancelled() => { stopped.notify_one(); },
+            }
+        }
+    }
     loop {
         let packet = tokio::select! {
             _ = stopped.notified() => break,
@@ -1827,6 +1859,17 @@ impl MirrorStream {
         let _ = send.set_priority(if audio { AUDIO_PRIORITY } else { VIDEO_PRIORITY });
         let (queue, mut packets) =
             mpsc::channel::<(PacketKind, u64, Vec<u8>)>(if audio { AUDIO_QUEUE } else { QUEUE });
+        #[cfg(feature = "test-support")]
+        let flow_probe = capture_end.as_ref().and_then(|(shared, peer, owner)| {
+            shared.mirror_flow_probe.lock().unwrap_or_else(|e| e.into_inner()).clone().filter(|p| {
+                !p.reader
+                    && p.peer == *peer
+                    && p.owner == *owner
+                    && p.session.upgrade().is_some_and(|session| {
+                        shared.session(peer).is_some_and(|live| Arc::ptr_eq(&session, &live))
+                    })
+            })
+        });
         let done = closed.clone();
         let stopped = stop.clone();
         tokio::spawn(async move {
@@ -1848,6 +1891,19 @@ impl MirrorStream {
                 let Ok(header) = video_packet_header(kind, time, data.len()) else { continue };
                 let written = async {
                     send.write_all(&header).await?;
+                    #[cfg(feature = "test-support")]
+                    if let Some(probe) = &flow_probe {
+                        // Poll the same production write_all future; never manufacture Pending.
+                        let mut write = Box::pin(send.write_all(&data));
+                        return std::future::poll_fn(|cx| {
+                            let result = std::future::Future::poll(write.as_mut(), cx);
+                            if result.is_pending() {
+                                probe.pending.notify_one();
+                            }
+                            result
+                        })
+                        .await;
+                    }
                     send.write_all(&data).await
                 };
                 let result = tokio::select! {
@@ -1867,6 +1923,10 @@ impl MirrorStream {
             }
             if let Some((shared, row_id, started_at)) = on_end {
                 shared.finish_timeline_session(row_id, started_at.elapsed().as_secs().max(1));
+            }
+            #[cfg(feature = "test-support")]
+            if let Some(probe) = flow_probe {
+                probe.exited.notify_one();
             }
         });
         MirrorStream { queue, closed, stop, resyncing: Mutex::new(false), audio, control_owner: None }

@@ -219,6 +219,8 @@ pub(crate) struct Shared {
     test_support_loopback_mirror_fixture: bool,
     #[cfg(feature = "test-support")]
     mirror_retire_barrier: Mutex<Option<Arc<std::sync::Barrier>>>,
+    #[cfg(feature = "test-support")]
+    pub(crate) mirror_flow_probe: Mutex<Option<Arc<crate::mirror::MirrorFlowProbe>>>,
     memory: MemoryLookup,
     /// This device's notifications, when it mirrors them (phones).
     pub notifications: Feed,
@@ -2101,6 +2103,8 @@ impl Node {
             test_support_loopback_mirror_fixture: config.test_support_loopback_mirror_fixture,
             #[cfg(feature = "test-support")]
             mirror_retire_barrier: Mutex::new(None),
+            #[cfg(feature = "test-support")]
+            mirror_flow_probe: Mutex::new(None),
             memory,
             notifications: Feed::default(),
             notification_history: Mutex::new(Vec::new()),
@@ -2487,6 +2491,43 @@ impl Node {
             return Err(Error::NotPaired);
         }
         self.shared.session(peer).ok_or(Error::Offline)
+    }
+
+    /// Exact-owner observation for the isolated real-flow-control fixture.
+    /// Signals: reader held, release reader, actual write pending, writer exited.
+    #[cfg(feature = "test-support")]
+    pub fn test_mirror_flow_probe(
+        &self,
+        peer: DeviceId,
+        owner: crate::MirrorControlContext,
+        reader: bool,
+    ) -> Result<(
+        Arc<tokio::sync::Notify>,
+        Arc<tokio::sync::Notify>,
+        Arc<tokio::sync::Notify>,
+        Arc<tokio::sync::Notify>,
+    )> {
+        if !self.shared.test_support_loopback_mirror_fixture || owner.session == 0 || owner.capture == 0 {
+            return Err(Error::Denied);
+        }
+        let session = self.shared.session(&peer).ok_or(Error::Offline)?;
+        if !reader && !self.shared.mirror_capture_current(&peer, owner) {
+            return Err(Error::Denied);
+        }
+        let probe = Arc::new(crate::mirror::MirrorFlowProbe {
+            peer,
+            owner,
+            reader,
+            session: Arc::downgrade(&session),
+            held: Arc::default(),
+            release: Arc::default(),
+            pending: Arc::default(),
+            exited: Arc::default(),
+        });
+        let signals =
+            (probe.held.clone(), probe.release.clone(), probe.pending.clone(), probe.exited.clone());
+        *lock(&self.shared.mirror_flow_probe) = Some(probe);
+        Ok(signals)
     }
 
     /// Test-only readback of the live session's QUIC dialer, to guard the
@@ -5078,6 +5119,16 @@ async fn bind_endpoint(
     #[cfg(feature = "test-support")]
     let transport = if let Some(count) = config.test_initial_max_concurrent_bi_streams {
         transport.max_concurrent_bidi_streams(VarInt::from_u32(count))
+    } else {
+        transport
+    };
+    #[cfg(feature = "test-support")]
+    let transport = if config.test_support_loopback_mirror_fixture {
+        if let Some(bytes) = config.test_mirror_stream_window {
+            transport.stream_receive_window(VarInt::from_u32(bytes))
+        } else {
+            transport
+        }
     } else {
         transport
     };
