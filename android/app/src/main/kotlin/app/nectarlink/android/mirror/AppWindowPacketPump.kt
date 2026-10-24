@@ -10,6 +10,7 @@ import java.util.ArrayDeque
 internal class AppWindowPacketPump(
     private val socket: Socket,
     private val current: () -> Boolean,
+    private val requestKeyframe: () -> Unit = {},
     private val onEnded: () -> Unit,
 ) {
     internal data class Packet(val kind: Int, val time: ULong, val data: ByteArray)
@@ -18,6 +19,9 @@ internal class AppWindowPacketPump(
     private var queuedBytes = 0
     private var closed = false
     private var attached = false
+    private var config: Packet? = null
+    private var waitingForKeyframe = true
+    private var keyframeRequestPending = false
 
     fun start() {
         Thread({ read() }, "app-window-reader").apply { isDaemon = true; start() }
@@ -32,12 +36,38 @@ internal class AppWindowPacketPump(
                 val kind = input.readUnsignedByte()
                 val time = input.readLong().toULong()
                 val data = ByteArray(length - 9).also { input.readFully(it) }
-                if (kind == 0 && data.size != 12) return
+                if (kind !in KIND_CONFIG..KIND_KEYFRAME || (kind == KIND_CONFIG && data.size != 12)) return
                 if (!current()) return
+                val packet = Packet(kind, time, data)
                 synchronized(lock) {
-                    if (closed || packets.size >= MAX_QUEUED_PACKETS || queuedBytes + data.size > MAX_QUEUED_BYTES) return
-                    packets.addLast(Packet(kind, time, data))
-                    queuedBytes += data.size
+                    if (closed) return
+                    if (kind == KIND_CONFIG) {
+                        // A new encoder configuration invalidates every queued dependency.
+                        keyframeRequestPending = config != null
+                        config = packet
+                        packets.clear()
+                        queuedBytes = 0
+                        waitingForKeyframe = true
+                        enqueue(packet)
+                    } else {
+                        val latestConfig = config ?: return
+                        if (kind == KIND_KEYFRAME || !waitingForKeyframe) {
+                            if (packets.size >= MAX_QUEUED_PACKETS || queuedBytes + data.size > MAX_QUEUED_BYTES) {
+                                // Dropping any frame breaks the queued chain. Keep its config,
+                                // drain the helper, and resume only at a complete keyframe.
+                                packets.clear()
+                                queuedBytes = 0
+                                enqueue(latestConfig)
+                                waitingForKeyframe = true
+                                keyframeRequestPending = true
+                            }
+                            if (kind == KIND_KEYFRAME) {
+                                waitingForKeyframe = false
+                                keyframeRequestPending = false
+                            }
+                            if (!waitingForKeyframe) enqueue(packet)
+                        }
+                    }
                     lock.notifyAll()
                 }
             }
@@ -45,6 +75,12 @@ internal class AppWindowPacketPump(
         } finally {
             finish()
         }
+    }
+
+    /** Queue mutations and accounting are protected by [lock]. */
+    private fun enqueue(packet: Packet) {
+        packets.addLast(packet)
+        queuedBytes += packet.data.size
     }
 
     /** Called once after the real stream opens; a late stream still runs its own cleanup. */
@@ -55,12 +91,21 @@ internal class AppWindowPacketPump(
                 attached = true
             }
             while (current()) {
+                var askKeyframe = false
                 val packet = synchronized(lock) {
-                    while (!closed && packets.isEmpty()) lock.wait()
+                    while (!closed && packets.isEmpty() && !keyframeRequestPending) lock.wait()
                     if (closed) return
-                    packets.removeFirst().also { queuedBytes -= it.data.size }
+                    if (keyframeRequestPending) {
+                        keyframeRequestPending = false
+                        askKeyframe = true
+                        null
+                    } else {
+                        packets.removeFirst().also { queuedBytes -= it.data.size }
+                    }
                 }
-                if (!current() || !send(packet)) return
+                if (!current()) return
+                // A helper command may block; the reader must remain free to observe EOF.
+                if (askKeyframe) requestKeyframe() else if (!send(checkNotNull(packet))) return
             }
         } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()
@@ -76,6 +121,8 @@ internal class AppWindowPacketPump(
                 closed = true
                 packets.clear()
                 queuedBytes = 0
+                config = null
+                keyframeRequestPending = false
                 lock.notifyAll()
                 true
             }
@@ -86,6 +133,9 @@ internal class AppWindowPacketPump(
     }
 
     companion object {
+        private const val KIND_CONFIG = 0
+        private const val KIND_FRAME = 1
+        private const val KIND_KEYFRAME = 2
         private const val MAX_PACKET = 8 shl 20
         private const val MAX_QUEUED_PACKETS = 4
         private const val MAX_QUEUED_BYTES = 16 shl 20

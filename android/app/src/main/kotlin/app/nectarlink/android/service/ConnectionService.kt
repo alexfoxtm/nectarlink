@@ -143,6 +143,11 @@ class ConnectionService : LifecycleService() {
         if (intent?.action == ACTION_STOP_RINGING) {
             (application as NectarlinkApplication).core.stopRinging()
         }
+        if (!Preferences.isBackgroundServiceEnabled(this)) {
+            stopSelf()
+            (application as? NectarlinkApplication)?.onBackgroundServiceDisabled()
+            return START_NOT_STICKY
+        }
         return START_STICKY
     }
 

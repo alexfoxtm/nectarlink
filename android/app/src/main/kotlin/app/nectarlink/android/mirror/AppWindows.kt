@@ -196,7 +196,7 @@ class AppWindows(
             stillCurrent = current,
             register = { socket ->
                 val window = Window(pc, options.session, socket, width, height, dpi, maxSize, node, accepted, settingsOffer, current)
-                window.pump = AppWindowPacketPump(socket, { owns(window) }) {
+                window.pump = AppWindowPacketPump(socket, { owns(window) }, requestKeyframe = { keyframe(window) }) {
                     try {
                         window.node.mirrorAppCaptureEnded(window.pc, window.owner)
                     } finally {
