@@ -162,6 +162,10 @@
 <context>
     <name>AppsPage</name>
     <message>
+        <source>Phone: %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <location filename="../../qml/pages/AppsPage.qml" line="83"/>
         <source>Phone apps</source>
         <translation type="unfinished"></translation>
@@ -3311,7 +3315,7 @@ What it needs
 Streams your phone screen into a low-latency desktop window with hardware-accelerated decoding, or opens individual Android apps in their own windows on your PC.
 
 Where to find it
-- Left navigation rail › Way Mode.
+- Left navigation rail › Apps.
 - Home › Mirror screen quick action.
 
 What it needs
@@ -4731,7 +4735,7 @@ What it needs
     <message>
         <location filename="../../qml/MainWindow.qml" line="644"/>
         <location filename="../../qml/MainWindow.qml" line="732"/>
-        <source>Way Mode</source>
+        <source>Apps</source>
         <translation type="unfinished"></translation>
     </message>
     <message>

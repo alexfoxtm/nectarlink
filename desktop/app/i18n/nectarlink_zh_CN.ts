@@ -162,6 +162,10 @@
 <context>
     <name>AppsPage</name>
     <message>
+        <source>Phone: %1</source>
+        <translation>手机：%1</translation>
+    </message>
+    <message>
         <location filename="../qml/pages/AppsPage.qml" line="94"/>
         <source>Opening phone apps in windows is not yet available on Mac.</source>
         <translation>Mac 上暂不支持在窗口中打开手机应用。</translation>
@@ -3554,7 +3558,7 @@ What it needs
 Streams your phone screen into a low-latency desktop window with hardware-accelerated decoding, or opens individual Android apps in their own windows on your PC.
 
 Where to find it
-- Left navigation rail › Way Mode.
+- Left navigation rail › Apps.
 - Home › Mirror screen quick action.
 
 What it needs
@@ -3565,7 +3569,7 @@ What it needs
 以硬件加速解码将手机屏幕串流到低延迟的桌面窗口，或在电脑上让单个 Android 应用拥有自己的窗口。
 
 位置
-- 左侧导航栏 › Way 模式。
+- 左侧导航栏 › 应用。
 - 首页 › 投屏快捷操作。
 
 需要
@@ -5023,8 +5027,8 @@ What it needs
     <message>
         <location filename="../qml/MainWindow.qml" line="644"/>
         <location filename="../qml/MainWindow.qml" line="732"/>
-        <source>Way Mode</source>
-        <translation>Way 模式</translation>
+        <source>Apps</source>
+        <translation>应用</translation>
     </message>
     <message>
         <location filename="../qml/MainWindow.qml" line="655"/>

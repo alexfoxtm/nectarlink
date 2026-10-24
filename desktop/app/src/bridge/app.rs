@@ -2518,7 +2518,7 @@ fn load_guide_doc_content(raw_key: &str) -> (String, String) {
                 "What it does\n\
              Streams your phone screen into a low-latency desktop window with hardware-accelerated decoding, or opens individual Android apps in their own windows on your PC.\n\n\
              Where to find it\n\
-             - Left navigation rail › Way Mode.\n\
+             - Left navigation rail › Apps.\n\
              - Home › Mirror screen quick action.\n\n\
              What it needs\n\
              - Standard mode mirrors the full phone screen after you tap Start now on Android's screen capture prompt.\n\

@@ -154,17 +154,42 @@ Item {
         anchors.topMargin: 8
 
         Row {
+            id: phoneContext
+            objectName: "appsPhoneContext"
+            anchors.top: parent.top
+            width: parent.width
+            height: 24
+
+            Txt {
+                width: Math.min(parent.width, 320)
+                anchors.verticalCenter: parent.verticalCenter
+                role: "bodySmall"
+                muted: true
+                objectName: "appsPhoneName"
+                text: page.deviceName
+                Accessible.name: page.deviceName
+                elide: Text.ElideRight
+                maximumLineCount: 1
+                wrapMode: Text.NoWrap
+            }
+        }
+
+        Row {
             id: toolbar
+            objectName: "appsToolbar"
+            anchors.top: phoneContext.bottom
+            anchors.topMargin: 8
             width: parent.width
             height: 40
             spacing: 8
 
             Rectangle {
-                width: parent.width - refresh.width - parent.spacing
+                objectName: "appsSearchSurface"
+                width: Math.min(460, parent.width - refresh.width - parent.spacing)
                 height: parent.height
-                radius: Theme.graphite ? Theme.radiusSm : height / 2
-                color: Theme.graphite ? "transparent" : Theme.surfaceContainerHighest
-                border.width: search.activeFocus ? 2 : (Theme.graphite ? 1 : 0)
+                radius: Theme.graphite ? Theme.radiusSm : 12
+                color: Theme.surfaceContainerHighest
+                border.width: search.activeFocus ? 1 : (Theme.graphite ? 1 : 0)
                 border.color: search.activeFocus ? Theme.primary : Theme.outlineVariant
                 Icon {
                     id: searchIcon
@@ -177,6 +202,7 @@ Item {
                 }
                 TextInput {
                     id: search
+                    objectName: "appsSearchField"
                     anchors.left: searchIcon.right
                     anchors.leftMargin: 10
                     anchors.right: parent.right
@@ -192,12 +218,19 @@ Item {
                     Keys.onReturnPressed: if (page.shown.length > 0) page.launch(page.shown[0])
                     Keys.onEnterPressed: if (page.shown.length > 0) page.launch(page.shown[0])
                     Keys.onEscapePressed: text = ""
+                    Keys.onDownPressed: grid.focusFirstApp()
                     Txt {
+                        anchors.left: parent.left
+                        anchors.right: parent.right
                         anchors.verticalCenter: parent.verticalCenter
                         visible: search.text.length === 0
+                        clip: true
                         role: "body"
                         muted: true
                         text: qsTr("Search %1's apps").arg(page.deviceName)
+                        elide: Text.ElideRight
+                        maximumLineCount: 1
+                        wrapMode: Text.NoWrap
                     }
                 }
             }
@@ -213,8 +246,10 @@ Item {
 
         // Loading, failed or empty.
         Column {
+            id: loadStateMessage
+            objectName: "appsLoadState"
             anchors.top: toolbar.bottom
-            anchors.topMargin: 48
+            anchors.topMargin: 32
             width: parent.width
             visible: page.loadState !== "ready" || page.shown.length === 0
             spacing: 12
@@ -234,6 +269,7 @@ Item {
                     : qsTr("Getting the phone's apps…")
             }
             Button {
+                objectName: "appsRetryButton"
                 anchors.horizontalCenter: parent.horizontalCenter
                 visible: page.loadState === "failed"
                 variant: "tonal"
@@ -245,16 +281,33 @@ Item {
 
         GridView {
             id: grid
+            objectName: "appsGrid"
             anchors.top: toolbar.bottom
-            anchors.topMargin: 12
+            anchors.topMargin: 16
             anchors.bottom: parent.bottom
             width: parent.width
             visible: page.loadState === "ready" && page.shown.length > 0
             clip: true
             model: page.shown
-            cellWidth: Math.floor(width / Math.max(1, Math.floor(width / 120)))
-            cellHeight: 116
+            cellWidth: width < 104 ? width : Math.max(104, Math.min(116,
+                Math.floor(width / Math.max(1, Math.round(width / 112)))))
+            cellHeight: 112
+            keyNavigationEnabled: true
+            activeFocusOnTab: true
             boundsBehavior: Flickable.StopAtBounds
+
+            function focusIndex(index) {
+                if (index < 0 || index >= count)
+                    return
+                currentIndex = index
+                positionViewAtIndex(index, GridView.Contain)
+                Qt.callLater(function() {
+                    if (currentItem)
+                        currentItem.forceActiveFocus()
+                })
+            }
+
+            function focusFirstApp() { focusIndex(0) }
             reuseItems: true
             cacheBuffer: 400
 
@@ -295,6 +348,7 @@ Item {
             delegate: AppCell {
                 required property var modelData
                 app: modelData
+                gridNavigation: true
                 width: grid.cellWidth
             }
         }
@@ -303,12 +357,18 @@ Item {
     component AppCell: Item {
         id: cell
         property var app: ({})
+        property bool gridNavigation: false
+        required property int index
         readonly property bool isOpen: page.openPkgs[app.pkg] === true
         height: grid.cellHeight
         activeFocusOnTab: true
         Accessible.role: Accessible.Button
         Accessible.name: isOpen ? qsTr("%1, open").arg(app.label) : app.label
         Accessible.onPressAction: page.launch(app)
+        Keys.onLeftPressed: if (gridNavigation) grid.focusIndex(index - 1)
+        Keys.onRightPressed: if (gridNavigation) grid.focusIndex(index + 1)
+        Keys.onUpPressed: if (gridNavigation) grid.focusIndex(index - Math.max(1, Math.floor(grid.width / grid.cellWidth)))
+        Keys.onDownPressed: if (gridNavigation) grid.focusIndex(index + Math.max(1, Math.floor(grid.width / grid.cellWidth)))
         Keys.onReturnPressed: page.launch(app)
         Keys.onEnterPressed: page.launch(app)
         Keys.onSpacePressed: page.launch(app)
@@ -331,13 +391,15 @@ Item {
         Column {
             anchors.centerIn: parent
             width: parent.width - 12
-            spacing: 8
+            spacing: 6
             Item {
                 anchors.horizontalCenter: parent.horizontalCenter
-                width: 48; height: 48
+                width: 44; height: 53
                 Image {
                     id: icon
-                    anchors.fill: parent
+                    anchors.top: parent.top
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: 44; height: 44
                     source: cell.app.icon || ""
                     sourceSize: Qt.size(96, 96)
                     asynchronous: true
@@ -346,7 +408,9 @@ Item {
                     visible: status === Image.Ready
                 }
                 Avatar {
-                    anchors.fill: parent
+                    anchors.top: parent.top
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: 44; height: 44
                     visible: icon.status !== Image.Ready
                     name: cell.app.label || ""
                 }
@@ -354,8 +418,8 @@ Item {
                 Rectangle {
                     visible: cell.isOpen
                     anchors.horizontalCenter: parent.horizontalCenter
-                    anchors.top: parent.bottom
-                    anchors.topMargin: 3
+                    anchors.top: parent.top
+                    anchors.topMargin: 47
                     width: 6; height: 6
                     radius: 3
                     color: Theme.primary

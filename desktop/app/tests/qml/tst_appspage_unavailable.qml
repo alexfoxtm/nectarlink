@@ -8,7 +8,7 @@ import app.nectarlink
 // adapters are passive and only supply connection/capability values.
 TestCase {
     id: testCase
-    name: "AppsPage unavailable accessibility"
+    name: "AppsPage"
     when: windowShown
 
     property var pageComponent
@@ -26,6 +26,7 @@ TestCase {
         Mirror.recentApps = "[]"
         Mirror.appsError = ""
         Mirror.windows = "[]"
+        Mirror.calls = []
     }
 
     function createVisiblePage(featureState) {
@@ -60,6 +61,53 @@ TestCase {
         Mirror.apps = "[]"
         Mirror.recentApps = "[]"
         Mirror.windows = "[]"
+        Mirror.calls = []
+    }
+
+    function test_keyboard_search_navigates_and_launches_selected_app() {
+        Mirror.appsDevice = "phone-1"
+        Mirror.appsState = "ready"
+        Mirror.apps = JSON.stringify([
+            { label: "Calculator", pkg: "com.example.calculator", icon: "" },
+            { label: "Calendar", pkg: "com.example.calendar", icon: "" }
+        ])
+        Mirror.calls = []
+        const page = createVisiblePage({ state: "available", reason: "" })
+        const phoneName = findChild(page, "appsPhoneName")
+        const search = findChild(page, "appsSearchField")
+        const searchSurface = findChild(page, "appsSearchSurface")
+        const grid = findChild(page, "appsGrid")
+        verify(phoneName !== null && search !== null && searchSurface !== null && grid !== null)
+        verify(phoneName.width <= 320)
+        verify(searchSurface.width <= 460)
+        tryVerify(() => grid.visible && grid.count === 2)
+
+        pageHost.requestActivate()
+        tryVerify(() => pageHost.active)
+        search.forceActiveFocus()
+        tryVerify(() => search.activeFocus)
+        keyClick(Qt.Key_Down)
+        tryVerify(() => grid.currentIndex === 0 && grid.currentItem && grid.currentItem.activeFocus)
+        keyClick(Qt.Key_Right)
+        tryVerify(() => grid.currentIndex === 1 && grid.currentItem && grid.currentItem.activeFocus)
+        keyClick(Qt.Key_Return)
+        tryVerify(() => Mirror.calls.length === 1)
+        compare(Mirror.calls[0][0], "startApp")
+        compare(Mirror.calls[0][1], "phone-1")
+        compare(Mirror.calls[0][2], "com.example.calendar")
+        compare(Mirror.calls[0][3], "Calendar")
+    }
+
+    function test_failed_load_keeps_retry_message_visible() {
+        Mirror.appsDevice = "phone-1"
+        Mirror.appsState = "failed"
+        Mirror.appsError = "Could not load phone apps."
+        const page = createVisiblePage({ state: "available", reason: "" })
+        const message = findChild(page, "appsLoadState")
+        const retry = findChild(page, "appsRetryButton")
+        verify(message !== null && message.visible)
+        verify(retry !== null && retry.visible)
+        compare(retry.text, "Try again")
     }
 
     function test_unavailable_connection_reason_is_neutral_and_accessible() {

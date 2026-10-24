@@ -32,6 +32,7 @@ QtObject {
     function setScreenOff(key, on) { record("setScreenOff", [key, on]) }
     function setStayAwake(key, on) { record("setStayAwake", [key, on]) }
     function stop(key) { record("stop", [key]) }
+    function startApp(deviceId, pkg, label) { record("startApp", [deviceId, pkg, label]) }
     function syncClipboardOnFocus(key) { record("syncClipboardOnFocus", [key]) }
     function text(key, value) { record("text", [key, value]) }
     function toggleRecording(key) { record("toggleRecording", [key]) }
