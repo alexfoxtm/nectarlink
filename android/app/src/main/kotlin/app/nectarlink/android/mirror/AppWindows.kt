@@ -30,8 +30,58 @@ import java.net.Socket
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+
+/** Binds callback-entry state, then completes all admission work off the native callback stack. */
+internal fun <T, R> appWindowAdmission(bind: () -> T, work: (T) -> R): R {
+    val bound = bind()
+    if (Thread.currentThread().name.startsWith(ADMISSION_THREAD)) return work(bound)
+    val onWorker = CountDownLatch(1)
+    val completed = CompletableFuture<R>()
+    var interrupted = Thread.interrupted()
+    admissionThreads().execute {
+        try {
+            completed.complete(work(bound))
+        } catch (failure: Throwable) {
+            completed.completeExceptionally(failure)
+        } finally {
+            onWorker.countDown()
+        }
+    }
+    // Completion is mandatory: never abandon a worker that may act after Core's return.
+    while (true) {
+        try {
+            onWorker.await()
+            break
+        } catch (_: InterruptedException) {
+            interrupted = true
+        }
+    }
+    if (interrupted) Thread.currentThread().interrupt()
+    return try {
+        completed.get()
+    } catch (wrapped: java.util.concurrent.ExecutionException) {
+        throw wrapped.cause ?: wrapped
+    }
+}
+
+private const val ADMISSION_THREAD = "app-window-admission"
+
+private fun admissionThreads(): ExecutorService = AdmissionThreads.INSTANCE
+
+private enum class AdmissionThreads {
+    ;
+    companion object {
+        val INSTANCE: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, ADMISSION_THREAD).apply { isDaemon = true }
+        }
+    }
+}
 
 /**
  * Phone apps in windows of their own on a PC (Elevated): each runs on a
@@ -42,8 +92,10 @@ import kotlin.math.roundToInt
 class AppWindows(
     context: Context,
     private val scope: CoroutineScope,
-    /** Captures the actual receiving Node and accepted request, never a later Node. */
-    private val owner: (String, UInt, ULong, ULong, ULong) -> Pair<NectarlinkNode, PhoneControlContext>?,
+    /** Pure callback-entry snapshot; reading the Core field does not enter native code. */
+    private val ownerSnapshot: () -> NectarlinkNode?,
+    /** Resolves the accepted tuple and uses only this callback's bound Node. */
+    private val owner: (NectarlinkNode?, String, UInt, ULong, ULong, ULong) -> Pair<NectarlinkNode, PhoneControlContext>?,
     private val currentNode: (NectarlinkNode) -> Boolean,
     /** A PC's name. */
     private val nameOf: (String) -> String,
@@ -83,7 +135,9 @@ class AppWindows(
 
     /** Runs the PC app on a display of its own and streams it; false if it cannot. */
     fun open(pc: String, options: MirrorOptions, connection: ULong, capture: ULong): Boolean =
-        openInternal(pc, options, connection, capture, settingsOffer = null)
+        appWindowAdmission(ownerSnapshot) { receivingNode ->
+            openInternal(receivingNode, pc, options, connection, capture, settingsOffer = null)
+        }
 
     /** The only qualified provider is the existing Elevated virtual-display app path. */
     fun settingsWindowQualificationSupported(): Boolean =
@@ -102,12 +156,18 @@ class AppWindows(
             options.app == SETTINGS_PACKAGE && options.session != 0u && options.request != null && options.request != 0uL &&
             options.maxSize == 1920u && options.fps == 60u && options.bitrate == 8_000_000u &&
             !options.audio && !options.stayAwake && !options.screenOff
-        val opened = valid && openInternal(pc, options, connection, capture, settingsOffer = offer)
+        // A Rust Platform callback may still be on its native call stack. Bind
+        // Core's Node before scheduling, then do every owner/Node check and the
+        // launch on one managed worker. Return only its completed result.
+        val opened = valid && appWindowAdmission(ownerSnapshot) { receivingNode ->
+            openInternal(receivingNode, pc, options, connection, capture, settingsOffer = offer)
+        }
         if (!opened) onSettingsQualificationEnded(pc, offer)
         return opened
     }
 
     private fun openInternal(
+        receivingNode: NectarlinkNode?,
         pc: String,
         options: MirrorOptions,
         connection: ULong,
@@ -117,7 +177,7 @@ class AppWindows(
         val pkg = options.app ?: return false
         val request = options.request ?: return false
         if (pkg == context.packageName || options.session == 0u || (settingsOffer != null && !settingsWindowQualificationSupported())) return false
-        val (node, accepted) = owner(pc, options.session, request, connection, capture) ?: return false
+        val (node, accepted) = owner(receivingNode, pc, options.session, request, connection, capture) ?: return false
         val current = {
             runCatching {
                 currentNode(node) && node.mirrorCaptureCurrent(pc, accepted) &&
@@ -240,7 +300,9 @@ class AppWindows(
     /** The PC closed a window. */
     fun close(pc: String, session: UInt, request: ULong, connection: ULong, capture: ULong) {
         val window = windows[pc to session] ?: return
-        if (window.owner.request == request && window.owner.connection == connection && window.owner.capture == capture) close(window)
+        if (window.owner.request == request && window.owner.connection == connection && window.owner.capture == capture) {
+            if (window.settingsOffer != null) appWindowAdmission({ window }, ::close) else close(window)
+        }
     }
 
     private fun close(window: Window) {
@@ -272,8 +334,10 @@ class AppWindows(
     /** Qualified keyframes require the exact active Settings capture context. */
     fun keyframeOwned(pc: String, owner: PhoneControlContext) {
         val window = windows[pc to owner.session] ?: return
-        if (window.settingsOffer == null || !matches(window, owner) || !owns(window)) return
-        keyframe(window)
+        if (window.settingsOffer == null) return
+        appWindowAdmission({ window }) { selected ->
+            if (matches(selected, owner) && owns(selected)) keyframe(selected)
+        }
     }
 
     private fun matches(window: Window, owner: PhoneControlContext): Boolean =
@@ -294,6 +358,15 @@ class AppWindows(
     /** The PC resized an app window: fit to encoder limits and tell the helper. */
     fun resize(pc: String, owner: PhoneControlContext, width: Int, height: Int) {
         val window = windows[pc to owner.session] ?: return
+        if (window.settingsOffer != null) {
+            appWindowAdmission({ window }) { selected -> resizeOwned(selected, owner, width, height) }
+            return
+        }
+        if (window.owner.request != owner.request || window.owner.connection != owner.connection || window.owner.capture != owner.capture) return
+        resizeOwned(window, owner, width, height)
+    }
+
+    private fun resizeOwned(window: Window, owner: PhoneControlContext, width: Int, height: Int) {
         if (window.owner.request != owner.request || window.owner.connection != owner.connection || window.owner.capture != owner.capture) return
         val (phoneW, phoneH) = screen()
         val (newW, newH) = WindowShape.fit(width, height, window.maxSize, phoneW, phoneH)
@@ -320,6 +393,19 @@ class AppWindows(
     /** The PC's mouse and keyboard on a window. */
     fun input(pc: String, owner: PhoneControlContext, event: MirrorInputEvent, admitted: () -> Boolean) {
         val window = windows[pc to owner.session] ?: return
+        if (window.settingsOffer != null) {
+            appWindowAdmission({ window }) { selected -> inputOwned(selected, owner, event, admitted) }
+            return
+        }
+        inputOwned(window, owner, event, admitted)
+    }
+
+    private fun inputOwned(
+        window: Window,
+        owner: PhoneControlContext,
+        event: MirrorInputEvent,
+        admitted: () -> Boolean,
+    ) {
         if (window.owner.request != owner.request || window.owner.connection != owner.connection || window.owner.capture != owner.capture) return
         // Settings qualification admits only a harmless scroll under the existing real grant.
         if (window.settingsOffer != null) {

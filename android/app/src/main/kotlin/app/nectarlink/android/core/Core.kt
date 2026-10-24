@@ -107,8 +107,8 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
     }
     private val appWindows = AppWindows(
         this.context, scope,
-        owner = { pc, session, request, connection, capture ->
-            val receivingNode = node
+        ownerSnapshot = { node },
+        owner = { receivingNode, pc, session, request, connection, capture ->
             val accepted = runCatching { receivingNode?.mirrorCaptureContextForSession(pc, session, request) }.getOrNull()
             if (receivingNode != null && node === receivingNode && accepted != null &&
                 accepted.connection == connection && accepted.capture == capture
