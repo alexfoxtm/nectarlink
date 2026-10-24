@@ -1214,6 +1214,43 @@ mod tests {
         assert_eq!(bytes[stsz + 8..stsz + 12], 1u32.to_be_bytes(), "only the sample before the limit");
     }
 
+    /// A sample write that fails after the recorder already owns bytes.
+    /// Create-collision coverage never reaches `write_all`. This swaps in a
+    /// closed anonymous pipe so the existing `File::write_all` arm returns
+    /// a real I/O error. Not a disk or volume fault.
+    #[test]
+    fn mid_write_failure_poisons_and_removes_only_the_owned_prefix() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("owned-prefix.mp4");
+        let sibling = dir.path().join("owner.txt");
+        std::fs::write(&sibling, b"owner-bytes").unwrap();
+        let fixture = include_bytes!("testdata/red-32x32.annexb");
+
+        let mut rec = MirrorRecorder::new(path.clone(), 32, 32, 30, None);
+        rec.on_packet(false, 0, fixture).unwrap();
+        let prefix_len = std::fs::metadata(&path).unwrap().len();
+        assert!(prefix_len > 0, "the first sample owns a real prefix");
+        assert!(rec.io_failure().is_none());
+
+        let (reader, writer) = std::io::pipe().unwrap();
+        drop(reader);
+        rec.file = Some(std::fs::File::from(std::os::fd::OwnedFd::from(writer)));
+
+        let failed = rec.on_packet(false, 33_333, fixture).unwrap_err();
+        let stored = rec.io_failure().expect("a sample write failure poisons the recorder");
+        assert_eq!(stored, failed);
+        assert!(!stored.contains("owned-prefix.mp4"), "sample write errors must not carry the path");
+        assert!(rec.format_changed().is_none(), "a write failure is not a format change");
+        assert!(rec.limit_reached().is_none(), "a write failure is not a length limit");
+        assert_eq!(std::fs::metadata(&path).unwrap().len(), prefix_len, "the failed sample is not appended");
+        assert!(rec.on_packet(false, 66_666, fixture).is_err(), "poison stays sticky");
+        assert_eq!(std::fs::metadata(&path).unwrap().len(), prefix_len);
+
+        assert!(rec.finish().is_err(), "finish must not claim the torn recording");
+        assert!(!path.exists(), "finish removes only the owned prefix");
+        assert_eq!(std::fs::read(&sibling).unwrap(), b"owner-bytes");
+    }
+
     #[test]
     fn local_timestamp_filename_formats_correctly() {
         let name = local_timestamp_filename("Screen", "mp4");
