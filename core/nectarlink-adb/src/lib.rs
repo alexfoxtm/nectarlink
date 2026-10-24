@@ -280,16 +280,41 @@ pub async fn forward_tcp(
     if !is_serial_allowed(serial) {
         return Err(AdbError::BlockedSerial(serial.to_owned()));
     }
-    let port = if local_port == 0 {
-        let listener = TcpListener::bind("127.0.0.1:0").await?;
-        listener.local_addr()?.port()
-    } else {
-        local_port
-    };
-    let mut stream = TcpStream::connect(server).await?;
-    let cmd = format!("host-serial:{serial}:forward:tcp:{port};tcp:{remote_port}");
-    send_command(&mut stream, &cmd).await?;
-    Ok(port)
+    let mut port = if local_port == 0 { free_local_port().await? } else { local_port };
+    let mut attempts = 0;
+    loop {
+        let mut stream = TcpStream::connect(server).await?;
+        let cmd = format!("host-serial:{serial}:forward:tcp:{port};tcp:{remote_port}");
+        match send_command(&mut stream, &cmd).await {
+            Ok(()) => return Ok(port),
+            // A port that was free a moment ago can still be taken by the time
+            // adb binds it (on WSL the Windows side can hold a port the Linux
+            // side just closed). Only then is another port worth trying.
+            Err(AdbError::Remote(reason))
+                if local_port == 0 && attempts < BIND_RETRIES && is_bind_failure(&reason) =>
+            {
+                attempts += 1;
+                port = free_local_port().await?;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+
+/// How many other ports [`forward_tcp`] tries when adb can't bind the one it picked.
+const BIND_RETRIES: u32 = 4;
+
+/// A local TCP port that is free right now.
+async fn free_local_port() -> Result<u16, AdbError> {
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    Ok(listener.local_addr()?.port())
+}
+
+/// Whether an adb `FAIL` reason means the local port couldn't be bound,
+/// for example "cannot bind listener: Address already in use".
+fn is_bind_failure(reason: &str) -> bool {
+    let reason = reason.to_ascii_lowercase();
+    reason.contains("cannot bind") || reason.contains("already in use")
 }
 
 /// Removes a TCP port forward (`adb -s <serial> forward --remove tcp:<local>`).
@@ -475,6 +500,57 @@ adb-BROKEN\t_adb-tls-connect._tcp.\tnope:notaport\n";
         assert_eq!(devices[0].usb, Some(String::new()));
         assert_eq!(devices[0].medium(), TunnelMedium::Unknown);
     }
+
+    /// A mock adb server that answers each `forward` with the next of
+    /// `replies` (`None` = OKAY, `Some(reason)` = FAIL) and records the commands.
+    async fn forward_server(replies: Vec<Option<&'static str>>) -> (SocketAddr, Arc<Mutex<Vec<String>>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let commands = Arc::new(Mutex::new(Vec::new()));
+        let seen = commands.clone();
+        tokio::spawn(async move {
+            let mut replies = replies.into_iter();
+            while let Ok((mut socket, _)) = listener.accept().await {
+                let Ok(cmd) = read_payload(&mut socket).await else { continue };
+                seen.lock().unwrap().push(cmd);
+                match replies.next().flatten() {
+                    None => {
+                        let _ = socket.write_all(b"OKAY").await;
+                    }
+                    Some(reason) => {
+                        let frame = format!("FAIL{:04x}{reason}", reason.len());
+                        let _ = socket.write_all(frame.as_bytes()).await;
+                    }
+                }
+                let _ = socket.flush().await;
+            }
+        });
+        (addr, commands)
+    }
+
+    #[tokio::test]
+    async fn forward_tries_another_port_only_when_adb_cannot_bind() {
+        let (addr, commands) =
+            forward_server(vec![Some("cannot bind listener: Address already in use"), None]).await;
+        let port = forward_tcp(addr, "emulator-5554", 0, 53319).await.unwrap();
+        let commands = commands.lock().unwrap().clone();
+        assert_eq!(commands.len(), 2, "one retry after the bind failure");
+        assert!(commands[1].contains(&format!("forward:tcp:{port};tcp:53319")));
+
+        let (addr, commands) = forward_server(vec![Some("device offline")]).await;
+        let err = forward_tcp(addr, "emulator-5554", 0, 53319).await.unwrap_err();
+        assert!(matches!(err, AdbError::Remote(ref r) if r == "device offline"));
+        assert_eq!(commands.lock().unwrap().len(), 1, "other errors are not retried");
+
+        let (addr, commands) = forward_server(vec![Some("cannot bind listener"); 10]).await;
+        assert!(forward_tcp(addr, "emulator-5554", 0, 53319).await.is_err());
+        assert_eq!(commands.lock().unwrap().len(), 1 + BIND_RETRIES as usize, "retries are bounded");
+
+        let (addr, commands) = forward_server(vec![Some("cannot bind listener")]).await;
+        assert!(forward_tcp(addr, "emulator-5554", 5000, 53319).await.is_err());
+        assert_eq!(commands.lock().unwrap().len(), 1, "a port the caller chose is not swapped");
+    }
+
 
     #[tokio::test]
     async fn mock_adb_server_forward_killforward_and_track_devices() {
