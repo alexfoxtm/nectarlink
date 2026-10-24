@@ -644,7 +644,10 @@
     <string name="keyboard_stop">停止输入</string>
     <string name="keyboard_stop_not_saved">无法保存停止操作。本次会话中已阻止输入；重启后，故障安全恢复会继续阻止已配对电脑。</string>
     <string name="keyboard_stop_wait_for_node">Waypair Link 尚未就绪，无法保存停止操作。重新连接后请重试。</string>
-    <string name="keyboard_recovery_required">Waypair Link 正在阻止此电脑向手机输入。要恢复输入，请关闭再重新打开“屏幕共享和输入”。如果开关已关闭，请先打开；若此提示仍显示，再关闭并重新打开。</string>
+    <string name="keyboard_recovery_required">已停止允许此电脑控制手机。</string>
+    <string name="phone_control_resume">恢复手机控制</string>
+    <string name="phone_control_resume_hint">这会结束当前的屏幕共享。请从 Mac 重新开始屏幕镜像。</string>
+    <string name="phone_control_resume_unavailable">恢复控制需要此手机已连接，并同时开启屏幕共享和手机控制。</string>
     <string name="widget_pc_title">电脑快捷操作</string>
     <string name="widget_pc_description">已配对电脑的连接状态、发送剪贴板、电脑响铃、锁定电脑和唤醒。</string>
     <string name="widget_pc_no_pc">未配对电脑</string>

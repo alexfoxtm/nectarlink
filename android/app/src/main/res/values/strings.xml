@@ -692,7 +692,10 @@
     <string name="keyboard_stop">Stop typing</string>
     <string name="keyboard_stop_not_saved">The stop could not be saved. Typing is blocked for this session; fail-closed recovery will keep paired PCs blocked after a restart.</string>
     <string name="keyboard_stop_wait_for_node">Waypair Link is not ready, so the stop could not be saved. Try again after it reconnects.</string>
-    <string name="keyboard_recovery_required">Waypair Link is blocking typing from this PC. To resume, turn mirroring off and then on. If it is already off, turn it on first; if this notice remains, turn it off and on again.</string>
+    <string name="keyboard_recovery_required">Phone control is stopped for this computer.</string>
+    <string name="phone_control_resume">Resume phone control</string>
+    <string name="phone_control_resume_hint">This ends the current screen share. Start mirroring again from the Mac.</string>
+    <string name="phone_control_resume_unavailable">Resume needs this phone connected with screen sharing and phone control both on.</string>
 
     <!-- Home-screen PC widget -->
     <string name="widget_pc_title">PC quick actions</string>

@@ -620,11 +620,36 @@ fun SettingsScreen(
                                     }
                                 }
                                 if (device.id in state.typingStoppedPcIds) {
-                                    Text(
-                                        stringResource(R.string.keyboard_recovery_required),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.error,
-                                    )
+                                    val canResumeControl = state.status is app.nectarlink.android.core.CoreStatus.Ready &&
+                                        device.online && device.mirroringEnabled && device.phoneControlEnabled
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Text(
+                                            stringResource(R.string.keyboard_recovery_required),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.error,
+                                        )
+                                        if (canResumeControl) {
+                                            FilledTonalButton(
+                                                onClick = {
+                                                    onSetMirroringEnabled(device.id, false)
+                                                    onSetMirroringEnabled(device.id, true)
+                                                },
+                                            ) {
+                                                Text(stringResource(R.string.phone_control_resume))
+                                            }
+                                            Text(
+                                                stringResource(R.string.phone_control_resume_hint),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        } else {
+                                            Text(
+                                                stringResource(R.string.phone_control_resume_unavailable),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
