@@ -166,6 +166,11 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "leaveWindow"]
         fn leave_window(self: &Mirror);
+        /// Emitted after `start` when the screen window is already showing,
+        /// so QML can raise the existing window instead of duplicating it.
+        #[qsignal]
+        #[cxx_name = "activateWindow"]
+        fn activate_window(self: Pin<&mut Mirror>, key: QString);
     }
 }
 
@@ -318,8 +323,16 @@ impl qobject::Mirror {
     }
 
     pub fn start(&self, device: &QString) {
-        if let Some(device) = super::parse_device(device) {
-            mirror::start(device);
+        let Some(device) = super::parse_device(device) else { return };
+        // In VIEW_ONLY builds backend start early-returns while the screen
+        // window is Showing (re-asking would orphan the live stream), so QML
+        // never gets a new window. Surface that as an activation so the
+        // existing window is raised instead.
+        let window = Window::screen(device);
+        mirror::start(device);
+        if mirror::phase(&window) == Some(Phase::Showing) {
+            let key = QString::from(&window.key());
+            let _ = self.qt_thread().queue(move |mut object| object.activate_window(key));
         }
     }
 

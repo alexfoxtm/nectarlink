@@ -2,6 +2,7 @@
 import QtQuick
 import QtQml
 import QtQml.Models
+import QtQuick.Window
 import app.nectarlink
 
 // Application root. The main window exists only while it's open: closing it
@@ -90,6 +91,18 @@ QtObject {
     property var openMirrors: ({})
     readonly property Component mirrorWindowComponent: Component {
         MirrorWindow {}
+    }
+
+    // Raised by Mirror.activateWindow when start() finds the screen window
+    // already showing: focus the existing window instead of duplicating it.
+    function activateMirrorWindow(key: string) {
+        const w = app.openMirrors[key]
+        if (!w)
+            return
+        if (w.visibility === Window.Minimized)
+            w.showNormal()
+        w.raise()
+        w.requestActivate()
     }
 
     function syncMirrorWindows() {
@@ -181,6 +194,11 @@ QtObject {
         target: Qt.styleHints
         property: "colorScheme"
         value: Theme.dark ? Qt.ColorScheme.Dark : Qt.ColorScheme.Light
+    }
+
+    readonly property Connections mirrorController: Connections {
+        target: Mirror
+        function onActivateWindow(key: string) { app.activateMirrorWindow(key) }
     }
 
     readonly property Connections controller: Connections {

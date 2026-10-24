@@ -93,8 +93,11 @@ Window {
     title: info.app ? qsTr("%1 · %2").arg(info.title).arg(deviceName)
          : deviceName.length > 0 ? qsTr("%1 · Waypair Link").arg(deviceName) : qsTr("Phone screen · Waypair Link")
     color: "black"
-    minimumWidth: Math.max(0, Math.min(240, availableArea.width * 0.95))
-    minimumHeight: Math.max(0, Math.min(240, availableArea.height * 0.95))
+    // No fixed minimum: a floor would independently clamp (or upscale) the
+    // natural device-pixel size computed below, breaking the no-upscale /
+    // aspect-ratio guarantee for small or landscape frames.
+    minimumWidth: 0
+    minimumHeight: 0
 
     // A phone-shaped window the first time a picture arrives (portrait or
     // landscape), within the screen, or restored to where the user left it.
@@ -143,8 +146,30 @@ Window {
         }
     }
 
-    onWidthChanged: if (info.app && sized && readyForResize) resizeTimer.restart()
-    onHeightChanged: if (info.app && sized && readyForResize) resizeTimer.restart()
+    // Manual resize override: user drags mark userResized; visibility
+    // transitions (fullscreen, minimize/restore) are not user resizes.
+    property bool userResized: false
+    onVisibilityChanged: {
+        if (!win.visible || userResized)
+            return
+        // Re-fit only for non-fullscreen transitions (e.g. restore from
+        // minimize); never during a fullscreen state. The manual override
+        // flag is intentionally preserved across visibility changes.
+        if (visibility !== Window.FullScreen)
+            fitFrameToAvailableArea()
+    }
+    onWidthChanged: {
+        if (!sized || !readyForResize || fullScreen)
+            return
+        userResized = true
+        resizeTimer.restart()
+    }
+    onHeightChanged: {
+        if (!sized || !readyForResize || fullScreen)
+            return
+        userResized = true
+        resizeTimer.restart()
+    }
     onXChanged: if (info.app && sized && readyForResize) moveTimer.restart()
     onYChanged: if (info.app && sized && readyForResize) moveTimer.restart()
     onPhaseChanged: {
@@ -160,6 +185,8 @@ Window {
     onActiveChanged: if (win.active && !win.settingsWindow) Mirror.syncClipboardOnFocus(win.mirrorKey)
     function fitFrameToAvailableArea() {
         if (frame.width <= 0)
+            return
+        if (userResized)
             return
         const area = availableArea
         const availW = area.width
@@ -182,15 +209,21 @@ Window {
             Qt.callLater(() => { win.readyForResize = true; resizeTimer.restart() })
             return
         }
+        // Natural display size: decoded frame pixels are device pixels, so
+        // divide by devicePixelRatio for logical points, then fit without
+        // upscaling, preserving aspect ratio.
+        const dpr = Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1
+        const naturalW = frame.width / dpr
+        const naturalH = frame.height / dpr
         const maxH = availH * 0.85
         const maxW = availW * 0.85
-        const scale = Math.min(maxH / frame.height, maxW / frame.width, 1)
+        const scale = Math.min(maxH / naturalH, maxW / naturalW, 1)
         if (!sized || (!info.app && !fullScreen && Math.abs(width / height - frame.width / frame.height) > 0.05)) {
             readyForResize = false
             const oldCenterX = x + width / 2
             const oldCenterY = y + height / 2
-            width = Math.round(frame.width * scale)
-            height = Math.round(frame.height * scale)
+            width = Math.round(naturalW * scale)
+            height = Math.round(naturalH * scale)
             if (sized) {
                 const p = clampedPosition(oldCenterX - width / 2, oldCenterY - height / 2, width, height)
                 x = p.x
