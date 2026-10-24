@@ -81,7 +81,15 @@ pub mod qobject {
         /// Saves an app window's position and size on this PC.
         #[qinvokable]
         #[cxx_name = "saveGeometry"]
-        fn save_geometry(self: &Mirror, key: &QString, x: i32, y: i32, width: u32, height: u32);
+        fn save_geometry(
+            self: &Mirror,
+            key: &QString,
+            x: i32,
+            y: i32,
+            width: u32,
+            height: u32,
+            user_resized: bool,
+        );
         /// Loads a phone's apps (into `apps`).
         #[qinvokable]
         #[cxx_name = "loadApps"]
@@ -267,6 +275,7 @@ impl qobject::Mirror {
                     "savedY": geom.map(|g| g.y),
                     "savedWidth": geom.map(|g| g.width).unwrap_or(0),
                     "savedHeight": geom.map(|g| g.height).unwrap_or(0),
+                    "savedUserResized": geom.is_some_and(|g| g.user_resized),
                 })
             })
             .collect();
@@ -367,9 +376,9 @@ impl qobject::Mirror {
         }
     }
 
-    pub fn save_geometry(&self, key: &QString, x: i32, y: i32, width: u32, height: u32) {
+    pub fn save_geometry(&self, key: &QString, x: i32, y: i32, width: u32, height: u32, user_resized: bool) {
         if let Some(window) = Window::parse(&String::from(key)) {
-            mirror::save_geometry(window, x, y, width, height);
+            mirror::save_geometry(window, x, y, width, height, user_resized);
         }
     }
 

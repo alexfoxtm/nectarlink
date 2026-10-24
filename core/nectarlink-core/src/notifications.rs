@@ -70,7 +70,7 @@ impl NotificationActionContext {
         if !Self::owner_current(shared, session) {
             return None;
         }
-        let active = authority.for_peer(session.peer);
+        let active = authority.for_peer(session.peer, session);
         Some(Self { shared: shared.clone(), session: session.clone(), active })
     }
 
@@ -91,27 +91,61 @@ impl NotificationActionContext {
     }
 }
 
-/// One current token per peer with an admitted action. Revocation removes it;
-/// retained contexts keep the retired token, and a later admission gets a new one.
+/// One current token per peer with an admitted action. The token is bound to
+/// the session that admitted it. A different session retires that token.
+/// Revocation removes it. Retained contexts keep the retired token, and a
+/// later admission gets a new one.
 #[derive(Default)]
 pub(crate) struct ActionAuthority {
-    peers: HashMap<DeviceId, Arc<AtomicBool>>,
+    peers: HashMap<DeviceId, PeerToken>,
+}
+
+struct PeerToken {
+    active: Arc<AtomicBool>,
+    session_ptr: usize,
 }
 
 impl ActionAuthority {
-    fn for_peer(&mut self, peer: DeviceId) -> Arc<AtomicBool> {
-        self.peers.entry(peer).or_insert_with(|| Arc::new(AtomicBool::new(true))).clone()
+    fn for_peer(&mut self, peer: DeviceId, session: &Arc<Session>) -> Arc<AtomicBool> {
+        self.token_for(peer, Arc::as_ptr(session) as usize)
+    }
+
+    /// Returns the live token for this session pointer. A different pointer
+    /// releases the previous token before the new one is stored.
+    fn token_for(&mut self, peer: DeviceId, session_ptr: usize) -> Arc<AtomicBool> {
+        if let Some(existing) = self.peers.get(&peer) {
+            if existing.session_ptr == session_ptr {
+                return existing.active.clone();
+            }
+            existing.active.store(false, Ordering::Release);
+        }
+        let active = Arc::new(AtomicBool::new(true));
+        self.peers.insert(peer, PeerToken { active: active.clone(), session_ptr });
+        active
+    }
+
+    /// Retires the token only when it still belongs to this session. A newer
+    /// admission for the same peer is left in place.
+    pub(crate) fn revoke_session(&mut self, peer: &DeviceId, session: &Arc<Session>) {
+        self.retire_if_session(peer, Arc::as_ptr(session) as usize);
+    }
+
+    fn retire_if_session(&mut self, peer: &DeviceId, session_ptr: usize) {
+        let matches = self.peers.get(peer).is_some_and(|token| token.session_ptr == session_ptr);
+        if matches && let Some(token) = self.peers.remove(peer) {
+            token.active.store(false, Ordering::Release);
+        }
     }
 
     pub(crate) fn revoke_peer(&mut self, peer: &DeviceId) {
-        if let Some(active) = self.peers.remove(peer) {
-            active.store(false, Ordering::Release);
+        if let Some(token) = self.peers.remove(peer) {
+            token.active.store(false, Ordering::Release);
         }
     }
 
     pub(crate) fn revoke_all(&mut self) {
-        for (_, active) in self.peers.drain() {
-            active.store(false, Ordering::Release);
+        for (_, token) in self.peers.drain() {
+            token.active.store(false, Ordering::Release);
         }
     }
 }
@@ -488,3 +522,42 @@ async fn run_blocking(
 
 /// Per-session record of which apps' icons were sent.
 pub(crate) type SentIcons = Mutex<HashSet<String>>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn peer() -> DeviceId {
+        DeviceId([7; 32])
+    }
+
+    #[test]
+    fn same_session_reuses_the_action_token() {
+        let feed = Feed::default();
+        let mut authority = feed.action_authority();
+        let session = 0xA11usize;
+        let first = authority.token_for(peer(), session);
+        let second = authority.token_for(peer(), session);
+        assert!(Arc::ptr_eq(&first, &second));
+        assert!(first.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn a_different_session_retires_the_previous_action_token() {
+        let feed = Feed::default();
+        let mut authority = feed.action_authority();
+        let id = peer();
+        let old = authority.token_for(id, 0x01);
+        let current = authority.token_for(id, 0x02);
+        assert!(!Arc::ptr_eq(&old, &current));
+        assert!(!old.load(Ordering::Acquire));
+        assert!(current.load(Ordering::Acquire));
+        authority.retire_if_session(&id, 0x01);
+        assert!(current.load(Ordering::Acquire));
+        authority.retire_if_session(&id, 0x02);
+        assert!(!current.load(Ordering::Acquire));
+        let later = authority.token_for(id, 0x03);
+        assert!(later.load(Ordering::Acquire));
+        assert!(!Arc::ptr_eq(&later, &current));
+    }
+}

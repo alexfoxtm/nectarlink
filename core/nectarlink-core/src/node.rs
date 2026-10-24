@@ -1616,6 +1616,7 @@ impl Shared {
             conn.close(VarInt::from_u32(CLOSE_NORMAL), b"away mode disabled");
             return None;
         }
+        let mut replaced_session = None;
         let mut sessions = lock(&self.sessions);
         if let Some(existing) = sessions.get(&peer).filter(|s| s.is_alive()) {
             let keep_existing = existing.dialer != dialer && existing.dialer < dialer;
@@ -1624,6 +1625,7 @@ impl Shared {
                 conn.close(VarInt::from_u32(CLOSE_DUPLICATE), b"duplicate");
                 return None;
             }
+            replaced_session = Some(existing.clone());
             existing.close(CLOSE_DUPLICATE, b"duplicate");
         }
 
@@ -1651,6 +1653,11 @@ impl Shared {
         });
         sessions.insert(peer, session.clone());
         drop(sessions);
+        if let Some(previous) = replaced_session {
+            // Authority is taken only after the sessions lock is released.
+            // Admission locks authority and then looks up the live session.
+            self.notifications.action_authority().revoke_session(&previous.peer, &previous);
+        }
         self.dispatch_mirror_stops(peer, mirror_owners);
         for owner in camera_owners {
             crate::webcam_owned::request_cleanup(owner);
@@ -1736,6 +1743,7 @@ impl Shared {
                 self.set_link(ended.peer, LinkState::Offline { last_seen: Some(crate::now_unix()) });
             }
             drop(sessions);
+            self.notifications.action_authority().revoke_session(&ended.peer, ended);
             self.dispatch_mirror_stops(ended.peer, mirror_owners);
             for owner in camera_owners {
                 crate::webcam_owned::request_cleanup(owner);

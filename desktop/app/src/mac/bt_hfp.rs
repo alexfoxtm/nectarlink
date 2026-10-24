@@ -458,9 +458,11 @@ fn setup_detail(setup: &str, name: &str) -> String {
         "choose-phone" => tr!("BtHfp", "Choose which of this Mac's paired Bluetooth devices is this phone."),
         "microphone-undecided" => tr!("BtHfp", "Allow microphone access to use this Mac for calls."),
         "bluetooth-undecided" => tr!("BtHfp", "Allow Bluetooth access to use this Mac for calls."),
+        // Usage descriptions and Bluetooth/microphone grants only reach this
+        // state. The provider keeps duplexQualified false; this is not a route.
         "ready" => tr!(
             "BtHfp",
-            "Can try during a call: %1 over Bluetooth, with this Mac's current microphone and speaker.",
+            "%1 is chosen, and Bluetooth and microphone access are allowed. Those checks do not qualify this Mac's microphone and speaker for the call.",
             name
         ),
         _ => String::new(),
@@ -1263,6 +1265,45 @@ mod tests {
         assert_eq!(err, status.detail);
     }
 
+    fn grants(bluetooth: &str, microphone: &str) -> Prerequisites {
+        Prerequisites {
+            bluetooth_usage_description: true,
+            microphone_usage_description: true,
+            bluetooth: bluetooth.into(),
+            microphone: microphone.into(),
+        }
+    }
+
+    #[test]
+    fn ready_grants_do_not_claim_a_qualified_mac_route() {
+        let ready = grants("allowed", "allowed");
+        assert_eq!(setup_state(Some(&ready), true), "ready");
+        let detail = setup_detail("ready", "Pixel");
+        assert_eq!(
+            detail,
+            "Pixel is chosen, and Bluetooth and microphone access are allowed. Those checks do not qualify this Mac's microphone and speaker for the call."
+        );
+        assert!(!detail.contains("current microphone and speaker"));
+    }
+
+    #[test]
+    fn missing_or_denied_checks_do_not_claim_a_mac_route() {
+        let mut missing = grants("allowed", "allowed");
+        missing.microphone_usage_description = false;
+        assert_eq!(setup_state(Some(&missing), true), "unavailable");
+        let unavailable = setup_detail("unavailable", "Pixel");
+        assert!(!unavailable.contains("microphone and speaker"));
+
+        let allowed = grants("allowed", "allowed");
+        assert_eq!(setup_state(Some(&allowed), false), "choose-phone");
+        assert!(!setup_detail("choose-phone", "Pixel").contains("qualify"));
+
+        assert_eq!(setup_state(Some(&grants("allowed", "denied")), true), "microphone-denied");
+        let denied = setup_detail("microphone-denied", "Pixel");
+        assert!(denied.contains("Microphone access"));
+        assert!(!denied.contains("qualify"));
+    }
+
     fn fixture() -> (Session, Live) {
         let device = DeviceId([7; 32]);
         let binding = MacCallAudioBinding {
@@ -1493,5 +1534,60 @@ mod tests {
         let unproved = CheckResult { address: PHONE_B.into(), ok: true, ..CheckResult::default() };
         apply_result(&mut listed, &check, &unproved);
         assert_eq!(listed.candidates[1].support, SdpSupport::CheckFailed);
+    }
+
+    /// `phase_detail` owns the Calls sentence. `duplex_qualified` and
+    /// `handset_audible_verified` are the separate `view` predicate
+    /// (`verified = duplex_qualified && handset_audible_verified`). The
+    /// provider snapshot hardcodes both flags false; these values are a fixture.
+    #[test]
+    fn sco_phase_owns_the_unverified_sentence_without_the_duplex_flags() {
+        let snapshot = Snapshot {
+            phase: "sco-observed-unqualified".into(),
+            reason: "operator-prototype-only".into(),
+            slc_observed: true,
+            sco_observed: true,
+            duplex_qualified: true,
+            handset_audible_verified: true,
+            ..Snapshot::default()
+        };
+        let detail = phase_detail(&snapshot, "Pixel");
+        assert_eq!(
+            detail,
+            "The phone opened a Bluetooth audio link to this Mac. Whether both sides hear each other isn't verified; you can return the audio to the phone at any time."
+        );
+        assert!(snapshot.duplex_qualified && snapshot.handset_audible_verified);
+        assert!(!detail.contains("qualified"));
+        let seam = probe_status(Some("Pixel"));
+        assert!(!seam.available);
+        assert!(!seam.connected);
+        assert_ne!(detail, seam.detail);
+    }
+
+    #[test]
+    fn a_different_phase_does_not_borrow_the_sco_sentence() {
+        let connecting =
+            Snapshot { phase: "connecting-audio".into(), sco_observed: true, ..Snapshot::default() };
+        let detail = phase_detail(&connecting, "Pixel");
+        assert!(detail.starts_with("Asking the phone to send this call's audio to the Mac"));
+        assert!(!detail.contains("isn't verified"));
+
+        let changed = Snapshot {
+            phase: "rejected".into(),
+            reason: "selected-current-mic-speaker-not-observed".into(),
+            sco_observed: true,
+            ..Snapshot::default()
+        };
+        let route = phase_detail(&changed, "Pixel");
+        assert_eq!(
+            route,
+            "This Mac's microphone or speaker changed since setup. Choose the phone's Bluetooth device again to use the current ones."
+        );
+        assert!(!route.contains("isn't verified"));
+        assert!(phase_detail(&Snapshot::default(), "Pixel").is_empty());
+
+        let ready = setup_detail("ready", "Pixel");
+        assert_ne!(ready, detail);
+        assert!(!ready.contains("isn't verified"));
     }
 }

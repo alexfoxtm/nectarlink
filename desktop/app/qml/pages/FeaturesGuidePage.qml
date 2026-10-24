@@ -229,13 +229,13 @@ Item {
         {
             id: "app_streams",
             macGap: true,
-            name: "App streams",
+            name: "Way Mode",
             icon: Icons.apps,
             area: "mirroring_apps",
             capKey: "mirroring.app_windows",
             toggleKey: "mirroring",
             summary: "Open individual Android apps in their own virtual display windows on your PC.",
-            whereLabel: "Apps",
+            whereLabel: "Left rail › Way Mode",
             needsLabel: "Elevated (Wireless debugging) enabled on phone",
             targetId: "apps:",
             docKey: "mirroring"

@@ -36,6 +36,12 @@ pub fn invalidate_copy_code_actions(device: &str, key: &str) {
     user_notifications::invalidate_copy_code_actions(device, key);
 }
 
+/// Keeps the one-shot copy action when a silent snapshot still has the same code.
+/// A changed or missing code drops that action and does not register a replacement.
+pub fn retain_copy_code_if_unchanged(device: &str, key: &str, code: Option<&str>) {
+    user_notifications::retain_copy_code_if_unchanged(device, key, code);
+}
+
 /// Consumes the code bound to this exact native action once.
 pub fn take_copy_code_action(device: &str, key: &str, action: &str) -> Option<String> {
     user_notifications::take_copy_code_action(device, key, action)

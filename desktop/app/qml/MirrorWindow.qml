@@ -24,6 +24,8 @@ Window {
     }
     readonly property string deviceName: info.name || ""
     readonly property string phase: info.phase || ""
+    // frameSize clears on stream end; retain whether this opening showed video.
+    property bool videoStarted: false
     // Restriction-only marker: this window can lose UI actions, never gain authority.
     readonly property bool settingsWindow: info.settingsQualification === true
     readonly property bool canControl: !settingsWindow && info.canControl === true
@@ -89,6 +91,15 @@ Window {
         onActivated: win.toggleFullScreen()
     }
 
+    // Close belongs to this active mirror window in every phase, including
+    // ended Settings windows. onClosing owns the exact mirror-key teardown.
+    Shortcut {
+        sequences: [StandardKey.Close]
+        context: Qt.WindowShortcut
+        enabled: win.active
+        onActivated: win.close()
+    }
+
     visible: true
     title: info.app ? qsTr("%1 · %2").arg(info.title).arg(deviceName)
          : deviceName.length > 0 ? qsTr("%1 · Waypair Link").arg(deviceName) : qsTr("Phone screen · Waypair Link")
@@ -104,6 +115,20 @@ Window {
     readonly property size frame: video.frameSize
     property bool sized: false
     property bool readyForResize: false
+    property bool pendingUserResize: false
+
+    // The size this window last set itself. width/height read back at once,
+    // but the platform's widthChanged/heightChanged can arrive after a
+    // Qt.callLater re-armed readyForResize; reporting that size is not a user
+    // resize. Any other size clears it.
+    property int expectedWidth: -1
+    property int expectedHeight: -1
+    function applySize(w, h) {
+        expectedWidth = w
+        expectedHeight = h
+        width = w
+        height = h
+    }
 
     function clampedPosition(x, y, width, height) {
         const area = win.availableArea
@@ -122,16 +147,64 @@ Window {
         y = p.y
     }
 
+    // Natural display size: decoded frame pixels are device pixels, so
+    // divide by devicePixelRatio for logical points, then fit without
+    // upscaling, preserving aspect ratio.
+    function naturalSizeFor(frameSize) {
+        const area = availableArea
+        if (frameSize.width <= 0 || frameSize.height <= 0 || area.width <= 0 || area.height <= 0)
+            return null
+        const dpr = Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1
+        const naturalW = frameSize.width / dpr
+        const naturalH = frameSize.height / dpr
+        const scale = Math.min(area.height * 0.85 / naturalH, area.width * 0.85 / naturalW, 1)
+        return { width: Math.round(naturalW * scale), height: Math.round(naturalH * scale) }
+    }
+
+    // Only the explicit Natural size action drops a manual size override.
+    // An app window reshapes the phone's display when resized, so its
+    // natural frame is the first one its current stream delivered.
+    property size naturalFrame: Qt.size(0, 0)
+    readonly property bool canResetNaturalSize: sized && (userResized || pendingUserResize)
+        && visibility === Window.Windowed && (info.app ? naturalFrame : frame).width > 0
+    function resetToNaturalSize() {
+        if (!canResetNaturalSize)
+            return
+        const natural = naturalSizeFor(info.app ? naturalFrame : frame)
+        if (!natural)
+            return
+        readyForResize = false
+        resizeTimer.stop()
+        moveTimer.stop()
+        pendingUserResize = false
+        userResized = false
+        const p = clampedPosition(x, y, natural.width, natural.height)
+        applySize(natural.width, natural.height)
+        x = p.x
+        y = p.y
+        Qt.callLater(() => { win.readyForResize = true; resizeTimer.restart() })
+    }
+
+    function saveWindowGeometry() {
+        if (!sized || visibility !== Window.Windowed)
+            return
+        userResized = userResized || pendingUserResize
+        pendingUserResize = false
+        if (info.app)
+            Mirror.saveGeometry(mirrorKey, x, y, width, height, userResized)
+    }
+
     Timer {
         id: resizeTimer
         interval: 300
         repeat: false
         onTriggered: {
+            win.saveWindowGeometry()
             if (!win.info.app || !win.sized)
                 return
-            if (!win.fullScreen)
-                Mirror.saveGeometry(win.mirrorKey, win.x, win.y, win.width, win.height)
-            if (win.phase === "showing")
+            // Every arming path ends here; without a decoded frame the
+            // phone display keeps its own size until onFrameChanged rearms.
+            if (win.phase === "showing" && win.frame.width > 0)
                 Mirror.resize(win.mirrorKey, win.width, win.height)
         }
     }
@@ -141,41 +214,55 @@ Window {
         interval: 300
         repeat: false
         onTriggered: {
-            if (win.info.app && win.sized && !win.fullScreen)
-                Mirror.saveGeometry(win.mirrorKey, win.x, win.y, win.width, win.height)
+            win.saveWindowGeometry()
         }
     }
 
-    // Manual resize override: user drags mark userResized; visibility
-    // transitions (fullscreen, minimize/restore) are not user resizes.
+    // Commit resize intent only after the normal-window resize settles.
+    // Native fullscreen/maximize/minimize transitions cancel pending intent.
     property bool userResized: false
     onVisibilityChanged: {
-        if (!win.visible || userResized)
-            return
-        // Re-fit only for non-fullscreen transitions (e.g. restore from
-        // minimize); never during a fullscreen state. The manual override
-        // flag is intentionally preserved across visibility changes.
-        if (visibility !== Window.FullScreen)
-            fitFrameToAvailableArea()
+        readyForResize = false
+        pendingUserResize = false
+        resizeTimer.stop()
+        moveTimer.stop()
+        Qt.callLater(() => {
+            if (win.visibility !== Window.Windowed)
+                return
+            win.fitFrameToAvailableArea()
+            win.readyForResize = true
+            if (win.info.app && win.sized)
+                resizeTimer.restart()
+        })
     }
     onWidthChanged: {
-        if (!sized || !readyForResize || fullScreen)
+        if (width === expectedWidth)
             return
-        userResized = true
+        expectedWidth = -1
+        if (!sized || !readyForResize || visibility !== Window.Windowed)
+            return
+        pendingUserResize = true
         resizeTimer.restart()
     }
     onHeightChanged: {
-        if (!sized || !readyForResize || fullScreen)
+        if (height === expectedHeight)
             return
-        userResized = true
+        expectedHeight = -1
+        if (!sized || !readyForResize || visibility !== Window.Windowed)
+            return
+        pendingUserResize = true
         resizeTimer.restart()
     }
     onXChanged: if (info.app && sized && readyForResize) moveTimer.restart()
     onYChanged: if (info.app && sized && readyForResize) moveTimer.restart()
     onPhaseChanged: {
+        if (phase === "asking" || phase === "showing")
+            videoStarted = frame.width > 0 && frame.height > 0
         if (phase !== "showing")
             video.resetLocalGesture()
-        if (phase === "showing" && info.app && sized)
+        // A reopened app stream is resized only after its first frame, so
+        // naturalFrame stays the phone's own size (see onFrameChanged).
+        if (phase === "showing" && info.app && sized && frame.width > 0)
             resizeTimer.restart()
     }
     onCanControlChanged: {
@@ -184,20 +271,20 @@ Window {
     }
     onActiveChanged: if (win.active && !win.settingsWindow) Mirror.syncClipboardOnFocus(win.mirrorKey)
     function fitFrameToAvailableArea() {
-        if (frame.width <= 0)
+        if (frame.width <= 0 || visibility !== Window.Windowed)
             return
-        if (userResized)
+        if (userResized || pendingUserResize)
             return
         const area = availableArea
         const availW = area.width
         const availH = area.height
         if (availW <= 0 || availH <= 0)
             return
-        if (!sized && info.app && (info.savedWidth || 0) >= 240 && (info.savedHeight || 0) >= 240) {
+        if (!sized && info.app && info.savedUserResized === true
+                && (info.savedWidth || 0) >= 200 && (info.savedHeight || 0) >= 200) {
             readyForResize = false
             const savedScale = Math.min(1, availW * 0.95 / info.savedWidth, availH * 0.95 / info.savedHeight)
-            width = Math.round(info.savedWidth * savedScale)
-            height = Math.round(info.savedHeight * savedScale)
+            applySize(Math.round(info.savedWidth * savedScale), Math.round(info.savedHeight * savedScale))
             if (info.savedX !== null && info.savedX !== undefined && info.savedY !== null && info.savedY !== undefined) {
                 const p = clampedPosition(info.savedX, info.savedY, width, height)
                 x = p.x
@@ -206,34 +293,34 @@ Window {
                 centerOnScreen()
             }
             sized = true
+            userResized = true
             Qt.callLater(() => { win.readyForResize = true; resizeTimer.restart() })
             return
         }
-        // Natural display size: decoded frame pixels are device pixels, so
-        // divide by devicePixelRatio for logical points, then fit without
-        // upscaling, preserving aspect ratio.
-        const dpr = Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1
-        const naturalW = frame.width / dpr
-        const naturalH = frame.height / dpr
-        const maxH = availH * 0.85
-        const maxW = availW * 0.85
-        const scale = Math.min(maxH / naturalH, maxW / naturalW, 1)
+        const natural = naturalSizeFor(frame)
+        if (!natural)
+            return
         if (!sized || (!info.app && !fullScreen && Math.abs(width / height - frame.width / frame.height) > 0.05)) {
             readyForResize = false
             const oldCenterX = x + width / 2
             const oldCenterY = y + height / 2
-            width = Math.round(naturalW * scale)
-            height = Math.round(naturalH * scale)
+            applySize(natural.width, natural.height)
             if (sized) {
                 const p = clampedPosition(oldCenterX - width / 2, oldCenterY - height / 2, width, height)
+                x = p.x
+                y = p.y
+            } else if (info.app && info.savedX !== null && info.savedX !== undefined
+                    && info.savedY !== null && info.savedY !== undefined) {
+                // Old records still restore position, but dimensions without
+                // explicit resize intent must not override the natural size.
+                const p = clampedPosition(info.savedX, info.savedY, width, height)
                 x = p.x
                 y = p.y
             } else {
                 centerOnScreen()
             }
             sized = true
-            if (info.app)
-                Mirror.saveGeometry(mirrorKey, x, y, width, height)
+            saveWindowGeometry()
             Qt.callLater(() => { win.readyForResize = true })
         }
     }
@@ -244,14 +331,14 @@ Window {
             fitFrameToAvailableArea()
             return
         }
-        if (fullScreen || area.width <= 0 || area.height <= 0)
+        if (visibility !== Window.Windowed || area.width <= 0 || area.height <= 0)
             return
+        readyForResize = false
         const scale = Math.min(1, area.width * 0.95 / width, area.height * 0.95 / height)
         if (scale < 1) {
             const oldCenterX = x + width / 2
             const oldCenterY = y + height / 2
-            width = Math.round(width * scale)
-            height = Math.round(height * scale)
+            applySize(Math.round(width * scale), Math.round(height * scale))
             const p = clampedPosition(oldCenterX - width / 2, oldCenterY - height / 2, width, height)
             x = p.x
             y = p.y
@@ -260,19 +347,32 @@ Window {
             x = p.x
             y = p.y
         }
+        Qt.callLater(() => { win.readyForResize = true })
     }
 
-    onFrameChanged: fitFrameToAvailableArea()
+    onFrameChanged: {
+        if (frame.width <= 0)
+            naturalFrame = Qt.size(0, 0)
+        else if (naturalFrame.width <= 0) {
+            naturalFrame = frame
+            if (sized && info.app && phase === "showing")
+                resizeTimer.restart()
+        }
+        fitFrameToAvailableArea()
+    }
     width: 420
     height: 860
     onClosing: {
-        if (info.app && sized && !fullScreen)
-            Mirror.saveGeometry(mirrorKey, x, y, width, height)
+        saveWindowGeometry()
         Mirror.stop(mirrorKey)
     }
 
     VideoView {
         id: video
+        onFrameSizeChanged: {
+            if (frameSize.width > 0 && frameSize.height > 0)
+                win.videoStarted = true
+        }
         objectName: "mirrorVideo"
         anchors.fill: parent
         stream: win.mirrorKey
@@ -513,7 +613,7 @@ Window {
     }
 
     // Floating mirror toolbar: screenshots, MP4 recording, stay awake, screen off, audio mute,
-    // full screen, and the phone's Back/Home/Recents.
+    // natural size, full screen, and the phone's Back/Home/Recents.
     Timer {
         id: toolbarWakeTimer
         interval: 1800
@@ -552,6 +652,7 @@ Window {
         }
         readonly property bool toolbarHasFocus: copyShotBtn.activeFocus || saveShotBtn.activeFocus
             || recordBtn.activeFocus || stayAwakeBtn.activeFocus || screenOffBtn.activeFocus || soundBtn.activeFocus
+            || naturalSizeBtn.activeFocus
             || fullScreenBtn.activeFocus || navBackBtn.activeFocus || navHomeBtn.activeFocus || navRecentsBtn.activeFocus
             || overflowBtn.activeFocus || overflowSheet.opened
         // Secondary actions move to More when the phone window is narrow.
@@ -581,6 +682,8 @@ Window {
             if (win.canScreenOff)
                 items.push(b)
             if (win.info.sound === true && !win.settingsWindow)
+                items.push(b)
+            if (win.canResetNaturalSize)
                 items.push(b)
             items.push(b)
             if (!win.info.app && !win.settingsWindow)
@@ -680,6 +783,19 @@ Window {
                 iconColor: "white"
                 label: Mirror.muted ? qsTr("Play the phone's sound here") : qsTr("Mute the phone's sound here")
                 onClicked: if (!win.settingsWindow) Mirror.toggleSound()
+            }
+            // The button hides itself once used, so focus returns to the phone.
+            IconButton {
+                id: naturalSizeBtn
+                objectName: "mirrorNaturalSize"
+                visible: win.canResetNaturalSize
+                iconPath: Icons.phone
+                iconColor: "white"
+                label: qsTr("Restore natural size")
+                onClicked: {
+                    win.resetToNaturalSize()
+                    video.forceActiveFocus()
+                }
             }
             IconButton {
                 id: fullScreenBtn
@@ -962,6 +1078,7 @@ Window {
                 role: "title"
                 objectName: "mirrorPreFrameTitle"
                 text: win.phase === "asking" ? (win.info.app ? qsTr("Opening %1").arg(win.info.title) : qsTr("Allow it on your phone"))
+                    : win.phase === "ended" && win.info.app && !win.videoStarted ? qsTr("%1 window ended").arg(win.info.title)
                     : win.phase === "ended" ? (win.info.app ? qsTr("%1 closed").arg(win.info.title) : qsTr("Mirroring stopped"))
                     : qsTr("Starting…")
             }
@@ -978,11 +1095,14 @@ Window {
                       ? qsTr("Open Waypair Link on %1 and approve sharing the entire screen.").arg(win.deviceName)
                       : win.phase === "showing" && video.frameSize.width <= 0 && !win.info.app
                       ? qsTr("No phone picture has arrived. Check that %1 is unlocked and still sharing.").arg(win.deviceName)
+                      : win.phase === "ended" && (win.info.reason || "").length > 0
+                      ? win.info.reason
+                      : win.phase === "ended" && win.info.app && !win.videoStarted
+                      ? qsTr("The window ended before video started.")
                       : win.phase === "ended" && win.settingsWindow
                       ? qsTr("Allow this computer again on your phone, then open a new Settings window.")
-                      : win.phase === "ended" ? ((win.info.reason || "").length > 0 ? win.info.reason
-                                                : win.info.app ? qsTr("The app closed on %1.").arg(win.deviceName)
-                                                : qsTr("The phone stopped sharing its screen."))
+                      : win.phase === "ended" ? (win.info.app ? qsTr("The app closed on %1.").arg(win.deviceName)
+                                                              : qsTr("The phone stopped sharing its screen."))
                       : ""
             }
             Button {

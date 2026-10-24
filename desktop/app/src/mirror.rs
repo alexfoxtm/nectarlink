@@ -140,6 +140,10 @@ pub struct WindowGeometry {
     pub y: i32,
     pub width: u32,
     pub height: u32,
+    /// Only explicit user resizes override the decoded frame's natural size.
+    /// Legacy records have no size provenance, so keep their position only.
+    #[serde(default)]
+    pub user_resized: bool,
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
@@ -891,14 +895,14 @@ pub fn geometry(device: &DeviceId, pkg: &str) -> Option<WindowGeometry> {
 }
 
 /// Saves an app window's position and size on this PC.
-pub fn save_geometry(window: Window, x: i32, y: i32, width: u32, height: u32) {
+pub fn save_geometry(window: Window, x: i32, y: i32, width: u32, height: u32, user_resized: bool) {
     if window.session == MIRROR_SCREEN || width < 200 || height < 200 {
         return;
     }
     state(|s| {
         let Some(pkg) = s.windows.get(&window).and_then(|w| w.pkg.clone()) else { return };
         let key = format!("{}/{pkg}", window.device);
-        let geom = WindowGeometry { x, y, width, height };
+        let geom = WindowGeometry { x, y, width, height, user_resized };
         if s.saved.geometry.insert(key, geom) != Some(geom) {
             s.saved.save();
         }
@@ -1906,7 +1910,7 @@ pub fn request_control(key: &str) {
         }
         "stopped" => tr!(
             "Mirror",
-            "Phone control was stopped on the phone. To allow this computer again, turn Screen sharing and typing off and then on for this computer in Waypair Link's settings on the phone."
+            "Phone control was stopped on the phone. In Waypair Link on your phone, open Settings, then Computers, and tap Resume phone control for this computer. Then start mirroring again from the Mac."
         ),
         "inputUnavailable" => {
             tr!("Mirror", "On the phone, enable Control from your PC or start Elevated mode.")

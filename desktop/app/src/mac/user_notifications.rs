@@ -90,6 +90,24 @@ pub(super) fn invalidate_copy_code_actions(device: &str, key: &str) {
     copy_code_actions().retain(|(saved_device, saved_key, _), _| saved_device != device || saved_key != key);
 }
 
+/// Keeps copy-code actions for this notification when a stored snapshot still
+/// equals `code`. Otherwise drops every entry for that notification. Does not
+/// mint a new action, so a silent snapshot cannot post another banner.
+pub(super) fn retain_copy_code_if_unchanged(device: &str, key: &str, code: Option<&str>) -> bool {
+    let mut actions = copy_code_actions();
+    let unchanged = code.is_some_and(|code| {
+        !code.is_empty()
+            && actions.iter().any(|((saved_device, saved_key, _), saved)| {
+                saved_device == device && saved_key == key && saved == code
+            })
+    });
+    if unchanged {
+        return true;
+    }
+    actions.retain(|(saved_device, saved_key, _), _| saved_device != device || saved_key != key);
+    false
+}
+
 pub(super) fn invalidate_device_copy_code_actions(device: &str) {
     copy_code_actions().retain(|(saved_device, _, _), _| saved_device != device);
 }

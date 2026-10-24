@@ -644,7 +644,7 @@ NativeWindow {
             }
             NavItem {
                 iconPath: Icons.apps
-                text: qsTr("Apps")
+                text: qsTr("Way Mode")
                 selected: window.page === "apps"
                 activeHover: rail.hoveredNav === "apps"
                 onHoveredChanged: {
@@ -785,7 +785,7 @@ NativeWindow {
                     : window.page === "calls" ? qsTr("Calls")
                     : window.page === "photos" ? qsTr("Photos")
                     : window.page === "phoneFiles" ? qsTr("Phone files")
-                    : window.page === "apps" ? qsTr("Apps")
+                    : window.page === "apps" ? qsTr("Way Mode")
                     : window.page === "deck" ? qsTr("Deck")
                     : window.page === "guide" ? qsTr("Features guide")
                     : qsTr("Settings")

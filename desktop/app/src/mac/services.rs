@@ -253,37 +253,59 @@ fn wait_stop(gate: WaitGate) -> Option<WaitStop> {
     None
 }
 
+fn stop_message(ticket: &ServiceTicket, requesting_app: &str, stop: WaitStop) -> String {
+    match stop {
+        WaitStop::Shutdown => {
+            tr!("MacServices", "Camera capture cancelled on %1.", ticket.device_name)
+        }
+        WaitStop::NoAck => {
+            tr!("MacServices", "%1 didn’t answer the capture request.", ticket.device_name)
+        }
+        WaitStop::Expired => tr!(
+            "MacServices",
+            "The capture from %1 didn’t finish in time, so nothing was returned to %2.",
+            ticket.device_name,
+            requesting_app
+        ),
+    }
+}
+
+/// Rechecks the elapsed and quit fences after an acknowledgement or image.
+/// Only `Expired` and `Shutdown` are reachable here because acceptance is
+/// already known; either result must stop before the caller's pasteboard is
+/// mutated.
+fn delivery_stop(shutting_down: bool, elapsed: Duration) -> Option<WaitStop> {
+    wait_stop(WaitGate { shutting_down, elapsed, acked: true })
+}
+
 fn finish_wait(
     ticket: &ServiceTicket,
     requesting_app: &str,
     stop: WaitStop,
 ) -> Result<(String, Vec<u8>), String> {
+    let message = stop_message(ticket, requesting_app, stop);
     match stop {
         WaitStop::Shutdown => {
             continuity_camera::cancel_service("cancelled");
-            Err(tr!("MacServices", "Camera capture cancelled on %1.", ticket.device_name))
         }
         WaitStop::NoAck => {
             continuity_camera::cancel_service("no_ack");
-            Err(tr!("MacServices", "%1 didn’t answer the capture request.", ticket.device_name))
         }
         WaitStop::Expired => {
             continuity_camera::cancel_service("expired");
-            Err(tr!(
-                "MacServices",
-                "The capture from %1 didn’t finish in time, so nothing was returned to %2.",
-                ticket.device_name,
-                requesting_app
-            ))
         }
     }
+    Err(message)
 }
 
 /// Waits for the ticket's terminal event, running the main run loop in
 /// slices. On success returns the image's `(mime, data)`; on any failure
 /// returns the banner/error text (already localized, device named).
-fn wait_for_image(ticket: &ServiceTicket, requesting_app: &str) -> Result<(String, Vec<u8>), String> {
-    let started = Instant::now();
+fn wait_for_image(
+    ticket: &ServiceTicket,
+    requesting_app: &str,
+    started: Instant,
+) -> Result<(String, Vec<u8>), String> {
     let mut acked = false;
     loop {
         // Quit, the ack deadline, and the total deadline are decided
@@ -367,6 +389,9 @@ fn wait_for_image(ticket: &ServiceTicket, requesting_app: &str) -> Result<(Strin
 /// pasteboard is written or the wait gives up; the returned `Err` text
 /// is only console-logged by AppKit, so every failure is also bannered.
 fn handle_capture(pboard: &NSPasteboard, user_data: &str) -> Result<(), String> {
+    // AppKit's timeout starts before preflight and transfer, so all result
+    // and final-delivery fences use the same invocation-entry instant.
+    let started = Instant::now();
     if MainThreadMarker::new().is_none() {
         // AppKit delivers Service calls on the main run loop; anything
         // else fails closed and starts no request.
@@ -390,43 +415,62 @@ fn handle_capture(pboard: &NSPasteboard, user_data: &str) -> Result<(), String> 
         }
     };
     crate::bridge::app::show_message(tr!("MacServices", "Asking %1…", ticket.device_name));
-    match wait_for_image(&ticket, &requesting_app) {
-        Ok((mime, data)) => match encoded_images(&mime, &data) {
-            Ok((png, tiff)) => match write_caller_pasteboard(pboard, png.as_deref(), tiff.as_deref()) {
-                Ok(()) => {
-                    let returned = match ticket.mode {
-                        CameraCaptureMode::Photo => tr!(
-                            "MacServices",
-                            "Photo from %1 returned to %2",
-                            ticket.device_name,
-                            requesting_app
-                        ),
-                        CameraCaptureMode::Scan => tr!(
-                            "MacServices",
-                            "Scanned document from %1 returned to %2",
-                            ticket.device_name,
-                            requesting_app
-                        ),
-                    };
-                    crate::bridge::app::show_message(returned);
-                    Ok(())
+    match wait_for_image(&ticket, &requesting_app, started) {
+        Ok((mime, data)) => {
+            // A result may be queued just before the total fence. Check the
+            // same invocation-entry deadline before conversion and again
+            // immediately before mutating the caller's pasteboard.
+            if let Some(stop) = delivery_stop(SHUTTING_DOWN.load(Ordering::Acquire), started.elapsed()) {
+                let message = stop_message(&ticket, &requesting_app, stop);
+                crate::bridge::app::show_message(message.clone());
+                return Err(message);
+            }
+            match encoded_images(&mime, &data) {
+                Ok((png, tiff)) => {
+                    if let Some(stop) =
+                        delivery_stop(SHUTTING_DOWN.load(Ordering::Acquire), started.elapsed())
+                    {
+                        let message = stop_message(&ticket, &requesting_app, stop);
+                        crate::bridge::app::show_message(message.clone());
+                        return Err(message);
+                    }
+                    match write_caller_pasteboard(pboard, png.as_deref(), tiff.as_deref()) {
+                        Ok(()) => {
+                            let returned = match ticket.mode {
+                                CameraCaptureMode::Photo => tr!(
+                                    "MacServices",
+                                    "Photo from %1 returned to %2",
+                                    ticket.device_name,
+                                    requesting_app
+                                ),
+                                CameraCaptureMode::Scan => tr!(
+                                    "MacServices",
+                                    "Scanned document from %1 returned to %2",
+                                    ticket.device_name,
+                                    requesting_app
+                                ),
+                            };
+                            crate::bridge::app::show_message(returned);
+                            Ok(())
+                        }
+                        Err(message) => {
+                            crate::bridge::app::show_message(message.clone());
+                            Err(message)
+                        }
+                    }
                 }
-                Err(message) => {
+                Err(detail) => {
+                    let message = tr!(
+                        "MacServices",
+                        "The image from %1 couldn’t be prepared: %2",
+                        ticket.device_name,
+                        detail
+                    );
                     crate::bridge::app::show_message(message.clone());
                     Err(message)
                 }
-            },
-            Err(detail) => {
-                let message = tr!(
-                    "MacServices",
-                    "The image from %1 couldn’t be prepared: %2",
-                    ticket.device_name,
-                    detail
-                );
-                crate::bridge::app::show_message(message.clone());
-                Err(message)
             }
-        },
+        }
         Err(message) => {
             crate::bridge::app::show_message(message.clone());
             Err(message)
@@ -589,6 +633,14 @@ mod tests {
         // deadline, and an ack does not extend the 90 s total.
         assert_eq!(wait_stop(WaitGate { elapsed: ACK_TIMEOUT, ..open }), None);
         assert_eq!(wait_stop(WaitGate { elapsed: TOTAL_TIMEOUT - Duration::from_millis(1), ..open }), None);
+    }
+
+    #[test]
+    fn final_delivery_gate_rejects_shutdown_and_expired_result() {
+        assert_eq!(delivery_stop(false, TOTAL_TIMEOUT - Duration::from_millis(1)), None);
+        assert_eq!(delivery_stop(false, Duration::from_secs(30)), None);
+        assert_eq!(delivery_stop(true, Duration::from_secs(30)), Some(WaitStop::Shutdown));
+        assert_eq!(delivery_stop(false, TOTAL_TIMEOUT), Some(WaitStop::Expired));
     }
 
     #[test]

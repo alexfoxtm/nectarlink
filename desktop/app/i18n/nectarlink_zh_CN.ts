@@ -338,34 +338,34 @@
         <translation>macOS 上暂不支持电脑通话音频；通话音频仍保留在你的手机上。</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="42" />
+        <location filename="rust_strings.h" line="43" />
         <source>Allow Bluetooth access to use this Mac for calls.</source>
         <translation>允许蓝牙权限，才能用这台 Mac 处理通话。</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="43" />
+        <location filename="rust_strings.h" line="44" />
         <source>Allow microphone access to use this Mac for calls.</source>
         <translation>允许麦克风权限，才能用这台 Mac 处理通话。</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="44" />
+        <location filename="rust_strings.h" line="45" />
         <source>Another Mac call audio attempt is in progress.</source>
         <translation>另一个 Mac 通话音频尝试正在进行中。</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="45" />
+        <location filename="rust_strings.h" line="46" />
         <source>Asking the phone to send this call's audio to the Mac…</source>
         <translation>正在请求手机将此通话的音频发送到 Mac…</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="46" />
+        <location filename="rust_strings.h" line="47" />
         <source>Bluetooth access for Waypair Link is off in System Settings &gt; Privacy &amp; Security &gt; Bluetooth.</source>
         <translation>Waypair Link 的蓝牙权限已在“系统设置 &gt; 隐私与安全性 &gt; 蓝牙”中关闭。</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="49" />
-        <source>Can try during a call: %1 over Bluetooth, with this Mac's current microphone and speaker.</source>
-        <translation>可在通话中尝试：通过蓝牙连接 %1，使用这台 Mac 当前的麦克风和扬声器。</translation>
+        <location filename="rust_strings.h" line="42" />
+        <source>%1 is chosen, and Bluetooth and microphone access are allowed. Those checks do not qualify this Mac's microphone and speaker for the call.</source>
+        <translation>已选择 %1，且已允许蓝牙和麦克风访问。这些检查并不能认定这台 Mac 的麦克风和扬声器可用于这通话。</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="50" />
@@ -3554,7 +3554,7 @@ What it needs
 Streams your phone screen into a low-latency desktop window with hardware-accelerated decoding, or opens individual Android apps in their own windows on your PC.
 
 Where to find it
-- Left navigation rail › Apps.
+- Left navigation rail › Way Mode.
 - Home › Mirror screen quick action.
 
 What it needs
@@ -3565,7 +3565,7 @@ What it needs
 以硬件加速解码将手机屏幕串流到低延迟的桌面窗口，或在电脑上让单个 Android 应用拥有自己的窗口。
 
 位置
-- 左侧导航栏 › 应用。
+- 左侧导航栏 › Way 模式。
 - 首页 › 投屏快捷操作。
 
 需要
@@ -5023,8 +5023,8 @@ What it needs
     <message>
         <location filename="../qml/MainWindow.qml" line="644"/>
         <location filename="../qml/MainWindow.qml" line="732"/>
-        <source>Apps</source>
-        <translation>应用</translation>
+        <source>Way Mode</source>
+        <translation>Way 模式</translation>
     </message>
     <message>
         <location filename="../qml/MainWindow.qml" line="655"/>
@@ -5661,8 +5661,8 @@ What it needs
     </message>
     <message>
         <location filename="rust_strings.h" line="349" />
-        <source>Phone control was stopped on the phone. To allow this computer again, turn Screen sharing and typing off and then on for this computer in Waypair Link's settings on the phone.</source>
-        <translation>手机上的手机控制已停止。如需再次允许这台电脑，请在手机上的 Waypair Link 设置中，为这台电脑先关闭再打开“屏幕共享和输入”。</translation>
+        <source>Phone control was stopped on the phone. In Waypair Link on your phone, open Settings, then Computers, and tap Resume phone control for this computer. Then start mirroring again from the Mac.</source>
+        <translation>手机控制已在手机上停止。请在手机上的 Waypair Link 中打开“设置”→“电脑”，为这台电脑点按“恢复手机控制”，然后从 Mac 重新开始屏幕镜像。</translation>
     </message>
     <message>
         <source>Keep-awake requested</source>
@@ -5968,6 +5968,21 @@ What it needs
     <message>
         <source>This window shows your phone's Settings. You can scroll here; make changes on your phone. Other phone controls are unavailable.</source>
         <translation>此窗口显示手机上的“设置”。你可以在此滚动浏览；请在手机上进行更改。其他手机控制功能不可用。</translation>
+    </message>
+    <message>
+        <location filename="../qml/MirrorWindow.qml" line="777"/>
+        <source>Restore natural size</source>
+        <translation>恢复原始大小</translation>
+    </message>
+    <message>
+        <location filename="../qml/MirrorWindow.qml" line="1064"/>
+        <source>%1 window ended</source>
+        <translation>%1 窗口已结束</translation>
+    </message>
+    <message>
+        <location filename="../qml/MirrorWindow.qml" line="1084"/>
+        <source>The window ended before video started.</source>
+        <translation>窗口在视频开始前已结束。</translation>
     </message>
 </context>
 <context>
@@ -10127,6 +10142,31 @@ What it needs
     <message>
         <source>Waypair Camera is ready · 720p at 30 fps.</source>
         <translation>Waypair 摄像头已就绪 · 720p，30 fps。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="538"/>
+        <source>Camera idle image could not finish.</source>
+        <translation>摄像头空闲画面未能完成设置。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="539"/>
+        <source>Camera idle image could not start.</source>
+        <translation>摄像头空闲画面无法开始设置。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="540"/>
+        <source>Camera is busy; idle image was not changed.</source>
+        <translation>摄像头正忙，空闲画面未更改。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="550"/>
+        <source>Idle screen sent to Waypair Camera. Reopen your video app to check it.</source>
+        <translation>空闲画面已发送到 Waypair 摄像头。请重新打开视频应用进行查看。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="552"/>
+        <source>Preparing Waypair idle image…</source>
+        <translation>正在准备 Waypair 空闲画面…</translation>
     </message>
 </context>
 <context>

@@ -338,33 +338,33 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="42" />
+        <location filename="../rust_strings.h" line="43" />
         <source>Allow Bluetooth access to use this Mac for calls.</source>
         <translation type="unfinished" />
     </message>
     <message>
-        <location filename="../rust_strings.h" line="43" />
+        <location filename="../rust_strings.h" line="44" />
         <source>Allow microphone access to use this Mac for calls.</source>
         <translation type="unfinished" />
     </message>
     <message>
-        <location filename="../rust_strings.h" line="44" />
+        <location filename="../rust_strings.h" line="45" />
         <source>Another Mac call audio attempt is in progress.</source>
         <translation type="unfinished" />
     </message>
     <message>
-        <location filename="../rust_strings.h" line="45" />
+        <location filename="../rust_strings.h" line="46" />
         <source>Asking the phone to send this call's audio to the Mac…</source>
         <translation type="unfinished" />
     </message>
     <message>
-        <location filename="../rust_strings.h" line="46" />
+        <location filename="../rust_strings.h" line="47" />
         <source>Bluetooth access for Waypair Link is off in System Settings &gt; Privacy &amp; Security &gt; Bluetooth.</source>
         <translation type="unfinished" />
     </message>
     <message>
-        <location filename="../rust_strings.h" line="49" />
-        <source>Can try during a call: %1 over Bluetooth, with this Mac's current microphone and speaker.</source>
+        <location filename="../rust_strings.h" line="42" />
+        <source>%1 is chosen, and Bluetooth and microphone access are allowed. Those checks do not qualify this Mac's microphone and speaker for the call.</source>
         <translation type="unfinished" />
     </message>
     <message>
@@ -3311,7 +3311,7 @@ What it needs
 Streams your phone screen into a low-latency desktop window with hardware-accelerated decoding, or opens individual Android apps in their own windows on your PC.
 
 Where to find it
-- Left navigation rail › Apps.
+- Left navigation rail › Way Mode.
 - Home › Mirror screen quick action.
 
 What it needs
@@ -4731,7 +4731,7 @@ What it needs
     <message>
         <location filename="../../qml/MainWindow.qml" line="644"/>
         <location filename="../../qml/MainWindow.qml" line="732"/>
-        <source>Apps</source>
+        <source>Way Mode</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -5354,7 +5354,7 @@ What it needs
     </message>
     <message>
         <location filename="../rust_strings.h" line="349" />
-        <source>Phone control was stopped on the phone. To allow this computer again, turn Screen sharing and typing off and then on for this computer in Waypair Link's settings on the phone.</source>
+        <source>Phone control was stopped on the phone. In Waypair Link on your phone, open Settings, then Computers, and tap Resume phone control for this computer. Then start mirroring again from the Mac.</source>
         <translation type="unfinished" />
     </message>
     <message>
@@ -5675,6 +5675,21 @@ What it needs
     </message>
     <message>
         <source>This window shows your phone's Settings. You can scroll here; make changes on your phone. Other phone controls are unavailable.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../qml/MirrorWindow.qml" line="777"/>
+        <source>Restore natural size</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../qml/MirrorWindow.qml" line="1064"/>
+        <source>%1 window ended</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../qml/MirrorWindow.qml" line="1084"/>
+        <source>The window ended before video started.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -9797,6 +9812,31 @@ What it needs
     </message>
     <message>
         <source>Waypair Camera is ready · 720p at 30 fps.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="538"/>
+        <source>Camera idle image could not finish.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="539"/>
+        <source>Camera idle image could not start.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="540"/>
+        <source>Camera is busy; idle image was not changed.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="550"/>
+        <source>Idle screen sent to Waypair Camera. Reopen your video app to check it.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="552"/>
+        <source>Preparing Waypair idle image…</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

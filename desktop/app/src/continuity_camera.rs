@@ -17,7 +17,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use nectarlink_core::{CameraCaptureMode, DeviceId, Error, LinkState, NodeEvent};
+use nectarlink_core::{CameraCaptureMode, DeviceId, Error, LinkState, Node, NodeEvent};
 
 use crate::{core_host, state::Changes};
 
@@ -45,7 +45,9 @@ struct PendingPastePrompt {
 /// Owned here so core events can be intercepted before the ordinary
 /// clipboard/paste delivery below ever sees them.
 #[derive(Debug)]
-struct ServiceWaiter {
+struct ServiceWaiter<N = Node> {
+    // Keep the core instance that accepted this exact Service request.
+    node: N,
     device: DeviceId,
     device_name: String,
     request_id: String,
@@ -117,10 +119,10 @@ const MAX_CLOSED_SERVICE_IDS: usize = 32;
 const SERVICE_REQUEST_PREFIX: &str = "mac-svc-";
 
 #[derive(Debug, Default)]
-struct ContinuityState {
+struct ContinuityState<N = Node> {
     active: Option<ActiveRequest>,
     prompt: Option<PendingPastePrompt>,
-    service: Option<ServiceWaiter>,
+    service: Option<ServiceWaiter<N>>,
     closed_service_ids: VecDeque<String>,
 }
 
@@ -362,7 +364,7 @@ pub fn start_for_index(preferred_index: usize, mode_raw: &str) {
 /// Records a Service request id as closed. Eviction does not make the
 /// id ordinary: [`is_reserved_service_id`] still keeps it out of
 /// clipboard delivery.
-fn tombstone_locked(state: &mut ContinuityState, request_id: &str) {
+fn tombstone_locked<N>(state: &mut ContinuityState<N>, request_id: &str) {
     if state.closed_service_ids.iter().any(|id| id == request_id) {
         return;
     }
@@ -375,11 +377,11 @@ fn tombstone_locked(state: &mut ContinuityState, request_id: &str) {
 /// Takes the Service waiter when `(device, request_id)` matches it
 /// strictly, tombstoning the id. A different device or a different id
 /// (e.g. a late result from an older request) never matches.
-fn take_service_locked(
-    state: &mut ContinuityState,
+fn take_service_locked<N>(
+    state: &mut ContinuityState<N>,
     device: &DeviceId,
     request_id: &str,
-) -> Option<ServiceWaiter> {
+) -> Option<ServiceWaiter<N>> {
     let matches = state.service.as_ref().is_some_and(|w| w.device == *device && w.request_id == request_id);
     if !matches {
         return None;
@@ -402,12 +404,12 @@ enum ServiceRoute<T> {
     Ordinary,
 }
 
-fn service_id_excluded(state: &ContinuityState, request_id: &str) -> bool {
+fn service_id_excluded<N>(state: &ContinuityState<N>, request_id: &str) -> bool {
     is_reserved_service_id(request_id) || state.closed_service_ids.iter().any(|id| id == request_id)
 }
 
-fn route_service_ack(
-    state: &ContinuityState,
+fn route_service_ack<N>(
+    state: &ContinuityState<N>,
     device: &DeviceId,
     request_id: &str,
 ) -> ServiceRoute<mpsc::Sender<ServiceEvent>> {
@@ -422,11 +424,11 @@ fn route_service_ack(
     if service_id_excluded(state, request_id) { ServiceRoute::Dropped } else { ServiceRoute::Ordinary }
 }
 
-fn route_service_terminal(
-    state: &mut ContinuityState,
+fn route_service_terminal<N>(
+    state: &mut ContinuityState<N>,
     device: &DeviceId,
     request_id: &str,
-) -> ServiceRoute<ServiceWaiter> {
+) -> ServiceRoute<ServiceWaiter<N>> {
     if let Some(waiter) = take_service_locked(state, device, request_id) {
         return ServiceRoute::Matched(waiter);
     }
@@ -496,6 +498,7 @@ pub fn begin_service(mode: CameraCaptureMode) -> Result<ServiceTicket, ServiceRe
             return Err(ServiceRefusal::Busy);
         }
         guard.service = Some(ServiceWaiter {
+            node: node.clone(),
             device: device_id,
             device_name: device_name.clone(),
             request_id: request_id.clone(),
@@ -544,27 +547,28 @@ fn fail_service(request_id: &str, message: String) {
     }
 }
 
+/// Retires the exact Service waiter while retaining its original core handle.
+fn take_cancelled_service_locked<N>(state: &mut ContinuityState<N>) -> Option<ServiceWaiter<N>> {
+    let waiter = state.service.take()?;
+    tombstone_locked(state, &waiter.request_id);
+    Some(waiter)
+}
+
 /// Cancels the in-flight Service capture, if any: clears the waiter,
 /// wakes it as locally cancelled, tombstones the id so a late result is
 /// dropped, and tells the phone. Returns whether one was in flight.
 pub fn cancel_service(phone_reason: &str) -> bool {
     let waiter = {
         let mut guard = STATE.lock().unwrap_or_else(|e| e.into_inner());
-        let waiter = guard.service.take();
-        if let Some(w) = &waiter {
-            tombstone_locked(&mut guard, &w.request_id);
-        }
-        waiter
+        take_cancelled_service_locked(&mut guard)
     };
     let Some(waiter) = waiter else { return false };
     let _ = waiter.sender.send(ServiceEvent::CancelledLocally);
     notify_continuity();
-    if let Some(node) = core_host::node() {
-        let reason = phone_reason.to_owned();
-        core_host::spawn(async move {
-            let _ = node.cancel_camera_capture(waiter.device, waiter.request_id, Some(reason)).await;
-        });
-    }
+    let reason = phone_reason.to_owned();
+    core_host::spawn(async move {
+        let _ = waiter.node.cancel_camera_capture(waiter.device, waiter.request_id, Some(reason)).await;
+    });
     true
 }
 
@@ -843,6 +847,79 @@ mod tests {
     use super::*;
 
     #[test]
+    fn cancelled_service_retirement_keeps_the_original_owner_and_request() {
+        let node = std::sync::Arc::new("original-node");
+        let phone = DeviceId([7; 32]);
+        let (sender, _receiver) = mpsc::channel();
+        let mut state = ContinuityState {
+            active: None,
+            prompt: None,
+            service: Some(ServiceWaiter {
+                node: node.clone(),
+                device: phone,
+                device_name: "Pixel".into(),
+                request_id: "mac-svc-owner-1".into(),
+                mode: CameraCaptureMode::Photo,
+                sender,
+            }),
+            closed_service_ids: VecDeque::new(),
+        };
+
+        let retired = take_cancelled_service_locked(&mut state).expect("current Service waiter");
+        assert!(std::sync::Arc::ptr_eq(&retired.node, &node));
+        assert_eq!(retired.device, phone);
+        assert_eq!(retired.request_id, "mac-svc-owner-1");
+        assert!(state.service.is_none());
+        assert_eq!(state.closed_service_ids, VecDeque::from(["mac-svc-owner-1".to_owned()]));
+        assert!(take_cancelled_service_locked(&mut state).is_none());
+        assert_eq!(state.closed_service_ids.len(), 1);
+        drop(retired);
+        assert_eq!(std::sync::Arc::strong_count(&node), 1);
+    }
+
+    #[test]
+    fn retired_service_owner_and_late_result_do_not_consume_a_replacement() {
+        let original = std::sync::Arc::new("original-node");
+        let replacement = std::sync::Arc::new("replacement-node");
+        let phone = DeviceId([7; 32]);
+        let (sender, _original_receiver) = mpsc::channel();
+        let mut state = ContinuityState {
+            active: None,
+            prompt: None,
+            service: Some(ServiceWaiter {
+                node: original.clone(),
+                device: phone,
+                device_name: "Pixel".into(),
+                request_id: "mac-svc-owner-old".into(),
+                mode: CameraCaptureMode::Photo,
+                sender,
+            }),
+            closed_service_ids: VecDeque::new(),
+        };
+        let retired = take_cancelled_service_locked(&mut state).expect("original Service waiter");
+        let (sender, _replacement_receiver) = mpsc::channel();
+        state.service = Some(ServiceWaiter {
+            node: replacement.clone(),
+            device: phone,
+            device_name: "Pixel".into(),
+            request_id: "mac-svc-owner-new".into(),
+            mode: CameraCaptureMode::Scan,
+            sender,
+        });
+
+        assert!(matches!(
+            route_service_terminal(&mut state, &phone, &retired.request_id),
+            ServiceRoute::Dropped
+        ));
+        assert!(std::sync::Arc::ptr_eq(&retired.node, &original));
+        assert!(!std::sync::Arc::ptr_eq(&retired.node, &replacement));
+        let current = state.service.as_ref().expect("replacement remains current");
+        assert!(std::sync::Arc::ptr_eq(&current.node, &replacement));
+        assert_eq!(current.request_id, "mac-svc-owner-new");
+        assert!(!state.closed_service_ids.iter().any(|id| id == "mac-svc-owner-new"));
+    }
+
+    #[test]
     fn delivery_decision_auto_pastes_when_target_window_is_alive() {
         let decision = decide_delivery_action(
             CameraCaptureMode::Photo,
@@ -887,6 +964,7 @@ mod tests {
             active: None,
             prompt: None,
             service: Some(ServiceWaiter {
+                node: (),
                 device: phone,
                 device_name: "Pixel".into(),
                 request_id: "mac-svc-1-1".into(),

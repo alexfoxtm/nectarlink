@@ -18,7 +18,7 @@ QtObject {
     function press(key, name) { record("press", [key, name]) }
     function requestControl(key) { record("requestControl", [key]) }
     function resize(key, width, height) { record("resize", [key, width, height]) }
-    function saveGeometry(key, x, y, width, height) { record("saveGeometry", [key, x, y, width, height]) }
+    function saveGeometry(key, x, y, width, height, userResized) { record("saveGeometry", [key, x, y, width, height, userResized]) }
     function screenshotClipboard(key) { record("screenshotClipboard", [key]) }
     function screenshotFile(key) { record("screenshotFile", [key]) }
     function scroll(key, x, y, dx, dy) { record("scroll", [key, x, y, dx, dy]) }

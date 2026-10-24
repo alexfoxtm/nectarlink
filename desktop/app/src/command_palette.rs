@@ -1062,7 +1062,7 @@ fn build_candidates() -> Vec<PaletteCandidate> {
         ("messages", "Go to Messages", "SMS, MMS, RCS, and chat conversations", "messages"),
         ("calls", "Go to Calls", "Call history, contacts, and dialpad", "call"),
         ("photos", "Go to Photos", "Recent photos, screenshots, and videos from your phone", "photo"),
-        ("apps", "Go to Apps & Mirroring", "Mirror your phone screen or open individual apps", "apps"),
+        ("apps", "Go to Way Mode", "Open individual phone apps in their own windows", "apps"),
         ("deck", "Go to Media & Deck", "Now Playing controls and audio output switcher", "deck"),
         ("timeline", "Go to Timeline", "Unified history of files, photos, clips, and calls", "history"),
         (
