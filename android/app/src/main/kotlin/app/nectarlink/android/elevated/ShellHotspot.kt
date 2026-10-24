@@ -24,9 +24,23 @@ import javax.crypto.spec.SecretKeySpec
  */
 internal object ShellHotspot {
     enum class Result { CAPABILITY_VERIFIED, ACTIVE, ACTIVATION_SUBMITTED, UNSUPPORTED, DENIED, CONFIG_CHANGED, CANCELLED, FAILED }
-    data class Owner(val peer: String, val connection: ULong, val request: ULong) {
+    sealed interface RequestOwner
+    data class Owner(val peer: String, val connection: ULong, val request: ULong) : RequestOwner {
         fun valid(): Boolean = peer.matches(Regex("[a-z0-9]{52}")) && connection != 0uL && request != 0uL
     }
+
+    data class LocalOwner(val activity: String, val request: Long, val deadline: Long) : RequestOwner {
+        fun valid(now: Long = android.os.SystemClock.elapsedRealtime()): Boolean = activity.matches(Regex("[a-f0-9]{64}")) && request > 0 &&
+            now >= 0 && deadline > now && deadline - now <= 40000
+    }
+    private fun current(owner: RequestOwner): Boolean = owner !is LocalOwner || owner.valid()
+    fun localProbe(): Result {
+        val capability = probe()
+        if (capability != Result.CAPABILITY_VERIFIED) return capability
+        return autoProbe()
+    }
+    fun localTicket(owner: LocalOwner): Ticket? = if (Build.VERSION.SDK_INT >= 36 && owner.valid()) service()?.ticket(owner, null) else null
+    fun localCancel(owner: LocalOwner): Ticket? = if (Build.VERSION.SDK_INT >= 36 && owner.activity.matches(Regex("[a-f0-9]{64}")) && owner.request > 0 && Process.myUid() == 2000) service?.cancellation(owner) else null
 
     @Volatile private var service: Service? = null
 
@@ -87,10 +101,10 @@ internal object ShellHotspot {
         private var interfaceGeneration = 0L
         private var interfaceFingerprints = emptyMap<String, ByteArray?>()
         private var pending: Operation? = null
-        private val cancelled = LinkedHashSet<Owner>()
+        private val cancelled = LinkedHashSet<RequestOwner>()
 
         private class Operation(
-            val owner: Owner,
+            val owner: RequestOwner,
             val fingerprint: ByteArray,
             val initiallyActive: Boolean,
             val initialInterfaces: Set<String>,
@@ -196,14 +210,15 @@ internal object ShellHotspot {
             return if (observe() && configuration() != null) Result.CAPABILITY_VERIFIED else Result.UNSUPPORTED
         }
 
-        fun ticket(owner: Owner, network: String?): Ticket? {
+        fun ticket(owner: RequestOwner, network: String?): Ticket? {
+            if (!current(owner)) return null
             if (probe() != Result.CAPABILITY_VERIFIED) return null
             val configuration = configuration() ?: return null
             if (network == null && readNetwork(configuration) == null) return null
             if (network != null && configuration.wifiSsid?.bytes?.contentEquals(network.toByteArray(Charsets.UTF_8)) != true) return null
             val fingerprint = fingerprint(configuration)
             val operation = synchronized(monitor) {
-                if (owner in cancelled || pending != null || !known) return null
+                if (!current(owner) || owner in cancelled || pending != null || !known) return null
                 // Actual TETHER_PRIVILEGED authority permits the persistent
                 // configuration request. The framework reads its own current
                 // configuration atomically; we never supply/restore a stale
@@ -238,7 +253,7 @@ internal object ShellHotspot {
             try {
                 if (!permitted() || !unchanged(operation)) return Result.CONFIG_CHANGED
                 synchronized(monitor) {
-                    if (pending !== operation || operation.cancelled || operation.owner in cancelled) return Result.CANCELLED
+                    if (!current(operation.owner) || pending !== operation || operation.cancelled || operation.owner in cancelled) return Result.CANCELLED
                     if (!known || interfaces != operation.initialInterfaces || interfaceGeneration != operation.initialGeneration) return Result.CONFIG_CHANGED
                     if (operation.initiallyActive) {
                         if (interfaceFingerprints.values.filterNotNull().any { !MessageDigest.isEqual(it, operation.fingerprint) }) return Result.CONFIG_CHANGED
@@ -254,13 +269,13 @@ internal object ShellHotspot {
                 }
                 val until = System.nanoTime() + TimeUnit.SECONDS.toNanos(35)
                 synchronized(monitor) {
-                    while (pending === operation && !operation.cancelled && !operation.failed && !(operation.started && matchingTetherReadback(operation))) {
+                    while (current(operation.owner) && pending === operation && !operation.cancelled && !operation.failed && !(operation.started && matchingTetherReadback(operation))) {
                         val left = until - System.nanoTime()
                         if (left <= 0) return Result.FAILED
                         try { TimeUnit.NANOSECONDS.timedWait(monitor, minOf(left, TimeUnit.MILLISECONDS.toNanos(50))) }
                         catch (_: InterruptedException) { Thread.currentThread().interrupt(); return Result.CANCELLED }
                     }
-                    if (operation.cancelled || operation.owner in cancelled) return if (operation.submitted) Result.ACTIVATION_SUBMITTED else Result.CANCELLED
+                    if (!current(operation.owner) || operation.cancelled || operation.owner in cancelled) return if (operation.submitted) Result.ACTIVATION_SUBMITTED else Result.CANCELLED
                     if (operation.failed || !operation.started || !matchingTetherReadback(operation)) return Result.FAILED
                     // Callback alone is insufficient: configuration may have
                     // changed while start/provisioning was asynchronous.
@@ -270,7 +285,7 @@ internal object ShellHotspot {
             } finally { retire(operation) }
         }
 
-        fun cancellation(owner: Owner): Ticket? {
+        fun cancellation(owner: RequestOwner): Ticket? {
             val submitted = synchronized(monitor) {
                 // Retire this logical preparation only. Configuration and
                 // interface observations cannot prove OS ownership against

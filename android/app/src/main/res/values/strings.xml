@@ -1421,6 +1421,21 @@
     <string name="settings_window_revoke">Revoke Settings window access</string>
     <string name="mirror_request_text_control">It can also tap, scroll and type on this phone. Tap to share it. You can stop anytime.</string>
     <string name="webcam_start_on_pc">Start webcam from your computer</string>
+    <string name="local_hotspot_title">Mobile hotspot</string>
+    <string name="local_hotspot_enable">Enable hotspot</string>
+    <string name="local_hotspot_checking">Checking hotspot availability…</string>
+    <string name="local_hotspot_ready">Ready to enable your existing protected hotspot.</string>
+    <string name="local_hotspot_busy">Enabling hotspot…</string>
+    <string name="local_hotspot_active">Hotspot active. Internet access depends on your mobile connection.</string>
+    <string name="local_hotspot_unavailable">Unavailable: an already-running compatible helper and a readable protected hotspot configuration are required.</string>
+    <string name="local_hotspot_denied">Unavailable: the existing helper lacks hotspot permission.</string>
+    <string name="local_hotspot_paused">Hotspot activation is paused for banking apps.</string>
+    <string name="local_hotspot_changed">Hotspot configuration changed. Try again when ready.</string>
+    <string name="local_hotspot_cancelled">Preparation cancelled. A hotspot already submitted for activation may remain on; turn it off in phone Settings when finished.</string>
+    <string name="local_hotspot_failed">Could not verify hotspot activation. Check the phone and try again.</string>
+    <string name="local_hotspot_ios">On iPhone or iPad, open Settings &gt; Wi-Fi, select this phone’s network and enter its hotspot password. Device security and band compatibility vary.</string>
+    <string name="local_hotspot_credentials">Phone wireless settings</string>
+    <string name="local_hotspot_refresh">Check again</string>
 </resources>
 
 

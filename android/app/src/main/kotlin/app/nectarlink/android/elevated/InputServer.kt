@@ -358,6 +358,26 @@ object InputServer {
             val first = runCatching { reader.nextLine() }.getOrNull()
             if (first != null && first.startsWith("V ")) return appWindow(client, first, reader)
             if (first == "A") return streamDeviceAudio(client.getOutputStream())
+            if (first != null && first.startsWith("HOTSPOT LOCAL_")) {
+                fun reply(value: String) { client.getOutputStream().apply { write((value + "\n").toByteArray(Charsets.UTF_8)); flush() } }
+                var ticket: ShellHotspot.Ticket? = null
+                try {
+                    if (first == "HOTSPOT LOCAL_PROBE") { reply(ShellHotspot.localProbe().name); return }
+                    val command = first.split(' ', limit = 3)
+                    if (command.size != 3 || command[1] !in setOf("LOCAL_PREPARE", "LOCAL_CANCEL") || command[2].length > 4096) { reply("FAILED"); return }
+                    val json = org.json.JSONObject(String(android.util.Base64.decode(command[2], android.util.Base64.NO_WRAP), Charsets.UTF_8))
+                    val owner = ShellHotspot.LocalOwner(json.getString("activity"), json.getString("request").toLong(), json.getString("deadline").toLong())
+                    ticket = if (command[1] == "LOCAL_CANCEL") ShellHotspot.localCancel(owner) else ShellHotspot.localTicket(owner)
+                    val admitted = ticket
+                    if (admitted == null) { reply("FAILED"); return }
+                    reply("READY")
+                    client.soTimeout = 2500
+                    if (runCatching { reader.nextLine() }.getOrNull() == "GO") reply(admitted.run().name)
+                } catch (_: LinkageError) { runCatching { reply("UNSUPPORTED") } }
+                catch (_: Exception) { runCatching { reply("FAILED") } }
+                finally { ticket?.abandon?.invoke() }
+                return
+            }
             if (first != null && first.startsWith("HOTSPOT ")) {
                 val output = client.getOutputStream()
                 fun reply(value: String) { output.write((value + "\n").toByteArray(Charsets.UTF_8)); output.flush() }
@@ -412,7 +432,7 @@ object InputServer {
             try {
                 if (first == "H") {
                     synchronized(writer) {
-                        writer.write("HOTSPOT_PROTOCOL\t2\nHOTSPOT_AUTO_PROTOCOL\t1\n")
+                        writer.write("HOTSPOT_PROTOCOL\t2\nHOTSPOT_AUTO_PROTOCOL\t1\nHOTSPOT_LOCAL_PROTOCOL\t1\n")
                         writer.flush()
                     }
                 }

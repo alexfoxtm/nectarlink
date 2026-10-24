@@ -96,6 +96,7 @@ object Elevated {
      * helper liveness or an old helper version must never admit unknown verbs. */
     @Volatile private var hotspotProtocolOwner: java.net.Socket? = null
     @Volatile private var hotspotAutoProtocolOwner: java.net.Socket? = null
+    @Volatile private var hotspotLocalProtocolOwner: java.net.Socket? = null
     /** Where the helper listens, and the token it wants, while it runs. */
     @Volatile private var helper: Pair<Int, String>? = null
     @Volatile private var screenOffRequested = false
@@ -530,6 +531,7 @@ object Elevated {
         socket = local
         hotspotProtocolOwner = null
         hotspotAutoProtocolOwner = null
+        hotspotLocalProtocolOwner = null
         val writer = OutputStreamWriter(local.outputStream, Charsets.UTF_8)
         writer.write("$token\nH\n")
         writer.flush()
@@ -539,7 +541,9 @@ object Elevated {
         Thread {
             runCatching {
                 local.inputStream.bufferedReader().lineSequence().forEach { line ->
-                    if (line == "HOTSPOT_AUTO_PROTOCOL\t1") {
+                    if (line == "HOTSPOT_LOCAL_PROTOCOL\t1") {
+                        if (socket === local && input != null) { hotspotLocalProtocolOwner = local; runCatching { onChange() } }
+                    } else if (line == "HOTSPOT_AUTO_PROTOCOL\t1") {
                         if (socket === local && input != null) { hotspotAutoProtocolOwner = local; runCatching { onChange() } }
                     } else if (line == "HOTSPOT_PROTOCOL\t2") {
                         if (socket === local && input != null) {
@@ -583,6 +587,7 @@ object Elevated {
                     if (socket === local) {
                         hotspotProtocolOwner = null
         hotspotAutoProtocolOwner = null
+        hotspotLocalProtocolOwner = null
                         val wasRunning = input != null
                         input = null
                         if (wasRunning) onProviderLost()
@@ -819,6 +824,56 @@ object Elevated {
                     response = readReply()
                 }
                 if (socket !== owner || hotspotProtocolOwner !== owner || helper != endpoint || input == null || !stillCurrent()) return@use ShellHotspot.Result.CANCELLED
+                ShellHotspot.Result.entries.firstOrNull { it.name == response } ?: ShellHotspot.Result.FAILED
+            }
+        }.getOrDefault(ShellHotspot.Result.FAILED)
+    }
+
+    internal fun localHotspotSession(): Any? = socket?.takeIf { it === hotspotLocalProtocolOwner && input != null }
+    internal fun localHotspotCapability(expected: Any): ShellHotspot.Result = localHotspotExchange("LOCAL_PROBE", null, expected) { true }
+    internal fun prepareLocalHotspot(owner: ShellHotspot.LocalOwner, expected: Any, current: () -> Boolean): ShellHotspot.Result =
+        localHotspotExchange("LOCAL_PREPARE", owner, expected, current)
+    internal fun cancelLocalHotspot(owner: ShellHotspot.LocalOwner, expected: Any): ShellHotspot.Result =
+        localHotspotExchange("LOCAL_CANCEL", owner, expected) { true }
+
+    private fun localHotspotExchange(action: String, localOwner: ShellHotspot.LocalOwner?, expected: Any?, stillCurrent: () -> Boolean): ShellHotspot.Result {
+        if (action !in setOf("LOCAL_PROBE", "LOCAL_PREPARE", "LOCAL_CANCEL")) return ShellHotspot.Result.FAILED
+        if (action != "LOCAL_PROBE" && (localOwner == null || (action == "LOCAL_PREPARE" && !localOwner.valid()))) return ShellHotspot.Result.FAILED
+        val owner = socket ?: return ShellHotspot.Result.UNSUPPORTED
+        if (hotspotLocalProtocolOwner !== owner || expected !== owner) return ShellHotspot.Result.UNSUPPORTED
+        val endpoint = helper ?: return ShellHotspot.Result.UNSUPPORTED
+        if (input == null || !stillCurrent()) return ShellHotspot.Result.CANCELLED
+        return runCatching {
+            java.net.Socket().use { query ->
+                query.connect(java.net.InetSocketAddress(InetAddress.getLoopbackAddress(), endpoint.first), 2000)
+                query.soTimeout = if (action == "LOCAL_PREPARE") 40000 else 5000
+                val out = OutputStreamWriter(query.getOutputStream(), Charsets.UTF_8)
+                if (socket !== owner || hotspotLocalProtocolOwner !== owner || helper != endpoint || input == null || !stillCurrent()) return@use ShellHotspot.Result.CANCELLED
+                val command = if (localOwner == null) "HOTSPOT LOCAL_PROBE" else {
+                    val json = org.json.JSONObject().put("activity", localOwner.activity).put("request", localOwner.request.toString()).put("deadline", localOwner.deadline.toString())
+                    "HOTSPOT $action " + android.util.Base64.encodeToString(json.toString().toByteArray(Charsets.UTF_8), android.util.Base64.NO_WRAP)
+                }
+                // Local owner metadata only; credentials never cross this exchange.
+                out.write("${endpoint.second}\n$command\n")
+                out.flush()
+                val reader = query.inputStream.reader(Charsets.UTF_8)
+                fun readReply(): String {
+                    val response = StringBuilder()
+                    while (response.length < 64) {
+                        val next = reader.read()
+                        if (next < 0 || next == '\n'.code) return response.toString()
+                        response.append(next.toChar())
+                    }
+                    return ""
+                }
+                var response = readReply()
+                if (response == "READY") {
+                    if (socket !== owner || hotspotLocalProtocolOwner !== owner || helper != endpoint || input == null || !stillCurrent()) return@use ShellHotspot.Result.CANCELLED
+                    out.write("GO\n")
+                    out.flush()
+                    response = readReply()
+                }
+                if (socket !== owner || hotspotLocalProtocolOwner !== owner || helper != endpoint || input == null || !stillCurrent()) return@use ShellHotspot.Result.CANCELLED
                 ShellHotspot.Result.entries.firstOrNull { it.name == response } ?: ShellHotspot.Result.FAILED
             }
         }.getOrDefault(ShellHotspot.Result.FAILED)

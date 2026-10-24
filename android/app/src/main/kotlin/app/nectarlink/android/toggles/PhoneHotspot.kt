@@ -87,6 +87,9 @@ internal class PhoneHotspot(context: Context, private val changed: () -> Unit) {
         synchronized(monitor) { known = false; monitor.notifyAll() }
     }
 
+    internal fun localReadbackKnown(): Boolean = registered && known
+    internal fun localActive(): Boolean = registered && known && tethered
+
     fun canEnableOrJoin(): Boolean = registered && known && helperVerified && Elevated.running
 
     fun canAutoJoin(): Boolean = canEnableOrJoin() && autoVerified
@@ -146,4 +149,98 @@ internal class PhoneHotspot(context: Context, private val changed: () -> Unit) {
         if (stillCurrent()) Elevated.cancelHotspotOwned(peer, connection, request, stillCurrent)
     }
 
+}
+
+/** One foreground Android screen; never impersonates a paired remote request. */
+internal class LocalHotspotController(context: Context) {
+    enum class Status { CHECKING, READY, BUSY, ACTIVE, UNAVAILABLE, DENIED, PAUSED, CONFIG_CHANGED, CANCELLED, FAILED }
+    private val context = context.applicationContext
+    private val activity = ByteArray(32).also(java.security.SecureRandom()::nextBytes).joinToString("") { "%02x".format(it.toInt() and 255) }
+    private val serial = java.util.concurrent.atomic.AtomicLong()
+    private val epoch = java.util.concurrent.atomic.AtomicLong()
+    @Volatile private var foreground = false
+    @Volatile private var operation: Pair<ShellHotspot.LocalOwner, Any>? = null
+    private val mutable = kotlinx.coroutines.flow.MutableStateFlow(Status.UNAVAILABLE)
+    val status: kotlinx.coroutines.flow.StateFlow<Status> = mutable
+    private val observer: PhoneHotspot = PhoneHotspot(this.context) { onReadbackChanged() }
+    private fun onReadbackChanged() {
+        if (mutable.value == Status.ACTIVE && !observer.localActive()) mutable.value = Status.READY
+    }
+
+    @Synchronized fun start() {
+        if (foreground) return
+        foreground = true
+        val generation = epoch.incrementAndGet()
+        mutable.value = Status.CHECKING
+        observer.start()
+        Thread {
+            val session = Elevated.localHotspotSession()
+            val result = if (session == null) ShellHotspot.Result.UNSUPPORTED else Elevated.localHotspotCapability(session)
+            synchronized(this) {
+                if (!foreground || epoch.get() != generation) return@Thread
+                mutable.value = if (app.nectarlink.android.banking.BankingPause.isPaused(context)) Status.PAUSED else when (result) {
+                    ShellHotspot.Result.CAPABILITY_VERIFIED -> if (observer.localReadbackKnown()) Status.READY else Status.UNAVAILABLE
+                    ShellHotspot.Result.DENIED -> Status.DENIED
+                    else -> Status.UNAVAILABLE
+                }
+            }
+        }.apply { isDaemon = true; start() }
+    }
+
+    @Synchronized fun stop() {
+        foreground = false
+        epoch.incrementAndGet()
+        val old = operation
+        operation = null
+        observer.stop()
+        mutable.value = Status.CANCELLED
+        if (old != null) Thread { Elevated.cancelLocalHotspot(old.first, old.second) }.apply { isDaemon = true; start() }
+    }
+
+    @Synchronized fun enable() {
+        if (!foreground || mutable.value == Status.BUSY) return
+        if (app.nectarlink.android.banking.BankingPause.isPaused(context)) { mutable.value = Status.PAUSED; return }
+        val session = Elevated.localHotspotSession() ?: run { mutable.value = Status.UNAVAILABLE; return }
+        val generation = epoch.get()
+        val owner = ShellHotspot.LocalOwner(activity, serial.incrementAndGet(), android.os.SystemClock.elapsedRealtime() + 40000)
+        operation = owner to session
+        mutable.value = Status.BUSY
+        fun current(): Boolean = foreground && epoch.get() == generation && operation?.first === owner &&
+            owner.valid() && Elevated.localHotspotSession() === session && !app.nectarlink.android.banking.BankingPause.isPaused(context)
+        Thread {
+            while (operation?.first === owner) {
+                if (!current()) {
+                    synchronized(this) {
+                        if (operation?.first === owner) {
+                            operation = null
+                            epoch.incrementAndGet()
+                            mutable.value = if (app.nectarlink.android.banking.BankingPause.isPaused(context)) Status.PAUSED else Status.CANCELLED
+                        }
+                    }
+                    Elevated.cancelLocalHotspot(owner, session)
+                    break
+                }
+                try { Thread.sleep(50) } catch (_: InterruptedException) { Thread.currentThread().interrupt(); break }
+            }
+        }.apply { isDaemon = true; start() }
+        Thread {
+            val result = Elevated.prepareLocalHotspot(owner, session, ::current)
+            synchronized(this) {
+                if (!current()) {
+                    if (operation?.first === owner) { operation = null; mutable.value = Status.CANCELLED }
+                } else {
+                    operation = null
+                    mutable.value = when (result) {
+                        ShellHotspot.Result.ACTIVE -> if (observer.localActive()) Status.ACTIVE else Status.FAILED
+                        ShellHotspot.Result.DENIED -> Status.DENIED
+                        ShellHotspot.Result.UNSUPPORTED -> Status.UNAVAILABLE
+                        ShellHotspot.Result.CONFIG_CHANGED -> Status.CONFIG_CHANGED
+                        ShellHotspot.Result.CANCELLED, ShellHotspot.Result.ACTIVATION_SUBMITTED -> Status.CANCELLED
+                        else -> Status.FAILED
+                    }
+                }
+            }
+            if (result != ShellHotspot.Result.ACTIVE) Elevated.cancelLocalHotspot(owner, session)
+        }.apply { isDaemon = true; start() }
+    }
 }

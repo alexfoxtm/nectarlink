@@ -1058,6 +1058,12 @@ fun SettingsScreen(
         }
 
         if (showFeatures) {
+            item(key = "local_hotspot", contentType = "section") {
+                Section(stringResource(R.string.local_hotspot_title)) { LocalHotspotAccess() }
+            }
+        }
+
+        if (showFeatures) {
             item(key = "waypair_extras", contentType = "section") {
                 Section(stringResource(R.string.waypair_extras_title)) {
                     Text(
@@ -1718,3 +1724,58 @@ private fun Choice(options: List<Pair<String, String>>, selected: String, onSele
     }
 }
 
+
+@Composable
+private fun LocalHotspotAccess() {
+    val context = LocalContext.current
+    val controller = remember { app.nectarlink.android.toggles.LocalHotspotController(context) }
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    val status by controller.status.collectAsStateWithLifecycle()
+    val elevated by Elevated.state.collectAsStateWithLifecycle()
+    androidx.compose.runtime.DisposableEffect(lifecycle, controller, elevated) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            when (event) {
+                androidx.lifecycle.Lifecycle.Event.ON_RESUME -> controller.start()
+                androidx.lifecycle.Lifecycle.Event.ON_PAUSE -> controller.stop()
+                else -> Unit
+            }
+        }
+        lifecycle.addObserver(observer)
+        if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) controller.start()
+        onDispose { lifecycle.removeObserver(observer); controller.stop() }
+    }
+    val reason = stringResource(when (status) {
+        app.nectarlink.android.toggles.LocalHotspotController.Status.CHECKING -> R.string.local_hotspot_checking
+        app.nectarlink.android.toggles.LocalHotspotController.Status.READY -> R.string.local_hotspot_ready
+        app.nectarlink.android.toggles.LocalHotspotController.Status.BUSY -> R.string.local_hotspot_busy
+        app.nectarlink.android.toggles.LocalHotspotController.Status.ACTIVE -> R.string.local_hotspot_active
+        app.nectarlink.android.toggles.LocalHotspotController.Status.UNAVAILABLE -> R.string.local_hotspot_unavailable
+        app.nectarlink.android.toggles.LocalHotspotController.Status.DENIED -> R.string.local_hotspot_denied
+        app.nectarlink.android.toggles.LocalHotspotController.Status.PAUSED -> R.string.local_hotspot_paused
+        app.nectarlink.android.toggles.LocalHotspotController.Status.CONFIG_CHANGED -> R.string.local_hotspot_changed
+        app.nectarlink.android.toggles.LocalHotspotController.Status.CANCELLED -> R.string.local_hotspot_cancelled
+        app.nectarlink.android.toggles.LocalHotspotController.Status.FAILED -> R.string.local_hotspot_failed
+    })
+    Text(reason, style = MaterialTheme.typography.bodyMedium)
+    Text(stringResource(R.string.local_hotspot_ios), style = MaterialTheme.typography.bodySmall)
+    val enabled = status in setOf(
+        app.nectarlink.android.toggles.LocalHotspotController.Status.READY,
+        app.nectarlink.android.toggles.LocalHotspotController.Status.CONFIG_CHANGED,
+        app.nectarlink.android.toggles.LocalHotspotController.Status.FAILED,
+        app.nectarlink.android.toggles.LocalHotspotController.Status.CANCELLED,
+    )
+    Button(onClick = { controller.enable() }, enabled = enabled,
+        modifier = Modifier.semantics { contentDescription = reason }) {
+        Text(stringResource(if (status == app.nectarlink.android.toggles.LocalHotspotController.Status.BUSY) R.string.local_hotspot_busy else R.string.local_hotspot_enable))
+    }
+    if (status in setOf(app.nectarlink.android.toggles.LocalHotspotController.Status.UNAVAILABLE,
+            app.nectarlink.android.toggles.LocalHotspotController.Status.DENIED,
+            app.nectarlink.android.toggles.LocalHotspotController.Status.PAUSED)) {
+        OutlinedButton(onClick = { controller.stop(); controller.start() }) { Text(stringResource(R.string.local_hotspot_refresh)) }
+    }
+    if (status == app.nectarlink.android.toggles.LocalHotspotController.Status.ACTIVE) {
+        OutlinedButton(onClick = { runCatching { context.startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS)) } }) {
+            Text(stringResource(R.string.local_hotspot_credentials))
+        }
+    }
+}
