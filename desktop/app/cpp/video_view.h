@@ -68,6 +68,7 @@ protected:
 
 private:
     Q_INVOKABLE void frameArrived();
+    void refreshFrame(bool consumeQueuedWake);
     void applyWindowChrome();
 
     QString m_stream;
@@ -90,3 +91,7 @@ void video_clear(rust::Str stream);
 // Drops cached video frames for streams that have no live VideoView.
 void clear_idle_video_frames();
 
+
+// Synthetic GUI-thread checks, invoked only by the test-support window gate.
+rust::String video_wakeup_burst_check();
+rust::String video_wakeup_lifecycle_check();

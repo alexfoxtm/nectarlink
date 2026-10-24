@@ -108,6 +108,11 @@ Window {
         }
         return qsTr("Phone control isn't available for this connection right now.")
     }
+    // Keep permission guidance readable at natural phone sizes without covering the picture.
+    readonly property bool compactControlHint: width < 420 || height < 320
+    readonly property bool tinyControlHint: width < 96 || height < 96
+    readonly property bool compactControlHelp: tinyControlHint || (compactControlHint
+        && width - 74 - notifyPhoneBtn.implicitWidth < 72)
     readonly property bool onMac: Qt.platform.os === "osx" || Qt.platform.os === "macos"
     readonly property bool fullScreen: visibility === Window.FullScreen
     property int visibilityBeforeFullScreen: Window.Windowed
@@ -1024,13 +1029,15 @@ Window {
         id: hintBanner
         objectName: "mirrorControlHint"
         Accessible.role: Accessible.StatusBar
-        Accessible.name: hint.text
-        anchors.left: parent.left
-        anchors.right: parent.right
+        Accessible.name: win.accessibleControlDescription
+        Accessible.description: win.accessibleControlDescription
+        anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
-        anchors.margins: 12
-        height: Math.max(hint.implicitHeight + 20, 48)
-        radius: Theme.radiusMd
+        anchors.bottomMargin: win.tinyControlHint ? 4 : win.compactControlHint ? 8 : 12
+        width: win.tinyControlHint ? Math.min(parent.width - 8, 40)
+            : parent.width - (win.compactControlHint ? 16 : 24)
+        height: win.tinyControlHint ? 26 : win.compactControlHint ? 40 : Math.max(hint.implicitHeight + 20, 48)
+        radius: win.tinyControlHint ? Theme.pill(height) : Theme.radiusMd
         visible: win.phase === "showing" && video.frameSize.width > 0 && !hintClose.closed
             && (win.settingsWindow || !win.canControl)
         color: Qt.rgba(0, 0, 0, 0.72)
@@ -1057,14 +1064,29 @@ Window {
 
         Txt {
             id: hint
+            objectName: "mirrorControlHintText"
             anchors.left: parent.left
-            anchors.right: win.settingsWindow ? hintClose.left : notifyPhoneBtn.left
-            anchors.margins: 10
+            anchors.right: notifyPhoneBtn.visible ? notifyPhoneBtn.left : compactRequestControl.visible ? compactRequestControl.left : hintClose.left
+            anchors.margins: win.compactControlHint ? 8 : 10
             anchors.verticalCenter: parent.verticalCenter
-            wrapMode: Text.WordWrap
+            visible: !win.tinyControlHint
+            wrapMode: win.compactControlHint ? Text.NoWrap : Text.WordWrap
+            elide: win.compactControlHint ? Text.ElideRight : Text.ElideNone
             role: "bodySmall"
             color: "white"
             text: win.accessibleControlDescription
+        }
+        Icon {
+            id: compactHintStatus
+            objectName: "mirrorControlHintStatus"
+            visible: win.tinyControlHint && !compactRequestControl.visible
+            anchors.left: parent.left
+            anchors.leftMargin: 4
+            anchors.verticalCenter: parent.verticalCenter
+            width: 10; height: 10
+            path: Icons.info
+            color: "white"
+            Accessible.ignored: true
         }
         Button {
             id: notifyPhoneBtn
@@ -1075,16 +1097,35 @@ Window {
             variant: "tonal"
             size: "sm"
             text: qsTr("How to enable")
-            visible: !win.settingsWindow
+            visible: !win.settingsWindow && win.canRequestControl && !win.viewOnly && !win.compactControlHelp
             enabled: win.canRequestControl && !win.viewOnly
             onClicked: if (win.canRequestControl) Mirror.requestControl(win.mirrorKey)
         }
         IconButton {
+            id: compactRequestControl
+            objectName: "mirrorRequestControlCompact"
+            visible: win.compactControlHelp && !win.settingsWindow && win.canRequestControl && !win.viewOnly
+            anchors.right: hintClose.left
+            anchors.rightMargin: 1
+            anchors.verticalCenter: parent.verticalCenter
+            width: 18; height: 18
+            iconSize: 10
+            iconPath: Icons.info
+            iconColor: "white"
+            label: qsTr("How to enable")
+            enabled: win.canRequestControl && !win.viewOnly
+            onClicked: if (win.canRequestControl && !win.viewOnly) Mirror.requestControl(win.mirrorKey)
+        }
+        IconButton {
             id: hintClose
+            objectName: "mirrorControlHintClose"
             property bool closed: false
             anchors.right: parent.right
-            anchors.rightMargin: 4
+            anchors.rightMargin: win.tinyControlHint ? 1 : 4
             anchors.verticalCenter: parent.verticalCenter
+            width: win.tinyControlHint ? 18 : 34
+            height: win.tinyControlHint ? 18 : 34
+            iconSize: win.tinyControlHint ? 10 : 18
             iconPath: Icons.close
             iconColor: "white"
             label: qsTr("Hide")

@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "video_view.h"
 
+#include <QtCore/QCoreApplication>
+#include <QtCore/QEvent>
 #include <QtCore/QHash>
+#include <QtCore/QThread>
 #include <QtCore/QUrl>
 #include <QtGui/QGuiApplication>
 #include <QtGui/QIcon>
@@ -21,7 +24,9 @@
 #endif
 
 #include <algorithm>
+#include <array>
 #include <mutex>
+#include <unordered_set>
 #include <vector>
 
 namespace {
@@ -37,13 +42,17 @@ struct Latest
 std::mutex lock;
 QHash<QString, Latest> latest;
 std::vector<VideoView *> views;
+// At most one queued GUI wake per live view; images still use the latest slot.
+std::unordered_set<VideoView *> queuedFrameUpdates;
 quint64 nextSerial = 1;
 
 void wakeViews(const QString &stream)
 {
     for (VideoView *view : views) {
-        if (view->stream() == stream)
-            QMetaObject::invokeMethod(view, "frameArrived", Qt::QueuedConnection);
+        if (view->stream() != stream || !queuedFrameUpdates.insert(view).second)
+            continue;
+        if (!QMetaObject::invokeMethod(view, "frameArrived", Qt::QueuedConnection))
+            queuedFrameUpdates.erase(view);
     }
 }
 
@@ -75,6 +84,7 @@ VideoView::VideoView(QQuickItem *parent)
 VideoView::~VideoView()
 {
     std::lock_guard guard(lock);
+    queuedFrameUpdates.erase(this);
     views.erase(std::remove(views.begin(), views.end(), this), views.end());
 }
 
@@ -88,7 +98,8 @@ void VideoView::setStream(const QString &stream)
     }
     m_shown = 0;
     emit streamChanged();
-    frameArrived();
+    // Keep the synchronous stream refresh without consuming an older queued wake.
+    refreshFrame(false);
 }
 
 void VideoView::setWindowIcon(const QString &icon)
@@ -203,9 +214,16 @@ QRectF VideoView::pictureRect() const
 
 void VideoView::frameArrived()
 {
+    refreshFrame(true);
+}
+
+void VideoView::refreshFrame(bool consumeQueuedWake)
+{
     QSize size;
     {
         std::lock_guard guard(lock);
+        if (consumeQueuedWake)
+            queuedFrameUpdates.erase(this);
         size = latest.value(m_stream).image.size();
     }
     if (size != m_frameSize) {
@@ -274,3 +292,67 @@ void clear_idle_video_frames()
     }
 }
 
+
+// Actual native checks used only by the existing test-support window gate.
+// They run on its GUI thread and use synthetic in-memory pixels, no Node or device.
+rust::String video_wakeup_burst_check()
+{
+    auto *app = qobject_cast<QGuiApplication *>(QCoreApplication::instance());
+    if (!app || QThread::currentThread() != app->thread())
+        return rust::String("video wake burst check needs the GUI thread");
+    const rust::Str stream("window-gate/video-wakeup-burst");
+    const std::array<uint8_t, 24> pixels{};
+    const rust::Slice<const uint8_t> data(pixels.data(), pixels.size());
+    VideoView view;
+    view.setStream(QStringLiteral("window-gate/video-wakeup-burst"));
+    const quint64 before = view.frames();
+    for (int i = 0; i < 256; ++i)
+        video_frame(stream, 1, 1, data);
+    video_frame(stream, 3, 2, data);
+    QCoreApplication::sendPostedEvents(&view, QEvent::MetaCall);
+    if (view.frames() != before + 1 || view.frameSize() != QSize(3, 2))
+        return rust::String("video wake burst was not coalesced to the latest frame");
+    video_frame(stream, 2, 1, data);
+    QCoreApplication::sendPostedEvents(&view, QEvent::MetaCall);
+    if (view.frames() != before + 2 || view.frameSize() != QSize(2, 1))
+        return rust::String("video wake did not rearm after delivery");
+    video_clear(stream);
+    QCoreApplication::sendPostedEvents(&view, QEvent::MetaCall);
+    return {};
+}
+
+rust::String video_wakeup_lifecycle_check()
+{
+    auto *app = qobject_cast<QGuiApplication *>(QCoreApplication::instance());
+    if (!app || QThread::currentThread() != app->thread())
+        return rust::String("video wake lifecycle check needs the GUI thread");
+    const rust::Str oldStream("window-gate/video-wakeup-old");
+    const rust::Str newStream("window-gate/video-wakeup-new");
+    const std::array<uint8_t, 24> pixels{};
+    const rust::Slice<const uint8_t> data(pixels.data(), pixels.size());
+    VideoView view;
+    view.setStream(QStringLiteral("window-gate/video-wakeup-old"));
+    const quint64 beforeClear = view.frames();
+    video_frame(oldStream, 1, 1, data);
+    video_clear(oldStream);
+    QCoreApplication::sendPostedEvents(&view, QEvent::MetaCall);
+    if (view.frames() != beforeClear + 1 || !view.frameSize().isEmpty())
+        return rust::String("video clear did not blank a queued frame");
+    const quint64 afterClear = view.frames();
+    QCoreApplication::sendPostedEvents(&view, QEvent::MetaCall);
+    if (view.frames() != afterClear)
+        return rust::String("video clear left a stale queued wake");
+    video_frame(oldStream, 1, 1, data);
+    view.setStream(QStringLiteral("window-gate/video-wakeup-new"));
+    const quint64 beforeRebindDelivery = view.frames();
+    video_frame(newStream, 2, 1, data);
+    QCoreApplication::sendPostedEvents(&view, QEvent::MetaCall);
+    if (view.frames() != beforeRebindDelivery + 1 || view.frameSize() != QSize(2, 1))
+        return rust::String("stream rebind consumed or duplicated a queued video wake");
+    video_clear(oldStream);
+    video_clear(newStream);
+    QCoreApplication::sendPostedEvents(&view, QEvent::MetaCall);
+    if (!view.frameSize().isEmpty())
+        return rust::String("rebound video did not clear");
+    return {};
+}

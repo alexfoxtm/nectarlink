@@ -109,6 +109,7 @@ fun SettingsScreen(
     updater: AppUpdater,
     onSetPhoneControlEnabled: (pcId: String, enabled: Boolean) -> Unit,
     onSetWayModeEnabled: (pcId: String, enabled: Boolean) -> Unit,
+    onResumePhoneControl: (pcId: String) -> Unit,
     settingsQualificationPcIds: Set<String> = emptySet(),
     onAllowSettingsWindowOnce: (pcId: String) -> Unit = {},
     onRevokeSettingsWindowAccess: (pcId: String) -> Unit = {},
@@ -643,8 +644,10 @@ fun SettingsScreen(
                                     }
                                 }
                                 if (device.id in state.typingStoppedPcIds) {
+                                    // Display gate only; the backend resume rechecks Node, epoch, Stop and scope.
                                     val canResumeControl = state.status is app.nectarlink.android.core.CoreStatus.Ready &&
-                                        device.online && device.mirroringEnabled && device.phoneControlEnabled
+                                        device.online && device.phoneControlEnabled &&
+                                        (device.mirroringEnabled || device.wayModeEnabled)
                                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                         Text(
                                             stringResource(R.string.keyboard_recovery_required),
@@ -653,10 +656,7 @@ fun SettingsScreen(
                                         )
                                         if (canResumeControl) {
                                             FilledTonalButton(
-                                                onClick = {
-                                                    onSetMirroringEnabled(device.id, false)
-                                                    onSetMirroringEnabled(device.id, true)
-                                                },
+                                                onClick = { onResumePhoneControl(device.id) },
                                             ) {
                                                 Text(stringResource(R.string.phone_control_resume))
                                             }

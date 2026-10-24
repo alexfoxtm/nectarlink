@@ -269,6 +269,17 @@ impl State {
         }
     }
 
+    /// Core owns APP admission; retain the exact ordinary or restricted view.
+    fn app_view_current(&self, window: &Window) -> bool {
+        let Some(shown) = self.windows.get(window) else { return false };
+        self.request_nodes
+            .get(window)
+            .and_then(|owner| owner.app_view.as_ref())
+            .is_some_and(|view| {
+                view.is_settings_qualification() == shown.settings_qualification && view.is_current()
+            })
+    }
+
     fn owns_request(&self, window: &Window, request: u64) -> bool {
         self.requests.get(window) == Some(&request)
     }
@@ -1282,7 +1293,7 @@ fn start_failure_reason(
         Error::Unsupported if settings_qualification => {
             tr!("Mirror", "Opening Settings in a window is unavailable for this phone connection.")
         }
-        Error::Denied if local_mirroring_enabled == Some(false) => {
+        Error::Denied if (!app || settings_qualification) && local_mirroring_enabled == Some(false) => {
             tr!("Mirror", "Screen sharing is turned off for this phone in Waypair Link on this computer.")
         }
         Error::Denied if settings_qualification => tr!(
@@ -1380,7 +1391,7 @@ fn request_window(window: Window, options: Option<MirrorStart>) {
         };
         if let Err(e) = started {
             // Read only this request's original Node. Unknown state cannot claim a toggle is off.
-            let local_mirroring_enabled = if matches!(&e, Error::Denied) {
+            let local_mirroring_enabled = if matches!(&e, Error::Denied) && (!app || settings_qualification) {
                 node.device_toggles(window.device).ok().and_then(|toggles| {
                     toggles.into_iter().find_map(|(name, enabled)| (name == "mirroring").then_some(enabled))
                 })
@@ -1764,8 +1775,8 @@ pub fn palette_apps(device: DeviceId) -> Vec<(String, String)> {
     out
 }
 
-/// Actual admission for the exact showing phone screen. App-window control
-/// remains separately fenced; no Mac host injection/capture is enabled here.
+/// Actual admission for the exact showing capture. App windows retain their
+/// original Core view; no Mac host injection/capture is enabled here.
 pub fn control_reason(window: Window) -> &'static str {
     if window.session != MIRROR_SCREEN && !APP_WINDOWS {
         return "unsupported";
@@ -1777,11 +1788,19 @@ pub fn control_reason(window: Window) -> &'static str {
         {
             return None;
         }
-        Some((s.request_nodes.get(&window)?.node.clone(), *s.control_requests.get(&window)?))
+        let owner = s.request_nodes.get(&window)?;
+        Some((owner.node.clone(), *s.control_requests.get(&window)?, owner.app_view.clone()))
     });
-    let Some((node, wire_request)) = target else {
+    let Some((node, wire_request, view)) = target else {
         return "notShowing";
     };
+    if window.session != MIRROR_SCREEN {
+        let Some(view) = view.filter(|view| view.request() == wire_request) else { return "notShowing" };
+        if view.is_settings_qualification() {
+            return "unsupported";
+        }
+        return view.control_reason();
+    }
     node.mirror_control_reason_for_session(window.device, window.session, wire_request)
 }
 
@@ -1846,6 +1865,11 @@ pub fn input(window: Window, input: nectarlink_core::MirrorInput) {
         if scroll_reason(window) != "available" {
             return;
         }
+        view.control()
+    } else if window.session != MIRROR_SCREEN {
+        let Some(view) = view.filter(|view| !view.is_settings_qualification() && view.request() == wire_request) else {
+            return;
+        };
         view.control()
     } else {
         node.mirror_control_for_session(window.device, window.session, wire_request)
@@ -2260,7 +2284,9 @@ pub fn sink(device: &DeviceId, session: u32) -> Option<Arc<dyn MirrorSink>> {
             .get(&window)
             .and_then(|owner| owner.app_view.as_ref())
             .is_some_and(|view| view.is_settings_qualification() && view.is_current());
-        if !((APP_WINDOWS || session == MIRROR_SCREEN || scoped) && live) {
+        if !((APP_WINDOWS || session == MIRROR_SCREEN || scoped) && live)
+            || (session != MIRROR_SCREEN && !s.app_view_current(&window))
+        {
             return None;
         }
         // Each sink gets a generation, so a later sound stream can tell that
@@ -2344,25 +2370,26 @@ fn request_keyframe(window: Window, request: Option<u64>, stream: Option<u64>) {
         {
             return None;
         }
-        let scoped = s.windows.get(&window)?.settings_qualification;
-        if !scoped {
-            return Some(None);
+        let owner = s.request_nodes.get(&window)?;
+        if window.session == MIRROR_SCREEN {
+            return Some((owner.node.clone(), None));
         }
-        let view = s.request_nodes.get(&window)?.app_view.as_ref()?;
-        if !view.is_settings_qualification()
+        let scoped = s.windows.get(&window)?.settings_qualification;
+        let view = owner.app_view.as_ref()?;
+        if view.is_settings_qualification() != scoped
             || !view.is_current()
             || s.control_requests.get(&window) != Some(&view.request())
         {
             return None;
         }
-        Some(Some(view.clone()))
+        Some((owner.node.clone(), Some(view.clone())))
     });
-    let Some(view) = captured else { return };
+    let Some((node, view)) = captured else { return };
     if let Some(view) = view {
         core_host::spawn(async move {
             let _ = view.request_keyframe_if_current().await;
         });
-    } else if let Some(node) = core_host::node() {
+    } else {
         core_host::spawn(async move { node.mirror_keyframe(window.device, window.session).await });
     }
 }
@@ -2431,7 +2458,10 @@ impl MirrorSink for Sink {
     fn packet(&self, keyframe: bool, time_us: u64, data: Vec<u8>) {
         let Some(video) = self.video.get() else { return };
         let accepted = state(|s| {
-            if !s.owns_request(&self.window, self.request) || !s.shows(&self.window, video.stream) {
+            if !s.owns_request(&self.window, self.request)
+                || !s.shows(&self.window, video.stream)
+                || (self.window.session != MIRROR_SCREEN && !s.app_view_current(&self.window))
+            {
                 return None;
             }
             if keyframe {
@@ -2610,7 +2640,9 @@ fn decode(window: Window, id: u64, items: &Receiver<Item>, waiting: &AtomicUsize
     let mut failures = 0;
     let mut stats = Stats::new();
     while let Ok(item) = items.recv() {
-        if !state(|s| s.shows(&window, id)) {
+        if !state(|s| {
+            s.shows(&window, id) && (window.session == MIRROR_SCREEN || s.app_view_current(&window))
+        }) {
             break;
         }
         match item {
@@ -2682,7 +2714,9 @@ fn decode(window: Window, id: u64, items: &Receiver<Item>, waiting: &AtomicUsize
                     // Keep ownership through publication: close/reopen cannot
                     // clear the window and then receive this older frame.
                     let became_ready = state(|s| {
-                        if s.shows(&window, id) {
+                        if s.shows(&window, id)
+                            && (window.session == MIRROR_SCREEN || s.app_view_current(&window))
+                        {
                             let first = latest_bitmap(&window).is_none();
                             ffi::video_frame(&stream, width, height, &pixels);
                             save_latest_frame(window, width, height, pixels);
@@ -3373,6 +3407,17 @@ pub mod window_gate {
         fn show(&self) -> Shown {
             ffi::prepare_qt_for_ui_check();
             let mut app = QGuiApplication::new();
+            let burst = ffi::video_wakeup_burst_check();
+            let lifecycle = ffi::video_wakeup_lifecycle_check();
+            if !burst.is_empty() || !lifecycle.is_empty() {
+                eprintln!("mirror-window-gate: FAILED native video wake checks: {burst}; {lifecycle}");
+                return Shown {
+                    code: FAILED,
+                    grabs: Err(format!("native video wake checks: {burst}; {lifecycle}")),
+                    qml_problems: ffi::qml_problem_count(),
+                };
+            }
+            println!("mirror-window-gate: PASS native video wake burst and clear/rebind checks");
             ffi::keep_running_without_windows();
             let _ = ffi::load_bundled_fonts();
             let phone = self.phone.device_id();
@@ -4100,10 +4145,10 @@ mod mac_receive_fixture {
     #[test]
     fn start_failure_reasons_do_not_infer_phone_permission() {
         assert_eq!(
-            super::start_failure_reason(&nectarlink_core::Error::Denied, true, false, Some(false)),
+            super::start_failure_reason(&nectarlink_core::Error::Denied, false, false, Some(false)),
             "Screen sharing is turned off for this phone in Waypair Link on this computer."
         );
-        for local_allow in [Some(true), None] {
+        for local_allow in [Some(false), Some(true), None] {
             assert_eq!(
                 super::start_failure_reason(&nectarlink_core::Error::Denied, true, false, local_allow),
                 "This app-window request was refused. In Waypair Link on the phone, check this computer's Way Mode status and any warning beside it, then try again."
@@ -4634,6 +4679,22 @@ mod mac_receive_fixture {
         assert!(super::sink(&device, app_window.session).is_none());
         super::stop(app_window);
         assert!(!super::windows().iter().any(|(window, _)| *window == app_window));
+        // A local row cannot grant an app sink without its original Core view.
+        let unowned_app = Window { device, session: 7 };
+        super::state(|s| {
+            s.windows.insert(
+                unowned_app,
+                Shown {
+                    settings_qualification: false,
+                    phase: Phase::Showing,
+                    app: Some("App".into()),
+                    pkg: Some("com.example.app".into()),
+                },
+            );
+            s.requests.insert(unowned_app, 77);
+        });
+        assert!(super::sink(&device, unowned_app.session).is_none(), "an app needs its retained Core view");
+        super::stop(unowned_app);
         let window = live_screen_request(device, 0x9E3779B9_7F4A7C15);
         super::set_stay_awake(window, true);
         assert!(super::stay_awake(&device), "Mac keep-awake remains available");

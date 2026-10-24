@@ -8213,9 +8213,11 @@ async fn app_control_denies_legacy_grant_off_stop_and_reused_capture_owners() {
     assert!(phone.node.mirror_typing_stopped(pc_id), "grant does not rearm Stop");
     let old_end = Arc::new(std::sync::Barrier::new(2));
     *pc.platform.screen.ended_barrier.lock().unwrap() = Some(old_end.clone());
+    // R31: this barrier tests APP revocation, not the now-independent SCREEN setting.
+    phone.node.set_phone_app_windows_enabled(pc_id, false).unwrap();
+    phone.node.set_phone_app_windows_enabled(pc_id, true).unwrap();
     let owner_tap = phone.node.mirror_typing_epoch(pc_id);
-    phone.node.set_mirroring_enabled(pc_id, false, owner_tap).unwrap();
-    phone.node.set_mirroring_enabled(pc_id, true, owner_tap).unwrap();
+    phone.node.resume_phone_control(pc_id, owner_tap).unwrap();
     let waiting_end = old_end.clone();
     tokio::task::spawn_blocking(move || {
         waiting_end.wait();
@@ -8782,6 +8784,177 @@ async fn app_control_denies_legacy_grant_off_stop_and_reused_capture_owners() {
     scope_screen.close();
     pc.node.shutdown().await;
     phone.node.shutdown().await;
+
+    // R31 negative matrix on real isolated pairs. No app admission may borrow
+    // SCREEN permission, and no broadened app path may bypass these fences.
+    for (case, case_session) in [("default-off", 91), ("app-off", 93), ("pending-write", 95),
+        ("input-off", 97), ("provider-loss", 99), ("source-end", 101),
+        ("stale-owner", 103), ("stale-node", 105), ("unpair", 107)] {
+        let (mut case_pc, mut case_phone) = request_control_pair(true).await;
+        let (case_pc_id, case_phone_id) = (case_pc.node.device_id(), case_phone.node.device_id());
+        let caps = vec![
+            MIRROR_CAPTURE.into(), MIRROR_CORRELATION.into(), MIRROR_INPUT.into(),
+            MIRROR_INPUT_REQUEST.into(), MIRROR_VIRTUAL_DISPLAY.into(), MIRROR_APP_WINDOWS_OWNED_V1.into(),
+        ];
+        case_phone.node.update_power(PowerLevel::Elevated, caps.clone()).await;
+        with_timeout("R31 actual owned-app capability received", async {
+            while !case_pc.node.test_peer_supports(case_phone_id, MIRROR_APP_WINDOWS_OWNED_V1) {
+                tokio::task::yield_now().await;
+            }
+        }).await;
+        let tapped = case_phone.node.mirror_typing_epoch(case_pc_id);
+        case_phone.node.set_mirroring_enabled(case_pc_id, false, tapped).unwrap();
+        assert!(!case_phone.node.phone_app_windows_enabled(case_pc_id), "per-PC default OFF: {case}");
+        if case == "default-off" {
+            let denied = case_pc.node.mirror_start_owned(case_phone_id, nectarlink_core::MirrorStart {
+                max_size: 128, fps: 30, bitrate: 1_000_000, audio: false, session: case_session,
+                app: Some("com.android.settings".into()), stay_awake: false, screen_off: false,
+                watch: None, request: None,
+            }, |view| view.is_current()).await;
+            assert!(matches!(&denied, Err(Error::Denied)),
+                "default-OFF app allowance must return policy Denied, got {denied:?}");
+            assert!(case_phone.platform.mirror_requests.lock().unwrap().is_empty());
+            assert!(case_phone.node.resume_phone_control(case_pc_id, case_phone.node.mirror_typing_epoch(case_pc_id)).is_err());
+            // Preserve the legacy once-route's own original guard, not an app grant fallback.
+            settings_qualification_pair(&case_pc, &case_phone).await;
+            assert!(matches!(case_phone.node.arm_phone_settings_window_qualification(case_pc_id), Err(Error::Denied)));
+        } else {
+            case_phone.node.set_phone_app_windows_enabled(case_pc_id, true).unwrap();
+            let (stream, request) = request_control_session(&mut case_pc, &mut case_phone, case_session).await;
+            let owner = case_phone.node.mirror_capture_context_for_session(case_pc_id, case_session, request).unwrap();
+            let view = case_pc.node.mirror_resize_target(case_phone_id, case_session, request).unwrap();
+            let control = view.control().unwrap();
+            case_phone.platform.control_inputs.lock().unwrap().clear();
+            let resize_count = case_phone.platform.owned_mirror_resizes.lock().unwrap().len();
+            if case == "stale-owner" {
+                // A replacement on the SAME Node/Session and mirror id owns a new request/capture.
+                let (replacement, next_request) = request_control_session(&mut case_pc, &mut case_phone, case_session).await;
+                let next = case_phone.node.mirror_capture_context_for_session(case_pc_id, case_session, next_request).unwrap();
+                assert_ne!(next_request, request);
+                assert_ne!(next.capture, owner.capture);
+                assert_eq!(next.connection, owner.connection);
+                assert!(!view.stop_if_current().await.unwrap());
+                assert!(view.send_if_current(256, 128, || true).await.is_err());
+                assert!(control.send(MirrorInput::Text { text: "old-request".into() }).await.is_err());
+                assert!(!case_phone.node.mirror_app_capture_ended(case_pc_id, owner));
+                stream.close();
+                assert!(case_phone.node.mirror_capture_current(case_pc_id, next) && !replacement.is_closed());
+                assert!(!case_phone.node.mirror_control_input_current(case_pc_id, owner));
+                replacement.close();
+            } else if case == "stale-node" {
+                // Keep the PC Node/Shared intact: its retained view owns actual old Session A,
+                // while restarting only the phone creates Session B on that same PC Shared.
+                let old_phone = case_phone.node.clone();
+                let old_tap = old_phone.mirror_typing_epoch(case_pc_id);
+                old_phone.shutdown().await;
+                let observing_pc = case_pc.node.clone();
+                wait_for(&mut case_pc, "R31 old phone Session offline", |event| match event {
+                    NodeEvent::LinkChanged { device, link: LinkState::Offline { .. } }
+                        if *device == case_phone_id && observing_pc.test_session_dialer(case_phone_id).is_none() => Some(()),
+                    _ => None,
+                }).await;
+                let TestDevice { platform, dir, name, .. } = case_phone;
+                case_phone = start_in_with_platform(dir, name, DeviceKind::Phone, platform).await;
+                case_phone.node.update_power(PowerLevel::Elevated, caps).await;
+                let phone_addrs = case_phone.node.direct_addrs().await;
+                assert!(!phone_addrs.is_empty() && phone_addrs.iter().all(|address| address.ip().is_loopback()));
+                case_pc.node.add_known_addrs(case_phone_id, &phone_addrs);
+                wait_online(&mut case_pc, case_phone_id).await;
+                wait_online(&mut case_phone, case_pc_id).await;
+                if case_pc.node.capabilities(case_phone_id).unwrap().state("mirroring.app_windows") != Some(FeatureState::Available) {
+                    wait_feature(&mut case_pc, case_phone_id, "mirroring.app_windows", |state| *state == FeatureState::Available).await;
+                }
+                control_barrier(&case_pc, &case_phone).await;
+                let (replacement, next_request) = request_control_session(&mut case_pc, &mut case_phone, case_session).await;
+                let next = case_phone.node.mirror_capture_context_for_session(case_pc_id, case_session, next_request).unwrap();
+                assert_ne!(next.connection, owner.connection);
+                assert_ne!(next.capture, owner.capture);
+                let db = rusqlite::Connection::open(case_phone.dir.path().join("nectarlink.db")).unwrap();
+                let before: String = db.query_row("SELECT value FROM meta WHERE key = 'mirror_typing_fence'", [], |row| row.get(0)).unwrap();
+                assert!(old_phone.resume_phone_control(case_pc_id, old_tap).is_err());
+                let after: String = db.query_row("SELECT value FROM meta WHERE key = 'mirror_typing_fence'", [], |row| row.get(0)).unwrap();
+                assert_eq!(before, after, "an old Node's Resume cannot mutate its successor");
+                drop(db);
+                assert!(!view.stop_if_current().await.unwrap());
+                assert!(view.send_if_current(256, 128, || true).await.is_err());
+                assert!(control.send(MirrorInput::Text { text: "old-session".into() }).await.is_err());
+                assert!(!case_phone.node.mirror_control_input_current(case_pc_id, owner));
+                stream.close();
+                assert!(case_phone.node.mirror_capture_current(case_pc_id, next) && !replacement.is_closed());
+                replacement.close();
+            } else {
+                match case {
+                    "app-off" => case_phone.node.set_phone_app_windows_enabled(case_pc_id, false).unwrap(),
+                    "pending-write" => {
+                        let db = rusqlite::Connection::open(case_phone.dir.path().join("nectarlink.db")).unwrap();
+                        db.execute_batch("CREATE TRIGGER fail_r31_app_grant BEFORE UPDATE ON peer_toggles WHEN NEW.toggle = 'phone_app_windows' BEGIN SELECT RAISE(ABORT, 'R31 synthetic grant failure'); END;").unwrap();
+                        assert!(case_phone.node.set_phone_app_windows_enabled(case_pc_id, false).is_err());
+                        assert!(case_phone.node.phone_app_windows_enabled(case_pc_id), "saved ON is not proof of effective admission");
+                        db.execute_batch("DROP TRIGGER fail_r31_app_grant;").unwrap();
+                    }
+                    "input-off" => case_phone.node.set_phone_control_enabled(case_pc_id, false).unwrap(),
+                    "provider-loss" => case_phone.node.update_power(PowerLevel::Basic, vec![
+                        MIRROR_CAPTURE.into(), MIRROR_CORRELATION.into(), MIRROR_INPUT_REQUEST.into(),
+                    ]).await,
+                    // Android banking pause removes the provider; a secure/helper end
+                    // reaches this exact Core retirement seam. This does not fake OS detection.
+                    "source-end" => assert!(case_phone.node.mirror_app_capture_ended(case_pc_id, owner)),
+                    "unpair" => case_phone.node.unpair(case_pc_id).await.unwrap(),
+                    _ => unreachable!(),
+                }
+                assert!(!case_phone.node.mirror_control_input_current(case_pc_id, owner), "input fence: {case}");
+                if case == "input-off" {
+                    assert!(case_phone.node.mirror_capture_current(case_pc_id, owner) && !stream.is_closed(),
+                        "control OFF retains view-only app ownership");
+                } else {
+                    assert!(!case_phone.node.mirror_capture_current(case_pc_id, owner), "capture fence: {case}");
+                    assert!(case_phone.node.mirror_open_owned(case_pc_id, owner).await.is_err());
+                    assert_eq!(stream.send(nectarlink_core::PacketKind::Frame, 0, vec![0]), nectarlink_core::MirrorSend::Closed);
+                }
+                let _ = control.send(MirrorInput::Text { text: format!("denied-{case}") }).await;
+                if case == "input-off" {
+                    // Capture resize is not an input grant: the view remains resizable.
+                    let current = case_phone.node.mirror_capture_context_for_session(case_pc_id, case_session, request).unwrap();
+                    view.send_if_current(256, 128, || true).await.unwrap();
+                    wait_owned_app_resize(&case_phone, resize_count + 1).await;
+                    assert_eq!(case_phone.platform.owned_mirror_resizes.lock().unwrap().last().unwrap().3, current);
+                } else {
+                    let _ = view.send_if_current(256, 128, || true).await;
+                }
+                if case != "unpair" { control_barrier(&case_pc, &case_phone).await; }
+                assert!(case_phone.platform.control_inputs.lock().unwrap().is_empty(), "old input reached platform: {case}");
+                if case != "input-off" {
+                    assert_eq!(case_phone.platform.owned_mirror_resizes.lock().unwrap().len(), resize_count,
+                        "old resize reached platform: {case}");
+                }
+                if matches!(case, "app-off" | "pending-write" | "provider-loss" | "unpair" | "input-off") {
+                    assert!(case_phone.node.resume_phone_control(case_pc_id, case_phone.node.mirror_typing_epoch(case_pc_id)).is_err(),
+                        "explicit Resume cannot bypass current grant/provider/pair denial: {case}");
+                }
+                if matches!(case, "app-off" | "pending-write" | "provider-loss") {
+                    let denied = case_pc.node.mirror_start_owned(case_phone_id, nectarlink_core::MirrorStart {
+                        max_size: 128, fps: 30, bitrate: 1_000_000, audio: false, session: case_session + 1,
+                        app: Some("com.android.settings".into()), stay_awake: false, screen_off: false,
+                        watch: None, request: None,
+                    }, |view| view.is_current()).await;
+                    let policy_denied = matches!(&denied, Err(Error::Denied));
+                    let provider_withdrawn = case == "provider-loss" && matches!(&denied, Err(Error::Unsupported));
+                    assert!(policy_denied || provider_withdrawn,
+                        "fresh app {case} must return explicit policy/provider denial, got {denied:?}");
+                }
+                stream.close();
+            }
+        }
+        if case == "unpair" {
+            assert!(!case_phone.node.paired_devices().unwrap().iter().any(|device| device.id == case_pc_id));
+        } else {
+            assert!(case_phone.node.device_toggles(case_pc_id).unwrap().iter().any(|(name, on)| *name == "mirroring" && !*on),
+                "app operations cannot turn SCREEN on: {case}");
+        }
+        case_pc.node.shutdown().await;
+        case_phone.node.shutdown().await;
+    }
+
 }
 
 #[cfg(feature = "test-support")]
@@ -10123,5 +10296,210 @@ async fn exact_app_source_end_cancels_pending_open_without_replacing_other_owner
     if let Err(error) = result {
         if error.is_panic() { std::panic::resume_unwind(error.into_panic()); }
         panic!("source EOF fixture task cancelled: {error}");
+    }
+}
+
+
+/// R31: actual owned app transport remains independent of full-phone sharing.
+#[cfg(feature = "test-support")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn ordinary_settings_app_survives_screen_off_and_owner_resume_without_screen_grant() {
+    use nectarlink_core::{
+        MIRROR_APP_WINDOWS_OWNED_V1, MIRROR_CAPTURE, MIRROR_CORRELATION, MIRROR_INPUT,
+        MIRROR_INPUT_REQUEST, MIRROR_VIRTUAL_DISPLAY, MirrorConfig, MirrorInput, MirrorSend,
+        MirrorStart, PacketKind,
+    };
+
+    async fn start_settings(pc: &TestDevice, phone: &TestDevice, session: u32) -> nectarlink_core::MirrorView {
+        let published = Mutex::new(None);
+        pc.node
+            .mirror_start_owned(
+                phone.node.device_id(),
+                nectarlink_core::MirrorStart {
+                    max_size: 128,
+                    fps: 30,
+                    bitrate: 1_000_000,
+                    audio: false,
+                    session,
+                    app: Some("com.android.settings".into()),
+                    stay_awake: false,
+                    screen_off: false,
+                    watch: None,
+                    request: None,
+                },
+                |view| {
+                    assert!(view.is_current(), "the actual ordinary view precedes the reply wait");
+                    assert!(!view.is_settings_qualification(), "ordinary Settings never borrows a once offer");
+                    *published.lock().unwrap() = Some(view);
+                    true
+                },
+            )
+            .await
+            .unwrap_or_else(|error| panic!("ordinary Settings session {session} failed: {error:?}"));
+        published.into_inner().unwrap().expect("owned start published its real view")
+    }
+
+    // Four bytes force a real STREAM-prelude write to wait when its exact reader is held.
+    let (mut pc, mut phone) = request_control_pair_with_pc_transport(Some(4)).await;
+    let pc_shutdown = pc.node.clone();
+    let phone_shutdown = phone.node.clone();
+    let mut task = tokio::spawn(async move {
+        let (pc_id, phone_id) = (pc.node.device_id(), phone.node.device_id());
+        phone.node.set_phone_app_windows_enabled(pc_id, true).unwrap();
+        phone.node.update_power(PowerLevel::Elevated, vec![
+            MIRROR_CAPTURE.into(), MIRROR_CORRELATION.into(), MIRROR_INPUT.into(),
+            MIRROR_INPUT_REQUEST.into(), MIRROR_VIRTUAL_DISPLAY.into(), MIRROR_APP_WINDOWS_OWNED_V1.into(),
+        ]).await;
+        wait_feature(&mut pc, phone_id, "mirroring.app_windows", |state| *state == FeatureState::Available).await;
+        assert!(!phone.node.mirror_typing_stopped(pc_id));
+        let mut opened: Vec<(nectarlink_core::MirrorView, Arc<nectarlink_core::MirrorStream>, nectarlink_core::MirrorControlContext)> = Vec::new();
+        for session in [71, 73, 75] {
+            // 71 is active before OFF; 73 crosses OFF in its actual pending prelude;
+            // 75 is a new ordinary app admitted after OFF. No Settings offer is armed.
+            let view = start_settings(&pc, &phone, session).await;
+            let owner = phone.node.mirror_capture_context_for_session(pc_id, session, view.request()).unwrap();
+            let stream = if session == 73 {
+                let (held, release, pending, _) = pc.node.test_mirror_prelude_probe(&phone.node, owner).unwrap();
+                let source = phone.node.clone();
+                let opening = tokio::spawn(async move { source.mirror_open_owned(pc_id, owner).await });
+                with_timeout("R31 exact app prelude reader held", held.notified()).await;
+                with_timeout("R31 actual app prelude write pending", pending.notified()).await;
+                let retained_control = opened[0].0.control().unwrap();
+                let tapped = phone.node.mirror_typing_epoch(pc_id);
+                phone.node.set_mirroring_enabled(pc_id, false, tapped).unwrap();
+                control_barrier(&pc, &phone).await;
+                assert!(phone.node.mirror_capture_current(pc_id, owner), "SCREEN OFF cannot retire a pending app");
+                assert!(!opening.is_finished(), "the same app open remains held, not revoked");
+                let (active_view, active_stream, active_owner): &(
+                    nectarlink_core::MirrorView,
+                    Arc<nectarlink_core::MirrorStream>,
+                    nectarlink_core::MirrorControlContext,
+                ) = &opened[0];
+                assert!(active_view.is_current());
+                assert!(phone.node.mirror_capture_current(pc_id, *active_owner));
+                assert!(!active_stream.is_closed(), "SCREEN OFF cannot end the already active app");
+                assert!(retained_control.is_current(), "SCREEN-only OFF preserves the original app input lease");
+                phone.platform.control_inputs.lock().unwrap().clear();
+                retained_control.send(MirrorInput::Text { text: "active-across-screen-off".into() }).await.unwrap();
+                control_barrier(&pc, &phone).await;
+                let reached = phone.platform.control_inputs.lock().unwrap().clone();
+                assert_eq!(reached.len(), 1);
+                assert_eq!(reached[0].2, *active_owner);
+                let resized = phone.platform.owned_mirror_resizes.lock().unwrap().len();
+                active_view.send_if_current(256, 128, || true).await.unwrap();
+                wait_owned_app_resize(&phone, resized + 1).await;
+                assert_eq!(phone.platform.owned_mirror_resizes.lock().unwrap().last().unwrap().3, *active_owner);
+                release.notify_one();
+                let stream = Arc::new(with_timeout("R31 pending app survives SCREEN OFF", opening).await.unwrap().unwrap());
+                let sender = stream.clone();
+                let request = view.request();
+                tokio::task::spawn_blocking(move || {
+                    assert_eq!(sender.send(PacketKind::Config, 0, MirrorConfig {
+                        codec: "h264".into(), width: 128, height: 128, session, request: Some(request),
+                    }.to_cbor()), MirrorSend::Queued);
+                }).await.unwrap();
+                wait_for(&mut pc, "R31 correlated pending app CONFIG", |event| {
+                    matches!(event, NodeEvent::Mirroring { device, session: got, on: true }
+                        if *device == phone_id && *got == session).then_some(())
+                }).await;
+                assert!(pc.platform.screen.configs.lock().unwrap().iter().any(|config| {
+                    config.session == session && config.request == Some(request)
+                }));
+                stream
+            } else {
+                show_control_request(&mut pc, &phone, session, view.request()).await
+            };
+            assert!(phone.node.mirror_capture_current(pc_id, owner));
+            assert!(view.is_current() && !stream.is_closed());
+            opened.push((view, stream, owner));
+        }
+        assert!(phone.node.device_toggles(pc_id).unwrap().iter().any(|(name, on)| *name == "mirroring" && !*on));
+        assert!(phone.node.phone_app_windows_enabled(pc_id));
+        let requests_before_screen = phone.platform.mirror_requests.lock().unwrap().len();
+        assert_eq!(requests_before_screen, 3);
+        assert!(phone.platform.mirror_requests.lock().unwrap().iter().all(|options| {
+            options.session != 0 && options.app.as_deref() == Some("com.android.settings")
+        }));
+        let screen = pc.node.mirror_start(phone_id, MirrorStart {
+            max_size: 128, fps: 30, bitrate: 1_000_000, audio: false, session: 0,
+            app: None, stay_awake: false, screen_off: false, watch: None, request: None,
+        }).await;
+        assert!(matches!(screen, Err(Error::Denied)), "full SCREEN request stays denied: {screen:?}");
+        assert_eq!(phone.platform.mirror_requests.lock().unwrap().len(), requests_before_screen,
+            "an app must not start a full-phone fallback or permission callback");
+
+        for (index, (view, stream, owner)) in opened.iter().enumerate() {
+            phone.platform.control_inputs.lock().unwrap().clear();
+            let control = view.control().expect("app control does not borrow SCREEN permission");
+            control.send(MirrorInput::Text { text: format!("ordinary-settings-{index}") }).await.unwrap();
+            control_barrier(&pc, &phone).await;
+            let reached = phone.platform.control_inputs.lock().unwrap().clone();
+            assert_eq!(reached.len(), 1);
+            assert_eq!(reached[0].2, *owner);
+            assert!(owner.session != 0 && phone.node.mirror_control_input_current(pc_id, *owner));
+            let count = phone.platform.owned_mirror_resizes.lock().unwrap().len();
+            view.send_if_current(256, 128, || true).await.unwrap();
+            wait_owned_app_resize(&phone, count + 1).await;
+            assert_eq!(phone.platform.owned_mirror_resizes.lock().unwrap().last().unwrap().3, *owner);
+            assert!(!stream.is_closed());
+        }
+
+        let (view, stream, old_owner) = &opened[0];
+        let old_control = view.control().unwrap();
+        let old_tap = phone.node.mirror_typing_epoch(pc_id);
+        let stopped_at = phone.node.mirror_deny_typing(pc_id).unwrap();
+        assert_ne!(old_tap, stopped_at);
+        assert!(phone.node.mirror_typing_stopped(pc_id));
+        assert!(phone.node.mirror_capture_current(pc_id, *old_owner) && !stream.is_closed(),
+            "Stop retains view-only ownership while denying input");
+        phone.platform.control_inputs.lock().unwrap().clear();
+        let _ = old_control.send(MirrorInput::Key { key: "enter".into() }).await;
+        control_barrier(&pc, &phone).await;
+        assert!(phone.platform.control_inputs.lock().unwrap().is_empty());
+        assert!(!phone.node.mirror_control_input_current(pc_id, *old_owner));
+        assert!(phone.node.resume_phone_control(pc_id, old_tap).is_err(), "a pre-Stop tap cannot resume");
+        assert!(phone.node.mirror_typing_stopped(pc_id));
+        let grants_before = phone.node.device_toggles(pc_id).unwrap();
+        phone.node.resume_phone_control(pc_id, stopped_at).unwrap();
+        assert!(!phone.node.mirror_typing_stopped(pc_id));
+        assert_eq!(phone.node.device_toggles(pc_id).unwrap(), grants_before,
+            "explicit app-only Resume changes neither SCREEN nor any saved grant");
+        assert!(phone.node.device_toggles(pc_id).unwrap().iter().any(|(name, on)| *name == "mirroring" && !*on));
+        assert!(view.is_current() && !stream.is_closed(), "Resume retains this same view/capture");
+        // Read only the actual current target while its advertised epoch arrives;
+        // no start, Resume or input request is retried.
+        let fresh_control = with_timeout("R31 fresh app control epoch advertised", async {
+            loop {
+                if !old_control.is_current() {
+                    if let Ok(control) = view.control() { break control; }
+                }
+                tokio::task::yield_now().await;
+            }
+        }).await;
+        let fresh_owner = phone.node.mirror_capture_context_for_session(pc_id, old_owner.session, old_owner.request).unwrap();
+        assert_eq!(fresh_owner.capture, old_owner.capture);
+        assert_eq!(fresh_owner.connection, old_owner.connection);
+        assert_ne!(fresh_owner.generation, old_owner.generation);
+        assert!(!old_control.is_current());
+        assert!(old_control.send(MirrorInput::Key { key: "enter".into() }).await.is_err());
+        assert!(!phone.node.mirror_control_input_current(pc_id, *old_owner));
+        phone.platform.control_inputs.lock().unwrap().clear();
+        fresh_control.send(MirrorInput::Key { key: "enter".into() }).await.unwrap();
+        control_barrier(&pc, &phone).await;
+        let reached = phone.platform.control_inputs.lock().unwrap().clone();
+        assert_eq!(reached.len(), 1);
+        assert_eq!(reached[0].2, fresh_owner);
+        assert!(phone.node.mirror_control_input_current(pc_id, fresh_owner));
+        assert_eq!(phone.platform.mirror_requests.lock().unwrap().len(), requests_before_screen);
+        for (_, stream, _) in opened { stream.close(); }
+    });
+    let result = tokio::time::timeout(Duration::from_secs(80), &mut task).await;
+    if result.is_err() { task.abort(); let _ = (&mut task).await; }
+    with_timeout("R31 main PC shutdown", pc_shutdown.shutdown()).await;
+    with_timeout("R31 main phone shutdown", phone_shutdown.shutdown()).await;
+    let result = result.expect("R31 main exceeded its bounded cleanup deadline");
+    if let Err(error) = result {
+        if error.is_panic() { std::panic::resume_unwind(error.into_panic()); }
+        panic!("R31 main task cancelled: {error}");
     }
 }

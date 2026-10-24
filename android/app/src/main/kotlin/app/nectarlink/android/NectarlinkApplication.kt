@@ -127,14 +127,17 @@ class NectarlinkApplication : Application() {
             delay(STOP_DELAY_MS)
             if (!isStopEligible()) return@launch
 
-            while (core.busy.value) {
-                core.busy.first { !it }
-                delay(STOP_IDLE_DEBOUNCE_MS)
-                if (!isStopEligible()) return@launch
-            }
+            while (isStopEligible()) {
+                while (core.busy.value) {
+                    core.busy.first { !it }
+                    delay(STOP_IDLE_DEBOUNCE_MS)
+                    if (!isStopEligible()) return@launch
+                }
 
-            if (isStopEligible()) {
-                core.stop { isStopEligible() }
+                if (core.stopWhenIdle { isStopEligible() }) return@launch
+                // App admission can win after the earlier busy read. Wait for
+                // its real lifetime instead of abandoning the next idle stop.
+                delay(STOP_IDLE_DEBOUNCE_MS)
             }
         }
     }

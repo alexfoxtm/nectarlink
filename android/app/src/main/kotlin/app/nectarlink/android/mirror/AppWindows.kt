@@ -34,7 +34,11 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.roundToInt
 
 /** Binds callback-entry state, then completes all admission work off the native callback stack. */
@@ -84,6 +88,78 @@ private enum class AdmissionThreads {
 }
 
 /**
+ * Pending opens and admitted windows. [busy] is written in the same lock as
+ * the set edit, so retiring an older member cannot store false after a
+ * successor is admitted. Saved allowance is not a member, and this value
+ * does not grant capture, input, or a helper start.
+ */
+internal class AppWindowWork {
+    private val lock = Any()
+    private val pending = HashSet<Long>()
+    private val admitted = HashSet<Long>()
+    private val next = AtomicLong(0)
+    private val _busy = MutableStateFlow(false)
+    val busy: StateFlow<Boolean> = _busy.asStateFlow()
+
+    /**
+     * Checks [current] and claims the pending token under this lock.
+     * [current] is the existing node-identity and Rust currentness closure.
+     * It must not acquire Core's opsLock. A false or throwing check claims nothing.
+     */
+    fun openStarted(current: () -> Boolean): Long? = synchronized(lock) {
+        if (!runCatching(current).getOrDefault(false)) {
+            null
+        } else {
+            val token = next.incrementAndGet()
+            pending.add(token)
+            publishLocked()
+            token
+        }
+    }
+
+    /**
+     * Runs [commit] only when nothing is pending or admitted.
+     * Caller already holds lifecycleMutex, then opsLock. [commit] clears the
+     * published node under this same lock and must not suspend, join, or take opsLock.
+     */
+    fun retireIfIdle(commit: () -> Unit): Boolean = synchronized(lock) {
+        if (pending.isNotEmpty() || admitted.isNotEmpty()) {
+            false
+        } else {
+            commit()
+            true
+        }
+    }
+
+    /** Only a token that is still pending becomes admitted. A retired token is not. */
+    fun admit(token: Long) {
+        synchronized(lock) {
+            if (pending.remove(token)) admitted.add(token)
+            publishLocked()
+        }
+    }
+
+    fun abandon(token: Long) {
+        synchronized(lock) {
+            pending.remove(token)
+            publishLocked()
+        }
+    }
+
+    fun retire(token: Long) {
+        synchronized(lock) {
+            pending.remove(token)
+            admitted.remove(token)
+            publishLocked()
+        }
+    }
+
+    private fun publishLocked() {
+        _busy.value = pending.isNotEmpty() || admitted.isNotEmpty()
+    }
+}
+
+/**
  * Phone apps in windows of their own on a PC (Elevated): each runs on a
  * display the shell-side helper makes for it, whose video goes to the PC
  * as a mirroring session of its own. A notification says so while any are
@@ -120,6 +196,7 @@ class AppWindows(
         val owner: PhoneControlContext,
         val settingsOffer: ULong?,
         val current: () -> Boolean,
+        val workToken: Long,
     ) {
         @Volatile var display: Int = -1
         var resizeRevision: Long = 0
@@ -127,6 +204,18 @@ class AppWindows(
     }
 
     private val windows = ConcurrentHashMap<Pair<String, UInt>, Window>()
+
+    private val work = AppWindowWork()
+
+    /** Readonly. True only while this object has a pending open or an admitted window. */
+    val busy: StateFlow<Boolean> = work.busy
+
+    /**
+     * Idle unpublish for Core. Caller holds lifecycleMutex, then opsLock.
+     * [commit] runs only when no open is pending or admitted, and it must not
+     * suspend, join, or take opsLock. False means admission won and nothing was cleared.
+     */
+    fun retireIfIdle(commit: () -> Unit): Boolean = work.retireIfIdle(commit)
 
     /** What each PC asks of the phone while its windows are open: (stay awake, screen off). */
     private val power = ConcurrentHashMap<String, Pair<Boolean, Boolean>>()
@@ -187,90 +276,101 @@ class AppWindows(
                         ?: wayModeCurrent(node, pc, accepted))
             }.getOrDefault(false)
         }
-        if (!current()) return false
-        val maxSize = options.maxSize.toInt().coerceIn(320, 1920)
-        val (width, height, dpi) = size(maxSize)
-        var registered: Window? = null
-        val socket = Elevated.openApp(
-            pkg, width, height, dpi, options.bitrate.toInt(), options.fps.toInt(),
-            stillCurrent = current,
-            register = { socket ->
-                val window = Window(pc, options.session, socket, width, height, dpi, maxSize, node, accepted, settingsOffer, current)
-                window.pump = AppWindowPacketPump(socket, { owns(window) }, requestKeyframe = { keyframe(window) }) {
-                    try {
-                        window.node.mirrorAppCaptureEnded(window.pc, window.owner)
-                    } finally {
-                        removeWindow(window)
-                    }
-                }
-                val key = pc to options.session
-                var displaced: Window? = null
-                var installed = false
-                var rejected = false
-                // Never hold a shared map monitor while waiting for a window:
-                // resize and close serialize through the window monitor, while
-                // ConcurrentHashMap compare/replace preserves exact ownership.
-                while (!installed && !rejected) {
-                    val previous = windows[key]
-                    if (previous == null) {
-                        if (!current()) {
-                            rejected = true
-                        } else if (windows.putIfAbsent(key, window) == null) {
-                            registered = window
-                            installed = true
+        val token = work.openStarted(current) ?: return false
+        var admittedToken = false
+        try {
+            val maxSize = options.maxSize.toInt().coerceIn(320, 1920)
+            val (width, height, dpi) = size(maxSize)
+            var registered: Window? = null
+            val socket = Elevated.openApp(
+                pkg, width, height, dpi, options.bitrate.toInt(), options.fps.toInt(),
+                stillCurrent = current,
+                register = { socket ->
+                    val window = Window(pc, options.session, socket, width, height, dpi, maxSize, node, accepted, settingsOffer, current, token)
+                    window.pump = AppWindowPacketPump(socket, { owns(window) }, requestKeyframe = { keyframe(window) }) {
+                        try {
+                            window.node.mirrorAppCaptureEnded(window.pc, window.owner)
+                        } finally {
+                            removeWindow(window)
                         }
-                    } else {
-                        synchronized(previous) {
-                            if (windows[key] === previous) {
-                                if (previous.current.invoke() || !current()) {
-                                    rejected = true
-                                } else if (windows.replace(key, previous, window)) {
-                                    registered = window
-                                    installed = true
-                                    // Revocation and socket close are ordered
-                                    // against the old window's final resize write.
-                                    runCatching { previous.socket.close() }
-                                    displaced = previous
+                    }
+                    val key = pc to options.session
+                    var displaced: Window? = null
+                    var installed = false
+                    var rejected = false
+                    // Never hold a shared map monitor while waiting for a window:
+                    // resize and close serialize through the window monitor, while
+                    // ConcurrentHashMap compare/replace preserves exact ownership.
+                    while (!installed && !rejected) {
+                        val previous = windows[key]
+                        if (previous == null) {
+                            if (!current()) {
+                                rejected = true
+                            } else if (windows.putIfAbsent(key, window) == null) {
+                                registered = window
+                                installed = true
+                            }
+                        } else {
+                            synchronized(previous) {
+                                if (windows[key] === previous) {
+                                    if (previous.current.invoke() || !current()) {
+                                        rejected = true
+                                    } else if (windows.replace(key, previous, window)) {
+                                        registered = window
+                                        installed = true
+                                        // Revocation and socket close are ordered
+                                        // against the old window's final resize write.
+                                        runCatching { previous.socket.close() }
+                                        displaced = previous
+                                    }
                                 }
                             }
                         }
                     }
+                    // Admit before the displaced pump retires, so that retirement
+                    // cannot publish idle over this successor.
+                    if (installed) {
+                        work.admit(token)
+                        admittedToken = true
+                    }
+                    displaced?.pump?.finish()
+                    if (!installed) return@openApp false
+                    window.pump.start()
+                    true
+                },
+            )
+            if (socket == null) {
+                registered?.let(::close)
+                return false
+            }
+            val window = registered ?: run { socket.close(); return false }
+            if (!owns(window)) {
+                close(window)
+                return false
+            }
+            power[pc] = if (settingsOffer == null) options.stayAwake to options.screenOff else false to false
+            changed()
+            scope.launch(Dispatchers.IO) {
+                if (!owns(window)) {
+                    close(window)
+                    return@launch
                 }
-                displaced?.pump?.finish()
-                if (!installed) return@openApp false
-                window.pump.start()
-                true
-            },
-        )
-        if (socket == null) {
-            registered?.let(::close)
-            return false
-        }
-        val window = registered ?: run { socket.close(); return false }
-        if (!owns(window)) {
-            close(window)
-            return false
-        }
-        power[pc] = if (settingsOffer == null) options.stayAwake to options.screenOff else false to false
-        changed()
-        scope.launch(Dispatchers.IO) {
-            if (!owns(window)) {
-                close(window)
-                return@launch
+                val stream = runCatching { window.node.mirrorOpenOwned(pc, window.owner) }.getOrElse {
+                    Log.w(TAG, "can't stream an app window", it)
+                    close(window)
+                    return@launch
+                }
+                if (!owns(window)) {
+                    stream.end()
+                    close(window)
+                    return@launch
+                }
+                Thread({ forward(window, stream) }, "app-window").start()
             }
-            val stream = runCatching { window.node.mirrorOpenOwned(pc, window.owner) }.getOrElse {
-                Log.w(TAG, "can't stream an app window", it)
-                close(window)
-                return@launch
-            }
-            if (!owns(window)) {
-                stream.end()
-                close(window)
-                return@launch
-            }
-            Thread({ forward(window, stream) }, "app-window").start()
+            return true
+        } finally {
+            if (!admittedToken) work.abandon(token)
         }
-        return true
     }
 
     private fun owns(window: Window): Boolean =
@@ -320,6 +420,8 @@ class AppWindows(
             runCatching { window.socket.close() }
             removed
         }
+        // This member only. A successor that already replaced the map slot keeps its own token.
+        work.retire(window.workToken)
         if (removed) {
             changed()
             window.settingsOffer?.let { onSettingsQualificationEnded(window.pc, it) }

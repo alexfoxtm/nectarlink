@@ -426,8 +426,9 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
             hasTransfers || isMirroring || isWebcam || isMic || isSpeaker
         },
         wakesInFlight.map { it > 0 }.distinctUntilChanged(),
-    ) { busy: Boolean, isWaking: Boolean ->
-        busy || isWaking
+        appWindows.busy,
+    ) { busy: Boolean, isWaking: Boolean, hasAppWork: Boolean ->
+        busy || isWaking || hasAppWork
     }.stateIn(scope, SharingStarted.Eagerly, false)
 
     /** Short messages for the user (a command failed). */
@@ -520,13 +521,18 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
                         _state.update { it.copy(status = CoreStatus.Failed(e.message ?: e.javaClass.simpleName)) }
                         return@launch
                     }
-                    if (!currentRun.isActive || startGuard.isCancelled(token)) {
-                        shutdownAndCloseNode(started)
-                        return@launch
+                    val published = synchronized(opsLock) {
+                        if (!currentRun.isActive || startGuard.isCancelled(token)) {
+                            false
+                        } else {
+                            node = started
+                            isRunning = true
+                            true
+                        }
                     }
-                    synchronized(opsLock) {
-                        node = started
-                        isRunning = true
+                    if (!published) {
+                        withContext(NonCancellable) { shutdownAndCloseNode(started) }
+                        return@launch
                     }
                     val devicesResult = runCatching { started.pairedDevices() }
                     val devices = devicesResult.getOrDefault(emptyList())
@@ -709,6 +715,42 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
         startJob?.join()
     }
 
+    private class IdleRetirement(val node: NectarlinkNode?)
+
+    /** Auto-idle only: publish retirement atomically against app-work admission, before cancellation. */
+    suspend fun stopWhenIdle(shouldStop: () -> Boolean): Boolean = withContext(Dispatchers.IO) {
+        lifecycleMutex.withLock {
+            var retirement: IdleRetirement? = null
+            val committed = synchronized(opsLock) {
+                if (!shouldStop() || busy.value) {
+                    false
+                } else {
+                    appWindows.retireIfIdle {
+                        if (verifiedUpdateOwner != null) {
+                            startGuard.stop()
+                            restartAfterVerifiedUpdate = false
+                        } else {
+                            retirement = IdleRetirement(node)
+                            startGuard.stop()
+                            isRunning = false
+                            node = null
+                        }
+                    }
+                }
+            }
+            if (!committed) return@withLock false
+            val retired = retirement
+            if (retired != null) {
+                // Foreground return may cancel the idle checker after commit.
+                // Finish retiring this captured owner before another start can run.
+                withContext(NonCancellable) {
+                    shutdownActiveNodeLocked(idleRetirement = retired)
+                }
+            }
+            true
+        }
+    }
+
     /**
      * Shuts down the active node and all per-run collectors, monitors, and loops.
      * Sets status back to [CoreStatus.Starting] and clears node references.
@@ -767,20 +809,25 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
     }
 
     /** Caller holds [lifecycleMutex]. Does not cancel the persistent send queue. */
-    private suspend fun shutdownActiveNodeLocked(requireProviderRetirement: Boolean = false) {
-        startGuard.stop()
+    private suspend fun shutdownActiveNodeLocked(
+        requireProviderRetirement: Boolean = false,
+        idleRetirement: IdleRetirement? = null,
+    ) {
+        if (idleRetirement == null) startGuard.stop()
         val activeJob = startJob
         val activeRun = runJob
-        if (activeJob == null && node == null && activeRun == null && !requireProviderRetirement) return
+        if (activeJob == null && node == null && activeRun == null && idleRetirement?.node == null && !requireProviderRetirement) return
 
         activeRun?.cancelAndJoin()
         activeJob?.cancelAndJoin()
 
-        val activeNode = node
+        val activeNode = if (idleRetirement != null) idleRetirement.node else node
         synchronized(opsLock) {
             revokeAllSettingsQualificationsLocked()
-            isRunning = false
-            node = null
+            if (idleRetirement == null) {
+                isRunning = false
+                node = null
+            }
             // Drain any pending operations so they don't replay on the next run.
             while (notificationOps.tryReceive().isSuccess) {}
             while (remoteOps.tryReceive().isSuccess) {}
@@ -2762,12 +2809,7 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
         }
     }
 
-    /**
-     * Lets [pcId] view this phone's screen, or not (on by default). Control also needs
-     * the separate default-off phone-owner grant. Phone
-     * owner's switch only: turning it off and then on, both after a Stop on that PC's typing,
-     * ends that Stop. Taps made before a Stop never end it.
-     */
+    /** Full SCREEN preference only. Way Mode, phone-control grants and owner Resume stay separate. */
     fun setMirroringEnabled(pcId: String, enabled: Boolean) {
         synchronized(opsLock) {
             if (!enabled) revokeSettingsWindowAccessLocked(pcId)
@@ -2789,8 +2831,8 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
                             if (node === tappedNode) {
                                 val result = runCatching { tappedNode.setMirroringEnabled(pcId, enabled, tappedAt) }
                                 result.onFailure { Log.w(TAG, "can't change the mirroring toggle", it) }
-                                // Keep the warning through OFF; clear it only
-                                // after an explicit ON and a fresh fence read.
+                                // Refresh only from the actual fence; this screen
+                                // preference supplies no app/input authority.
                                 if (enabled && result.isSuccess) {
                                     runCatching { tappedNode.mirrorTypingStopped(pcId) }
                                         .onSuccess { stopped ->
@@ -2936,6 +2978,25 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
             _state.update { it.withPhoneControlEnabled(pcId, actual) }
             val stopped = runCatching { tappedNode.mirrorTypingStopped(pcId) }.getOrDefault(true)
             _state.update { it.withTypingStopped(pcId, stopped) }
+            result.onFailure { _messages.tryEmit(describe(it as? NectarlinkException ?: throw it)) }
+        }
+    }
+
+    /** Explicit owner Resume; backend fences the tapped Node/epoch and never enables SCREEN or grants. */
+    fun resumePhoneControl(pcId: String) {
+        synchronized(opsLock) {
+            val tappedNode = node ?: return
+            val result = runCatching {
+                val tappedAt = tappedNode.mirrorTypingEpoch(pcId)
+                tappedNode.resumePhoneControl(pcId, tappedAt)
+            }
+            // The actual same-Node fence is the only source of a cleared Stop warning.
+            if (node === tappedNode) {
+                runCatching { tappedNode.mirrorTypingStopped(pcId) }
+                    .onSuccess { stopped ->
+                        if (node === tappedNode) _state.update { it.withTypingStopped(pcId, stopped) }
+                    }
+            }
             result.onFailure { _messages.tryEmit(describe(it as? NectarlinkException ?: throw it)) }
         }
     }

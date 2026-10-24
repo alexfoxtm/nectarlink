@@ -351,6 +351,96 @@ TestCase {
         verify(findChild(mirrorWindow, "mirrorPreFrameDetail").text.indexOf("new Settings window") >= 0)
     }
 
+    function test_view_only_notice_is_compact_at_landscape_phone_size() {
+        const reason = "Viewing only for this connection. Remote control isn't supported on this phone connection."
+        createMirror(false, "showing", {
+            viewOnly: true, controlReason: "unsupported", canRequestControl: false
+        })
+        mirrorWindow.width = 320
+        mirrorWindow.height = 180
+        const banner = findChild(mirrorWindow, "mirrorControlHint")
+        const hint = findChild(mirrorWindow, "mirrorControlHintText")
+        const help = findChild(mirrorWindow, "mirrorRequestControl")
+        tryVerify(() => banner.visible && banner.height === 40)
+        verify(hint.visible)
+        compare(hint.text, reason)
+        verify(hint.width > 0)
+        verify(!help.visible, "unsupported view-only state has no disabled enable action")
+        compare(banner.Accessible.name, reason)
+        compare(mirrorWindow.accessibleControlDescription, reason)
+        compare(videoView.Accessible.description, reason)
+
+        Mirror.windows = JSON.stringify([{
+            key: "passive-test", name: "Fixture", phase: "showing",
+            canControl: false, viewOnly: false, controlReason: "ownerApproval",
+            canRequestControl: true
+        }])
+        const regularHelp = findChild(mirrorWindow, "mirrorRequestControl")
+        const compactHelp = findChild(mirrorWindow, "mirrorRequestControlCompact")
+        tryVerify(() => regularHelp.visible && !compactHelp.visible)
+        Mirror.calls = []
+        regularHelp.clicked()
+        tryVerify(() => Mirror.calls.some(call => call[0] === "requestControl"))
+        compare(Mirror.calls.filter(call => call[0] === "requestControl").pop(),
+                ["requestControl", "passive-test"])
+
+        mirrorWindow.width = 180
+        mirrorWindow.height = 320
+        tryVerify(() => compactHelp.visible && !regularHelp.visible)
+        Mirror.calls = []
+        compactHelp.clicked()
+        tryVerify(() => Mirror.calls.some(call => call[0] === "requestControl"))
+        compare(Mirror.calls.filter(call => call[0] === "requestControl").pop(),
+                ["requestControl", "passive-test"])
+
+        mirrorWindow.width = 96
+        mirrorWindow.height = 96
+        tryVerify(() => compactHelp.visible && !regularHelp.visible)
+        Mirror.calls = []
+        compactHelp.clicked()
+        tryVerify(() => Mirror.calls.some(call => call[0] === "requestControl"))
+        compare(Mirror.calls.filter(call => call[0] === "requestControl").pop(),
+                ["requestControl", "passive-test"])
+
+        mirrorWindow.width = 64
+        mirrorWindow.height = 64
+        tryVerify(() => compactHelp.visible && !regularHelp.visible)
+        Mirror.calls = []
+        compactHelp.clicked()
+        tryVerify(() => Mirror.calls.some(call => call[0] === "requestControl"))
+        compare(Mirror.calls.filter(call => call[0] === "requestControl").pop(),
+                ["requestControl", "passive-test"])
+    }
+
+    function test_tiny_view_only_notice_collapses_and_can_still_be_hidden() {
+        const reason = "Viewing only for this connection. Remote control isn't supported on this phone connection."
+        createMirror(false, "showing", {
+            viewOnly: true, controlReason: "unsupported", canRequestControl: false
+        })
+        mirrorWindow.width = 64
+        mirrorWindow.height = 64
+        const banner = findChild(mirrorWindow, "mirrorControlHint")
+        const hint = findChild(mirrorWindow, "mirrorControlHintText")
+        const status = findChild(mirrorWindow, "mirrorControlHintStatus")
+        const close = findChild(mirrorWindow, "mirrorControlHintClose")
+        tryVerify(() => banner.visible && banner.width <= 40 && banner.height === 26)
+        verify(!hint.visible)
+        verify(status.visible)
+        verify(close.visible)
+        compare(banner.Accessible.name, reason)
+        compare(mirrorWindow.accessibleControlDescription, reason)
+        compare(videoView.Accessible.description, reason)
+        Mirror.calls = []
+
+        close.clicked()
+
+        tryVerify(() => !banner.visible)
+        compare(videoView.Accessible.description, reason)
+        compare(Mirror.calls.filter(call => call[0] === "requestControl" || call[0] === "stop").length, 0)
+
+    }
+
+
     function test_app_control_guidance_keeps_stop_and_helper_separate_from_allowance() {
         createMirror(false, "showing", {
             app: true, title: "Settings", controlReason: "stopped", canRequestControl: false

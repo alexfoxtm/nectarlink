@@ -15,6 +15,12 @@ pub mod ffi {
         /// The stream ended: its views go blank. Any thread.
         fn video_clear(stream: &str);
 
+        /// Actual native queue/lifecycle checks; synthetic pixels on the window-gate GUI thread.
+        #[cfg(target_os = "macos")]
+        fn video_wakeup_burst_check() -> String;
+        #[cfg(target_os = "macos")]
+        fn video_wakeup_lifecycle_check() -> String;
+
         /// Must run before `QGuiApplication` is created.
         fn prepare_qt();
         /// Like `prepare_qt`, without the QML log file: for the installer

@@ -4583,6 +4583,16 @@ impl NectarlinkNode {
         Ok(self.node.mirror_typing_stopped(parse_id(&pc_id)?))
     }
 
+    /// The phone owner's tap resumes `pc_id`'s typing after a Stop, guarded by
+    /// the typing epoch read on that same tap. Synchronous: parses the peer
+    /// with the standard `parse_id` gate, then forwards to this exact node.
+    /// Backend policy (stale epochs, unpaired peers, revocations, Stop) stays
+    /// in core; denial errors propagate and are never converted to success.
+    /// No wire, grant, capability, or full-screen write happens here.
+    pub fn resume_phone_control(&self, pc_id: String, expected_typing_epoch: u64) -> Result<()> {
+        Ok(self.node.resume_phone_control(parse_id(&pc_id)?, expected_typing_epoch)?)
+    }
+
     /// Asks a paired PC to stream its screen to this phone (`mirror.start`, `session == 0`),
     /// or with `watch`, what that PC player plays, with its sound (Play on phone, after the
     /// PC offered it).

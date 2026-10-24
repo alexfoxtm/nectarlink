@@ -15,6 +15,46 @@ import android.view.Surface
 import java.io.DataOutputStream
 import java.io.OutputStream
 
+internal class PendingAppDisplaySize {
+    private var pending: Triple<Int, Int, Int>? = null
+
+    @Synchronized
+    fun submit(size: Triple<Int, Int, Int>) {
+        pending = size
+    }
+
+    @Synchronized
+    fun take(): Triple<Int, Int, Int>? {
+        val latest = pending
+        pending = null
+        return latest
+    }
+
+    @Synchronized
+    fun isPending(): Boolean = pending != null
+}
+
+/**
+ * Task visibility can change because Android places the keyguard over a still-owned app display.
+ * Only that exact hidden task may be retained; an absent task still ends the request.
+ */
+internal enum class AppDisplayTaskState { VISIBLE, HIDDEN, ABSENT, UNKNOWN }
+
+internal fun classifyAppDisplayTask(identityMatches: Boolean?, childCount: Int?, visible: Boolean?): AppDisplayTaskState = when {
+    identityMatches == false -> AppDisplayTaskState.ABSENT
+    identityMatches != true || childCount == null -> AppDisplayTaskState.UNKNOWN
+    childCount <= 0 -> AppDisplayTaskState.ABSENT
+    visible == null -> AppDisplayTaskState.UNKNOWN
+    visible -> AppDisplayTaskState.VISIBLE
+    else -> AppDisplayTaskState.HIDDEN
+}
+
+internal fun shouldKeepAppDisplay(state: AppDisplayTaskState, keyguardLocked: Boolean): Boolean = when (state) {
+    AppDisplayTaskState.VISIBLE, AppDisplayTaskState.UNKNOWN -> true
+    AppDisplayTaskState.HIDDEN -> keyguardLocked
+    AppDisplayTaskState.ABSENT -> false
+}
+
 /**
  * An app in a window of its own (Elevated): a virtual display of its own,
  * made by the shell-side helper (apps may not put other apps on their
@@ -33,7 +73,7 @@ class AppDisplay(
     private val codecName: String = "h264",
 ) {
     @Volatile private var running = true
-    @Volatile private var nextSize: Triple<Int, Int, Int>? = null
+    private val pendingSize = PendingAppDisplaySize()
     private var display: VirtualDisplay? = null
     /** The exact package-resolver or launcher child for this display's request. */
     private var commandProcess: Process? = null
@@ -79,15 +119,14 @@ class AppDisplay(
             if (!fullScreen) {
                 launch(pkg, displayId)
                 if (!running) return
-                watchActivities(displayId)
+                watchActivities(displayId, pkg)
                 keepActive(displayId)
             }
             while (running) {
                 val activeCodec = codec ?: break
                 drain(activeCodec, data)
                 if (!running) break
-                val (newW, newH, newDpi) = nextSize ?: continue
-                nextSize = null
+                val (newW, newH, newDpi) = pendingSize.take() ?: continue
                 if (newW == curW && newH == curH && newDpi == curDpi) continue
                 codecForKeyframes = null
                 runCatching { activeCodec.stop() }
@@ -130,7 +169,7 @@ class AppDisplay(
     }
 
     fun resize(w: Int, h: Int, newDpi: Int) {
-        nextSize = Triple(w, h, newDpi)
+        pendingSize.submit(Triple(w, h, newDpi))
     }
 
     @Volatile private var codecForKeyframes: MediaCodec? = null
@@ -184,7 +223,7 @@ class AppDisplay(
     private fun drain(codec: MediaCodec, out: DataOutputStream) {
         val info = MediaCodec.BufferInfo()
         var parameters = ByteArray(0)
-        while (running && nextSize == null) {
+        while (running && !pendingSize.isPending()) {
             val index = codec.dequeueOutputBuffer(info, 50_000)
             if (index < 0) continue
             val buffer = codec.getOutputBuffer(index)
@@ -205,7 +244,10 @@ class AppDisplay(
                 }
             }
             codec.releaseOutputBuffer(index, false)
-            if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) return
+            if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
+                running = false
+                return
+            }
         }
     }
 
@@ -399,17 +441,23 @@ class AppDisplay(
         }
     }
 
-    /** Stops the stream when the app on [display] finishes its last activity. */
-    private fun watchActivities(display: Int) {
+    /** Stops only after the exact app task has disappeared; keyguard visibility alone is not removal. */
+    private fun watchActivities(display: Int, pkg: String) {
         Thread({
             try {
                 Thread.sleep(1_500)
+                var ownedTaskId: Int? = null
                 var seen = false
                 var emptyCount = 0
                 var ticks = 0
                 while (running) {
-                    if (hasActivityOnDisplay(display)) {
+                    val observation = activityOnDisplay(display, pkg, ownedTaskId)
+                    val locked = observation.state == AppDisplayTaskState.HIDDEN && keyguardIsLocked()
+                    if (observation.state == AppDisplayTaskState.VISIBLE) {
+                        ownedTaskId = observation.taskId
                         seen = true
+                        emptyCount = 0
+                    } else if (shouldKeepAppDisplay(observation.state, locked)) {
                         emptyCount = 0
                     } else if (seen || ticks >= 15) {
                         emptyCount++
@@ -430,25 +478,70 @@ class AppDisplay(
         }
     }
 
-    /**
-     * Whether the display still has a visible task, asked of the activity
-     * manager (Android 12+). When it can't tell, the window stays open:
-     * closing someone's window by mistake is worse than a stale picture.
-     */
+    private data class ActivityTaskObservation(val state: AppDisplayTaskState, val taskId: Int? = null)
+
+    /** The task is tied to this app-display request, not merely any visible task on the display. */
     @SuppressLint("PrivateApi", "DiscouragedPrivateApi")
-    private fun hasActivityOnDisplay(display: Int): Boolean = runCatching {
+    private fun activityOnDisplay(display: Int, pkg: String, ownedTaskId: Int?): ActivityTaskObservation = runCatching {
         val service = Class.forName("android.app.ActivityTaskManager").getMethod("getService").invoke(null)
-            ?: return@runCatching true
+            ?: return@runCatching ActivityTaskObservation(AppDisplayTaskState.UNKNOWN)
         val tasks = service.javaClass
             .getMethod("getAllRootTaskInfosOnDisplay", Int::class.javaPrimitiveType)
-            .invoke(service, display) as List<*>
-        tasks.any { task ->
-            if (task == null) return@any false
-            val visible = runCatching { task.javaClass.getField("visible").getBoolean(task) }.getOrDefault(true)
-            val children = runCatching { (task.javaClass.getField("childTaskIds").get(task) as IntArray).size }.getOrDefault(1)
-            visible && children > 0
+            .invoke(service, display) as? List<*>
+            ?: return@runCatching ActivityTaskObservation(AppDisplayTaskState.UNKNOWN)
+
+        fun taskId(task: Any): Int? = runCatching { task.javaClass.getField("taskId").getInt(task) }.getOrNull()
+        fun childCount(task: Any): Int? = runCatching {
+            (task.javaClass.getField("childTaskIds").get(task) as IntArray).size
+        }.getOrNull()
+        fun visible(task: Any): Boolean? = runCatching { task.javaClass.getField("visible").getBoolean(task) }.getOrNull()
+        fun packages(task: Any): Set<String>? {
+            val names = listOf("topActivity", "baseActivity", "rootActivity").mapNotNull { field ->
+                runCatching { (task.javaClass.getField(field).get(task) as? android.content.ComponentName)?.packageName }.getOrNull()
+            }.toSet()
+            return names.takeIf { it.isNotEmpty() }
         }
-    }.getOrDefault(true)
+
+        if (ownedTaskId != null) {
+            for (task in tasks) {
+                if (task == null) return@runCatching ActivityTaskObservation(AppDisplayTaskState.UNKNOWN)
+                val id = taskId(task) ?: return@runCatching ActivityTaskObservation(AppDisplayTaskState.UNKNOWN)
+                if (id == ownedTaskId) {
+                    val children = childCount(task) ?: return@runCatching ActivityTaskObservation(AppDisplayTaskState.UNKNOWN)
+                    val noChildren = classifyAppDisplayTask(identityMatches = true, childCount = children, visible = null)
+                    if (noChildren == AppDisplayTaskState.ABSENT) return@runCatching ActivityTaskObservation(noChildren)
+                    val isVisible = visible(task) ?: return@runCatching ActivityTaskObservation(AppDisplayTaskState.UNKNOWN)
+                    val state = classifyAppDisplayTask(identityMatches = true, childCount = children, visible = isVisible)
+                    if (state == AppDisplayTaskState.UNKNOWN) return@runCatching ActivityTaskObservation(state)
+                    val packageNames = packages(task) ?: return@runCatching ActivityTaskObservation(AppDisplayTaskState.UNKNOWN)
+                    if (pkg !in packageNames) return@runCatching ActivityTaskObservation(AppDisplayTaskState.ABSENT)
+                    return@runCatching ActivityTaskObservation(state, id)
+                }
+            }
+            return@runCatching ActivityTaskObservation(
+                classifyAppDisplayTask(identityMatches = false, childCount = null, visible = null),
+            )
+        }
+
+        for (task in tasks) {
+            if (task == null) return@runCatching ActivityTaskObservation(AppDisplayTaskState.UNKNOWN)
+            val id = taskId(task) ?: return@runCatching ActivityTaskObservation(AppDisplayTaskState.UNKNOWN)
+            val children = childCount(task) ?: return@runCatching ActivityTaskObservation(AppDisplayTaskState.UNKNOWN)
+            if (children == 0) continue
+            val isVisible = visible(task) ?: return@runCatching ActivityTaskObservation(AppDisplayTaskState.UNKNOWN)
+            val packageNames = packages(task) ?: return@runCatching ActivityTaskObservation(AppDisplayTaskState.UNKNOWN)
+            val state = classifyAppDisplayTask(identityMatches = pkg in packageNames, childCount = children, visible = isVisible)
+            if (state == AppDisplayTaskState.VISIBLE) return@runCatching ActivityTaskObservation(state, id)
+        }
+        ActivityTaskObservation(AppDisplayTaskState.ABSENT)
+    }.getOrDefault(ActivityTaskObservation(AppDisplayTaskState.UNKNOWN))
+
+    private fun keyguardIsLocked(): Boolean = runCatching {
+        val keyguard = ShellContext.get().getSystemService(android.app.KeyguardManager::class.java) ?: return false
+        keyguard.isKeyguardLocked || keyguard.isDeviceLocked
+    }.getOrDefault(false)
+
+
 
     companion object {
         const val KIND_CONFIG = 0

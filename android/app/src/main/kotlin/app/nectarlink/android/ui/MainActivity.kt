@@ -967,6 +967,7 @@ private fun App(
                                     onSetMicEnabled = core::setMicEnabled,
                                     onSetMirroringEnabled = core::setMirroringEnabled,
                                     onSetPhoneControlEnabled = core::setPhoneControlEnabled,
+                                    onResumePhoneControl = core::resumePhoneControl,
                                     onSetWayModeEnabled = core::setWayModeEnabled,
                                     settingsQualificationPcIds = settingsQualificationPcIds,
                                     onAllowSettingsWindowOnce = core::allowSettingsWindowOnce,

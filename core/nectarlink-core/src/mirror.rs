@@ -60,7 +60,7 @@ pub(crate) struct MirrorPreludeProbe {
     pub(crate) exited: Arc<tokio::sync::Notify>,
 }
 
-/// The device toggle that allows phone-to-PC mirroring for a device.
+/// The device toggle that allows full phone-screen sharing for a device.
 pub(crate) const TOGGLE: &str = "mirroring";
 /// The per-device toggle that allows PC-to-phone reverse mirroring (off by default).
 pub const PC_MIRROR_TOGGLE: &str = "pc_mirror";
@@ -268,7 +268,7 @@ impl MirrorView {
     pub fn is_current(&self) -> bool {
         self.request != 0
             && !self.shared.cancel.is_cancelled()
-            && self.shared.toggle_on(&self.session.peer, TOGGLE)
+            && viewer_scope_allowed(&self.shared, &self.session.peer, self.mirroring, self.scope)
             && self.shared.store.is_paired(&self.session.peer).unwrap_or(false)
             && self.shared.session(&self.session.peer).is_some_and(|live| Arc::ptr_eq(&live, &self.session))
             && self.shared.peer_supports(&self.session.peer, mirror::VIRTUAL_DISPLAY)
@@ -385,6 +385,32 @@ fn pc_mirror_allowed(shared: &Shared, peer: &DeviceId) -> bool {
     shared.toggle_on(peer, PC_MIRROR_TOGGLE)
         || shared.pc_mirror_sessions.lock().unwrap_or_else(|e| e.into_inner()).contains(peer)
 }
+
+// Ordinary owned app views do not borrow the full-screen preference. Legacy
+// screen and one-shot Settings paths retain their existing screen restriction.
+fn viewer_scope_allowed(shared: &Shared, peer: &DeviceId, mirroring: u32, scope: MirrorScope) -> bool {
+    if is_local_desktop(shared) {
+        if mirroring != mirror::SCREEN
+            && scope == MirrorScope::Ordinary
+            && shared.mirror_correlated(peer)
+            && shared.peer_supports(peer, mirror::APP_WINDOWS_OWNED_V1)
+        {
+            return true;
+        }
+        shared.toggle_on(peer, TOGGLE)
+    } else {
+        shared.store.toggles(peer).ok().and_then(|t| t.get(PC_MIRROR_TOGGLE).copied()).unwrap_or(true)
+    }
+}
+
+fn source_scope_allowed(shared: &Shared, peer: &DeviceId, mirroring: u32, scope: MirrorScope) -> bool {
+    if mirroring != mirror::SCREEN && scope == MirrorScope::Ordinary {
+        shared.ordinary_app_provider_usable() && shared.phone_app_windows_admissible(peer)
+    } else {
+        shared.toggle_on(peer, TOGGLE)
+    }
+}
+
 /// Packets waiting to go out, at most. Beyond this the network is behind:
 /// sending more would only add delay.
 const QUEUE: usize = 4;
@@ -423,9 +449,10 @@ fn prepare_start(
     shared: &Shared,
     session: &Session,
     options: MirrorStart,
+    owned_app: Option<&Arc<Session>>,
 ) -> Result<(MirrorStart, Envelope)> {
     let allowed = if is_local_desktop(shared) {
-        shared.toggle_on(&session.peer, TOGGLE)
+        owned_app.is_some() || shared.toggle_on(&session.peer, TOGGLE)
     } else {
         shared.store.toggles(&session.peer)?.get(PC_MIRROR_TOGGLE).copied().unwrap_or(true)
     };
@@ -451,7 +478,15 @@ fn prepare_start(
     let options = MirrorStart { request: Some(request), ..options };
     let env = Envelope::new(types::MIRROR_START, &options)?;
     // A peer can open its media stream before the control reply arrives.
-    shared.note_mirror_outgoing(&session.peer, options.session, request);
+    if let Some(original) = owned_app {
+        if shared.with_current_mirror_session(original, || {
+            shared.note_mirror_outgoing(&original.peer, options.session, request);
+        }).is_none() {
+            return Err(Error::Denied);
+        }
+    } else {
+        shared.note_mirror_outgoing(&session.peer, options.session, request);
+    }
     Ok((options, env))
 }
 
@@ -471,7 +506,7 @@ async fn finish_start(shared: &Shared, session: &Session, options: MirrorStart, 
 }
 
 pub(crate) async fn start(shared: &Shared, session: &Session, options: MirrorStart) -> Result<()> {
-    let (options, env) = prepare_start(shared, session, options)?;
+    let (options, env) = prepare_start(shared, session, options, None)?;
     finish_start(shared, session, options, env).await
 }
 
@@ -492,7 +527,7 @@ pub(crate) async fn start_owned(
     {
         return Err(Error::Unsupported);
     }
-    let (options, env) = prepare_start(shared, session, options)?;
+    let (options, env) = prepare_start(shared, session, options, Some(session))?;
     finish_owned_start(shared, session, options, env, MirrorScope::Ordinary, ready).await
 }
 
@@ -975,6 +1010,55 @@ impl Shared {
         Ok(true)
     }
 
+
+    /// One explicit phone-owner action. It changes no view or sharing toggle.
+    pub(crate) fn resume_phone_control(&self, peer: &DeviceId, expected: u64) -> Result<()> {
+        if self.cancel.is_cancelled() || !is_local_phone(self) {
+            return Err(Error::Denied);
+        }
+        // Same app-authority -> local -> typing order as provider publication.
+        // No platform or UI callback runs while these guards are held.
+        let _app_epochs = self.phone_app_revoke_epoch.lock().unwrap_or_else(|e| e.into_inner());
+        let caps = self.local_capabilities();
+        let mut fence = self.typing_fence();
+        let current = fence.current(peer);
+        let paired_pc = self.store.get_peer(peer)?.is_some_and(|record| {
+            matches!(record.info.kind, crate::DeviceKind::Desktop | crate::DeviceKind::Laptop)
+        });
+        let toggles = self.store.toggles(peer)?;
+        let input_ready = caps.iter().any(|cap| cap == mirror::INPUT_REQUEST)
+            && caps.iter().any(|cap| cap == mirror::INPUT);
+        let screen = toggles.get(TOGGLE).copied().unwrap_or(true)
+            && caps.iter().any(|cap| cap == mirror::CAPTURE);
+        let app = toggles.get(PHONE_APP_WINDOWS_TOGGLE) == Some(&true)
+            && !current.app_uncertain
+            && caps.iter().any(|cap| cap == mirror::VIRTUAL_DISPLAY)
+            && caps.iter().any(|cap| cap == mirror::CORRELATION)
+            && caps.iter().any(|cap| cap == mirror::APP_WINDOWS_OWNED_V1)
+            && self.settings_provider_epoch.load(Ordering::Acquire) != 0;
+        if self.cancel.is_cancelled()
+            || current.generation != expected
+            || !paired_pc
+            || !input_ready
+            || toggles.get(PHONE_CONTROL_TOGGLE) != Some(&true)
+            || (!screen && !app)
+        {
+            return Err(Error::Denied);
+        }
+        if !current.stopped {
+            return Ok(());
+        }
+        let mut resumed = fence.clone();
+        let generation = resumed.advance();
+        resumed.peers.insert(
+            *peer,
+            Typing { generation, stopped: false, app_uncertain: current.app_uncertain, owner_off: None },
+        );
+        resumed.persist(&self.store)?;
+        *fence = resumed;
+        Ok(())
+    }
+
     /// `peer` is unpaired: its entry goes, and the floor moves, so nothing
     /// admitted before (stopped or not) reaches the OS after a re-pairing.
     pub(crate) fn forget_mirror_typing(&self, peer: &DeviceId) -> Result<()> {
@@ -1031,10 +1115,7 @@ pub(crate) async fn power(
 }
 
 /// The apps a phone can open in windows of their own, by name.
-pub(crate) async fn apps(shared: &Shared, session: &Session) -> Result<Vec<PhoneApp>> {
-    if !shared.toggle_on(&session.peer, TOGGLE) {
-        return Err(Error::Denied);
-    }
+pub(crate) async fn apps(_shared: &Shared, session: &Session) -> Result<Vec<PhoneApp>> {
     let env = Envelope::empty(types::MIRROR_APPS);
     let PhoneApps { mut apps } =
         session.request(env, crate::session::REQUEST_TIMEOUT).await?.expect_body(types::MIRROR_APPS)?;
@@ -1064,11 +1145,10 @@ pub(crate) async fn receive(
         let _ = recv.stop(VarInt::from_u32(mirror::STOPPED));
     };
     let shows = shared.local_capabilities().iter().any(|c| c == mirror::VIEW);
-    let allowed = if is_local_desktop(&shared) {
-        shared.toggle_on(&peer, TOGGLE)
-    } else {
-        shared.store.toggles(&peer).ok().and_then(|t| t.get(PC_MIRROR_TOGGLE).copied()).unwrap_or(true)
-    };
+    // The config identifies SCREEN versus APP; authorize that scope before
+    // registering a reader or forwarding its first picture.
+    let allowed = is_local_desktop(&shared)
+        || shared.store.toggles(&peer).ok().and_then(|t| t.get(PC_MIRROR_TOGGLE).copied()).unwrap_or(true);
     if !shows || !allowed || !shared.session(&peer).is_some_and(|live| Arc::ptr_eq(&live, &session)) {
         return refuse(send, recv);
     }
@@ -1098,9 +1178,11 @@ pub(crate) async fn receive(
     // phones, unstamped streams) behavior is unchanged.
     let expected =
         shared.mirror_outgoing.lock().unwrap_or_else(|e| e.into_inner()).get(&(peer, mirroring)).copied();
+    let scope = expected.map(|owner| owner.scope).unwrap_or(MirrorScope::Ordinary);
     let correlated = shared.mirror_correlated(&peer)
         || (mirroring != mirror::SCREEN && shared.peer_supports(&peer, mirror::APP_WINDOWS_OWNED_V1));
-    if !shared.session(&peer).is_some_and(|live| Arc::ptr_eq(&live, &session))
+    if !viewer_scope_allowed(&shared, &peer, mirroring, scope)
+        || !shared.session(&peer).is_some_and(|live| Arc::ptr_eq(&live, &session))
         || !mirror_token_accepted(expected.map(|owner| owner.request), config.request, correlated)
     {
         tracing::warn!("a phone's video stream answered an older mirroring request");
@@ -1114,6 +1196,7 @@ pub(crate) async fn receive(
     let request = config.request;
     let current = || {
         !shared.cancel.is_cancelled()
+            && viewer_scope_allowed(&shared, &peer, mirroring, scope)
             && shared.session(&peer).is_some_and(|live| Arc::ptr_eq(&live, &session))
             && (!correlated
                 || shared
@@ -1127,6 +1210,9 @@ pub(crate) async fn receive(
     let Some(stopped) = shared.register_mirror_view_reader(&session, mirroring, request, correlated) else {
         return refuse(send, recv);
     };
+    if !current() {
+        return refuse(send, recv);
+    }
     let started_at = std::time::Instant::now();
     let title = if mirroring == mirror::SCREEN {
         "Screen mirroring".to_owned()
@@ -1337,7 +1423,7 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
             session.send(reply.reply_to(env.id)).await?;
         }
         types::MIRROR_START => {
-            let admission_epoch = shared.mirror_epoch(&peer);
+            let admission_provider_epoch = shared.settings_provider_epoch.load(Ordering::Acquire);
             // Frozen beside the admission epoch so OFF/ON during capability or
             // callback work cannot admit a pre-revoke ordinary app request.
             let admission_app_epoch = shared.phone_app_epoch(&peer);
@@ -1361,7 +1447,7 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
                 // Ordinary owned app windows are explicitly per-PC Way Mode.
                 // Settings qualification takes its separate one-shot path.
                 None if options.app.is_some() => {
-                    shared.toggle_on(&peer, TOGGLE) && shared.phone_app_windows_admissible(&peer)
+                    shared.phone_app_windows_admissible(&peer)
                 }
                 None => shared.toggle_on(&peer, TOGGLE),
             };
@@ -1381,13 +1467,14 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
                 // Copied out: the consent call below moves `options`.
                 let accepted_session = options.session;
                 let accepted_request = options.request;
+                let app_request = options.app.is_some();
                 let registered = match accepted_request {
                     Some(request) if options.app.is_some() => {
                         shared.admit_mirror_app(
                             session,
                             accepted_session,
                             request,
-                            admission_epoch,
+                            admission_provider_epoch,
                             admission_app_epoch,
                         )
                     }
@@ -1413,6 +1500,11 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
                             // is stale.
                             if !shared.session(&peer).is_some_and(|live| Arc::ptr_eq(&live, session)) {
                                 Envelope::error(ErrorCode::Denied, "the mirror connection was replaced")
+                            } else if app_request && !accepted_request.is_some_and(|request| {
+                                shared.mirror_capture_context(&peer, accepted_session, request)
+                                    .is_some_and(|owner| owner.connection == connection && owner.capture == capture)
+                            }) {
+                                Envelope::error(ErrorCode::Denied, "the app request was revoked while opening")
                             } else {
                                 Envelope::empty(types::OK)
                             }
@@ -1551,7 +1643,7 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
         }
         types::MIRROR_RESIZE => {
             let resize: MirrorResize = env.body()?;
-            let allowed = shared.toggle_on(&peer, TOGGLE)
+            let allowed = (resize.session != mirror::SCREEN || shared.toggle_on(&peer, TOGGLE))
                 && shared.local_capabilities().iter().any(|c| c == mirror::VIRTUAL_DISPLAY);
             // App resizes are capture operations. Mint authority from the local
             // accepted request and authenticated Session, never from sender IDs.
@@ -1641,9 +1733,9 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
             }
         }
         types::MIRROR_APPS => {
-            let reply = if !shared.toggle_on(&peer, TOGGLE) {
-                Envelope::error(ErrorCode::Denied, "mirroring is off for this device")
-            } else if !shared.local_capabilities().iter().any(|c| c == mirror::VIRTUAL_DISPLAY) {
+            let reply = if !shared.phone_app_windows_admissible(&peer) {
+                Envelope::error(ErrorCode::Denied, "Way Mode is off for this device")
+            } else if !shared.ordinary_app_provider_usable() {
                 Envelope::error(ErrorCode::Unsupported, "this device doesn't open apps in windows")
             } else {
                 match tokio::task::spawn_blocking(move || platform.phone_apps())
@@ -1829,11 +1921,11 @@ impl MirrorStream {
 /// after registering (the toggle may flip while the stream is being
 /// opened). Input, start and generation checks live elsewhere and are
 /// unchanged.
-fn mirror_open_allowed(shared: &Shared, peer: &DeviceId) -> bool {
+fn mirror_open_allowed(shared: &Shared, peer: &DeviceId, owner: Option<MirrorControlContext>, scope: MirrorScope) -> bool {
     if is_local_desktop(shared) {
         pc_mirror_allowed(shared, peer) || crate::media::watch_open(shared, peer)
     } else {
-        shared.toggle_on(peer, TOGGLE)
+        source_scope_allowed(shared, peer, owner.map_or(mirror::SCREEN, |owner| owner.session), scope)
     }
 }
 
@@ -1852,17 +1944,17 @@ pub(crate) async fn open(
     let needs_way_mode = scope == MirrorScope::Ordinary
         && owner.is_some_and(|owner| owner.session != mirror::SCREEN);
     let app_epoch = needs_way_mode.then(|| shared.phone_app_epoch(&session.peer));
-    if !mirror_open_allowed(shared, &session.peer)
+    if !mirror_open_allowed(shared, &session.peer, owner, scope)
         || owner.is_some_and(|owner| !shared.mirror_capture_current(&session.peer, owner))
         || (needs_way_mode && !shared.phone_app_windows_admissible(&session.peer))
     {
         return Err(Error::Denied);
     }
-    let mut pending = PendingMirrorOpen::new(shared, session.peer, owner);
-    if shared.mirror_epoch(&session.peer) != epoch
+    let mut pending = PendingMirrorOpen::new(shared, session.peer, owner, scope);
+    if (!needs_way_mode && shared.mirror_epoch(&session.peer) != epoch)
         || app_epoch.is_some_and(|epoch| shared.phone_app_epoch(&session.peer) != epoch)
         || pending.live.closed.load(Ordering::Acquire)
-        || !mirror_open_allowed(shared, &session.peer)
+        || !mirror_open_allowed(shared, &session.peer, owner, scope)
         || owner.is_some_and(|owner| !shared.mirror_capture_current(&session.peer, owner))
         || (needs_way_mode && !shared.phone_app_windows_admissible(&session.peer))
     {
@@ -1949,9 +2041,9 @@ pub(crate) async fn open(
     // not generation proof across off/on, so the sampled revocation epoch
     // decides too; either way the just-opened stream is closed and denied.
     // A cancelled pending open drops its own handles; a live writer finishes.
-    if shared.mirror_epoch(&session.peer) != epoch
+    if (!needs_way_mode && shared.mirror_epoch(&session.peer) != epoch)
         || app_epoch.is_some_and(|epoch| shared.phone_app_epoch(&session.peer) != epoch)
-        || !mirror_open_allowed(shared, &session.peer)
+        || !mirror_open_allowed(shared, &session.peer, owner, scope)
         || owner.is_some_and(|owner| !shared.mirror_capture_current(&session.peer, owner))
         || (needs_way_mode && !shared.phone_app_windows_admissible(&session.peer))
     {
@@ -2027,7 +2119,11 @@ impl MirrorStream {
                     next = packets.recv() => next,
                 };
                 let Some((kind, time, data)) = next else { break };
-                if done.load(Ordering::Acquire) {
+                if done.load(Ordering::Acquire)
+                    || capture_end.as_ref().is_some_and(|(shared, peer, owner)| {
+                        !shared.mirror_capture_current(peer, *owner)
+                    })
+                {
                     break;
                 }
                 let Ok(header) = video_packet_header(kind, time, data.len()) else { continue };
@@ -2096,6 +2192,7 @@ pub(crate) struct MirrorLiveOut {
     closed: Arc<AtomicBool>,
     stop: Arc<tokio::sync::Notify>,
     owner: Option<MirrorControlContext>,
+    scope: MirrorScope,
 }
 
 /// Owns registration until the network writer takes over. Dropping a cancelled
@@ -2108,8 +2205,8 @@ struct PendingMirrorOpen<'a> {
 }
 
 impl<'a> PendingMirrorOpen<'a> {
-    fn new(shared: &'a Shared, peer: DeviceId, owner: Option<MirrorControlContext>) -> Self {
-        let live = MirrorLiveOut { closed: Arc::default(), stop: Arc::default(), owner };
+    fn new(shared: &'a Shared, peer: DeviceId, owner: Option<MirrorControlContext>, scope: MirrorScope) -> Self {
+        let live = MirrorLiveOut { closed: Arc::default(), stop: Arc::default(), owner, scope };
         shared.track_mirror_lifetime(&peer, live.clone());
         Self { shared, peer, live, transferred: false }
     }
@@ -2152,10 +2249,17 @@ impl Shared {
         // Same lock/order as grant transition: never combine an old allow row
         // with the newer epoch committed by an OFF action.
         let fence = self.typing_fence();
-        if !self.toggle_on(peer, TOGGLE) || !self.phone_control_granted(peer) {
+        let typing = fence.current(peer);
+        let app_provider_ready = self.settings_provider_epoch.load(Ordering::Acquire) != 0
+            && [mirror::VIRTUAL_DISPLAY, mirror::CORRELATION, mirror::APP_WINDOWS_OWNED_V1]
+                .iter().all(|required| caps.iter().any(|cap| cap.as_str() == *required));
+        let app_allowed = app_provider_ready && !typing.app_uncertain
+            && self.store.toggles(peer).ok().is_some_and(|toggles| {
+                toggles.get(PHONE_APP_WINDOWS_TOGGLE) == Some(&true)
+            });
+        if (!self.toggle_on(peer, TOGGLE) && !app_allowed) || !self.phone_control_granted(peer) {
             return None;
         }
-        let typing = fence.current(peer);
         (!typing.stopped).then_some(typing.generation)
     }
 
@@ -2209,7 +2313,7 @@ impl Shared {
         {
             return "unsupported";
         }
-        if !self.toggle_on(peer, TOGGLE) {
+        if (mirroring == mirror::SCREEN || scope != MirrorScope::Ordinary) && !self.toggle_on(peer, TOGGLE) {
             return "mirroringOff";
         }
         if record.caps.contains(mirror::CONTROL_STOPPED) {
@@ -2273,7 +2377,6 @@ impl Shared {
         request: u64,
     ) -> Option<MirrorControlContext> {
         if !is_local_phone(self)
-            || !self.toggle_on(peer, TOGGLE)
             || !self.store.is_paired(peer).ok()?
             || (mirroring != mirror::SCREEN
                 && !self.local_capabilities().iter().any(|cap| cap == mirror::VIRTUAL_DISPLAY))
@@ -2282,14 +2385,17 @@ impl Shared {
         }
         let session = self.session(peer)?;
         let connection = session.mirror_control_id;
-        let capture = {
+        let (capture, scope) = {
             let incoming = self.mirror_incoming.lock().unwrap_or_else(|e| e.into_inner());
             let accepted = incoming.get(&(*peer, mirroring))?;
             if accepted.request != request || accepted.connection != connection {
                 return None;
             }
-            accepted.capture
+            (accepted.capture, accepted.scope)
         };
+        if !source_scope_allowed(self, peer, mirroring, scope) {
+            return None;
+        }
         Some(MirrorControlContext {
             session: mirroring,
             capture,
@@ -2341,6 +2447,19 @@ impl Shared {
                         .and_then(Weak::upgrade)
                         .is_some_and(|closed| !closed.load(Ordering::Acquire))
             })
+    }
+
+
+    /// Current ordinary APP capture contract; capability loss is not an input grant.
+    pub(crate) fn ordinary_app_provider_usable(&self) -> bool {
+        if self.cancel.is_cancelled() || !is_local_phone(self)
+            || self.settings_provider_epoch.load(Ordering::Acquire) == 0
+        {
+            return false;
+        }
+        let caps = self.local_capabilities();
+        [mirror::VIRTUAL_DISPLAY, mirror::CORRELATION, mirror::APP_WINDOWS_OWNED_V1]
+            .iter().all(|required| caps.iter().any(|cap| cap.as_str() == *required))
     }
 
     /// Whether this exact paired PC has the durable local Way Mode allowance.
@@ -2636,6 +2755,14 @@ impl Shared {
     /// the peer's screen. Returns exact app capture owners for platform teardown.
     pub(crate) fn clear_phone_app_peer(&self, peer: &DeviceId) -> Vec<(u32, Option<u64>, u64, u64)> {
         let mut epochs = self.phone_app_revoke_epoch.lock().unwrap_or_else(|e| e.into_inner());
+        self.clear_phone_app_peer_locked(peer, &mut epochs)
+    }
+
+    pub(crate) fn clear_phone_app_peer_locked(
+        &self,
+        peer: &DeviceId,
+        epochs: &mut std::collections::HashMap<DeviceId, u64>,
+    ) -> Vec<(u32, Option<u64>, u64, u64)> {
         let next = epochs.get(peer).copied().unwrap_or(0).saturating_add(1);
         epochs.insert(*peer, next);
         let mut incoming = self.mirror_incoming.lock().unwrap_or_else(|e| e.into_inner());
@@ -2676,6 +2803,89 @@ impl Shared {
         owners
     }
 
+
+    /// Caller holds app epochs across the provider publication; no callback runs here.
+    pub(crate) fn retire_app_provider_locked(
+        &self,
+        epochs: &mut std::collections::HashMap<DeviceId, u64>,
+    ) -> Vec<(DeviceId, Vec<(u32, Option<u64>, u64, u64)>)> {
+        let peers = self.mirror_incoming.lock().unwrap_or_else(|e| e.into_inner()).iter()
+            .filter(|((_, session), owner)| *session != mirror::SCREEN && owner.scope == MirrorScope::Ordinary)
+            .map(|((peer, _), _)| *peer)
+            .collect::<std::collections::HashSet<_>>();
+        peers.into_iter().map(|peer| {
+            let owners = self.clear_phone_app_peer_locked(&peer, epochs);
+            (peer, owners)
+        }).collect()
+    }
+
+    /// The user's screen preference cannot retire ordinary Way Mode work.
+    /// Legacy once-Settings stays screen-bound and cannot survive an off/on.
+    pub(crate) fn clear_mirror_screen_peer(&self, peer: &DeviceId) -> Vec<(u32, Option<u64>, u64, u64)> {
+        let mut epochs = self.mirror_revoke_epoch.lock().unwrap_or_else(|e| e.into_inner());
+        let next = epochs.get(peer).copied().unwrap_or(0).saturating_add(1);
+        epochs.insert(*peer, next);
+        {
+            let mut outgoing = self.mirror_outgoing.lock().unwrap_or_else(|e| e.into_inner());
+            let retired = outgoing.iter().filter(|((p, session), owner)| {
+                p == peer && (*session == mirror::SCREEN || owner.scope != MirrorScope::Ordinary)
+            }).map(|((_, session), _)| *session).collect::<Vec<_>>();
+            for session in retired {
+                outgoing.remove(&(*peer, session));
+                self.stop_showing(peer, session);
+            }
+            self.stop_showing(peer, mirror::SCREEN);
+        }
+        let mut incoming = self.mirror_incoming.lock().unwrap_or_else(|e| e.into_inner());
+        let mut owners = incoming.iter().filter(|((p, session), owner)| {
+            p == peer && (*session == mirror::SCREEN || owner.scope != MirrorScope::Ordinary)
+        }).map(|((_, session), owner)| (*session, Some(owner.request), owner.connection, owner.capture))
+            .collect::<Vec<_>>();
+        incoming.retain(|(p, session), owner| {
+            p != peer || (*session != mirror::SCREEN && owner.scope == MirrorScope::Ordinary)
+        });
+        drop(incoming);
+        let retired = owners.iter().copied().collect::<std::collections::HashSet<_>>();
+        let mut all = self.mirror_live_out.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(streams) = all.get_mut(peer) {
+            for stream in streams.iter() {
+                if stream.scope != MirrorScope::Ordinary
+                    || stream.owner.is_none_or(|owner| owner.session == mirror::SCREEN
+                    || retired.contains(&(owner.session, Some(owner.request), owner.connection, owner.capture)))
+                {
+                    stream.closed.store(true, Ordering::Release);
+                    stream.stop.notify_one();
+                }
+            }
+            streams.retain(|stream| !stream.closed.load(Ordering::Acquire));
+            if streams.is_empty() { all.remove(peer); }
+        }
+        owners.sort_unstable();
+        owners
+    }
+
+    /// A peer's real capability loss retires only its original app reader owners.
+    pub(crate) fn retire_app_views_for_capability_loss(
+        &self,
+        original: &Arc<Session>,
+        before: &std::collections::BTreeSet<String>,
+        after: &std::collections::BTreeSet<String>,
+    ) {
+        let lost = |cap: &str| before.contains(cap) && !after.contains(cap);
+        let _ = self.with_current_mirror_session(original, || {
+            let mut outgoing = self.mirror_outgoing.lock().unwrap_or_else(|e| e.into_inner());
+            let retired = outgoing.iter().filter(|((peer, session), owner)| {
+                *peer == original.peer && *session != mirror::SCREEN
+                    && owner.scope == MirrorScope::Ordinary
+                    && (lost(mirror::VIRTUAL_DISPLAY) || lost(mirror::CORRELATION) || lost(mirror::APP_WINDOWS_OWNED_V1))
+            }).map(|((_, session), _)| *session).collect::<Vec<_>>();
+            for session in retired {
+                outgoing.remove(&(original.peer, session));
+                self.stop_showing(&original.peer, session);
+            }
+        });
+    }
+
     /// Invalidate a peer's accepted requests and output handles together.
     /// Returns exact platform capture owners for a later owned teardown.
     /// Admission holds this same epoch lock, so an old start cannot insert
@@ -2684,6 +2894,9 @@ impl Shared {
         let mut epochs = self.mirror_revoke_epoch.lock().unwrap_or_else(|e| e.into_inner());
         let next = epochs.get(peer).copied().unwrap_or(0).saturating_add(1);
         epochs.insert(*peer, next);
+        let mut app_epochs = self.phone_app_revoke_epoch.lock().unwrap_or_else(|e| e.into_inner());
+        let app_next = app_epochs.get(peer).copied().unwrap_or(0).saturating_add(1);
+        app_epochs.insert(*peer, app_next);
         self.mirror_outgoing.lock().unwrap_or_else(|e| e.into_inner()).retain(|(p, _), _| p != peer);
         let mut incoming = self.mirror_incoming.lock().unwrap_or_else(|e| e.into_inner());
         let mut owners: Vec<_> = incoming
@@ -2708,7 +2921,7 @@ impl Shared {
     /// [`Self::clear_mirror_peer`] on revocation or connection replacement.
     /// A stream opened across a revocation observes the bump even if the
     /// toggle was re-enabled since, so off/on cannot escape the re-check in
-    /// [`open`]. Owned-app Way Mode has its own epoch below.
+    /// [`open`]. Ordinary Way Mode uses its own epoch below; global retirement bumps both.
     pub(crate) fn mirror_epoch(&self, peer: &DeviceId) -> u64 {
         self.mirror_revoke_epoch.lock().unwrap_or_else(|e| e.into_inner()).get(peer).copied().unwrap_or(0)
     }
@@ -2727,11 +2940,17 @@ impl Shared {
     /// keeps reading. Prunes streams that already finished so dead handles
     /// never accumulate; per-peer only, never another peer's.
     #[cfg(all(test, feature = "test-support"))]
-    pub(crate) fn track_mirror_outgoing(&self, peer: &DeviceId, stream: &MirrorStream) {
+    pub(crate) fn track_mirror_outgoing(
+        &self,
+        peer: &DeviceId,
+        stream: &MirrorStream,
+        owner: Option<MirrorControlContext>,
+    ) {
         let live = MirrorLiveOut {
             closed: stream.closed.clone(),
             stop: stream.stop.clone(),
-            owner: stream.control_owner.as_ref().and_then(|(_, _, _, owner)| *owner),
+            owner: owner.or_else(|| stream.control_owner.as_ref().and_then(|(_, _, _, owner)| *owner)),
+            scope: MirrorScope::Ordinary,
         };
         self.track_mirror_lifetime(peer, live);
     }

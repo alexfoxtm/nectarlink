@@ -709,6 +709,10 @@ async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: Envelope) -> 
             if had_caps {
                 session.mirror_input_epoch.store(update.input_epoch.unwrap_or(0), Ordering::Release);
             }
+            if let Some(next) = &caps {
+                let before = shared.store.get_peer(&peer)?.map(|record| record.caps).unwrap_or_default();
+                shared.retire_app_views_for_capability_loss(session, &before, next);
+            }
             if caps.is_some() || power.is_some() {
                 shared.store.update_capabilities(&peer, caps.as_ref(), power)?;
             }

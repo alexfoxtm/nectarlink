@@ -1027,7 +1027,8 @@ pub const FEATURES: &[FeatureDef] = &[
             PowerAtLeast(PowerLevel::Elevated),
             AndroidAtLeast(11),
             desktop("mirror.view", UPDATE),
-            DeviceToggle("mirroring"),
+            // No DeviceToggle("mirroring"): per-app Way Mode works while the full-phone
+            // mirroring switch is off. That switch gates full-screen capture only.
         ],
         partial: None,
     },
@@ -1276,6 +1277,31 @@ mod tests {
         ] {
             assert_eq!(m.state(id), Some(FeatureState::Available), "{id}");
         }
+    }
+
+    #[test]
+    fn app_windows_stay_available_when_full_screen_mirroring_is_off() {
+        let mut caps = BASIC_PHONE.to_vec();
+        caps.push("mirror.virtual_display");
+        let phone = facts(DeviceKind::Phone, "android", "16", PowerLevel::Elevated, &caps);
+        let toggles = HashMap::from([("mirroring".to_owned(), false)]);
+        let m = matrix_with(&phone, &pc(), &toggles);
+        assert_eq!(m.state("mirroring.app_windows"), Some(FeatureState::Available));
+        // Full-screen capture itself stays behind its own switch.
+        assert_eq!(
+            m.state("mirroring.view"),
+            Some(locked(UpgradeAction::EnableDeviceToggle("mirroring"), Effort::Instant))
+        );
+    }
+
+    #[test]
+    fn app_windows_still_need_their_own_provider_capability() {
+        let phone = facts(DeviceKind::Phone, "android", "16", PowerLevel::Elevated, BASIC_PHONE);
+        let toggles = HashMap::from([("mirroring".to_owned(), false)]);
+        let m = matrix_with(&phone, &pc(), &toggles);
+        // No synthesized grant from the switch being off: without the provider's own
+        // virtual-display capability the feature stays unavailable.
+        assert_ne!(m.state("mirroring.app_windows"), Some(FeatureState::Available));
     }
 
     #[test]
