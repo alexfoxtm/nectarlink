@@ -233,6 +233,9 @@ struct State {
     /// The first-frame deadline each opened screen stream is held to; a
     /// stream that opens again replaces it.
     first_frames: HashMap<Window, u64>,
+    /// The owner each window's finger went down under, until it lifts or the
+    /// window ends (see `press_owner`).
+    presses: HashMap<Window, InputOwner<nectarlink_core::MirrorControl>>,
     apps: HashMap<DeviceId, Apps>,
     saved: SavedWindows,
 }
@@ -250,6 +253,7 @@ impl State {
         if matches!(phase, Phase::Ended(_)) {
             self.request_nodes.remove(&window);
             self.control_requests.remove(&window);
+            self.presses.remove(&window);
         }
         if showing && self.active_window.is_none() {
             self.active_window = Some(window);
@@ -334,6 +338,35 @@ fn release_sound_owner(sound: &mut HashMap<DeviceId, u64>, device: DeviceId, gen
     }
 }
 
+/// The exact control, local request and stream an input is queued under.
+#[derive(Debug, Clone)]
+struct InputOwner<C> {
+    control: C,
+    request: u64,
+    stream: u64,
+}
+
+/// Who a phone input goes to. A finger going down is held under `current`;
+/// its release goes to that same owner or nowhere, never to a capture or
+/// session that replaced it. The queue still drops it once that owner is
+/// stopped, revoked or no longer shown. Anything else goes to `current`.
+fn press_owner<C: Clone>(
+    presses: &mut HashMap<Window, InputOwner<C>>,
+    window: Window,
+    input: &nectarlink_core::MirrorInput,
+    current: InputOwner<C>,
+) -> Option<InputOwner<C>> {
+    use nectarlink_core::{MirrorInput, TouchAction};
+    match input {
+        MirrorInput::Touch { action: TouchAction::Up, .. } => presses.remove(&window),
+        MirrorInput::Touch { action: TouchAction::Down, .. } => {
+            presses.insert(window, current.clone());
+            Some(current)
+        }
+        _ => Some(current),
+    }
+}
+
 impl Default for State {
     fn default() -> Self {
         Self {
@@ -352,6 +385,7 @@ impl Default for State {
             control_requests: HashMap::new(),
             pending_stops: HashMap::new(),
             first_frames: HashMap::new(),
+            presses: HashMap::new(),
             apps: HashMap::new(),
             saved: SavedWindows::load(),
         }
@@ -1237,6 +1271,45 @@ fn request(window: Window, options: MirrorStart) {
     request_window(window, Some(options));
 }
 
+/// Presentation only: a generic denial does not identify a remote permission or Stop.
+fn start_failure_reason(
+    error: &Error,
+    app: bool,
+    settings_qualification: bool,
+    local_mirroring_enabled: Option<bool>,
+) -> String {
+    match error {
+        Error::Unsupported if settings_qualification => {
+            tr!("Mirror", "Opening Settings in a window is unavailable for this phone connection.")
+        }
+        Error::Denied if local_mirroring_enabled == Some(false) => {
+            tr!("Mirror", "Screen sharing is turned off for this phone in Waypair Link on this computer.")
+        }
+        Error::Denied if settings_qualification => tr!(
+            "Mirror",
+            "In Waypair Link on your phone, allow this computer to open Settings once, then open a new Settings window here."
+        ),
+        Error::Denied if app => tr!(
+            "Mirror",
+            "This app-window request was refused. In Waypair Link on the phone, check this computer's Way Mode status and any warning beside it, then try again."
+        ),
+        Error::Denied => tr!(
+            "Mirror",
+            "This screen-sharing request was refused. Reconnect the phone, then try again."
+        ),
+        Error::Unsupported if app => tr!(
+            "Mirror",
+            "App windows are unavailable for this connection."
+        ),
+        Error::Unsupported => tr!(
+            "Mirror",
+            "This phone's app doesn't share its screen yet. Update Waypair Link on the phone."
+        ),
+        Error::Offline | Error::NotPaired => tr!("Mirror", "The phone isn't connected."),
+        error => describe(error),
+    }
+}
+
 // None is the private Settings route, not caller-controlled MirrorStart flags.
 fn request_window(window: Window, options: Option<MirrorStart>) {
     let settings_qualification = options.is_none();
@@ -1306,28 +1379,15 @@ fn request_window(window: Window, options: Option<MirrorStart>) {
             }
         };
         if let Err(e) = started {
-            let reason = match e {
-                Error::Unsupported if settings_qualification => {
-                    tr!("Mirror", "Opening Settings in a window is unavailable for this phone connection.")
-                }
-                Error::Denied if settings_qualification => tr!(
-                    "Mirror",
-                    "In Waypair Link on your phone, allow this computer to open Settings once, then open a new Settings window here."
-                ),
-                Error::Denied => tr!("Mirror", "Mirroring is turned off for this phone."),
-                Error::Unsupported if app => tr!(
-                    "Mirror",
-                    "Set up Wireless debugging in Waypair Link on the phone to open its apps here."
-                ),
-                Error::Unsupported => {
-                    tr!(
-                        "Mirror",
-                        "This phone's app doesn't share its screen yet. Update Waypair Link on the phone."
-                    )
-                }
-                Error::Offline | Error::NotPaired => tr!("Mirror", "The phone isn't connected."),
-                e => describe(&e),
+            // Read only this request's original Node. Unknown state cannot claim a toggle is off.
+            let local_mirroring_enabled = if matches!(&e, Error::Denied) {
+                node.device_toggles(window.device).ok().and_then(|toggles| {
+                    toggles.into_iter().find_map(|(name, enabled)| (name == "mirroring").then_some(enabled))
+                })
+            } else {
+                None
             };
+            let reason = start_failure_reason(&e, app, settings_qualification, local_mirroring_enabled);
             let current = state(|s| {
                 if !s.owns_request(&window, request) {
                     return false;
@@ -1419,6 +1479,7 @@ pub fn stop(window: Window) {
         s.control_requests.remove(&window);
         s.first_frames.remove(&window);
         s.streams.remove(&window);
+        s.presses.remove(&window);
         clear_window_buffers(&window);
         ffi::video_clear(&window.key());
         if !s.mirroring(&window.device) {
@@ -1790,6 +1851,12 @@ pub fn input(window: Window, input: nectarlink_core::MirrorInput) {
         node.mirror_control_for_session(window.device, window.session, wire_request)
     };
     let Ok(control) = control else { return };
+    let current = InputOwner { control, request: local_request, stream };
+    let Some(InputOwner { control, request, stream }) =
+        state(|s| press_owner(&mut s.presses, window, &input, current))
+    else {
+        return;
+    };
     static QUEUE: OnceLock<mirror_scroll::Inputs<nectarlink_core::MirrorControl>> = OnceLock::new();
     let mut started = false;
     let queue = QUEUE.get_or_init(|| {
@@ -1819,7 +1886,7 @@ pub fn input(window: Window, input: nectarlink_core::MirrorInput) {
             }
         });
     }
-    let queued = mirror_scroll::Queued { window, control, request: local_request, stream, input };
+    let queued = mirror_scroll::Queued { window, control, request, stream, input };
     if !queue.push(queued, nectarlink_core::MirrorControl::is_current) {
         tracing::debug!("no room for this input; the phone is behind");
     }
@@ -1913,8 +1980,9 @@ pub fn request_control(key: &str) {
             "Phone control was stopped on the phone. In Waypair Link on your phone, open Settings, then Computers, and tap Resume phone control for this computer. Then start mirroring again from the Mac."
         ),
         "inputUnavailable" => {
-            tr!("Mirror", "On the phone, enable Control from your PC or start Elevated mode.")
+            tr!("Mirror", "Phone control is unavailable on this connection. Open Waypair Link on the phone to check Control from your PC or Elevated mode.")
         }
+        "mirroringOff" => tr!("Mirror", "Screen sharing is turned off for this phone in Waypair Link on this computer."),
         "unsupported" => tr!("Mirror", "Phone control is unavailable for this connection."),
         _ => tr!("Mirror", "Connect the phone and start screen mirroring to control it."),
     };
@@ -3974,6 +4042,32 @@ mod tests {
         super::release_sound_owner(&mut sound, device, newer);
         assert!(!sound.contains_key(&device), "the owner's end clears the flag");
     }
+
+    /// A finger released after its window's capture was replaced must not
+    /// lift on the replacement, nor lift twice. No `State` or control is
+    /// built; owners are plain tags.
+    #[test]
+    fn a_release_reaches_only_its_press_owner_never_a_replacement() {
+        use super::{InputOwner, Window, press_owner};
+        use nectarlink_core::{MirrorInput, TouchAction};
+        use std::collections::HashMap;
+        let window = Window::screen(nectarlink_core::DeviceId([0x45; 32]));
+        let mut presses: HashMap<Window, InputOwner<u64>> = HashMap::new();
+        let (pressed, replacement) = (1, 2);
+        let sent = |presses: &mut HashMap<Window, InputOwner<u64>>, action: TouchAction, current: u64| {
+            let input = MirrorInput::Touch { action, x: 0.25, y: 0.75 };
+            let current = InputOwner { control: current, request: current, stream: current };
+            press_owner(presses, window, &input, current).map(|owner| owner.control)
+        };
+        assert_eq!(sent(&mut presses, TouchAction::Down, pressed), Some(pressed));
+        assert_eq!(
+            sent(&mut presses, TouchAction::Up, replacement),
+            Some(pressed),
+            "the release goes to the owner its press went to"
+        );
+        assert_eq!(sent(&mut presses, TouchAction::Up, replacement), None, "nor does a second release");
+        assert!(presses.is_empty());
+    }
 }
 
 /// Mac view-only mirror fixtures use the real production sink, VideoToolbox
@@ -4002,6 +4096,32 @@ mod mac_receive_fixture {
     #[cfg(feature = "test-support")]
     use super::window_gate::{loopback_config as fixture_node_config, wait_for_link};
     use super::{Phase, Shown, Window};
+
+    #[test]
+    fn start_failure_reasons_do_not_infer_phone_permission() {
+        assert_eq!(
+            super::start_failure_reason(&nectarlink_core::Error::Denied, true, false, Some(false)),
+            "Screen sharing is turned off for this phone in Waypair Link on this computer."
+        );
+        for local_allow in [Some(true), None] {
+            assert_eq!(
+                super::start_failure_reason(&nectarlink_core::Error::Denied, true, false, local_allow),
+                "This app-window request was refused. In Waypair Link on the phone, check this computer's Way Mode status and any warning beside it, then try again."
+            );
+        }
+        assert_eq!(
+            super::start_failure_reason(&nectarlink_core::Error::Denied, false, false, None),
+            "This screen-sharing request was refused. Reconnect the phone, then try again."
+        );
+        assert_eq!(
+            super::start_failure_reason(&nectarlink_core::Error::Unsupported, true, false, None),
+            "App windows are unavailable for this connection."
+        );
+        assert_eq!(
+            super::start_failure_reason(&nectarlink_core::Error::Offline, true, false, None),
+            "The phone isn't connected."
+        );
+    }
 
     /// The two receive fixtures share the production mirror state and global
     /// core-host seam, so serialize them and start that host at most once.

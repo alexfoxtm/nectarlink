@@ -19,6 +19,14 @@ Item {
     readonly property bool settingsEntrySupported: Mirror.settingsQualificationSupported
     readonly property var feature: negotiatedFeature
     readonly property bool available: !macGap && (feature.state === "available" || feature.state === "partial")
+    readonly property string unavailableReason: {
+        if (page.deviceId.length === 0)
+            return qsTr("Pair your phone to open its apps in windows on this PC.")
+        if (page.macGap)
+            return qsTr("Opening phone apps in windows is not yet available on Mac.")
+        const reason = page.feature && typeof page.feature.reason === "string" ? page.feature.reason.trim() : ""
+        return reason.length > 0 ? reason : qsTranslate("Mirror", "App windows are unavailable for this connection.")
+    }
 
     readonly property var apps: {
         if (Mirror.appsDevice !== deviceId)
@@ -66,11 +74,16 @@ Item {
 
     // ---- No phone, or opening apps isn't available yet ----
     Column {
+        id: unavailablePlaceholder
+        objectName: "appsUnavailablePlaceholder"
         anchors.centerIn: parent
         width: Math.min(parent.width - Theme.contentPadding * 2, 420)
         spacing: 12
         visible: page.deviceId.length === 0 || !page.available
+        Accessible.ignored: !visible
         Icon {
+            objectName: "appsUnavailableIcon"
+            Accessible.ignored: true
             anchors.horizontalCenter: parent.horizontalCenter
             width: 40; height: 40
             stroke: 1.5
@@ -80,22 +93,28 @@ Item {
         Txt {
             width: parent.width
             horizontalAlignment: Text.AlignHCenter
+            objectName: "appsUnavailableHeading"
             role: "title"
             text: page.deviceId.length === 0 ? qsTr("Phone apps")
                 : qsTr("Open %1's apps here").arg(page.deviceName)
+            Accessible.role: Accessible.StaticText
+            Accessible.name: text
+            Accessible.ignored: !unavailablePlaceholder.visible
         }
         Txt {
+            objectName: "appsUnavailableReason"
             width: parent.width
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.WordWrap
             role: "body"
             muted: true
-            text: page.deviceId.length === 0
-                ? qsTr("Pair your phone to open its apps in windows on this PC.")
-                : page.macGap ? qsTr("Opening phone apps in windows is not yet available on Mac.")
-                : (page.feature.reason || qsTr("Set up Wireless debugging in Waypair Link on the phone to open its apps here."))
+            text: page.unavailableReason
+            Accessible.role: Accessible.StaticText
+            Accessible.name: text
+            Accessible.ignored: !unavailablePlaceholder.visible
         }
         Txt {
+            objectName: "appsUnavailableSettingsGuidance"
             width: parent.width
             visible: page.deviceId.length > 0 && page.macGap && page.settingsEntrySupported
             horizontalAlignment: Text.AlignHCenter
@@ -103,15 +122,22 @@ Item {
             role: "body"
             muted: true
             text: qsTr("In Waypair Link on your phone, allow this computer to open Settings once, then open the window here. Scrolling needs the phone-control allowance.")
+            Accessible.role: Accessible.StaticText
+            Accessible.name: text
+            Accessible.ignored: !unavailablePlaceholder.visible || !visible
         }
         Button {
+            objectName: "appsUnavailableSettingsButton"
             anchors.horizontalCenter: parent.horizontalCenter
             visible: page.deviceId.length > 0 && page.macGap && page.settingsEntrySupported
+            Accessible.ignored: !unavailablePlaceholder.visible || !visible
             enabled: page.openPkgs["com.android.settings"] !== true
             text: qsTr("Open Settings window")
             onClicked: Mirror.startSettingsQualification(page.deviceId)
         }
         LockChip {
+            objectName: "appsUnavailableLockChip"
+            Accessible.ignored: !unavailablePlaceholder.visible || !visible
             anchors.horizontalCenter: parent.horizontalCenter
             visible: !page.macGap && page.deviceId.length > 0 && label.length > 0
             feature: page.feature

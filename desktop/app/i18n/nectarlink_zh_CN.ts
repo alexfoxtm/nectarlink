@@ -5545,9 +5545,9 @@ What it needs
         <translation>镜像截图</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="351"/>
-        <source>Mirroring is turned off for this phone.</source>
-        <translation>已为此手机关闭镜像。</translation>
+        <location filename="rust_strings.h" line="396" />
+        <source>Screen sharing is turned off for this phone in Waypair Link on this computer.</source>
+        <translation>此电脑上的 Waypair Link 已为这部手机关闭屏幕共享。</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="352"/>
@@ -5588,6 +5588,11 @@ What it needs
         <location filename="rust_strings.h" line="361"/>
         <source>Set up Wireless debugging in Waypair Link on the phone to open its apps here.</source>
         <translation>在手机上的 Waypair Link 中设置无线调试，即可在这里打开其应用。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="408" />
+        <source>App windows are unavailable for this connection.</source>
+        <translation>此连接上的应用窗口不可用。</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="362"/>
@@ -5645,9 +5650,9 @@ What it needs
         <translation>请在手机的设置中允许这台电脑控制手机。</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="355" />
-        <source>On the phone, enable Control from your PC or start Elevated mode.</source>
-        <translation>请在手机上启用“从电脑控制”或启动增强模式。</translation>
+        <location filename="rust_strings.h" line="389" />
+        <source>Phone control is unavailable on this connection. Open Waypair Link on the phone to check Control from your PC or Elevated mode.</source>
+        <translation>此连接上的手机控制不可用。请在手机上打开 Waypair Link，检查“从电脑控制”或高级模式。</translation>
     </message>
     <message>
         <location filename="rust_strings.h" line="356" />
@@ -5703,6 +5708,16 @@ What it needs
     <message>
         <source>Settings didn't open on the phone. Allow this computer again in Waypair Link, then open a new Settings window.</source>
         <translation>手机未能打开“设置”。请在 Waypair Link 中重新允许这台电脑，然后重新打开“设置”窗口。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="412" />
+        <source>This app-window request was refused. In Waypair Link on the phone, check this computer's Way Mode status and any warning beside it, then try again.</source>
+        <translation>此应用窗口请求被拒绝。请在手机上的 Waypair Link 中检查这台电脑的 Way 模式状态及其旁边的警告，然后重试。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="414" />
+        <source>This screen-sharing request was refused. Reconnect the phone, then try again.</source>
+        <translation>此屏幕共享请求被拒绝。请重新连接手机，然后重试。</translation>
     </message>
 </context>
 <context>
@@ -5819,9 +5834,9 @@ What it needs
         <translation>在 Mac 上仅支持查看，暂不支持控制手机。</translation>
     </message>
     <message>
-        <location filename="../qml/MirrorWindow.qml" line="480"/>
-        <source>To control the phone, turn on Control from your PC in Waypair Link&apos;s settings on the phone.</source>
-        <translation>要控制手机，请在手机上的 Waypair Link 设置中开启“从电脑控制”。</translation>
+        <location filename="../qml/MirrorWindow.qml" line="66" />
+        <source>Phone control is unavailable on this connection. Open Waypair Link on the phone to check Control from your PC or Elevated mode.</source>
+        <translation>此连接上的手机控制不可用。请在手机上打开 Waypair Link，检查“从电脑控制”或高级模式。</translation>
     </message>
     <message>
         <location filename="../qml/MirrorWindow.qml" line="489"/>
@@ -5894,9 +5909,9 @@ What it needs
         <translation>需要批准手机控制。请在手机上的 Waypair Link 设置中，为这台电脑打开“允许控制此手机”。</translation>
     </message>
     <message>
-        <location filename="../qml/MirrorWindow.qml" line="42" />
-        <source>Phone control was stopped on the phone. To allow this computer again, turn Screen sharing and typing off and then on for this computer in Waypair Link's settings on the phone.</source>
-        <translation>手机上的手机控制已停止。如需再次允许这台电脑，请在手机上的 Waypair Link 设置中，为这台电脑先关闭再打开“屏幕共享和输入”。</translation>
+        <location filename="../qml/MirrorWindow.qml" line="63" />
+        <source>Phone control was stopped on the phone. In Waypair Link on your phone, open Settings, then Computers, and tap Resume phone control for this computer. Then start mirroring again from the Mac.</source>
+        <translation>手机控制已在手机上停止。请在手机上的 Waypair Link 中打开“设置”→“电脑”，为这台电脑点按“恢复手机控制”，然后从 Mac 重新开始屏幕镜像。</translation>
     </message>
     <message>
         <location filename="../qml/MirrorWindow.qml" line="48" />
@@ -5983,6 +5998,21 @@ What it needs
         <location filename="../qml/MirrorWindow.qml" line="1084"/>
         <source>The window ended before video started.</source>
         <translation>窗口在视频开始前已结束。</translation>
+    </message>
+    <message>
+        <location filename="../qml/MirrorWindow.qml" line="69" />
+        <source>Screen sharing is turned off for this phone in Waypair Link on this computer.</source>
+        <translation>此电脑上的 Waypair Link 已为这部手机关闭屏幕共享。</translation>
+    </message>
+    <message>
+        <location filename="../qml/MirrorWindow.qml" line="72" />
+        <source>Scrolling isn't available for this Settings window right now. Other phone controls remain unavailable.</source>
+        <translation>此设置窗口目前无法滚动。其他手机控制仍不可用。</translation>
+    </message>
+    <message>
+        <location filename="../qml/MirrorWindow.qml" line="61" />
+        <source>Way Mode and phone control are separate. To control this app window, turn on Allow phone control for this computer in Waypair Link on the phone.</source>
+        <translation>Way 模式和手机控制是独立设置。如需控制此应用窗口，请在手机上的 Waypair Link 中为这台电脑开启“允许手机控制”。</translation>
     </message>
 </context>
 <context>

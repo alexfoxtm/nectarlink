@@ -11,12 +11,14 @@ QtObject {
     property string phoneColors: ""
     property string wallpaperColors: ""
     property string currentPage: "home"
+    property int capsRevision: -1
+    property var appFeatureStates: ({})
     property string settingsSection: ""
     property bool doctorBusy: false
     property var doctorChecks: []
     property var commandPaletteResults: []
     property double commandPaletteOpenMs: 0
-    function featureState(feature) { return "" }
+    function featureState(deviceId, feature) { return appFeatureStates[deviceId + "|" + feature] || ({}) }
     function closeCommandPalette() {}
     function noteCommandPaletteShown() {}
     function runCommandPalette(id) {}

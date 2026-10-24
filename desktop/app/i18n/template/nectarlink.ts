@@ -5253,8 +5253,8 @@ What it needs
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="351"/>
-        <source>Mirroring is turned off for this phone.</source>
+        <location filename="../rust_strings.h" line="396" />
+        <source>Screen sharing is turned off for this phone in Waypair Link on this computer.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -5275,6 +5275,11 @@ What it needs
     <message>
         <location filename="../rust_strings.h" line="361"/>
         <source>Set up Wireless debugging in Waypair Link on the phone to open its apps here.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="408" />
+        <source>App windows are unavailable for this connection.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -5363,8 +5368,8 @@ What it needs
         <translation type="unfinished" />
     </message>
     <message>
-        <location filename="../rust_strings.h" line="355" />
-        <source>On the phone, enable Control from your PC or start Elevated mode.</source>
+        <location filename="../rust_strings.h" line="389" />
+        <source>Phone control is unavailable on this connection. Open Waypair Link on the phone to check Control from your PC or Elevated mode.</source>
         <translation type="unfinished" />
     </message>
     <message>
@@ -5411,6 +5416,16 @@ What it needs
     <message>
         <source>Settings didn't open on the phone. Allow this computer again in Waypair Link, then open a new Settings window.</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="412" />
+        <source>This app-window request was refused. In Waypair Link on the phone, check this computer's Way Mode status and any warning beside it, then try again.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="414" />
+        <source>This screen-sharing request was refused. Reconnect the phone, then try again.</source>
+        <translation type="unfinished" />
     </message>
 </context>
 <context>
@@ -5527,8 +5542,8 @@ What it needs
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/MirrorWindow.qml" line="480"/>
-        <source>To control the phone, turn on Control from your PC in Waypair Link&apos;s settings on the phone.</source>
+        <location filename="../../qml/MirrorWindow.qml" line="66" />
+        <source>Phone control is unavailable on this connection. Open Waypair Link on the phone to check Control from your PC or Elevated mode.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -5602,8 +5617,8 @@ What it needs
         <translation type="unfinished" />
     </message>
     <message>
-        <location filename="../../qml/MirrorWindow.qml" line="42" />
-        <source>Phone control was stopped on the phone. To allow this computer again, turn Screen sharing and typing off and then on for this computer in Waypair Link's settings on the phone.</source>
+        <location filename="../../qml/MirrorWindow.qml" line="63" />
+        <source>Phone control was stopped on the phone. In Waypair Link on your phone, open Settings, then Computers, and tap Resume phone control for this computer. Then start mirroring again from the Mac.</source>
         <translation type="unfinished" />
     </message>
     <message>
@@ -5691,6 +5706,21 @@ What it needs
         <location filename="../../qml/MirrorWindow.qml" line="1084"/>
         <source>The window ended before video started.</source>
         <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../qml/MirrorWindow.qml" line="69" />
+        <source>Screen sharing is turned off for this phone in Waypair Link on this computer.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../../qml/MirrorWindow.qml" line="72" />
+        <source>Scrolling isn't available for this Settings window right now. Other phone controls remain unavailable.</source>
+        <translation type="unfinished" />
+    </message>
+    <message>
+        <location filename="../../qml/MirrorWindow.qml" line="61" />
+        <source>Way Mode and phone control are separate. To control this app window, turn on Allow phone control for this computer in Waypair Link on the phone.</source>
+        <translation type="unfinished" />
     </message>
 </context>
 <context>

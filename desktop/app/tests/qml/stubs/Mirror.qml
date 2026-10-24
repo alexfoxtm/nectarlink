@@ -5,6 +5,13 @@ import QtQuick
 // Passive Mirror bridge for QML component tests; no backend or device access.
 QtObject {
     property string windows: "[]"
+    property bool appWindowsSupported: false
+    property bool settingsQualificationSupported: false
+    property string appsDevice: ""
+    property string appsState: ""
+    property string apps: "[]"
+    property string recentApps: "[]"
+    property string appsError: ""
     property bool muted: false
     property var calls: []
 

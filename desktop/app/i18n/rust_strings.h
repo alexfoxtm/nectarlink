@@ -375,6 +375,7 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Messages", "Group texts can't be sent from the PC yet."), // desktop/app/src/messages.rs
     QT_TRANSLATE_NOOP("Messages", "Only image or voice-note audio files can be attached."), // desktop/app/src/messages.rs
     QT_TRANSLATE_NOOP("Mirror", "Allow this computer again on your phone, then open a new Settings window."), // desktop/app/src/mirror.rs
+    QT_TRANSLATE_NOOP("Mirror", "App windows are unavailable for this connection."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Connect the phone and start screen mirroring to control it."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Couldn't start recording."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "In Waypair Link on your phone, allow this computer to open Settings once, then open a new Settings window here."), // desktop/app/src/mirror.rs
@@ -382,18 +383,18 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Mirror", "Keep-awake requested"), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Mirror recording"), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Mirror screenshot"), // desktop/app/src/mirror.rs
-    QT_TRANSLATE_NOOP("Mirror", "Mirroring is turned off for this phone."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "No picture arrived from the phone. Keep the phone unlocked while it shares its screen, then try again."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "On the phone, allow this computer to control the phone in Settings."), // desktop/app/src/mirror.rs
-    QT_TRANSLATE_NOOP("Mirror", "On the phone, enable Control from your PC or start Elevated mode."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Opening Settings in a window is unavailable for this phone connection."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Phone control is unavailable for this connection."), // desktop/app/src/mirror.rs
+    QT_TRANSLATE_NOOP("Mirror", "Phone control is unavailable on this connection. Open Waypair Link on the phone to check Control from your PC or Elevated mode."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Phone control was stopped on the phone. In Waypair Link on your phone, open Settings, then Computers, and tap Resume phone control for this computer. Then start mirroring again from the Mac."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Recording from %1, saved in %2"), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Recording limit reached. Saved %1"), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Recording stopped: the file couldn't be written."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Saved %1"), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Saved %1 to %2."), // desktop/app/src/mirror.rs
+    QT_TRANSLATE_NOOP("Mirror", "Screen sharing is turned off for this phone in Waypair Link on this computer."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Screen-off requested"), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Screen-on requested"), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Screenshot copied to clipboard."), // desktop/app/src/mirror.rs
@@ -409,7 +410,9 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Mirror", "The screenshot couldn't be copied to the clipboard."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "The screenshot couldn't be saved."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "This PC can't decode the phone's video."), // desktop/app/src/mirror.rs
+    QT_TRANSLATE_NOOP("Mirror", "This app-window request was refused. In Waypair Link on the phone, check this computer's Way Mode status and any warning beside it, then try again."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "This phone's app doesn't share its screen yet. Update Waypair Link on the phone."), // desktop/app/src/mirror.rs
+    QT_TRANSLATE_NOOP("Mirror", "This screen-sharing request was refused. Reconnect the phone, then try again."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Wait for the screen to appear first."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mp4", "No video frames were recorded yet."), // desktop/app/src/win/mp4.rs
     QT_TRANSLATE_NOOP("Notifications", "Code copied"), // desktop/app/src/notifications.rs

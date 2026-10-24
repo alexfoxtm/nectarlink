@@ -8,6 +8,36 @@ import app.nectarlink
 Window {
     id: win
     required property string mirrorKey
+    FontMetrics {
+        id: wheelFontMetrics
+        font: Qt.application.font
+    }
+    readonly property real wheelPixelsPerClick: wheelFontMetrics.lineSpacing * Qt.application.styleHints.wheelScrollLines
+
+    // The protocol represents scroll in wheel clicks. For pixel-only Qt events,
+    // use the platform's lines-per-click and this application's current font.
+    function wheelNotches(wheel) {
+        const angle = wheel.angleDelta || Qt.point(0, 0)
+        if (angle.x !== 0 || angle.y !== 0)
+            return Qt.point(-angle.x / 120, -angle.y / 120)
+        const pixels = wheel.pixelDelta || Qt.point(0, 0)
+        const pixelsPerClick = wheelPixelsPerClick
+        if (!isFinite(pixelsPerClick) || pixelsPerClick <= 0 || !isFinite(pixels.x) || !isFinite(pixels.y))
+            return Qt.point(0, 0)
+        return Qt.point(-pixels.x / pixelsPerClick, -pixels.y / pixelsPerClick)
+    }
+
+    // Called only after the existing Settings/control admission checks.
+    function dispatchWheel(wheel, point) {
+        if (!point.inside)
+            return false
+        const delta = wheelNotches(wheel)
+        // Zero phase events cannot move content and only consume a bounded queue slot.
+        if (delta.x === 0 && delta.y === 0)
+            return false
+        Mirror.scroll(win.mirrorKey, point.x, point.y, delta.x, delta.y)
+        return true
+    }
     readonly property var availableArea: screenGeometry.availableGeometry
 
     WindowScreenGeometry {
@@ -47,24 +77,33 @@ Window {
     readonly property string accessibleControlDescription: {
         if (win.phase !== "showing")
             return ""
-        if (win.settingsWindow) {
-            return win.canScroll
-                ? qsTr("This window shows your phone's Settings. You can scroll here; make changes on your phone. Other phone controls are unavailable.")
-                : qsTr("This window shows your phone's Settings. Scrolling needs this computer's phone-control allowance. Other phone controls are unavailable.")
+        if (win.settingsWindow && win.canScroll) {
+            return qsTr("This window shows your phone's Settings. You can scroll here; make changes on your phone. Other phone controls are unavailable.")
         }
         if (win.canControl) {
             return qsTr("Phone control is on. Type or use arrow keys to control the phone. Press F6 to reach the toolbar. Escape in the toolbar returns here.")
         }
-        if (win.controlReason === "ownerApproval") {
-            return qsTr("Phone control needs approval. Turn on Allow phone control for this computer in Waypair Link's settings on the phone.")
+        const reason = win.settingsWindow ? (win.info.scrollReason || "") : win.controlReason
+        if (reason === "ownerApproval") {
+            return win.settingsWindow
+                ? qsTr("This window shows your phone's Settings. Scrolling needs this computer's phone-control allowance. Other phone controls are unavailable.")
+                : win.info.app
+                ? qsTr("Way Mode and phone control are separate. To control this app window, turn on Allow phone control for this computer in Waypair Link on the phone.")
+                : qsTr("Phone control needs approval. Turn on Allow phone control for this computer in Waypair Link's settings on the phone.")
         }
-        if (win.controlReason === "stopped") {
-            return qsTr("Phone control was stopped on the phone. To allow this computer again, turn Screen sharing and typing off and then on for this computer in Waypair Link's settings on the phone.")
+        if (reason === "stopped") {
+            return qsTr("Phone control was stopped on the phone. In Waypair Link on your phone, open Settings, then Computers, and tap Resume phone control for this computer. Then start mirroring again from the Mac.")
         }
-        if (win.controlReason === "inputUnavailable") {
-            return qsTr("To control the phone, turn on Control from your PC in Waypair Link's settings on the phone.")
+        if (reason === "inputUnavailable") {
+            return qsTr("Phone control is unavailable on this connection. Open Waypair Link on the phone to check Control from your PC or Elevated mode.")
         }
-        if (win.controlReason === "unsupported" || win.viewOnly) {
+        if (reason === "mirroringOff") {
+            return qsTr("Screen sharing is turned off for this phone in Waypair Link on this computer.")
+        }
+        if (win.settingsWindow) {
+            return qsTr("Scrolling isn't available for this Settings window right now. Other phone controls remain unavailable.")
+        }
+        if (reason === "unsupported" || win.viewOnly) {
             return qsTr("Viewing only for this connection. Remote control isn't supported on this phone connection.")
         }
         return qsTr("Phone control isn't available for this connection right now.")
@@ -453,6 +492,7 @@ Window {
             cursorShape: win.canControl ? Qt.PointingHandCursor : Qt.ArrowCursor
             property bool down: false
             property double lastMove: 0
+            property point lastPoint: Qt.point(0, 0)
             onPressed: (mouse) => {
                 video.forceActiveFocus()
                 if (win.settingsWindow)
@@ -469,6 +509,7 @@ Window {
                 if (mouse.button === Qt.MiddleButton) { Mirror.press(win.mirrorKey, "home"); return }
                 if (!p.inside) return
                 down = true
+                lastPoint = Qt.point(p.x, p.y)
                 Mirror.touch(win.mirrorKey, "down", p.x, p.y)
             }
             onPositionChanged: (mouse) => {
@@ -478,6 +519,7 @@ Window {
                 if (now - lastMove < 16) return
                 lastMove = now
                 const p = video.at(mouse.x, mouse.y)
+                lastPoint = Qt.point(p.x, p.y)
                 Mirror.touch(win.mirrorKey, "move", p.x, p.y)
             }
             onReleased: (mouse) => {
@@ -487,7 +529,13 @@ Window {
                 const p = video.at(mouse.x, mouse.y)
                 Mirror.touch(win.mirrorKey, "up", p.x, p.y)
             }
-            onCanceled: video.resetLocalGesture()
+            // Focus loss, hiding or a taken grab lifts the finger where the
+            // phone last saw it; never once control or showing is gone.
+            onCanceled: {
+                if (down && win.canControl && win.phase === "showing")
+                    Mirror.touch(win.mirrorKey, "up", lastPoint.x, lastPoint.y)
+                video.resetLocalGesture()
+            }
             onWheel: (wheel) => {
                 if (win.settingsWindow) {
                     wheel.accepted = true
@@ -495,7 +543,7 @@ Window {
                         return
                     const p = video.at(wheel.x, wheel.y)
                     if (p.inside)
-                        Mirror.scroll(win.mirrorKey, p.x, p.y, -wheel.angleDelta.x / 120, -wheel.angleDelta.y / 120)
+                        win.dispatchWheel(wheel, p)
                     return
                 }
                 if (!win.canControl) {
@@ -506,7 +554,7 @@ Window {
                 }
                 const p = video.at(wheel.x, wheel.y)
                 if (p.inside)
-                    Mirror.scroll(win.mirrorKey, p.x, p.y, -wheel.angleDelta.x / 120, -wheel.angleDelta.y / 120)
+                    win.dispatchWheel(wheel, p)
             }
         }
 
@@ -974,6 +1022,7 @@ Window {
     // accessibleControlDescription so the banner and screen reader agree.
     Rectangle {
         id: hintBanner
+        objectName: "mirrorControlHint"
         Accessible.role: Accessible.StatusBar
         Accessible.name: hint.text
         anchors.left: parent.left
@@ -983,7 +1032,7 @@ Window {
         height: Math.max(hint.implicitHeight + 20, 48)
         radius: Theme.radiusMd
         visible: win.phase === "showing" && video.frameSize.width > 0 && !hintClose.closed
-            && (win.settingsWindow || (!win.canControl && !win.info.app))
+            && (win.settingsWindow || !win.canControl)
         color: Qt.rgba(0, 0, 0, 0.72)
 
         SequentialAnimation {
@@ -1119,7 +1168,12 @@ Window {
                 visible: win.phase === "ended" && win.canReopen
                 variant: "tonal"
                 text: win.info.app ? qsTr("Open again") : qsTr("Try again")
-                onClicked: if (win.canReopen) Mirror.reopen(win.mirrorKey)
+                onClicked: {
+                    if (!win.canReopen || win.phase !== "ended")
+                        return
+                    Mirror.reopen(win.mirrorKey)
+                    video.forceActiveFocus()
+                }
             }
         }
     }

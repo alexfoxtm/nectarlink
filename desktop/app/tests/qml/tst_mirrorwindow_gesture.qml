@@ -105,6 +105,69 @@ TestCase {
         }
     }
 
+    function test_reopen_returns_keyboard_focus_to_the_app_surface() {
+        createMirror(true, "ended", { app: true, title: "Calculator", canReopen: true }, true)
+        const reopen = findChild(mirrorWindow, "mirrorPreFrameReopen")
+        verify(reopen.visible)
+        mirrorWindow.requestActivate()
+        tryVerify(() => mirrorWindow.active)
+        reopen.forceActiveFocus(Qt.TabFocusReason)
+        tryVerify(() => reopen.activeFocus)
+        Mirror.calls = []
+
+        keyClick(Qt.Key_Return)
+        tryVerify(() => videoView.activeFocus)
+        const requests = Mirror.calls.filter(call => call[0] === "reopen")
+        compare(requests.length, 1)
+        compare(requests[0][1], "passive-test")
+
+        const current = JSON.parse(Mirror.windows)[0]
+        current.phase = "showing"
+        Mirror.windows = JSON.stringify([current])
+        videoView.frameSize = Qt.size(420, 860)
+        tryVerify(() => mirrorWindow.phase === "showing" && videoView.activeFocus)
+        Mirror.calls = []
+        keyClick(Qt.Key_Left)
+        const keys = Mirror.calls.filter(call => call[0] === "press")
+        compare(keys.length, 1)
+        compare(keys[0][1], "passive-test")
+        compare(keys[0][2], "left")
+    }
+
+    function test_reopen_focus_preserves_pending_and_denied_input_fences() {
+        createMirror(false, "ended", { app: true, title: "Calculator", canReopen: true }, true)
+        const reopen = findChild(mirrorWindow, "mirrorPreFrameReopen")
+        mirrorWindow.requestActivate()
+        tryVerify(() => mirrorWindow.active)
+        reopen.forceActiveFocus(Qt.TabFocusReason)
+        tryVerify(() => reopen.activeFocus)
+        Mirror.calls = []
+        keyClick(Qt.Key_Return)
+        tryVerify(() => videoView.activeFocus)
+
+        const current = JSON.parse(Mirror.windows)[0]
+        current.phase = "asking"
+        current.canControl = true
+        Mirror.windows = JSON.stringify([current])
+        tryVerify(() => mirrorWindow.phase === "asking")
+        keyClick(Qt.Key_Left)
+        compare(Mirror.calls.filter(call => call[0] === "press").length, 0,
+                "returning local focus does not send input before the request is showing")
+
+        current.phase = "showing"
+        current.canControl = false
+        Mirror.windows = JSON.stringify([current])
+        videoView.frameSize = Qt.size(420, 860)
+        tryVerify(() => mirrorWindow.phase === "showing" && videoView.activeFocus)
+        keyClick(Qt.Key_Left)
+        compare(Mirror.calls.filter(call => call[0] === "press" || call[0] === "text"
+                || call[0] === "requestControl").length, 0,
+                "local focus never supplies a missing phone-control allowance")
+        // An activation queued for the old pre-frame button cannot reopen a showing request.
+        reopen.clicked()
+        compare(Mirror.calls.filter(call => call[0] === "reopen").length, 1)
+    }
+
     function test_app_close_after_video_keeps_existing_wording() {
         createMirror(false, "showing", { app: true, title: "Calculator" })
         tryVerify(() => mirrorWindow.videoStarted)
@@ -194,6 +257,36 @@ TestCase {
                 "phase loss clears local state without emitting a touch cancel")
     }
 
+    function test_focus_loss_lifts_a_held_finger_once_where_the_phone_saw_it() {
+        createMirror(true, "showing")
+        const otherWindow = Qt.createQmlObject(
+            'import QtQuick; import QtQuick.Window; Window { visible: true; width: 240; height: 240 }',
+            testCase)
+        verify(otherWindow !== null)
+        try {
+            mirrorWindow.requestActivate()
+            tryVerify(() => mirrorWindow.active)
+            mousePress(gesture, 80, 80, Qt.LeftButton)
+            verify(gesture.down)
+            mouseMove(gesture, 100, 100)
+            tryVerify(() => gesture.lastMove > 0)
+            const held = Mirror.calls.filter(call => call[0] === "touch")
+            const lastSeen = held[held.length - 1]
+            compare(lastSeen[2], "move")
+
+            otherWindow.requestActivate()
+            tryVerify(() => otherWindow.active && !mirrorWindow.active)
+            tryVerify(() => !gesture.down)
+            mouseRelease(gesture, 100, 100, Qt.LeftButton)
+
+            const touches = Mirror.calls.filter(call => call[0] === "touch")
+            compare(touches.length, held.length + 1, "focus loss lifts the finger exactly once")
+            compare(touches[touches.length - 1], ["touch", "passive-test", "up", lastSeen[3], lastSeen[4]])
+        } finally {
+            otherWindow.destroy()
+        }
+    }
+
     function test_settings_window_allows_only_approved_wheel_scrolling() {
         createMirror(true, "showing", {
             app: true, title: "Settings", settingsQualification: true,
@@ -258,6 +351,39 @@ TestCase {
         verify(findChild(mirrorWindow, "mirrorPreFrameDetail").text.indexOf("new Settings window") >= 0)
     }
 
+    function test_app_control_guidance_keeps_stop_and_helper_separate_from_allowance() {
+        createMirror(false, "showing", {
+            app: true, title: "Settings", controlReason: "stopped", canRequestControl: false
+        })
+        compare(mirrorWindow.accessibleControlDescription, "Phone control was stopped on the phone. In Waypair Link on your phone, open Settings, then Computers, and tap Resume phone control for this computer. Then start mirroring again from the Mac.")
+        verify(findChild(mirrorWindow, "mirrorControlHint").visible)
+        verify(!mirrorWindow.canControl)
+
+        Mirror.windows = JSON.stringify([{
+            key: "passive-test", name: "Fixture", phase: "showing", app: true,
+            title: "Settings", canControl: false, canRequestControl: false, controlReason: "ownerApproval"
+        }])
+        tryCompare(mirrorWindow, "accessibleControlDescription", "Way Mode and phone control are separate. To control this app window, turn on Allow phone control for this computer in Waypair Link on the phone.")
+
+        for (const reason of ["inputUnavailable", "ownerApproval", ""]) {
+            Mirror.windows = JSON.stringify([{
+                key: "passive-test", name: "Fixture", phase: "showing", app: true,
+                title: "Settings", settingsQualification: true, viewOnly: true,
+                canControl: false, canScroll: false, canRequestControl: false,
+                controlReason: "unsupported", scrollReason: reason
+            }])
+            const expected = reason === "inputUnavailable"
+                ? "Phone control is unavailable on this connection. Open Waypair Link on the phone to check Control from your PC or Elevated mode."
+                : reason === "ownerApproval"
+                ? "This window shows your phone's Settings. Scrolling needs this computer's phone-control allowance. Other phone controls are unavailable."
+                : "Scrolling isn't available for this Settings window right now. Other phone controls remain unavailable."
+            tryCompare(mirrorWindow, "accessibleControlDescription", expected)
+            verify(!mirrorWindow.canControl)
+            verify(!mirrorWindow.canScroll)
+        }
+        compare(Mirror.calls.filter(call => call[0] === "requestControl" || call[0] === "touch" || call[0] === "scroll").length, 0)
+    }
+
     function test_settings_window_wheel_without_allowance_does_not_request_control() {
         createMirror(false, "showing", {
             app: true, title: "Settings", settingsQualification: true,
@@ -275,6 +401,44 @@ TestCase {
         compare(Mirror.calls.filter(call => call[0] === "touch").length, 0)
     }
 
+
+    function test_pixel_delta_only_wheel_uses_platform_line_units() {
+        createMirror(true, "showing", { app: true })
+        const pixelUnit = mirrorWindow.wheelPixelsPerClick
+        verify(pixelUnit > 0, "the current app font and Qt wheel preference define a positive unit")
+        const pixels = Math.max(1, Math.round(pixelUnit * 1.5))
+        const wheel = {
+            x: 80, y: 80,
+            angleDelta: Qt.point(0, 0),
+            pixelDelta: Qt.point(0, -pixels)
+        }
+        const point = videoView.at(wheel.x, wheel.y)
+        verify(point.inside)
+        Mirror.calls = []
+
+        verify(mirrorWindow.dispatchWheel(wheel, point))
+        const scrolls = Mirror.calls.filter(call => call[0] === "scroll")
+        compare(scrolls.length, 1)
+        compare(scrolls[0][1], "passive-test")
+        compare(scrolls[0][4], 0)
+        verify(Math.abs(scrolls[0][5] - pixels / pixelUnit) < 0.000001,
+               "pixelDelta is normalized by system wheel lines and current-font line spacing")
+    }
+
+    function test_zero_pixel_delta_wheel_is_not_dispatched() {
+        createMirror(true, "showing", { app: true })
+        const wheel = {
+            x: 80, y: 80,
+            angleDelta: Qt.point(0, 0),
+            pixelDelta: Qt.point(0, 0)
+        }
+        const point = videoView.at(wheel.x, wheel.y)
+        verify(point.inside)
+        Mirror.calls = []
+
+        verify(!mirrorWindow.dispatchWheel(wheel, point))
+        compare(Mirror.calls.filter(call => call[0] === "scroll").length, 0)
+    }
 
     function test_first_portrait_is_centered_and_rotation_stays_in_available_area() {
         createMirror(false, "showing", { app: false })
