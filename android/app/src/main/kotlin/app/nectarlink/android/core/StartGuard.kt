@@ -14,6 +14,13 @@ internal class StartGuard {
 
     fun beginStart(): Token = Token(stopCount.get())
 
+    /** Core calls this under its lifecycle lock, before any queued-start side effect. */
+    fun beginStartIfCurrent(expected: Token?): Token? {
+        val stop = stopCount.get()
+        if (expected != null && expected.stopAtStart != stop) return null
+        return Token(stop)
+    }
+
     fun stop() {
         stopCount.incrementAndGet()
     }

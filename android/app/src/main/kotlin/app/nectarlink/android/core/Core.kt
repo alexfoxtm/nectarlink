@@ -65,7 +65,10 @@ import app.nectarlink.core.TransferDirection
 import app.nectarlink.core.TransferStatus
 import app.nectarlink.core.initLogging
 import app.nectarlink.android.files.transferTitle
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -333,6 +336,9 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
     @Volatile private var networkChange: Job? = null
     private val lifecycleMutex = Mutex()
     private val startGuard = StartGuard()
+    /** One verified received-APK attempt; starts wait until its exact result releases the hold. */
+    private var verifiedUpdateOwner: String? = null
+    private var restartAfterVerifiedUpdate = false
     private val wakeTimers = java.util.concurrent.ConcurrentHashMap<String, Job>()
     /** Wakes in flight (send and its ~60 s poll); counted in [busy] so an idle stop doesn't cut them. */
     private val wakesInFlight = MutableStateFlow(0)
@@ -479,11 +485,18 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
      * two nodes with one identity, which kept taking the PC from each other.
      * Only a stop cancels a start; starts never cancel each other.
      */
-    fun start() {
-        startCall = scope.launch(Dispatchers.IO) {
+    fun start() = start(null)
+
+    private fun start(expected: StartGuard.Token?) {
+        val call = scope.launch(Dispatchers.IO) {
             lifecycleMutex.withLock {
+                val token = startGuard.beginStartIfCurrent(expected) ?: return@withLock
+                if (expected != null) startCall = currentCoroutineContext()[Job]
+                if (verifiedUpdateOwner != null) {
+                    restartAfterVerifiedUpdate = true
+                    return@withLock
+                }
                 if (node != null || startJob?.isActive == true) return@withLock
-                val token = startGuard.beginStart()
                 val currentRun = Job()
                 runJob = currentRun
                 val currentRunScope = CoroutineScope(scope.coroutineContext + currentRun)
@@ -683,6 +696,7 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
                 startJob = job
             }
         }
+        if (expected == null) startCall = call
     }
 
     /**
@@ -706,73 +720,122 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
         scope.launch(Dispatchers.IO) {
             lifecycleMutex.withLock {
                 if (!shouldStop()) return@withLock
-                startGuard.stop()
-                val activeJob = startJob
-                val activeRun = runJob
-                if (activeJob == null && node == null && activeRun == null) return@withLock
-
-                activeRun?.cancelAndJoin()
-                activeJob?.cancelAndJoin()
-
-                val activeNode = node
-                synchronized(opsLock) {
-                    revokeAllSettingsQualificationsLocked()
-                    isRunning = false
-                    node = null
-                    // Drain any pending operations so they don't replay on the next run.
-                    while (notificationOps.tryReceive().isSuccess) {}
-                    while (remoteOps.tryReceive().isSuccess) {}
-                    synchronized(pendingMoveLock) {
-                        pendingMovePcId = null
-                        pendingMoveDx = 0f
-                        pendingMoveDy = 0f
-                        pendingMoveQueued = false
-                    }
+                if (verifiedUpdateOwner != null) {
+                    startGuard.stop()
+                    restartAfterVerifiedUpdate = false
+                    return@withLock
                 }
-                startJob = null
-                runJob = null
-                runScope = null
-
-                activeNode?.let { shutdownAndCloseNode(it) }
-                try {
-                    Elevated.stop()
-                } catch (e: Exception) {
-                    Log.w(TAG, "elevated stop failed", e)
-                }
-
-                withContext(Dispatchers.Main) {
-                    battery.stop()
-                    accent.stop()
-                    network.stop()
-                    routes.stop()
-                    calls.stop()
-                    contacts.stop()
-                    sms.stop()
-                    signal.stop()
-                    toggles.stop()
-                    photos.stop()
-                    phoneMedia.stop()
-                    pcSpeakerPlayer.stop()
-                }
-
-                lastReportedBattery = null
-                localsendMulticast?.runCatching { release() }
-                wakeTimers.values.forEach { it.cancel() }
-                wakeTimers.clear()
-
-                // No node is left to finish a Wake, so no PC stays "Waking".
-                _state.update { s ->
-                    val offline = s.withDevicesOffline()
-                    offline.copy(
-                        status = CoreStatus.Starting,
-                        devices = offline.devices.map {
-                            if (it.wakeState == WakeState.Waking) it.copy(wakeState = WakeState.Idle) else it
-                        },
-                    )
-                }
-                app.nectarlink.android.widget.PcWidgetProvider.refreshAll(context, _state.value)
+                shutdownActiveNodeLocked()
             }
         }
+    }
+
+    /** The caller has verified a private same-package/same-signer APK; no saved allowance is rewritten. */
+    internal suspend fun shutdownBeforeVerifiedUpdate(attempt: String): Boolean = withContext(Dispatchers.IO) {
+        lifecycleMutex.withLock {
+            if (verifiedUpdateOwner != null) return@withLock false
+            verifiedUpdateOwner = attempt
+            restartAfterVerifiedUpdate = node != null || startJob?.isActive == true || runJob?.isActive == true
+            // Once this attempt owns retirement, finish it even if its activity
+            // is recreated/cancelled. The caller then releases this exact hold.
+            withContext(NonCancellable) {
+                try {
+                    shutdownActiveNodeLocked(requireProviderRetirement = true)
+                    true
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (e: Exception) {
+                    Log.w(TAG, "verified update shutdown failed", e)
+                    false
+                }
+            }
+        }
+    }
+
+    /** Late installer results cannot release another attempt's hold or change Way Mode/Stop. */
+    internal fun resumeAfterVerifiedUpdateCancelled(attempt: String) {
+        scope.launch(Dispatchers.IO) {
+            val restart = lifecycleMutex.withLock {
+                if (verifiedUpdateOwner != attempt) return@withLock null
+                verifiedUpdateOwner = null
+                val restart = restartAfterVerifiedUpdate
+                restartAfterVerifiedUpdate = false
+                if (restart) startGuard.beginStart() else null
+            }
+            if (restart != null) start(restart)
+        }
+    }
+
+    /** Caller holds [lifecycleMutex]. Does not cancel the persistent send queue. */
+    private suspend fun shutdownActiveNodeLocked(requireProviderRetirement: Boolean = false) {
+        startGuard.stop()
+        val activeJob = startJob
+        val activeRun = runJob
+        if (activeJob == null && node == null && activeRun == null && !requireProviderRetirement) return
+
+        activeRun?.cancelAndJoin()
+        activeJob?.cancelAndJoin()
+
+        val activeNode = node
+        synchronized(opsLock) {
+            revokeAllSettingsQualificationsLocked()
+            isRunning = false
+            node = null
+            // Drain any pending operations so they don't replay on the next run.
+            while (notificationOps.tryReceive().isSuccess) {}
+            while (remoteOps.tryReceive().isSuccess) {}
+            synchronized(pendingMoveLock) {
+                pendingMovePcId = null
+                pendingMoveDx = 0f
+                pendingMoveDy = 0f
+                pendingMoveQueued = false
+            }
+        }
+        startJob = null
+        runJob = null
+        runScope = null
+
+        activeNode?.let { shutdownAndCloseNode(it) }
+        try {
+            Elevated.stop()
+        } catch (e: Exception) {
+            Log.w(TAG, "elevated stop failed", e)
+            if (requireProviderRetirement) throw e
+        }
+
+        withContext(Dispatchers.Main) {
+            battery.stop()
+            accent.stop()
+            network.stop()
+            routes.stop()
+            calls.stop()
+            contacts.stop()
+            sms.stop()
+            signal.stop()
+            toggles.stop()
+            photos.stop()
+            phoneMedia.stop()
+            pcSpeakerPlayer.stop()
+        }
+
+        lastReportedBattery = null
+        localsendMulticast?.runCatching { release() }
+        wakeTimers.values.forEach { it.cancel() }
+        wakeTimers.clear()
+
+        // No node is left to finish a Wake, so no PC stays "Waking".
+        // withDevicesOffline keeps each device's saved Way Mode bit and the
+        // explicit Stop set; neither is rewritten here.
+        _state.update { s ->
+            val offline = s.withDevicesOffline()
+            offline.copy(
+                status = CoreStatus.Starting,
+                devices = offline.devices.map {
+                    if (it.wakeState == WakeState.Waking) it.copy(wakeState = WakeState.Idle) else it
+                },
+            )
+        }
+        app.nectarlink.android.widget.PcWidgetProvider.refreshAll(context, _state.value)
     }
 
     private suspend fun shutdownAndCloseNode(node: NectarlinkNode) {

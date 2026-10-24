@@ -3782,11 +3782,7 @@ private fun PcFilesSheet(
 
 private fun openSavedPcFile(context: android.content.Context, uri: Uri, fileName: String) {
     runCatching {
-        val mime = ReceivedFiles.mimeOf(fileName)
-        val view = Intent(Intent.ACTION_VIEW)
-            .setDataAndType(uri, mime)
-            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.startActivity(Intent.createChooser(view, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        context.startActivity(ReceivedFiles.openIntent(context, uri, fileName))
     }
 }
 

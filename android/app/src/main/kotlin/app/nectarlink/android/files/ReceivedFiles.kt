@@ -23,6 +23,19 @@ object ReceivedFiles {
 
     private fun folderName(context: Context) = context.getString(R.string.app_name)
 
+    /** User-opened APKs pass through private-byte verification before any self-update retirement. */
+    fun openIntent(context: Context, uri: Uri, name: String, mime: String = mimeOf(name)): android.content.Intent {
+        if (mime == app.nectarlink.android.update.RECEIVED_APK_MIME || name.endsWith(".apk", ignoreCase = true)) {
+            return android.content.Intent(context, app.nectarlink.android.update.ReceivedSelfUpdateActivity::class.java)
+                .setData(uri)
+                .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        val view = android.content.Intent(android.content.Intent.ACTION_VIEW).setDataAndType(uri, mime)
+            .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        return android.content.Intent.createChooser(view, null).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+
+
     fun mimeOf(name: String): String =
         MimeTypeMap.getSingleton().getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase())
             ?: "application/octet-stream"

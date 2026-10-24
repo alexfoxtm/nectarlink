@@ -207,6 +207,14 @@
             android:name=".notifications.PcNotificationPoster$DismissReceiver"
             android:exported="false" />
 
+        <!-- Owns only a user-opened, locally verified self-update installer result. -->
+        <activity
+            android:name=".update.ReceivedSelfUpdateActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <!-- Android's answers while installing an update. -->
         <receiver
             android:name=".update.AppUpdater$InstallResult"

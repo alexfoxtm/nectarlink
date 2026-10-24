@@ -2426,6 +2426,8 @@ async fn a_stop_during_screen_mirroring_outlives_a_reconnect() {
     use nectarlink_core::MirrorInput;
     let (pc, mut phone) = typing_pair().await;
     let (pc_id, phone_id) = (pc.node.device_id(), phone.node.device_id());
+    // Establish the saved per-PC allow and an explicit durable stopped=false entry.
+    phone.node.set_phone_control_enabled(pc_id, true).unwrap();
     let text = |t: &str| MirrorInput::Text { text: t.into() };
     let reached = |phone: &TestDevice| phone.platform.screen_inputs.lock().unwrap().clone();
 
@@ -2448,9 +2450,9 @@ async fn a_stop_during_screen_mirroring_outlives_a_reconnect() {
     let posted_before_stop = take_screen_inputs(&phone, 1).await;
     assert_eq!(dispatch_texts(&phone, &posted_before_stop), [4]);
 
-    // The Store refuses the production fence write. The in-memory fence still
-    // drops current and already-posted input, and the durable running marker
-    // makes the next Node start recover all paired peers fail-closed.
+    // The Store refuses the first Stop write. Live denial still drops current
+    // and posted input; after process loss the chosen policy follows the last
+    // durable Stop rather than inventing a new one for this known journal.
     let fence_db = rusqlite::Connection::open(phone.dir.path().join("nectarlink.db")).unwrap();
     fence_db
         .execute_batch(
@@ -2492,8 +2494,8 @@ async fn a_stop_during_screen_mirroring_outlives_a_reconnect() {
     typing_control_barrier(&pc, &phone).await;
     assert!(reached(&phone).is_empty(), "a new session inherited typing");
 
-    // Shutdown cannot persist through the injected Store failure. Recovery
-    // durably stops every still-paired PC while allowing Node/network startup.
+    // Shutdown cannot save this refused Stop. Known saved control may resume
+    // after process loss; this is the explicitly accepted unsaved-Stop risk.
     phone.node.shutdown().await;
     let TestDevice {
         node: stopped_phone, platform: phone_platform, dir: phone_dir, name: phone_name, ..
@@ -2511,8 +2513,8 @@ async fn a_stop_during_screen_mirroring_outlives_a_reconnect() {
     recovery_config.enable_loopback_mirror_fixture();
     let recovered_node = Node::start(recovery_config, phone_platform.clone())
         .await
-        .expect("typing recovery persists the denial and continues Node startup");
-    assert!(recovered_node.mirror_typing_stopped(pc_id));
+        .expect("typing recovery loads the last durable state and starts");
+    assert!(!recovered_node.mirror_typing_stopped(pc_id), "a refused Stop was never durable");
     phone = TestDevice {
         events: recovered_node.events(),
         node: recovered_node,
@@ -2537,6 +2539,17 @@ async fn a_stop_during_screen_mirroring_outlives_a_reconnect() {
         .await;
     wait_online(&mut pc, phone_id).await;
     wait_online(&mut phone, pc_id).await;
+    // A fresh input can use saved authority, but queued old generations cannot.
+    assert!(!phone.node.mirror_typing_stopped(pc_id));
+    assert!(dispatch_texts(&phone, &posted_before_stop).is_empty());
+    pc.node.mirror_input(phone_id, 0, text("saved")).await.unwrap();
+    let recovered_inputs = take_screen_inputs(&phone, 1).await;
+    assert_eq!(dispatch_texts(&phone, &recovered_inputs), [5]);
+    // A Stop that successfully reaches Store is still respected; an old tap
+    // cannot clear it merely because automatic recovery was allowed before it.
+    phone.node.mirror_deny_typing(pc_id).unwrap();
+    assert!(phone.node.mirror_typing_stopped(pc_id));
+
     // A queued tap from the old Node is stale.
     let restarted_epoch = phone.node.mirror_typing_epoch(pc_id);
     assert_ne!(queued_owner_tap, restarted_epoch, "phone Node recreation must move the token");
@@ -2558,7 +2571,7 @@ async fn a_stop_during_screen_mirroring_outlives_a_reconnect() {
     let tapped = phone.node.mirror_typing_epoch(pc_id);
     phone.node.set_mirroring_enabled(pc_id, false, tapped).unwrap();
     phone.node.set_mirroring_enabled(pc_id, true, phone.node.mirror_typing_epoch(pc_id)).unwrap();
-    assert!(!phone.node.mirror_typing_stopped(pc_id), "the explicit owner rearm clears the recovery deny");
+    assert!(!phone.node.mirror_typing_stopped(pc_id), "the explicit owner rearm clears the saved Stop");
     pc.node.mirror_input(phone_id, 0, text("again!!")).await.unwrap();
     let posted = take_screen_inputs(&phone, 1).await;
     assert_eq!(dispatch_texts(&phone, &posted), [7]);
@@ -7525,13 +7538,72 @@ async fn request_control_session(
     if mirroring == 0 {
         pc.node.mirror_start(peer, options).await.unwrap();
     } else {
-        pc.node
+        let published = Mutex::new(None::<nectarlink_core::MirrorView>);
+        tracing::debug!(
+            target: "nectarlink_core::waymode_fixture",
+            session = mirroring,
+            pc_dialer = ?pc.node.test_session_dialer(peer),
+            phone_dialer = ?phone.node.test_session_dialer(pc.node.device_id()),
+            "starting owned app view"
+        );
+        let result = pc
+            .node
             .mirror_start_owned(peer, options, |view| {
                 assert!(view.is_current(), "exact owner is published before the reply wait");
+                *published.lock().unwrap() = Some(view);
                 true
             })
-            .await
-            .unwrap();
+            .await;
+        tracing::debug!(
+            target: "nectarlink_core::waymode_fixture",
+            session = mirroring,
+            error = ?result.as_ref().err(),
+            "owned app start finished"
+        );
+        if let Err(error) = result {
+            let owner = published.lock().unwrap().as_ref().map(|view| (view.request(), view.is_current()));
+            let pc_id = pc.node.device_id();
+            let accepted = owner.is_some_and(|(request, _)| {
+                phone.platform.mirror_requests.lock().unwrap().iter().any(|options| {
+                    options.session == mirroring && options.request == Some(request)
+                })
+            });
+            let fence = rusqlite::Connection::open_with_flags(
+                phone.dir.path().join("nectarlink.db"),
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+            )
+            .ok()
+            .and_then(|db| {
+                db.query_row(
+                    "SELECT value FROM meta WHERE key = 'mirror_typing_fence'",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+                .ok()
+            })
+            .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+            .map(|state| {
+                let pc_key = pc_id.to_string();
+                (
+                    state["version"].as_u64(),
+                    state["grant_journal"].as_u64(),
+                    state["node_running"].as_bool(),
+                    state["peers"][pc_key.as_str()]["app_uncertain"].as_bool(),
+                )
+            });
+            let pc_mirroring = pc.node.device_toggles(peer).map(|toggles| {
+                toggles.into_iter().filter(|(toggle, _)| *toggle == "mirroring").collect::<Vec<_>>()
+            });
+            panic!(
+                "owned app start failed: session={mirroring} error={error:?} owner={owner:?} \
+                 platform_accepted={accepted} saved_allow={} stopped={} fence={fence:?} \
+                 pc_mirroring={pc_mirroring:?} pc_dialer={:?} phone_dialer={:?}",
+                phone.node.phone_app_windows_enabled(pc_id),
+                phone.node.mirror_typing_stopped(pc_id),
+                pc.node.test_session_dialer(peer),
+                phone.node.test_session_dialer(pc_id),
+            );
+        }
     }
     let request = phone.platform.mirror_requests.lock().unwrap().last().unwrap().request.unwrap();
     let stream = show_control_request(pc, phone, mirroring, request).await;
@@ -7720,7 +7792,15 @@ async fn phone_control_revocation_stale_owners_store_failure_and_reconnect_fail_
     let after: String = db
         .query_row("SELECT value FROM meta WHERE key = 'mirror_typing_fence'", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(before, after, "grant failure rolls back the durable epoch too");
+    assert_ne!(before, after, "grant failure retains its durable input-denial journal");
+    let stored: serde_json::Value = serde_json::from_str(&after).unwrap();
+    let pc_key = pc_id.to_string();
+    assert_eq!(stored["version"].as_u64(), Some(2));
+    assert_eq!(stored["grant_journal"].as_u64(), Some(1));
+    assert_eq!(stored["peers"][pc_key.as_str()]["stopped"].as_bool(), Some(true));
+    assert!(
+        phone.node.device_toggles(pc_id).unwrap().iter().any(|(name, on)| *name == "phone_control" && *on)
+    );
     assert!(phone.node.mirror_typing_stopped(pc_id), "store failure retains live denial");
     assert!(!phone.node.mirror_control_input_current(pc_id, owner_c));
     db.execute_batch("DROP TRIGGER fail_control_grant;").unwrap();
@@ -8757,21 +8837,39 @@ async fn phone_app_windows_opt_in_survives_reconnect_and_clean_restart() {
     assert!(phone.node.mirror_control_input_current(pc_id, posted[0].2));
     app.close();
 
-    phone = restart_with_same_store(phone, DeviceKind::Phone).await;
+    let TestDevice { node: old_phone, platform, dir, name, .. } = phone;
+    old_phone.shutdown().await;
+    let observing_pc = pc.node.clone();
+    wait_for(&mut pc, "previous phone Session is offline", |event| match event {
+        NodeEvent::LinkChanged { device, link: LinkState::Offline { .. } }
+            if *device == phone_id && observing_pc.test_session_dialer(phone_id).is_none() => Some(()),
+        _ => None,
+    })
+    .await;
+    drop(old_phone);
+    phone = start_in_with_platform(dir, name, DeviceKind::Phone, platform).await;
     assert!(
         phone.node.phone_app_windows_enabled(pc_id),
         "clean Node restart retains the exact paired-PC allowance"
     );
-    phone.node.update_power(PowerLevel::Elevated, phone_caps).await;
+    phone.node.update_power(PowerLevel::Elevated, phone_caps.clone()).await;
     // Restart binds a fresh disposable loopback endpoint; refresh both fixture peers.
     let phone_addrs = phone.node.direct_addrs().await;
     let pc_addrs = pc.node.direct_addrs().await;
     assert!(!phone_addrs.is_empty() && phone_addrs.iter().all(|addr| addr.ip().is_loopback()));
     assert!(!pc_addrs.is_empty() && pc_addrs.iter().all(|addr| addr.ip().is_loopback()));
     pc.node.add_known_addrs(phone_id, &phone_addrs);
-    phone.node.add_known_addrs(pc_id, &pc_addrs);
     wait_online(&mut pc, phone_id).await;
     wait_online(&mut phone, pc_id).await;
+    if pc.node.capabilities(phone_id).unwrap().state("mirroring.app_windows")
+        != Some(FeatureState::Available)
+    {
+        wait_feature(&mut pc, phone_id, "mirroring.app_windows", |state| *state == FeatureState::Available)
+            .await;
+    }
+    assert_eq!(pc.node.test_session_dialer(phone_id), Some(pc_id));
+    assert_eq!(phone.node.test_session_dialer(pc_id), Some(pc_id));
+    control_barrier(&pc, &phone).await;
     assert!(!phone.node.mirror_control_input_current(pc_id, posted[0].2));
     assert!(!lease.is_current());
 
@@ -8790,6 +8888,94 @@ async fn phone_app_windows_opt_in_survives_reconnect_and_clean_restart() {
     assert!(phone.node.phone_app_windows_enabled(pc_id));
     assert!(phone.node.mirror_control_input_current(pc_id, posted[0].2));
     reconnected.close();
+
+    // Synthetic Store markers exercise production recovery and an old-reader rewrite.
+    for (mode, mirroring) in [("unexpected", 11), ("old-clean", 13), ("saved-stop", 15)] {
+        let saved_stop = mode == "saved-stop";
+        if saved_stop {
+            phone.node.mirror_deny_typing(pc_id).unwrap();
+        }
+        let old_epoch = phone.node.mirror_typing_epoch(pc_id);
+        let TestDevice { node: old_phone, platform, dir, name, .. } = phone;
+        old_phone.shutdown().await;
+        let observing_pc = pc.node.clone();
+        wait_for(&mut pc, "previous phone Session is offline", |event| match event {
+            NodeEvent::LinkChanged { device, link: LinkState::Offline { .. } }
+                if *device == phone_id && observing_pc.test_session_dialer(phone_id).is_none() => Some(()),
+            _ => None,
+        })
+        .await;
+        let db = rusqlite::Connection::open(dir.path().join("nectarlink.db")).unwrap();
+        let raw: String = db
+            .query_row("SELECT value FROM meta WHERE key = 'mirror_typing_fence'", [], |row| row.get(0))
+            .unwrap();
+        let mut stored: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        let pc_key = pc_id.to_string();
+        assert_eq!(stored["version"].as_u64(), Some(2));
+        assert_eq!(stored["grant_journal"].as_u64(), Some(1));
+        assert_eq!(stored["peers"][pc_key.as_str()]["app_uncertain"].as_bool(), Some(false));
+        assert_eq!(stored["peers"][pc_key.as_str()]["stopped"].as_bool(), Some(saved_stop));
+        if mode == "old-clean" {
+            // Old typed serializers ignore and then drop the optional marker.
+            stored.as_object_mut().unwrap().remove("grant_journal");
+        } else {
+            stored["node_running"] = serde_json::Value::Bool(true);
+        }
+        db.execute(
+            "UPDATE meta SET value = ?1 WHERE key = 'mirror_typing_fence'",
+            [serde_json::to_string(&stored).unwrap()],
+        )
+        .unwrap();
+        drop(db);
+        phone = start_in_with_platform(dir, name, DeviceKind::Phone, platform).await;
+        assert!(phone.node.phone_app_windows_enabled(pc_id));
+        assert_eq!(phone.node.mirror_typing_stopped(pc_id), saved_stop);
+        assert_ne!(phone.node.mirror_typing_epoch(pc_id), old_epoch);
+        assert!(!phone.node.mirror_control_input_current(pc_id, posted[0].2));
+        assert!(!lease.is_current());
+        assert!(old_phone.set_phone_app_windows_enabled(pc_id, false).is_err());
+        assert!(phone.node.phone_app_windows_enabled(pc_id), "old Node cannot revoke the fresh allowance");
+        drop(old_phone);
+        phone.node.update_power(PowerLevel::Elevated, phone_caps.clone()).await;
+        let phone_addrs = phone.node.direct_addrs().await;
+        assert!(!phone_addrs.is_empty() && phone_addrs.iter().all(|addr| addr.ip().is_loopback()));
+        // Only the PC dials the fresh phone; there is no competing reverse reseed.
+        pc.node.add_known_addrs(phone_id, &phone_addrs);
+        wait_online(&mut pc, phone_id).await;
+        wait_online(&mut phone, pc_id).await;
+        if pc.node.capabilities(phone_id).unwrap().state("mirroring.app_windows")
+            != Some(FeatureState::Available)
+        {
+            wait_feature(&mut pc, phone_id, "mirroring.app_windows", |state| {
+                *state == FeatureState::Available
+            })
+            .await;
+        }
+        assert_eq!(pc.node.test_session_dialer(phone_id), Some(pc_id));
+        assert_eq!(phone.node.test_session_dialer(pc_id), Some(pc_id));
+        control_barrier(&pc, &phone).await;
+        let (recovered, request) = request_control_session(&mut pc, &mut phone, mirroring).await;
+        let owner = phone.node.mirror_capture_context_for_session(pc_id, mirroring, request).unwrap();
+        assert!(phone.node.mirror_capture_current(pc_id, owner));
+        phone.platform.control_inputs.lock().unwrap().clear();
+        if saved_stop {
+            assert!(matches!(
+                pc.node.mirror_control_for_session(phone_id, mirroring, request),
+                Err(Error::Denied)
+            ));
+            assert!(!phone.node.mirror_control_input_current(pc_id, owner));
+        } else {
+            let resumed = pc.node.mirror_control_for_session(phone_id, mirroring, request).unwrap();
+            resumed.send(MirrorInput::Key { key: "enter".into() }).await.unwrap();
+            control_barrier(&pc, &phone).await;
+            let reached = phone.platform.control_inputs.lock().unwrap().clone();
+            assert_eq!(reached.len(), 1);
+            assert_eq!(reached[0].2, owner);
+            assert!(phone.node.mirror_control_input_current(pc_id, owner));
+        }
+        assert_eq!(phone.node.mirror_typing_stopped(pc_id), saved_stop);
+        recovered.close();
+    }
     pc.node.shutdown().await;
     phone.node.shutdown().await;
 }
@@ -8915,6 +9101,22 @@ async fn phone_app_windows_denies_unknown_and_stale_owners_but_preserves_indepen
     assert!(phone.node.mirror_control_input_current(pc_id, fresh_posted));
 
     let db = rusqlite::Connection::open(phone.dir.path().join("nectarlink.db")).unwrap();
+    let before_intent: String = db
+        .query_row("SELECT value FROM meta WHERE key = 'mirror_typing_fence'", [], |row| row.get(0))
+        .unwrap();
+    db.execute_batch(
+        "CREATE TRIGGER fail_way_mode_intent BEFORE UPDATE ON meta \
+         WHEN OLD.key = 'mirror_typing_fence' \
+         BEGIN SELECT RAISE(ABORT, 'synthetic pending intent failure'); END;",
+    )
+    .unwrap();
+    assert!(phone.node.set_phone_app_windows_enabled(pc_id, false).is_err());
+    let after_intent: String = db
+        .query_row("SELECT value FROM meta WHERE key = 'mirror_typing_fence'", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(before_intent, after_intent, "failed intent storage cannot begin a durable transition");
+    assert!(phone.node.phone_app_windows_enabled(pc_id));
+    db.execute_batch("DROP TRIGGER fail_way_mode_intent;").unwrap();
     db.execute_batch(
         "CREATE TRIGGER fail_phone_app_windows BEFORE UPDATE ON peer_toggles \
          WHEN NEW.toggle = 'phone_app_windows' \
@@ -8933,6 +9135,15 @@ async fn phone_app_windows_denies_unknown_and_stale_owners_but_preserves_indepen
     assert!(fresh_lease.send(MirrorInput::Key { key: "home".into() }).await.is_err());
     assert!(phone.node.mirror_open_owned(pc_id, fresh_owner).await.is_err());
     assert!(!phone.node.mirror_capture_current(pc_id, fresh_owner));
+    let pending: String = db
+        .query_row("SELECT value FROM meta WHERE key = 'mirror_typing_fence'", [], |row| row.get(0))
+        .unwrap();
+    assert_ne!(pending, before_intent, "pending denial commits before the failed grant transaction");
+    let pending: serde_json::Value = serde_json::from_str(&pending).unwrap();
+    let pc_key = pc_id.to_string();
+    assert_eq!(pending["version"].as_u64(), Some(2));
+    assert_eq!(pending["grant_journal"].as_u64(), Some(1));
+    assert_eq!(pending["peers"][pc_key.as_str()]["app_uncertain"].as_bool(), Some(true));
     db.execute_batch("DROP TRIGGER fail_phone_app_windows;").unwrap();
     fresh.close();
 
@@ -8944,37 +9155,97 @@ async fn phone_app_windows_denies_unknown_and_stale_owners_but_preserves_indepen
         "clean restart retains the saved true allowance"
     );
     assert!(!phone.node.mirror_typing_stopped(pc_id), "app uncertainty is not an input Stop");
-    phone.node.update_power(PowerLevel::Elevated, phone_caps).await;
-    // Restart binds a fresh disposable loopback endpoint; refresh both fixture peers.
-    let phone_addrs = phone.node.direct_addrs().await;
-    let pc_addrs = pc.node.direct_addrs().await;
-    assert!(!phone_addrs.is_empty() && phone_addrs.iter().all(|addr| addr.ip().is_loopback()));
-    assert!(!pc_addrs.is_empty() && pc_addrs.iter().all(|addr| addr.ip().is_loopback()));
-    pc.node.add_known_addrs(phone_id, &phone_addrs);
-    phone.node.add_known_addrs(pc_id, &pc_addrs);
-    wait_online(&mut pc, phone_id).await;
-    wait_online(&mut phone, pc_id).await;
-    let denied = with_timeout(
-        "fresh ordinary app denied after uncertain persistence",
-        pc.node.mirror_start_owned(
-            phone_id,
-            nectarlink_core::MirrorStart {
-                max_size: 128,
-                fps: 30,
-                bitrate: 1_000_000,
-                audio: false,
-                session: 10,
-                app: Some("com.example.chat".into()),
-                stay_awake: false,
-                screen_off: false,
-                watch: None,
-                request: None,
-            },
-            |_| true,
-        ),
-    )
-    .await;
-    assert!(matches!(denied, Err(Error::Denied)));
+    // Pending app intent, omitted app state and ambiguous legacy unclean state deny.
+    // The Store markers are synthetic; each recovery uses production Node.start.
+    for mode in ["pending", "missing-app", "missing-peer", "legacy"] {
+        let legacy = mode == "legacy";
+        let TestDevice { node: old_phone, platform, dir, name, .. } = phone;
+        old_phone.shutdown().await;
+        let observing_pc = pc.node.clone();
+        wait_for(&mut pc, "previous phone Session is offline", |event| match event {
+            NodeEvent::LinkChanged { device, link: LinkState::Offline { .. } }
+                if *device == phone_id && observing_pc.test_session_dialer(phone_id).is_none() => Some(()),
+            _ => None,
+        })
+        .await;
+        let db = rusqlite::Connection::open(dir.path().join("nectarlink.db")).unwrap();
+        let raw: String = db
+            .query_row("SELECT value FROM meta WHERE key = 'mirror_typing_fence'", [], |row| row.get(0))
+            .unwrap();
+        let mut stored: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(stored["peers"][pc_key.as_str()]["app_uncertain"].as_bool(), Some(true));
+        stored["node_running"] = serde_json::Value::Bool(true);
+        if legacy {
+            // An old rewrite loses provenance; an unclean lifetime remains ambiguous.
+            stored.as_object_mut().unwrap().remove("grant_journal");
+            stored["peers"][pc_key.as_str()]["app_uncertain"] = serde_json::Value::Bool(false);
+            stored["peers"][pc_key.as_str()]["stopped"] = serde_json::Value::Bool(false);
+        } else if mode == "missing-app" {
+            stored["peers"][pc_key.as_str()].as_object_mut().unwrap().remove("app_uncertain");
+        } else if mode == "missing-peer" {
+            stored["peers"].as_object_mut().unwrap().remove(pc_key.as_str());
+        }
+        db.execute(
+            "UPDATE meta SET value = ?1 WHERE key = 'mirror_typing_fence'",
+            [serde_json::to_string(&stored).unwrap()],
+        )
+        .unwrap();
+        drop(db);
+        phone = start_in_with_platform(dir, name, DeviceKind::Phone, platform).await;
+        assert!(phone.node.phone_app_windows_enabled(pc_id));
+        assert_eq!(phone.node.mirror_typing_stopped(pc_id), legacy || mode == "missing-peer");
+        let db = rusqlite::Connection::open(phone.dir.path().join("nectarlink.db")).unwrap();
+        let current: String = db
+            .query_row("SELECT value FROM meta WHERE key = 'mirror_typing_fence'", [], |row| row.get(0))
+            .unwrap();
+        assert!(old_phone.set_phone_app_windows_enabled(pc_id, true).is_err());
+        let after_old: String = db
+            .query_row("SELECT value FROM meta WHERE key = 'mirror_typing_fence'", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(current, after_old, "a queued old Node cannot clear pending uncertainty");
+        drop(db);
+        drop(old_phone);
+        phone.node.update_power(PowerLevel::Elevated, phone_caps.clone()).await;
+        let phone_addrs = phone.node.direct_addrs().await;
+        let pc_addrs = pc.node.direct_addrs().await;
+        assert!(!phone_addrs.is_empty() && phone_addrs.iter().all(|addr| addr.ip().is_loopback()));
+        assert!(!pc_addrs.is_empty() && pc_addrs.iter().all(|addr| addr.ip().is_loopback()));
+        pc.node.add_known_addrs(phone_id, &phone_addrs);
+        wait_online(&mut pc, phone_id).await;
+        wait_online(&mut phone, pc_id).await;
+        if pc.node.capabilities(phone_id).unwrap().state("mirroring.app_windows")
+            != Some(FeatureState::Available)
+        {
+            wait_feature(&mut pc, phone_id, "mirroring.app_windows", |state| {
+                *state == FeatureState::Available
+            })
+            .await;
+        }
+        assert_eq!(pc.node.test_session_dialer(phone_id), Some(pc_id));
+        assert_eq!(phone.node.test_session_dialer(pc_id), Some(pc_id));
+        control_barrier(&pc, &phone).await;
+        let denied = with_timeout(
+            "fresh ordinary app denied after uncertain persistence",
+            pc.node.mirror_start_owned(
+                phone_id,
+                nectarlink_core::MirrorStart {
+                    max_size: 128,
+                    fps: 30,
+                    bitrate: 1_000_000,
+                    audio: false,
+                    session: 10,
+                    app: Some("com.example.chat".into()),
+                    stay_awake: false,
+                    screen_off: false,
+                    watch: None,
+                    request: None,
+                },
+                |_| true,
+            ),
+        )
+        .await;
+        assert!(matches!(denied, Err(Error::Denied)));
+    }
 
     // An explicit Way Mode write resolves app uncertainty. It must not clear
     // the independently retained explicit input Stop.

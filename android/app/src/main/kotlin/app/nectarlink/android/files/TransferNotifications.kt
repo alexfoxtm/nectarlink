@@ -160,10 +160,7 @@ internal object TransferNotifications {
         }
         if (!allowed(context)) return
         val open = if (transfer.files.toInt() == transfer.names.size) {
-            Intent.createChooser(
-                Intent(Intent.ACTION_VIEW).setDataAndType(first.uri, first.mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION),
-                null,
-            )
+            ReceivedFiles.openIntent(context, first.uri, first.name, first.mime)
         } else {
             Intent(DownloadManager.ACTION_VIEW_DOWNLOADS)
         }

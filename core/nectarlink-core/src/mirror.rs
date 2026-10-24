@@ -690,20 +690,26 @@ pub(crate) struct TypingFence {
     node_running: bool,
     /// Exact Store value observed or last committed by this Node; protects a newer Node's row.
     persisted_value: Option<String>,
+    /// This stored format journals local grant intent before attempting its transaction.
+    grant_intents_durable: bool,
 }
 
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 struct Typing {
     generation: u64,
     stopped: bool,
-    /// A failed Way Mode persistence transition could not prove its committed
-    /// setting. This blocks app viewing independently of the user's input Stop.
-    #[serde(default)]
+    /// A pending or failed Way Mode persistence transition could not prove its
+    /// committed setting. This blocks app viewing independently of input Stop.
+    #[serde(default = "missing_app_grant_is_uncertain")]
     app_uncertain: bool,
     /// The epoch the phone owner's last mirroring "off" was tapped at
     /// ([`Shared::mirror_typing_epoch`]). Only an off tapped after the Stop
     /// carries the Stop's own generation; a Stop clears it.
     owner_off: Option<u64>,
+}
+
+fn missing_app_grant_is_uncertain() -> bool {
+    true
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -714,6 +720,9 @@ struct StoredTypingFence {
     peers: std::collections::BTreeMap<String, Typing>,
     #[serde(default)]
     node_running: Option<bool>,
+    /// Optional so older v2 readers retain the denial bits and drop this on rewrite.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    grant_journal: Option<u8>,
 }
 
 impl Default for TypingFence {
@@ -724,6 +733,7 @@ impl Default for TypingFence {
             peers: std::collections::HashMap::new(),
             node_running: false,
             persisted_value: None,
+            grant_intents_durable: false,
         }
     }
 }
@@ -754,13 +764,18 @@ impl TypingFence {
             (2, Some(node_running)) => node_running,
             _ => return Err(Error::Internal("invalid persisted mirror typing fence state".into())),
         };
+        let grant_intents_durable = match (stored.version, stored.grant_journal) {
+            (2, Some(1)) => true,
+            (_, None) => false,
+            _ => return Err(Error::Internal("invalid persisted grant journal state".into())),
+        };
         if stored.floor == 0
             || stored.next <= stored.floor
             || stored.peers.values().any(|typing| typing.generation == 0 || typing.generation >= stored.next)
         {
             return Err(Error::Internal("invalid persisted mirror typing fence state".into()));
         }
-        let peers = stored
+        let mut peers = stored
             .peers
             .into_iter()
             .map(|(id, typing)| {
@@ -769,7 +784,33 @@ impl TypingFence {
                     .map_err(|_| Error::Internal("invalid peer in persisted mirror typing fence".into()))
             })
             .collect::<Result<std::collections::HashMap<_, _>>>()?;
-        Ok(Self { next: stored.next, floor: stored.floor, peers, node_running, persisted_value: Some(value) })
+        for record in store.list_peers()? {
+            if peers.contains_key(&record.id) {
+                continue;
+            }
+            let toggles = store.toggles(&record.id)?;
+            if toggles.get(PHONE_CONTROL_TOGGLE) == Some(&true)
+                || toggles.get(PHONE_APP_WINDOWS_TOGGLE) == Some(&true)
+            {
+                peers.insert(
+                    record.id,
+                    Typing {
+                        generation: stored.floor,
+                        stopped: true,
+                        app_uncertain: true,
+                        owner_off: None,
+                    },
+                );
+            }
+        }
+        Ok(Self {
+            next: stored.next,
+            floor: stored.floor,
+            peers,
+            node_running,
+            persisted_value: Some(value),
+            grant_intents_durable,
+        })
     }
 
     pub(crate) fn node_was_running(&self) -> bool {
@@ -782,9 +823,9 @@ impl TypingFence {
         self.persisted_value.is_none()
     }
 
-    /// On an unclean restart, deny every still-paired peer and clear orphaned
-    /// entries. Persist the deny before the caller continues Node startup; the
-    /// stopped entries remain until the phone owner explicitly rearms them.
+    /// Recover under fresh generations before admission. Known journaled state
+    /// retains the owner's saved Stop; legacy or missing state cannot exclude
+    /// an unrecorded denial, so it remains stopped and app-denied.
     pub(crate) fn recover_unclean_node_lifetime(
         &mut self,
         store: &crate::store::Store,
@@ -794,18 +835,21 @@ impl TypingFence {
         self.floor = self.advance();
         self.peers.retain(|peer, _| paired.contains(peer));
         for peer in paired_peers {
+            let previous = self.current(peer);
+            let legacy_unknown = !self.grant_intents_durable
+                || self.persisted_value.is_none()
+                || !self.peers.contains_key(peer);
+            let app_uncertain = legacy_unknown || previous.app_uncertain;
+            let stopped = legacy_unknown || previous.stopped;
             let generation = self.advance();
-            self.peers.insert(
-                *peer,
-                Typing { generation, stopped: true, app_uncertain: true, owner_off: None },
-            );
+            self.peers.insert(*peer, Typing { generation, stopped, app_uncertain, owner_off: None });
         }
         self.node_running = false;
         self.persist(store)
     }
 
     /// Moves admissions to this new Node lifetime and discards any
-    /// half-completed owner off tap. A fresh off → on is required afterward.
+    /// half-completed owner off tap. A retained Stop still needs fresh owner rearm.
     pub(crate) fn begin_node_lifetime(&mut self) {
         self.floor = self.advance();
         let peers: Vec<_> = self.peers.keys().copied().collect();
@@ -839,11 +883,13 @@ impl TypingFence {
             floor: self.floor,
             peers: self.peers.iter().map(|(id, typing)| (id.to_string(), *typing)).collect(),
             node_running: Some(self.node_running),
+            grant_journal: Some(1),
         };
         let value = serde_json::to_string(&stored)
             .map_err(|error| Error::Internal(format!("can't encode mirror typing fence: {error}")))?;
         store.compare_and_set_mirror_typing_fence(self.persisted_value.as_deref(), &value)?;
         self.persisted_value = Some(value);
+        self.grant_intents_durable = true;
         Ok(())
     }
 }
@@ -885,9 +931,9 @@ impl Shared {
         let generation = fence.advance();
         let uncertain = fence.current(peer).app_uncertain;
         fence.peers.insert(*peer, Typing { generation, stopped: true, app_uncertain: uncertain, owner_off: None });
-        // Keep the in-memory input denial even when persistence fails. An
-        // unclean restart recovers all paired peers' input as stopped; app
-        // viewing keeps only its separate Way Mode uncertainty state.
+        // Keep live denial even when persistence fails. Known-journal restart
+        // follows the last durable Stop: a refused first write alone is not
+        // durable across process loss. Legacy uncertainty still recovers closed.
         fence.persist(&self.store)?;
         Ok(generation)
     }
@@ -2363,18 +2409,24 @@ impl Shared {
             },
         );
         *fence = denied;
+        // Persist the old-reader denial bit before either protected grant
+        // transaction. A refused first write aborts before touching the grant;
+        // a later failed transaction leaves this denial durable.
+        fence.persist(&self.store)?;
+        changed.persisted_value.clone_from(&fence.persisted_value);
+        changed.grant_intents_durable = fence.grant_intents_durable;
         let stored = StoredTypingFence {
             version: 2,
             next: changed.next,
             floor: changed.floor,
             peers: changed.peers.iter().map(|(id, typing)| (id.to_string(), *typing)).collect(),
             node_running: Some(changed.node_running),
+            grant_journal: Some(1),
         };
         let value = serde_json::to_string(&stored)
             .map_err(|error| Error::Internal(format!("can't encode mirror typing fence: {error}")))?;
-        // Denial is installed before this fallible transaction. On error it may
-        // be only in memory; Node shutdown still persists it, and an unclean
-        // exit recovers paired peers fail-closed.
+        // A failed commit retains the journaled denial. The grant row and final
+        // epoch commit together, and success cannot clear a prior owner Stop.
         self.store.compare_and_set_phone_grant(
             changed.persisted_value.as_deref(),
             &value,
@@ -2383,6 +2435,7 @@ impl Shared {
             enabled,
         )?;
         changed.persisted_value = Some(value);
+        changed.grant_intents_durable = true;
         *fence = changed;
         Ok(())
     }
