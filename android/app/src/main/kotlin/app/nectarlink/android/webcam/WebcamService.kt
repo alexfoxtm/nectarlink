@@ -373,11 +373,14 @@ class WebcamService : LifecycleService() {
         }
 
         fun refreshCapabilities(context: Context) {
-            val cam = _session.value.camera
+            val snapshot = _session.value
+            val cam = snapshot.camera
+            val supports4k = !snapshot.active && hasPermission(context) && CameraEncoder.supports4k(context, cam)
             val flash = CameraEncoder.cameraHasFlash(context, cam)
             val maxZoom = CameraEncoder.cameraMaxZoom(context, cam)
             _session.update {
                 it.copy(
+                    supports4k = if (!it.active && it.camera == cam) supports4k else it.supports4k,
                     hasFlash = flash,
                     maxZoomRatio = maxZoom,
                     zoomRatio = it.zoomRatio.coerceIn(1f, maxZoom),
@@ -388,11 +391,13 @@ class WebcamService : LifecycleService() {
         fun setCamera(camera: String, context: Context? = null) {
             val norm = if (camera == "front") "front" else "back"
             val ctx = context ?: current
+            val supports4k = !_session.value.active && ctx != null && hasPermission(ctx) && CameraEncoder.supports4k(ctx, norm)
             val flash = ctx?.let { CameraEncoder.cameraHasFlash(it, norm) } ?: false
             val maxZoom = ctx?.let { CameraEncoder.cameraMaxZoom(it, norm) } ?: 4f
             _session.update {
                 it.copy(
                     camera = norm,
+                    supports4k = if (!it.active) supports4k else it.supports4k,
                     hasFlash = flash,
                     maxZoomRatio = maxZoom,
                     zoomRatio = it.zoomRatio.coerceIn(1f, maxZoom),
