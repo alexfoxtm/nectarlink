@@ -35,20 +35,28 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
@@ -110,6 +118,7 @@ import app.nectarlink.android.core.Core
 import app.nectarlink.android.core.Device
 import app.nectarlink.android.core.WakeState
 import app.nectarlink.android.ui.theme.LocalReducedMotion
+import app.nectarlink.android.ui.theme.WaypairDesign
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlinx.coroutines.delay
@@ -199,7 +208,7 @@ fun RemoteScreen(
                 Spacer(Modifier.width(4.dp))
                 Text(
                     device.name,
-                    style = MaterialTheme.typography.titleLarge,
+                    style = MaterialTheme.typography.headlineSmall,
                     modifier = Modifier.weight(1f),
                 )
                 Surface(
@@ -341,7 +350,7 @@ fun RemoteScreen(
 @Composable
 private fun OfflineWakeBanner(device: Device, onWake: () -> Unit) {
     Surface(
-        shape = MaterialTheme.shapes.large,
+        shape = RoundedCornerShape(WaypairDesign.cardRadius),
         color = MaterialTheme.colorScheme.secondaryContainer,
         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
     ) {
@@ -404,20 +413,21 @@ private fun OfflineWakeBanner(device: Device, onWake: () -> Unit) {
 @Composable
 private fun StatusBanner(title: String?, text: String) {
     Surface(
-        shape = MaterialTheme.shapes.large,
+        shape = RoundedCornerShape(WaypairDesign.cardRadius),
         color = MaterialTheme.colorScheme.secondaryContainer,
         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
     ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
             if (title != null) {
-                Text(title, style = MaterialTheme.typography.titleSmall)
-                Spacer(Modifier.height(2.dp))
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(WaypairDesign.spacingXs))
             }
-            Text(text, style = MaterialTheme.typography.bodySmall)
+            Text(text, style = MaterialTheme.typography.bodyMedium)
         }
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TouchpadView(
     pcId: String,
@@ -448,296 +458,301 @@ private fun TouchpadView(
         }
     }
 
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        // Big touchpad surface
-        val primaryColor = MaterialTheme.colorScheme.primary
-        val outlineColor = MaterialTheme.colorScheme.outlineVariant
-        val touchpadDesc = stringResource(R.string.remote_mode_touchpad)
-        Surface(
-            shape = MaterialTheme.shapes.extraLarge,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            border = BorderStroke(
-                width = if (dragging) 2.dp else 1.dp,
-                color = if (dragging) primaryColor else outlineColor,
-            ),
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .semantics { contentDescription = touchpadDesc }
-                .pointerInput(pcId, sensitivity) {
-                    val tapSlop = viewConfiguration.touchSlop
-                    // Movement in reference-density pixels, so the same physical swipe moves
-                    // the PC pointer and scrolls the same amount on every phone's screen.
-                    val toReference = TOUCHPAD_REFERENCE_DENSITY / density
-                    val tapTimeoutMs = 240L
-                    val doubleTapWindowMs = 260L
-                    var lastSingleTapTime = 0L
+    BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+        val controlsMaxHeight = maxHeight * 0.6f
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            // Big touchpad surface
+            val primaryColor = MaterialTheme.colorScheme.primary
+            val outlineColor = MaterialTheme.colorScheme.outlineVariant
+            val touchpadDesc = stringResource(R.string.remote_mode_touchpad)
+            Surface(
+                shape = RoundedCornerShape(WaypairDesign.heroRadius),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                border = BorderStroke(
+                    width = if (dragging) 2.dp else 1.dp,
+                    color = if (dragging) primaryColor else outlineColor,
+                ),
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .semantics { contentDescription = touchpadDesc }
+                    .pointerInput(pcId, sensitivity) {
+                        val tapSlop = viewConfiguration.touchSlop
+                        // Movement in reference-density pixels, so the same physical swipe moves
+                        // the PC pointer and scrolls the same amount on every phone's screen.
+                        val toReference = TOUCHPAD_REFERENCE_DENSITY / density
+                        val tapTimeoutMs = 240L
+                        val doubleTapWindowMs = 260L
+                        var lastSingleTapTime = 0L
 
-                    awaitEachGesture {
-                        val firstDown = awaitFirstDown(requireUnconsumed = false)
-                        val downTime = System.currentTimeMillis()
-                        var maxPointers = 1
-                        var totalMoved = 0f
-                        var scrollAccumX = 0f
-                        var scrollAccumY = 0f
-                        var isDragHold = (downTime - lastSingleTapTime) <= doubleTapWindowMs
-                        var dragStarted = false
+                        awaitEachGesture {
+                            val firstDown = awaitFirstDown(requireUnconsumed = false)
+                            val downTime = System.currentTimeMillis()
+                            var maxPointers = 1
+                            var totalMoved = 0f
+                            var scrollAccumX = 0f
+                            var scrollAccumY = 0f
+                            var isDragHold = (downTime - lastSingleTapTime) <= doubleTapWindowMs
+                            var dragStarted = false
 
-                        touchPoint = firstDown.position
+                            touchPoint = firstDown.position
 
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            val changes = event.changes
-                            var pressedCount = 0
-                            var firstPressed: androidx.compose.ui.input.pointer.PointerInputChange? = null
-                            for (i in 0 until changes.size) {
-                                val c = changes[i]
-                                if (c.pressed) {
-                                    if (firstPressed == null) firstPressed = c
-                                    pressedCount++
-                                }
-                            }
-                            if (pressedCount == 0 || firstPressed == null) break
-
-                            if (pressedCount > maxPointers) {
-                                maxPointers = pressedCount
-                                if (dragStarted) {
-                                    core.remoteButton(pcId, "left", "up", onStatus)
-                                    dragStarted = false
-                                    dragging = false
-                                }
-                                isDragHold = false
-                            }
-
-                            if (pressedCount == 1 && maxPointers == 1) {
-                                val change = firstPressed
-                                touchPoint = change.position
-                                val delta = change.positionChange()
-                                val dist = hypot(delta.x, delta.y)
-                                totalMoved += dist
-
-                                if (isDragHold && !dragStarted && totalMoved > tapSlop * 0.6f) {
-                                    dragStarted = true
-                                    dragging = true
-                                    core.remoteButton(pcId, "left", "down", onStatus)
-                                }
-
-                                if (dist > 0.2f) {
-                                    val scaledDx = delta.x * toReference * sensitivity
-                                    val scaledDy = delta.y * toReference * sensitivity
-                                    core.remoteMove(pcId, scaledDx, scaledDy)
-                                    change.consume()
-                                }
-                            } else if (pressedCount >= 2) {
-                                touchPoint = firstPressed.position
-                                var avgDx = 0f
-                                var avgDy = 0f
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val changes = event.changes
+                                var pressedCount = 0
+                                var firstPressed: androidx.compose.ui.input.pointer.PointerInputChange? = null
                                 for (i in 0 until changes.size) {
                                     val c = changes[i]
                                     if (c.pressed) {
-                                        val d = c.positionChange()
-                                        avgDx += d.x
-                                        avgDy += d.y
-                                        c.consume()
+                                        if (firstPressed == null) firstPressed = c
+                                        pressedCount++
                                     }
                                 }
-                                avgDx /= pressedCount
-                                avgDy /= pressedCount
-                                totalMoved += hypot(avgDx, avgDy)
+                                if (pressedCount == 0 || firstPressed == null) break
 
-                                scrollAccumX += avgDx * toReference
-                                scrollAccumY += avgDy * toReference
-                                val stepPx = 18f
-                                if (abs(scrollAccumX) >= stepPx || abs(scrollAccumY) >= stepPx) {
-                                    val notchesX = -(scrollAccumX / 48f)
-                                    val notchesY = -(scrollAccumY / 36f)
-                                    scrollAccumX = 0f
-                                    scrollAccumY = 0f
-                                    core.remoteScroll(pcId, notchesX, notchesY, fast = true)
+                                if (pressedCount > maxPointers) {
+                                    maxPointers = pressedCount
+                                    if (dragStarted) {
+                                        core.remoteButton(pcId, "left", "up", onStatus)
+                                        dragStarted = false
+                                        dragging = false
+                                    }
+                                    isDragHold = false
+                                }
+
+                                if (pressedCount == 1 && maxPointers == 1) {
+                                    val change = firstPressed
+                                    touchPoint = change.position
+                                    val delta = change.positionChange()
+                                    val dist = hypot(delta.x, delta.y)
+                                    totalMoved += dist
+
+                                    if (isDragHold && !dragStarted && totalMoved > tapSlop * 0.6f) {
+                                        dragStarted = true
+                                        dragging = true
+                                        core.remoteButton(pcId, "left", "down", onStatus)
+                                    }
+
+                                    if (dist > 0.2f) {
+                                        val scaledDx = delta.x * toReference * sensitivity
+                                        val scaledDy = delta.y * toReference * sensitivity
+                                        core.remoteMove(pcId, scaledDx, scaledDy)
+                                        change.consume()
+                                    }
+                                } else if (pressedCount >= 2) {
+                                    touchPoint = firstPressed.position
+                                    var avgDx = 0f
+                                    var avgDy = 0f
+                                    for (i in 0 until changes.size) {
+                                        val c = changes[i]
+                                        if (c.pressed) {
+                                            val d = c.positionChange()
+                                            avgDx += d.x
+                                            avgDy += d.y
+                                            c.consume()
+                                        }
+                                    }
+                                    avgDx /= pressedCount
+                                    avgDy /= pressedCount
+                                    totalMoved += hypot(avgDx, avgDy)
+
+                                    scrollAccumX += avgDx * toReference
+                                    scrollAccumY += avgDy * toReference
+                                    val stepPx = 18f
+                                    if (abs(scrollAccumX) >= stepPx || abs(scrollAccumY) >= stepPx) {
+                                        val notchesX = -(scrollAccumX / 48f)
+                                        val notchesY = -(scrollAccumY / 36f)
+                                        scrollAccumX = 0f
+                                        scrollAccumY = 0f
+                                        core.remoteScroll(pcId, notchesX, notchesY, fast = true)
+                                    }
                                 }
                             }
-                        }
 
-                        touchPoint = null
-                        val elapsed = System.currentTimeMillis() - downTime
-                        if (dragStarted) {
-                            core.remoteButton(pcId, "left", "up", onStatus)
-                            dragging = false
-                            lastSingleTapTime = 0L
-                        } else if (elapsed <= tapTimeoutMs && totalMoved <= tapSlop * 1.5f) {
-                            if (maxPointers == 1) {
-                                lastSingleTapTime = System.currentTimeMillis()
-                                core.remoteButton(pcId, "left", "click", onStatus)
-                            } else if (maxPointers == 2) {
+                            touchPoint = null
+                            val elapsed = System.currentTimeMillis() - downTime
+                            if (dragStarted) {
+                                core.remoteButton(pcId, "left", "up", onStatus)
+                                dragging = false
                                 lastSingleTapTime = 0L
-                                core.remoteButton(pcId, "right", "click", onStatus)
+                            } else if (elapsed <= tapTimeoutMs && totalMoved <= tapSlop * 1.5f) {
+                                if (maxPointers == 1) {
+                                    lastSingleTapTime = System.currentTimeMillis()
+                                    core.remoteButton(pcId, "left", "click", onStatus)
+                                } else if (maxPointers == 2) {
+                                    lastSingleTapTime = 0L
+                                    core.remoteButton(pcId, "right", "click", onStatus)
+                                }
+                            } else {
+                                lastSingleTapTime = 0L
                             }
-                        } else {
-                            lastSingleTapTime = 0L
+                        }
+                    },
+            ) {
+                Box(Modifier.fillMaxSize()) {
+                    Canvas(Modifier.fillMaxSize()) {
+                        touchPoint?.let { pt ->
+                            drawCircle(
+                                color = primaryColor.copy(alpha = 0.22f),
+                                radius = 28.dp.toPx(),
+                                center = pt,
+                            )
+                            drawCircle(
+                                color = primaryColor.copy(alpha = 0.65f),
+                                radius = 6.dp.toPx(),
+                                center = pt,
+                            )
                         }
                     }
-                },
-        ) {
-            Box(Modifier.fillMaxSize()) {
-                Canvas(Modifier.fillMaxSize()) {
-                    touchPoint?.let { pt ->
-                        drawCircle(
-                            color = primaryColor.copy(alpha = 0.22f),
-                            radius = 28.dp.toPx(),
-                            center = pt,
+                    Text(
+                        stringResource(R.string.remote_touchpad_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(horizontal = 20.dp, vertical = 14.dp),
+                    )
+                }
+            }
+
+            // Keep controls reachable in short/IME panes without scrolling the gesture surface.
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = controlsMaxHeight)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                // Mouse buttons + Keyboard toggle row
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(WaypairDesign.spacingSm),
+                    verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingSm),
+                ) {
+                    FilledTonalButton(
+                        onClick = { core.remoteButton(pcId, "left", "click", onStatus) },
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
+                        modifier = Modifier.widthIn(min = WaypairDesign.touchTarget).heightIn(min = WaypairDesign.touchTarget),
+                    ) {
+                        Text(
+                            stringResource(R.string.remote_left_click),
+                            style = MaterialTheme.typography.labelLarge,
                         )
-                        drawCircle(
-                            color = primaryColor.copy(alpha = 0.65f),
-                            radius = 6.dp.toPx(),
-                            center = pt,
+                    }
+                    OutlinedButton(
+                        onClick = { core.remoteButton(pcId, "middle", "click", onStatus) },
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
+                        modifier = Modifier.widthIn(min = WaypairDesign.touchTarget).heightIn(min = WaypairDesign.touchTarget),
+                    ) {
+                        Text(
+                            stringResource(R.string.remote_middle_click),
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    }
+                    FilledTonalButton(
+                        onClick = { core.remoteButton(pcId, "right", "click", onStatus) },
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
+                        modifier = Modifier.widthIn(min = WaypairDesign.touchTarget).heightIn(min = WaypairDesign.touchTarget),
+                    ) {
+                        Text(
+                            stringResource(R.string.remote_right_click),
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    }
+                    Button(
+                        onClick = { showKeyboard = !showKeyboard },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                        modifier = Modifier.widthIn(min = WaypairDesign.touchTarget).heightIn(min = WaypairDesign.touchTarget),
+                    ) {
+                        Text(
+                            stringResource(R.string.remote_keyboard),
+                            style = MaterialTheme.typography.labelLarge,
                         )
                     }
                 }
-                Text(
-                    stringResource(R.string.remote_touchpad_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(horizontal = 20.dp, vertical = 14.dp),
-                )
-            }
-        }
 
-        // Mouse buttons + Keyboard toggle row
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            FilledTonalButton(
-                onClick = { core.remoteButton(pcId, "left", "click", onStatus) },
-                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
-                modifier = Modifier.weight(0.88f).height(46.dp),
-            ) {
-                Text(
-                    stringResource(R.string.remote_left_click),
-                    style = MaterialTheme.typography.labelLarge,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                // Voice typing bar (Dictate button: hold to talk, or tap to start/stop)
+                VoiceTypingBar(
+                    pcId = pcId,
+                    pcName = pcName,
+                    core = core,
+                    utteranceJoiner = utteranceJoiner,
+                    onStatus = onStatus,
                 )
-            }
-            OutlinedButton(
-                onClick = { core.remoteButton(pcId, "middle", "click", onStatus) },
-                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
-                modifier = Modifier.weight(1.04f).height(46.dp),
-            ) {
-                Text(
-                    stringResource(R.string.remote_middle_click),
-                    style = MaterialTheme.typography.labelLarge,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            FilledTonalButton(
-                onClick = { core.remoteButton(pcId, "right", "click", onStatus) },
-                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
-                modifier = Modifier.weight(0.94f).height(46.dp),
-            ) {
-                Text(
-                    stringResource(R.string.remote_right_click),
-                    style = MaterialTheme.typography.labelLarge,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Button(
-                onClick = { showKeyboard = !showKeyboard },
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
-                modifier = Modifier.weight(1.26f).height(46.dp),
-            ) {
-                Text(
-                    stringResource(R.string.remote_keyboard),
-                    style = MaterialTheme.typography.labelLarge,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
 
-        // Voice typing bar (Dictate button: hold to talk, or tap to start/stop)
-        VoiceTypingBar(
-            pcId = pcId,
-            pcName = pcName,
-            core = core,
-            utteranceJoiner = utteranceJoiner,
-            onStatus = onStatus,
-        )
-
-        // Special keys & modifiers bar (always accessible in Touchpad mode)
-        SpecialKeysBar(
-            activeMods = activeMods,
-            showExtraKeys = showKeyboard,
-            onToggleMod = { mod ->
-                if (mod in activeMods) activeMods.remove(mod) else activeMods.add(mod)
-            },
-            onKey = { key, forceMods ->
-                val mods = forceMods ?: activeMods.toList()
-                core.remoteKey(pcId, key, mods, onStatus)
-                if (forceMods == null) activeMods.clear()
-            },
-        )
-
-        // Soft keyboard input row when toggled open
-        if (showKeyboard) {
-            val typePlaceholder = stringResource(R.string.remote_type_placeholder, pcName)
-            OutlinedTextField(
-                value = typed,
-                onValueChange = { next ->
-                    val diff = typingDiff(typed.text, next.text)
-                    if (activeMods.isNotEmpty() && diff.backspaces == 0 && diff.added.length == 1 &&
-                        diff.added[0].isLetterOrDigit()
-                    ) {
-                        // A shortcut (Ctrl+C...), not text: it stays out of the field.
-                        core.remoteKey(pcId, diff.added.lowercase(), activeMods.toList(), onStatus)
-                        activeMods.clear()
-                        return@OutlinedTextField
-                    }
-                    repeat(diff.backspaces) { i ->
-                        core.remoteKey(pcId, "backspace", if (i == 0) activeMods.toList() else emptyList(), onStatus)
-                    }
-                    if (diff.added.isNotEmpty()) core.remoteText(pcId, diff.added, onStatus)
-                    if (diff.backspaces > 0 || diff.added.isNotEmpty()) activeMods.clear()
-                    // The PC's cursor is at the end of what was typed: keep this one there too.
-                    typed = if (next.selection == TextRange(next.text.length)) {
-                        next
-                    } else {
-                        next.copy(selection = TextRange(next.text.length))
-                    }
-                },
-                placeholder = { Text(typePlaceholder) },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(
-                    onSend = {
-                        core.remoteKey(pcId, "enter", activeMods.toList(), onStatus)
-                        activeMods.clear()
-                        typed = TextFieldValue("")
+                // Special keys & modifiers bar (always accessible in Touchpad mode)
+                SpecialKeysBar(
+                    activeMods = activeMods,
+                    showExtraKeys = showKeyboard,
+                    onToggleMod = { mod ->
+                        if (mod in activeMods) activeMods.remove(mod) else activeMods.add(mod)
                     },
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .focusRequester(focusRequester)
-                    // Backspace with nothing typed here still deletes on the PC.
-                    .onPreviewKeyEvent { event ->
-                        if (event.type == KeyEventType.KeyDown && event.key == Key.Backspace && typed.text.isEmpty()) {
-                            core.remoteKey(pcId, "backspace", activeMods.toList(), onStatus)
-                            activeMods.clear()
-                            true
-                        } else {
-                            false
-                        }
-                    }
-                    .semantics { contentDescription = typePlaceholder },
-            )
+                    onKey = { key, forceMods ->
+                        val mods = forceMods ?: activeMods.toList()
+                        core.remoteKey(pcId, key, mods, onStatus)
+                        if (forceMods == null) activeMods.clear()
+                    },
+                )
+
+                // Soft keyboard input row when toggled open
+                if (showKeyboard) {
+                    val typePlaceholder = stringResource(R.string.remote_type_placeholder, pcName)
+                    OutlinedTextField(
+                        value = typed,
+                        onValueChange = { next ->
+                            val diff = typingDiff(typed.text, next.text)
+                            if (activeMods.isNotEmpty() && diff.backspaces == 0 && diff.added.length == 1 &&
+                                diff.added[0].isLetterOrDigit()
+                            ) {
+                                // A shortcut (Ctrl+C...), not text: it stays out of the field.
+                                core.remoteKey(pcId, diff.added.lowercase(), activeMods.toList(), onStatus)
+                                activeMods.clear()
+                                return@OutlinedTextField
+                            }
+                            repeat(diff.backspaces) { i ->
+                                core.remoteKey(pcId, "backspace", if (i == 0) activeMods.toList() else emptyList(), onStatus)
+                            }
+                            if (diff.added.isNotEmpty()) core.remoteText(pcId, diff.added, onStatus)
+                            if (diff.backspaces > 0 || diff.added.isNotEmpty()) activeMods.clear()
+                            // The PC's cursor is at the end of what was typed: keep this one there too.
+                            typed = if (next.selection == TextRange(next.text.length)) {
+                                next
+                            } else {
+                                next.copy(selection = TextRange(next.text.length))
+                            }
+                        },
+                        placeholder = { Text(typePlaceholder) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                        keyboardActions = KeyboardActions(
+                            onSend = {
+                                core.remoteKey(pcId, "enter", activeMods.toList(), onStatus)
+                                activeMods.clear()
+                                typed = TextFieldValue("")
+                            },
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(focusRequester)
+                            // Backspace with nothing typed here still deletes on the PC.
+                            .onPreviewKeyEvent { event ->
+                                if (event.type == KeyEventType.KeyDown && event.key == Key.Backspace && typed.text.isEmpty()) {
+                                    core.remoteKey(pcId, "backspace", activeMods.toList(), onStatus)
+                                    activeMods.clear()
+                                    true
+                                } else {
+                                    false
+                                }
+                            }
+                            .semantics { contentDescription = typePlaceholder },
+                    )
+                }
+            }
         }
     }
 }
@@ -818,7 +833,7 @@ private fun AirMouseView(
         val outlineColor = MaterialTheme.colorScheme.outlineVariant
         val airDesc = stringResource(R.string.remote_mode_air)
         Surface(
-            shape = MaterialTheme.shapes.extraLarge,
+            shape = RoundedCornerShape(WaypairDesign.heroRadius),
             color = if (padHeld) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
             contentColor = if (padHeld) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
             border = BorderStroke(
@@ -1175,7 +1190,7 @@ private fun VoiceTypingBar(
     }
 
     Surface(
-        shape = MaterialTheme.shapes.large,
+        shape = RoundedCornerShape(WaypairDesign.cardRadius),
         color = containerColor,
         contentColor = contentColor,
         modifier = Modifier.fillMaxWidth(),
@@ -1247,7 +1262,8 @@ private fun VoiceTypingBar(
                 color = buttonBg,
                 contentColor = buttonFg,
                 modifier = Modifier
-                    .height(40.dp)
+                    .widthIn(min = WaypairDesign.touchTarget)
+                    .heightIn(min = WaypairDesign.touchTarget)
                     .semantics(mergeDescendants = true) {
                         role = Role.Button
                         contentDescription = dictateLabel
@@ -1322,6 +1338,7 @@ private fun VoiceTypingBar(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SpecialKeysBar(
     activeMods: List<String>,
@@ -1333,17 +1350,17 @@ private fun SpecialKeysBar(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        // Modifier keys row: 4 equal columns that fit at every font scale without overflowing
+        // Modifier keys wrap while keeping explicit, non-overlapping action bounds.
         val mods = listOf(
             "ctrl" to stringResource(R.string.remote_key_ctrl),
             "alt" to stringResource(R.string.remote_key_alt),
             "shift" to stringResource(R.string.remote_key_shift),
             "win" to stringResource(R.string.remote_key_win),
         )
-        Row(
+        FlowRow(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(WaypairDesign.spacingSm),
+            verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingSm),
         ) {
             for ((id, label) in mods) {
                 val selected = id in activeMods
@@ -1368,8 +1385,8 @@ private fun SpecialKeysBar(
                         },
                     ),
                     modifier = Modifier
-                        .weight(1f)
-                        .height(36.dp)
+                        .widthIn(min = WaypairDesign.touchTarget)
+                        .heightIn(min = WaypairDesign.touchTarget)
                         .semantics(mergeDescendants = true) {
                             role = Role.Switch
                             this.selected = selected
@@ -1377,19 +1394,17 @@ private fun SpecialKeysBar(
                         }
                         .clickable { onToggleMod(id) },
                 ) {
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 4.dp)) {
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                         Text(
                             text = label,
                             style = MaterialTheme.typography.labelMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
             }
         }
 
-        // Navigation & special keys row: 6 equal columns across the full width
+        // Navigation and special keys wrap to the available pane width.
         val keys = listOf(
             Triple("escape", stringResource(R.string.remote_key_esc), stringResource(R.string.remote_key_esc_desc)),
             Triple("tab", stringResource(R.string.remote_key_tab), stringResource(R.string.remote_key_tab)),
@@ -1398,10 +1413,10 @@ private fun SpecialKeysBar(
             Triple("down", "↓", stringResource(R.string.remote_key_down_desc)),
             Triple("right", "→", stringResource(R.string.remote_key_right_desc)),
         )
-        Row(
+        FlowRow(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(WaypairDesign.spacingSm),
+            verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingSm),
         ) {
             for ((key, label, a11yLabel) in keys) {
                 Surface(
@@ -1410,19 +1425,18 @@ private fun SpecialKeysBar(
                     contentColor = MaterialTheme.colorScheme.onSurface,
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                     modifier = Modifier
-                        .weight(1f)
-                        .height(36.dp)
+                        .widthIn(min = WaypairDesign.touchTarget)
+                        .heightIn(min = WaypairDesign.touchTarget)
                         .semantics(mergeDescendants = true) {
                             role = Role.Button
                             contentDescription = a11yLabel
                         }
                         .clickable(role = Role.Button) { onKey(key, null) },
                 ) {
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 2.dp)) {
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                         Text(
                             text = label,
                             style = MaterialTheme.typography.labelMedium,
-                            maxLines = 1,
                         )
                     }
                 }
@@ -1437,10 +1451,10 @@ private fun SpecialKeysBar(
                 Triple("copy", stringResource(R.string.remote_key_copy), stringResource(R.string.remote_key_copy)),
                 Triple("paste", stringResource(R.string.remote_key_paste), stringResource(R.string.remote_key_paste)),
             )
-            Row(
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(WaypairDesign.spacingSm),
+                verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingSm),
             ) {
                 for ((key, label, a11yLabel) in extra) {
                     val isShortcut = key == "copy" || key == "paste"
@@ -1450,20 +1464,18 @@ private fun SpecialKeysBar(
                         contentColor = MaterialTheme.colorScheme.onSurface,
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                         modifier = Modifier
-                            .weight(1f)
-                            .height(36.dp)
+                            .widthIn(min = WaypairDesign.touchTarget)
+                            .heightIn(min = WaypairDesign.touchTarget)
                             .semantics(mergeDescendants = true) {
                                 role = Role.Button
                                 contentDescription = a11yLabel
                             }
                             .clickable(role = Role.Button) { onKey(key, if (isShortcut) emptyList() else null) },
                     ) {
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 2.dp)) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                             Text(
                                 text = label,
                                 style = MaterialTheme.typography.labelMedium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
                             )
                         }
                     }
@@ -1548,7 +1560,7 @@ private fun PresentationView(
         // Huge Next Slide button (easy to hit without looking)
         Button(
             onClick = { core.remoteSlide(pcId, "next", onStatus) },
-            shape = MaterialTheme.shapes.extraLarge,
+            shape = RoundedCornerShape(WaypairDesign.heroRadius),
             modifier = Modifier
                 .fillMaxWidth()
                 .height(96.dp),
@@ -1564,7 +1576,7 @@ private fun PresentationView(
         // Previous Slide button
         FilledTonalButton(
             onClick = { core.remoteSlide(pcId, "previous", onStatus) },
-            shape = MaterialTheme.shapes.extraLarge,
+            shape = RoundedCornerShape(WaypairDesign.heroRadius),
             modifier = Modifier
                 .fillMaxWidth()
                 .height(64.dp),
@@ -1624,7 +1636,7 @@ private fun PresentationView(
             pcName,
         )
         Surface(
-            shape = MaterialTheme.shapes.extraLarge,
+            shape = RoundedCornerShape(WaypairDesign.heroRadius),
             color = if (laserHeld) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
             contentColor = if (laserHeld) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
             border = BorderStroke(

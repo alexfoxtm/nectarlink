@@ -555,38 +555,52 @@ NativeWindow {
         }
     }
 
+    readonly property bool wideSidebar: (Qt.platform.os === "osx" || Qt.platform.os === "macos") && window.width >= 1100
     readonly property bool macNavOverflow: Qt.platform.os === "osx" || Qt.platform.os === "macos"
 
     // ---- Navigation rail ----
     Rectangle {
         id: rail
         visible: !window.welcome
-        width: Theme.railWidth
+        width: window.wideSidebar ? Theme.sidebarWidth : Theme.compactRailWidth
         height: parent.height
-        color: "transparent"
+        color: Theme.panelColor
         property string hoveredNav: ""
 
         Rectangle {
             id: mark
-            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.horizontalCenter: window.wideSidebar ? undefined : parent.horizontalCenter
+            x: window.wideSidebar ? Theme.spacingXl : 0
             // Centered on the top bar, level with the page title and the window buttons.
             y: (Theme.topBarHeight - height) / 2
             width: 38; height: 38
             radius: Theme.radiusSm
-            color: "#000000"
+            color: Theme.primary
             Icon {
                 anchors.centerIn: parent
                 path: Icons.mark
                 stroke: 2.4
-                color: "#FFFFFF"
+                color: Theme.primaryContent
             }
+        }
+        Txt {
+            anchors.left: mark.right
+            anchors.leftMargin: Theme.spacingMd
+            anchors.verticalCenter: mark.verticalCenter
+            visible: window.wideSidebar
+            text: qsTr("Waypair Link")
+            role: "title"
+            size: 17
         }
         Column {
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.top: mark.bottom
-            anchors.topMargin: 31
-            spacing: 6
+            anchors.topMargin: Theme.spacingXl
+            width: rail.width - Theme.spacingMd * 2
+            spacing: Theme.spacingXs
             NavItem {
+                width: parent.width
+                expanded: window.wideSidebar
                 iconPath: Icons.home
                 text: qsTr("Home")
                 selected: window.page === "home" || window.page === "timeline"
@@ -598,6 +612,8 @@ NativeWindow {
                 onClicked: window.page = "home"
             }
             NavItem {
+                width: parent.width
+                expanded: window.wideSidebar
                 iconPath: Icons.messages
                 text: qsTr("Messages")
                 selected: window.page === "messages"
@@ -609,6 +625,8 @@ NativeWindow {
                 onClicked: window.page = "messages"
             }
             NavItem {
+                width: parent.width
+                expanded: window.wideSidebar
                 iconPath: Icons.call
                 text: qsTr("Calls")
                 selected: window.page === "calls"
@@ -620,6 +638,8 @@ NativeWindow {
                 onClicked: window.page = "calls"
             }
             NavItem {
+                width: parent.width
+                expanded: window.wideSidebar
                 iconPath: Icons.photo
                 text: qsTr("Photos")
                 selected: window.page === "photos"
@@ -631,6 +651,8 @@ NativeWindow {
                 onClicked: window.page = "photos"
             }
             NavItem {
+                width: parent.width
+                expanded: window.wideSidebar
                 visible: Qt.platform.os === "osx" && PhoneBrowser.enabled
                 iconPath: Icons.folder
                 text: qsTr("Phone files")
@@ -643,6 +665,8 @@ NativeWindow {
                 onClicked: window.page = "phoneFiles"
             }
             NavItem {
+                width: parent.width
+                expanded: window.wideSidebar
                 iconPath: Icons.apps
                 text: qsTr("Apps")
                 selected: window.page === "apps"
@@ -654,6 +678,8 @@ NativeWindow {
                 onClicked: window.page = "apps"
             }
             NavItem {
+                width: parent.width
+                expanded: window.wideSidebar
                 visible: !window.macNavOverflow
                 iconPath: Icons.deck
                 text: qsTr("Deck")
@@ -666,6 +692,8 @@ NativeWindow {
                 onClicked: window.page = "deck"
             }
             NavItem {
+                width: parent.width
+                expanded: window.wideSidebar
                 visible: !window.macNavOverflow
                 iconPath: Icons.book
                 text: qsTr("Guide")
@@ -678,6 +706,8 @@ NativeWindow {
                 onClicked: window.page = "guide"
             }
             NavItem {
+                width: parent.width
+                expanded: window.wideSidebar
                 id: moreItem
                 property bool restoreMenuFocus: false
                 visible: window.macNavOverflow
@@ -729,6 +759,8 @@ NativeWindow {
                 }
             }
             NavItem {
+                width: parent.width
+                expanded: window.wideSidebar
                 iconPath: Icons.settings
                 text: qsTr("Settings")
                 selected: window.page === "settings"
@@ -790,7 +822,7 @@ NativeWindow {
                     : window.page === "guide" ? qsTr("Features guide")
                     : qsTr("Settings")
                 role: "headline"
-                size: 20
+                size: 24
             }
             // Screen sharing: a live pill in the title bar, so the page never shifts. It sits
             // centered, and slides aside rather than overlap the title or the actions.
@@ -939,17 +971,8 @@ NativeWindow {
             anchors.bottom: parent.bottom
             width: parent.width
             clip: true
-            topLeftRadius: 18
-            // Hive: lets the comb show faintly through, under opaque cards.
-            color: Theme.hive
-                ? Qt.rgba(Theme.surfaceContainerLow.r, Theme.surfaceContainerLow.g, Theme.surfaceContainerLow.b, Theme.dark ? 0.50 : 0.58)
-                : Theme.amoled
-                ? "#07080C"
-                : (Theme.glass
-                    ? Qt.rgba(Theme.surfaceContainerLow.r, Theme.surfaceContainerLow.g, Theme.surfaceContainerLow.b, Theme.dark ? 0.34 : 0.46)
-                    : (Theme.graphite
-                        ? Theme.surfaceContainerLow
-                        : Qt.rgba(Theme.surfaceContainerLow.r, Theme.surfaceContainerLow.g, Theme.surfaceContainerLow.b, Theme.dark ? 0.56 : 0.68)))
+            topLeftRadius: Theme.heroRadius
+            color: Theme.canvasColor
             Behavior on color { ColorAnimation { duration: Theme.fadeNormal } }
             border.width: 0
 

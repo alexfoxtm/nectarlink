@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package app.nectarlink.android.ui.walkthrough
 
 import android.Manifest
@@ -27,6 +29,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
+import app.nectarlink.android.ui.theme.WaypairDesign
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -86,9 +93,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import app.nectarlink.android.R
@@ -186,98 +193,109 @@ fun WalkthroughScreen(
 
     Surface(
         modifier = modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background,
+        color = WaypairDesign.canvasColor(),
     ) {
-        Column(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(horizontal = 20.dp, vertical = 12.dp),
+                .windowInsetsPadding(WindowInsets.safeDrawing),
         ) {
-            WalkthroughTopProgressRow(
-                currentStep = step,
-                onSelectStep = onStepChange,
-                onSkip = onSkip,
-            )
-            Spacer(Modifier.height(12.dp))
-
-            HoneycombCellStage(
-                step = step,
-                permissionGrantedFlags = permissionGrantedFlags,
-                hasPairedPc = hasPairedPc,
-                activeTierIndex = activeTierIndex,
-                isGlass = isGlass,
-                reducedMotion = reducedMotion,
+            val availablePaneHeight = maxHeight
+            val stageHeight = if (availablePaneHeight < 600.dp) 96.dp else 128.dp
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(128.dp),
-            )
-            Spacer(Modifier.height(14.dp))
+                    .fillMaxSize()
+                    .wrapContentWidth(Alignment.CenterHorizontally)
+                    .widthIn(max = 600.dp)
+                    .padding(horizontal = WaypairDesign.spacingLg, vertical = WaypairDesign.spacingMd),
+            ) {
+                WalkthroughTopProgressRow(
+                    currentStep = step,
+                    onSelectStep = onStepChange,
+                    onSkip = onSkip,
+                )
+                Spacer(Modifier.height(12.dp))
 
-            AnimatedContent(
-                targetState = step,
-                transitionSpec = {
-                    if (reducedMotion) {
-                        fadeIn(tween(0)) togetherWith fadeOut(tween(0))
-                    } else {
-                        fadeIn(tween(180)) togetherWith fadeOut(tween(140))
-                    }
-                },
-                // Content scrolled up fades out under the stage instead of being cut mid-line.
-                modifier = Modifier
-                    .weight(1f)
-                    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                    .drawWithContent {
-                        drawContent()
-                        val fade = 20.dp.toPx()
-                        drawRect(
-                            brush = Brush.verticalGradient(
-                                0f to Color.Transparent,
-                                fade / size.height.coerceAtLeast(1f) to Color.Black,
-                            ),
-                            blendMode = BlendMode.DstIn,
-                        )
-                    },
-                label = "walkthrough_step",
-            ) { targetStep ->
-                when (targetStep) {
-                    WalkthroughStep.Welcome -> WelcomeStepContent(
+                if (availablePaneHeight >= 480.dp) {
+                    HoneycombCellStage(
+                        step = step,
+                        permissionGrantedFlags = permissionGrantedFlags,
+                        hasPairedPc = hasPairedPc,
+                        activeTierIndex = activeTierIndex,
                         isGlass = isGlass,
+                        reducedMotion = reducedMotion,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(stageHeight),
                     )
-                    WalkthroughStep.Permissions -> PermissionsStepContent(
-                        state = state,
-                        postNotifGranted = postNotifGranted,
-                        isGlass = isGlass,
-                        onAccessChanged = onAccessChanged,
-                    )
-                    WalkthroughStep.Pair -> PairStepContent(
-                        state = state,
-                        actions = pairingActions,
-                        isGlass = isGlass,
-                        onContinue = { onStepChange(WalkthroughStep.PowerLevel) },
-                    )
-                    WalkthroughStep.PowerLevel -> PowerLevelStepContent(
-                        state = state,
-                        isGlass = isGlass,
-                        onAccessChanged = onAccessChanged,
-                    )
-                    WalkthroughStep.Done -> DoneStepContent(
-                        state = state,
-                        isGlass = isGlass,
-                    )
+                    Spacer(Modifier.height(14.dp))
                 }
-            }
 
-            WalkthroughFooterBar(
-                step = step,
-                hasPairedPc = hasPairedPc,
-                onBack = step.previous?.let { prev -> { onStepChange(prev) } },
-                onNext = {
-                    step.next?.let(onStepChange)
-                },
-                onOpenFeaturesGuide = onOpenFeaturesGuide,
-                onFinish = onFinishToHome,
-            )
+                AnimatedContent(
+                    targetState = step,
+                    transitionSpec = {
+                        if (reducedMotion) {
+                            fadeIn(tween(0)) togetherWith fadeOut(tween(0))
+                        } else {
+                            fadeIn(tween(180)) togetherWith fadeOut(tween(140))
+                        }
+                    },
+                    // Content scrolled up fades out under the stage instead of being cut mid-line.
+                    modifier = Modifier
+                        .weight(1f)
+                        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                        .drawWithContent {
+                            drawContent()
+                            val fade = 20.dp.toPx()
+                            drawRect(
+                                brush = Brush.verticalGradient(
+                                    0f to Color.Transparent,
+                                    fade / size.height.coerceAtLeast(1f) to Color.Black,
+                                ),
+                                blendMode = BlendMode.DstIn,
+                            )
+                        },
+                    label = "walkthrough_step",
+                ) { targetStep ->
+                    when (targetStep) {
+                        WalkthroughStep.Welcome -> WelcomeStepContent(
+                            isGlass = isGlass,
+                        )
+                        WalkthroughStep.Permissions -> PermissionsStepContent(
+                            state = state,
+                            postNotifGranted = postNotifGranted,
+                            isGlass = isGlass,
+                            onAccessChanged = onAccessChanged,
+                        )
+                        WalkthroughStep.Pair -> PairStepContent(
+                            state = state,
+                            actions = pairingActions,
+                            isGlass = isGlass,
+                            onContinue = { onStepChange(WalkthroughStep.PowerLevel) },
+                        )
+                        WalkthroughStep.PowerLevel -> PowerLevelStepContent(
+                            state = state,
+                            isGlass = isGlass,
+                            onAccessChanged = onAccessChanged,
+                        )
+                        WalkthroughStep.Done -> DoneStepContent(
+                            state = state,
+                            isGlass = isGlass,
+                        )
+                    }
+                }
+
+                WalkthroughFooterBar(
+                    step = step,
+                    hasPairedPc = hasPairedPc,
+                    onBack = step.previous?.let { prev -> { onStepChange(prev) } },
+                    onNext = {
+                        step.next?.let(onStepChange)
+                    },
+                    onOpenFeaturesGuide = onOpenFeaturesGuide,
+                    onFinish = onFinishToHome,
+                )
+            }
         }
     }
 }
@@ -294,18 +312,15 @@ private fun WalkthroughTopProgressRow(
         currentStep.index + 1,
         totalSteps,
     )
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 36.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingXs),
     ) {
         Row(
             modifier = Modifier
-                .weight(1f)
+                .fillMaxWidth()
                 .semantics { contentDescription = stepProgressDesc },
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(WaypairDesign.spacingXs),
         ) {
             WalkthroughStep.entries.forEach { item ->
                 val active = item.index <= currentStep.index
@@ -314,18 +329,35 @@ private fun WalkthroughTopProgressRow(
                 } else {
                     MaterialTheme.colorScheme.surfaceContainerHighest
                 }
+                val itemDescription = stringResource(
+                    R.string.walkthrough_step_progress,
+                    item.index + 1,
+                    totalSteps,
+                )
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .height(6.dp)
-                        .bentoWell(cornerRadius = 3.dp, fillColor = color)
+                        .heightIn(min = WaypairDesign.touchTarget)
+                        .semantics {
+                            selected = item == currentStep
+                            contentDescription = itemDescription
+                        }
                         .clickable(role = Role.Tab) { onSelectStep(item) },
-                )
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(6.dp)
+                            .bentoWell(cornerRadius = 3.dp, fillColor = color),
+                    )
+                }
             }
         }
         if (currentStep != WalkthroughStep.Done) {
             TextButton(
                 onClick = onSkip,
+                modifier = Modifier.align(Alignment.End).heightIn(min = WaypairDesign.touchTarget),
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
             ) {
                 Text(stringResource(R.string.walkthrough_action_skip))
@@ -343,56 +375,42 @@ private fun WalkthroughFooterBar(
     onOpenFeaturesGuide: () -> Unit,
     onFinish: () -> Unit,
 ) {
-    Row(
+    FlowRow(
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = 12.dp, bottom = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(WaypairDesign.spacingSm, Alignment.End),
+        verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingXs),
     ) {
         if (onBack != null) {
             OutlinedButton(
                 onClick = onBack,
-                modifier = Modifier.heightIn(min = 46.dp),
+                modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
             ) {
                 Text(
                     text = stringResource(R.string.walkthrough_action_back),
-                    maxLines = 1,
-                    softWrap = false,
                 )
             }
         }
         if (step == WalkthroughStep.Done) {
-            Box(
-                modifier = Modifier.weight(1f),
-                contentAlignment = Alignment.CenterEnd,
+            FilledTonalButton(
+                onClick = onOpenFeaturesGuide,
+                modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
             ) {
-                FilledTonalButton(
-                    onClick = onOpenFeaturesGuide,
-                    modifier = Modifier.heightIn(min = 46.dp),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
-                ) {
-                    Text(
-                        text = stringResource(R.string.walkthrough_action_open_guide),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
+                Text(text = stringResource(R.string.walkthrough_action_open_guide))
             }
             Button(
                 onClick = onFinish,
-                modifier = Modifier.heightIn(min = 46.dp),
+                modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
             ) {
                 Text(
                     text = stringResource(R.string.walkthrough_action_done),
-                    maxLines = 1,
-                    softWrap = false,
                 )
             }
         } else {
-            Spacer(Modifier.weight(1f))
             val primaryLabelRes = when (step) {
                 WalkthroughStep.Welcome -> R.string.walkthrough_action_get_started
                 WalkthroughStep.Pair -> if (hasPairedPc) {
@@ -404,12 +422,10 @@ private fun WalkthroughFooterBar(
             }
             Button(
                 onClick = onNext,
-                modifier = Modifier.heightIn(min = 46.dp),
+                modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
             ) {
                 Text(
                     text = stringResource(primaryLabelRes),
-                    maxLines = 1,
-                    softWrap = false,
                 )
             }
         }
@@ -417,7 +433,7 @@ private fun WalkthroughFooterBar(
 }
 
 /**
- * Fixed-height (128.dp) vector Honeycomb Cell stage shown at the top of every walkthrough step.
+ * Vector Honeycomb Cell stage, compacted when the available pane is short.
  * Combines the 5-cell step honeycomb cluster on the left with the active step's honeycomb motif on the right.
  */
 @Composable
@@ -452,11 +468,11 @@ private fun HoneycombCellStage(
     Box(
         modifier = modifier
             .liquidGlassCard(
-                cornerRadius = 24.dp,
+                cornerRadius = WaypairDesign.heroRadius,
                 isGlass = isGlass,
-                baseColor = MaterialTheme.colorScheme.surfaceContainer,
+                baseColor = WaypairDesign.heroWash(),
                 tintColor = primary,
-                outlineColor = if (isGlass) outlineVariant else Color.Transparent,
+                outlineColor = WaypairDesign.panelBorder(),
             )
             .semantics { contentDescription = stageDesc }
             .padding(horizontal = 16.dp, vertical = 12.dp),
@@ -917,7 +933,7 @@ private fun WelcomeStepContent(
         )
         Text(
             text = stringResource(R.string.walkthrough_welcome_subtitle),
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
@@ -925,13 +941,13 @@ private fun WelcomeStepContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .liquidGlassCard(
-                    cornerRadius = 24.dp,
+                    cornerRadius = WaypairDesign.cardRadius,
                     isGlass = isGlass,
-                    baseColor = MaterialTheme.colorScheme.surfaceContainer,
+                    baseColor = WaypairDesign.panelColor(),
                     tintColor = MaterialTheme.colorScheme.primary,
-                    outlineColor = if (isGlass) MaterialTheme.colorScheme.outlineVariant else Color.Transparent,
+                    outlineColor = WaypairDesign.panelBorder(),
                 )
-                .padding(18.dp),
+                .padding(WaypairDesign.spacingLg),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
@@ -943,12 +959,12 @@ private fun WelcomeStepContent(
                 title = stringResource(R.string.walkthrough_welcome_tls_title),
                 detail = stringResource(R.string.walkthrough_welcome_tls_body),
             )
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+            HorizontalDivider(color = WaypairDesign.panelBorder())
             PrivacyPointRow(
                 title = stringResource(R.string.walkthrough_welcome_lan_title),
                 detail = stringResource(R.string.walkthrough_welcome_lan_body),
             )
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+            HorizontalDivider(color = WaypairDesign.panelBorder())
             PrivacyPointRow(
                 title = stringResource(R.string.walkthrough_welcome_local_title),
                 detail = stringResource(R.string.walkthrough_welcome_local_body),
@@ -969,7 +985,7 @@ private fun PrivacyPointRow(
         )
         Text(
             text = detail,
-            style = MaterialTheme.typography.bodySmall,
+            style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
@@ -1137,15 +1153,13 @@ private fun PermissionsStepContent(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Row(
+        Column(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+            verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingSm),
         ) {
             Text(
                 text = stringResource(R.string.walkthrough_permissions_title),
                 style = MaterialTheme.typography.headlineSmall,
-                modifier = Modifier.weight(1f).padding(end = 12.dp),
             )
             StatusPillBadge(
                 label = stringResource(R.string.walkthrough_permissions_granted_badge, grantedCount, specs.size),
@@ -1154,7 +1168,7 @@ private fun PermissionsStepContent(
         }
         Text(
             text = stringResource(R.string.walkthrough_permissions_subtitle),
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
@@ -1162,20 +1176,19 @@ private fun PermissionsStepContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .liquidGlassCard(
-                    cornerRadius = 24.dp,
+                    cornerRadius = WaypairDesign.cardRadius,
                     isGlass = isGlass,
-                    baseColor = MaterialTheme.colorScheme.surfaceContainer,
+                    baseColor = WaypairDesign.panelColor(),
                     tintColor = MaterialTheme.colorScheme.primary,
-                    outlineColor = if (isGlass) MaterialTheme.colorScheme.outlineVariant else Color.Transparent,
+                    outlineColor = WaypairDesign.panelBorder(),
                 )
-                .padding(18.dp),
+                .padding(WaypairDesign.spacingLg),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // Compact horizontal row of 7 interactive permission selector pills
-            Row(
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(WaypairDesign.spacingXs),
+                verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingXs),
             ) {
                 specs.forEachIndexed { idx, spec ->
                     val isSelected = idx == safeIndex
@@ -1206,9 +1219,11 @@ private fun PermissionsStepContent(
                             null
                         },
                         modifier = Modifier
-                            .weight(1f)
-                            .height(32.dp)
-                            .semantics { contentDescription = dotDesc }
+                            .size(WaypairDesign.touchTarget)
+                            .semantics {
+                                contentDescription = dotDesc
+                                selected = isSelected
+                            }
                             .clickable(role = Role.Tab) { activeCardIndex = idx },
                     ) {
                         Box(contentAlignment = Alignment.Center) {
@@ -1235,7 +1250,7 @@ private fun PermissionsStepContent(
                 }
             }
 
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+            HorizontalDivider(color = WaypairDesign.panelBorder())
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1266,11 +1281,11 @@ private fun PermissionsStepContent(
             )
             Text(
                 text = stringResource(currentSpec.whatItDoesRes),
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodyLarge,
             )
             Text(
                 text = stringResource(currentSpec.whatAndroidRequiresRes),
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             if (currentSpec.restrictable &&
@@ -1335,7 +1350,7 @@ private fun RestrictedSettingsHelp(onOpenAppInfo: () -> Unit) {
         )
         Text(
             text = stringResource(R.string.walkthrough_restricted_body),
-            style = MaterialTheme.typography.bodySmall,
+            style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSecondaryContainer,
         )
         listOf(
@@ -1345,7 +1360,7 @@ private fun RestrictedSettingsHelp(onOpenAppInfo: () -> Unit) {
         ).forEachIndexed { i, step ->
             Text(
                 text = "${i + 1}. " + stringResource(step),
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
             )
         }
@@ -1386,7 +1401,7 @@ private fun PairStepContent(
         )
         Text(
             text = stringResource(R.string.walkthrough_pair_subtitle),
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
@@ -1394,13 +1409,13 @@ private fun PairStepContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .liquidGlassCard(
-                    cornerRadius = 24.dp,
+                    cornerRadius = WaypairDesign.cardRadius,
                     isGlass = isGlass,
-                    baseColor = MaterialTheme.colorScheme.surfaceContainer,
+                    baseColor = WaypairDesign.panelColor(),
                     tintColor = MaterialTheme.colorScheme.primary,
-                    outlineColor = if (isGlass) MaterialTheme.colorScheme.outlineVariant else Color.Transparent,
+                    outlineColor = WaypairDesign.panelBorder(),
                 )
-                .padding(18.dp),
+                .padding(WaypairDesign.spacingLg),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             if (state.devices.isNotEmpty()) {
@@ -1425,10 +1440,10 @@ private fun PairStepContent(
                             if (dev.online) R.string.walkthrough_pair_device_online else R.string.walkthrough_pair_device_offline,
                             dev.name,
                         ),
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodyLarge,
                     )
                 }
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                HorizontalDivider(color = WaypairDesign.panelBorder())
             }
 
             when (val p = state.pairing) {
@@ -1449,7 +1464,7 @@ private fun PairStepContent(
                     if (showQrScanner) {
                         Text(
                             text = stringResource(R.string.pair_scan_hint),
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         QrScanner(
@@ -1462,7 +1477,7 @@ private fun PairStepContent(
                         )
                     }
 
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                    HorizontalDivider(color = WaypairDesign.panelBorder())
 
                     Text(
                         text = stringResource(R.string.walkthrough_pair_nearby_heading),
@@ -1471,7 +1486,7 @@ private fun PairStepContent(
                     if (state.discovered.isEmpty()) {
                         Text(
                             text = stringResource(R.string.pair_looking),
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     } else {
@@ -1480,7 +1495,7 @@ private fun PairStepContent(
                         }
                     }
 
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                    HorizontalDivider(color = WaypairDesign.panelBorder())
 
                     PrivacyPointRow(
                         title = stringResource(R.string.walkthrough_pair_usb_title),
@@ -1576,7 +1591,7 @@ private fun NearbyPcWalkthroughRow(
                 Text(pc.name ?: stringResource(R.string.your_pc), style = MaterialTheme.typography.titleSmall)
                 Text(
                     text = stringResource(R.string.walkthrough_pair_nearby_tap),
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -1623,7 +1638,7 @@ private fun VerificationCodeWalkthroughCard(
                 CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
                 Text(
                     text = stringResource(R.string.pair_waiting, peer),
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                 )
                 TextButton(onClick = onReject) {
@@ -1701,15 +1716,13 @@ private fun PowerLevelStepContent(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Row(
+        Column(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+            verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingSm),
         ) {
             Text(
                 text = stringResource(R.string.walkthrough_power_title),
                 style = MaterialTheme.typography.headlineSmall,
-                modifier = Modifier.weight(1f).padding(end = 12.dp),
             )
             StatusPillBadge(
                 label = stringResource(R.string.walkthrough_power_current_badge, activeTierLabel),
@@ -1718,7 +1731,7 @@ private fun PowerLevelStepContent(
         }
         Text(
             text = stringResource(R.string.walkthrough_power_subtitle),
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
@@ -1726,13 +1739,13 @@ private fun PowerLevelStepContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .liquidGlassCard(
-                    cornerRadius = 24.dp,
+                    cornerRadius = WaypairDesign.cardRadius,
                     isGlass = isGlass,
-                    baseColor = MaterialTheme.colorScheme.surfaceContainer,
+                    baseColor = WaypairDesign.panelColor(),
                     tintColor = MaterialTheme.colorScheme.primary,
-                    outlineColor = if (isGlass) MaterialTheme.colorScheme.outlineVariant else Color.Transparent,
+                    outlineColor = WaypairDesign.panelBorder(),
                 )
-                .padding(18.dp),
+                .padding(WaypairDesign.spacingLg),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             // Tier 1: Standard
@@ -1745,7 +1758,7 @@ private fun PowerLevelStepContent(
                 onAction = null,
             )
 
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+            HorizontalDivider(color = WaypairDesign.panelBorder())
 
             // Tier 2: Assist
             PowerLevelRow(
@@ -1761,7 +1774,7 @@ private fun PowerLevelStepContent(
                 },
             )
 
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+            HorizontalDivider(color = WaypairDesign.panelBorder())
 
             // Tier 3: Elevated
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1790,12 +1803,13 @@ private fun PowerLevelStepContent(
                 }
                 Text(
                     text = stringResource(R.string.walkthrough_power_elevated_desc),
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Row(
+                FlowRow(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(WaypairDesign.spacingSm),
+                    verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingXs),
                 ) {
                     FilledTonalButton(
                         onClick = {
@@ -1807,26 +1821,22 @@ private fun PowerLevelStepContent(
                                 onAccessChanged()
                             }
                         },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
                     ) {
                         Text(
                             stringResource(
                                 if (state.elevated) R.string.walkthrough_power_elevated_reconnect else R.string.walkthrough_power_elevated_enable,
                             ),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                     OutlinedButton(
                         onClick = { showElevatedGuide = !showElevatedGuide },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
                     ) {
                         Text(
                             stringResource(
                                 if (showElevatedGuide) R.string.walkthrough_power_elevated_hide_steps else R.string.walkthrough_power_elevated_show_steps,
                             ),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
@@ -1842,7 +1852,7 @@ private fun PowerLevelStepContent(
                             .padding(top = 4.dp)
                             .bentoWell(
                                 cornerRadius = 16.dp,
-                                fillColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                fillColor = WaypairDesign.insetColor(),
                             )
                             .padding(14.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -1853,17 +1863,17 @@ private fun PowerLevelStepContent(
                         )
                         Text(
                             text = stringResource(R.string.walkthrough_power_elevated_step1),
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Text(
                             text = stringResource(R.string.walkthrough_power_elevated_step2),
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Text(
                             text = stringResource(R.string.walkthrough_power_elevated_step3),
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
@@ -1908,19 +1918,15 @@ private fun PowerLevelRow(
         }
         Text(
             text = summary,
-            style = MaterialTheme.typography.bodySmall,
+            style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         if (actionLabel != null && onAction != null) {
-            // Same width and style as the Elevated row's first button, so the actions line up.
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            FilledTonalButton(
+                onClick = onAction,
+                modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
             ) {
-                FilledTonalButton(onClick = onAction, modifier = Modifier.weight(1f)) {
-                    Text(actionLabel, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-                Spacer(Modifier.weight(1f))
+                Text(actionLabel)
             }
         }
     }
@@ -1980,7 +1986,7 @@ private fun DoneStepContent(
         )
         Text(
             text = stringResource(R.string.walkthrough_done_subtitle),
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
@@ -1988,13 +1994,13 @@ private fun DoneStepContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .liquidGlassCard(
-                    cornerRadius = 24.dp,
+                    cornerRadius = WaypairDesign.cardRadius,
                     isGlass = isGlass,
-                    baseColor = MaterialTheme.colorScheme.surfaceContainer,
+                    baseColor = WaypairDesign.panelColor(),
                     tintColor = MaterialTheme.colorScheme.primary,
-                    outlineColor = if (isGlass) MaterialTheme.colorScheme.outlineVariant else Color.Transparent,
+                    outlineColor = WaypairDesign.panelBorder(),
                 )
-                .padding(18.dp),
+                .padding(WaypairDesign.spacingLg),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text(
@@ -2006,17 +2012,17 @@ private fun DoneStepContent(
                 title = stringResource(R.string.walkthrough_done_paired_label),
                 detail = pairedText,
             )
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+            HorizontalDivider(color = WaypairDesign.panelBorder())
             PrivacyPointRow(
                 title = stringResource(R.string.walkthrough_done_power_label),
                 detail = powerLevelText,
             )
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+            HorizontalDivider(color = WaypairDesign.panelBorder())
             PrivacyPointRow(
                 title = stringResource(R.string.walkthrough_done_permissions_label),
                 detail = permissionsSummary,
             )
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+            HorizontalDivider(color = WaypairDesign.panelBorder())
             Text(
                 text = stringResource(R.string.walkthrough_done_try_heading),
                 style = MaterialTheme.typography.titleSmall,
@@ -2024,12 +2030,12 @@ private fun DoneStepContent(
             )
             Text(
                 text = stringResource(R.string.walkthrough_done_try_1),
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
                 text = stringResource(R.string.walkthrough_done_try_2),
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -2055,8 +2061,6 @@ internal fun StatusPillBadge(
         text = label,
         style = MaterialTheme.typography.labelSmall,
         color = fg,
-        maxLines = 1,
-        softWrap = false,
         modifier = Modifier
             .bentoWell(cornerRadius = 10.dp, fillColor = bg)
             .padding(horizontal = 8.dp, vertical = 4.dp),

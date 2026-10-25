@@ -9,6 +9,14 @@ import app.nectarlink
 // Windows Photos app, and an in-app viewer with arrow-key navigation.
 Item {
     id: page
+    readonly property bool wideContent: width >= 1080
+    readonly property real pageInset: Theme.spacingXl
+
+    Rectangle {
+        anchors.fill: parent
+        color: Theme.canvasColor
+        z: -1
+    }
     property bool active: false
     property string deviceId
     property string deviceName
@@ -328,8 +336,19 @@ Item {
     Item {
         id: albumPane
         visible: !page.phoneOffline
-        width: page.width < 760 ? 200 : 248
-        height: parent.height
+        x: page.pageInset
+        y: page.pageInset
+        width: page.wideContent ? 248 : page.width - page.pageInset * 2
+        height: page.wideContent ? page.height - page.pageInset * 2 : Math.min(176, page.height * 0.27)
+
+        Rectangle {
+            anchors.fill: parent
+            radius: Theme.cardRadius
+            color: Theme.glass || Theme.hive ? Theme.cardColor : Theme.panelColor
+            border.width: 1
+            border.color: Theme.hive ? Theme.cardBorder : Theme.panelBorder
+            z: -1
+        }
 
         Item {
             id: albumHeader
@@ -339,7 +358,8 @@ Item {
                 anchors.left: parent.left
                 anchors.leftMargin: 18
                 anchors.verticalCenter: parent.verticalCenter
-                role: "label"
+                role: "title"
+                size: 18
                 muted: true
                 text: qsTr("Albums")
             }
@@ -400,17 +420,26 @@ Item {
                 }
             }
         }
-
-        Divider { anchors.right: parent.right; width: 1; height: parent.height }
     }
 
     // ---- Right pane: Toolbar + Virtualized GridView ----
     Item {
         id: gridPane
         visible: !page.phoneOffline
-        anchors.left: albumPane.right
-        anchors.right: parent.right
-        height: parent.height
+        x: page.wideContent ? albumPane.x + albumPane.width + Theme.spacingLg : page.pageInset
+        y: page.wideContent ? page.pageInset : albumPane.y + albumPane.height + Theme.spacingLg
+        width: page.width - x - page.pageInset
+        height: page.height - y - page.pageInset
+
+        Rectangle {
+            anchors.fill: parent
+            radius: Theme.cardRadius
+            color: Theme.glass || Theme.hive ? Theme.cardColor : Theme.panelColor
+            border.width: 1
+            border.color: Theme.hive ? Theme.cardBorder : Theme.panelBorder
+            z: -1
+        }
+
         readonly property bool compactBar: width < 540
 
         // Top toolbar: album info OR multi-select actions.
@@ -427,14 +456,14 @@ Item {
                 anchors.right: normalRightRow.visible ? normalRightRow.left : parent.right
                 anchors.rightMargin: 12
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: 10
+                spacing: Theme.spacingMd
                 visible: page.selectedCount === 0 && !page.selectMode
                 clip: true
 
                 Txt {
                     anchors.verticalCenter: parent.verticalCenter
                     role: "title"
-                    size: 16
+                    size: 18
                     elide: Text.ElideRight
                     text: page.currentAlbumName
                 }
@@ -626,8 +655,8 @@ Item {
                 Rectangle {
                     width: Math.max(100, Math.min(240, gridPane.width - 210))
                     height: 32
-                    radius: 6
-                    color: Theme.surface
+                    radius: Theme.controlRadius
+                    color: Theme.insetColor
                     border.width: 1
                     border.color: Theme.surfaceContentVariant
                     TextInput {
@@ -688,14 +717,14 @@ Item {
             Column {
                 anchors.centerIn: parent
                 width: Math.min(parent.width - 48, 400)
-                spacing: 10
+                spacing: Theme.spacingMd
                 visible: Photos.count === 0 && Photos.status !== "loading" && Photos.status !== "ready"
                 Icon {
                     anchors.horizontalCenter: parent.horizontalCenter
                     width: 34; height: 34
                     stroke: 1.5
                     path: Icons.photo
-                    color: Theme.surfaceContentVariant
+                    color: Photos.status === "failed" ? Theme.error : Theme.surfaceContentVariant
                 }
                 Txt {
                     width: parent.width
@@ -1105,7 +1134,7 @@ Item {
             anchors.rightMargin: 10
             anchors.topMargin: 2
             anchors.bottomMargin: 2
-            radius: Theme.graphite ? Theme.radiusSm : Theme.radiusMd
+            radius: Theme.controlRadius
             color: albumRow.selected
                 ? Theme.secondaryContainer
                 : albumHover.hovered
@@ -1227,14 +1256,26 @@ Item {
                 Photos.dropThumb(requestedThumbId)
         }
 
+        // The card keeps its selection border; focus stays outside its clipped media.
+        Rectangle {
+            anchors.fill: cellCard
+            anchors.margins: -4
+            radius: cellCard.radius + 4
+            color: "transparent"
+            border.width: 2
+            border.color: Theme.focusColor
+            visible: Theme.focusVisible(tile)
+            z: 1
+        }
+
         Rectangle {
             id: cellCard
             anchors.fill: parent
             anchors.margins: 4
             radius: Theme.radiusSm
             color: Theme.surfaceContainerHigh
-            border.width: tile.selected ? 3 : (Theme.focusVisible(tile) ? 2 : (Theme.graphite ? 1 : 0))
-            border.color: (tile.selected || Theme.focusVisible(tile)) ? Theme.primary : Theme.outlineVariant
+            border.width: tile.selected ? 3 : (Theme.graphite ? 1 : 0)
+            border.color: tile.selected ? Theme.primary : Theme.outlineVariant
             clip: true
 
             Icon {

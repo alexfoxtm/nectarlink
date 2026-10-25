@@ -14,6 +14,7 @@ Item {
     signal pairRequested
 
     readonly property bool wideLayout: page.width >= 680
+    readonly property int pagePadding: page.width < 680 ? 16 : 24
 
     // Rows whose backend this Mac build lacks stay listed, greyed, with this reason.
     readonly property bool onMac: Qt.platform.os === "osx" || Qt.platform.os === "macos"
@@ -276,10 +277,10 @@ Item {
     Flickable {
         id: categoryRail
         visible: page.wideLayout
-        x: Theme.contentPadding
-        y: Theme.contentPadding
-        width: 232
-        height: parent.height - Theme.contentPadding * 2
+        x: page.pagePadding
+        y: page.pagePadding
+        width: Theme.sidebarWidth
+        height: parent.height - page.pagePadding * 2
         contentHeight: railCol.height
         interactive: contentHeight > height
         boundsBehavior: Flickable.StopAtBounds
@@ -315,17 +316,15 @@ Item {
                         readonly property var modelData: navGroup.modelData
                         readonly property bool selected: page.currentSection === modelData.id
                         readonly property bool isHovered: railCol.hoveredCategoryId === modelData.id && navMouse.containsMouse
-                        readonly property color fg: selected
-                            ? (Theme.graphite ? Theme.surface : Theme.secondaryContainerContent)
-                            : Theme.surfaceContent
+                        readonly property color fg: Theme.surfaceContent
                         width: railCol.width
-                        height: 42
-                        radius: Theme.radiusMd
+                        height: 40
+                        radius: 10
                         activeFocusOnTab: true
                         color: selected
-                            ? (Theme.graphite ? Theme.surfaceContent : Theme.secondaryContainer)
+                            ? Theme.heroWash
                             : (isHovered ? Qt.rgba(Theme.surfaceContent.r, Theme.surfaceContent.g, Theme.surfaceContent.b, Theme.dark ? 0.06 : 0.04) : "transparent")
-                        border.width: Theme.focusVisible(navItem) ? 2 : (Theme.graphite && selected ? 1 : 0)
+                        border.width: Theme.focusVisible(navItem) ? 2 : 0
                         border.color: Theme.focusVisible(navItem) ? Theme.primary : Theme.outlineVariant
 
                         Accessible.role: Accessible.PageTab
@@ -406,9 +405,9 @@ Item {
     Rectangle {
         visible: page.wideLayout
         x: categoryRail.x + categoryRail.width + 16
-        y: Theme.contentPadding
+        y: page.pagePadding
         width: 1
-        height: parent.height - Theme.contentPadding * 2
+        height: parent.height - page.pagePadding * 2
         color: Theme.outlineVariant
         opacity: 0.6
     }
@@ -417,10 +416,10 @@ Item {
     Flickable {
         id: compactCategoryBar
         visible: !page.wideLayout
-        x: Theme.contentPadding
+        x: page.pagePadding
         y: 12
-        width: parent.width - Theme.contentPadding * 2
-        height: 38
+        width: parent.width - page.pagePadding * 2
+        height: 40
         contentWidth: compactRow.width
         boundsBehavior: Flickable.StopAtBounds
         clip: true
@@ -435,15 +434,13 @@ Item {
                     id: compactTab
                     required property var modelData
                     readonly property bool selected: page.currentSection === modelData.id
-                    readonly property color fg: selected
-                        ? (Theme.graphite ? Theme.surface : Theme.secondaryContainerContent)
-                        : Theme.surfaceContent
-                    height: 34
+                    readonly property color fg: Theme.surfaceContent
+                    height: 36
                     width: compactTabRow.implicitWidth + 22
                     anchors.verticalCenter: parent.verticalCenter
-                    radius: Theme.pill(height)
+                    radius: 10
                     color: selected
-                        ? (Theme.graphite ? Theme.surfaceContent : Theme.secondaryContainer)
+                        ? Theme.heroWash
                         : Theme.surfaceContainerHigh
                     border.width: Theme.graphite ? 1 : 0
                     border.color: Theme.outlineVariant
@@ -479,16 +476,16 @@ Item {
         y: page.wideLayout ? 0 : (compactCategoryBar.y + compactCategoryBar.height + 8)
         width: parent.width - x
         height: parent.height - y
-        contentHeight: column.height + Theme.contentPadding * 2
+        contentHeight: column.height + page.pagePadding * 2
         boundsBehavior: Flickable.StopAtBounds
         clip: true
 
         Column {
             id: column
-            width: Math.min(840, contentFlickable.width - Theme.contentPadding * 2)
-            x: Math.max(Theme.contentPadding, Math.round((contentFlickable.width - width) / 2))
-            y: Theme.contentPadding
-            spacing: Theme.gutter
+            width: Math.min(1040, contentFlickable.width - page.pagePadding * 2)
+            x: Math.max(page.pagePadding, Math.round((contentFlickable.width - width) / 2))
+            y: page.pagePadding
+            spacing: Theme.spacingXl
             transform: Translate { id: sectionTranslate; y: 0 }
 
             ParallelAnimation {
@@ -523,7 +520,8 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     text: page.activeCategoryObj.title
                     role: "headline"
-                    elide: Text.ElideRight
+                    size: 24
+                    wrapMode: Text.WordWrap
                 }
                 Button {
                     id: pairNewHeaderBtn
@@ -541,7 +539,7 @@ Item {
             Txt {
                 width: parent.width
                 text: page.activeCategoryObj.subtitle
-                role: "bodySmall"
+                role: "body"
                 muted: true
                 wrapMode: Text.WordWrap
                 elide: Text.ElideNone
@@ -550,7 +548,7 @@ Item {
             Column {
                 visible: page.currentSection === "apps_screen"
                 width: visible ? parent.width : 0
-                spacing: Theme.gutter
+                spacing: Theme.spacingXl
 
                 Card {
                     width: parent.width
@@ -609,7 +607,7 @@ Item {
             Column {
                 visible: page.currentSection === "appearance"
                 width: visible ? parent.width : 0
-                spacing: Theme.gutter
+                spacing: Theme.spacingXl
 
                 Card {
                     width: parent.width
@@ -992,7 +990,7 @@ Item {
             Column {
                 visible: page.currentSection === "general"
                 width: visible ? parent.width : 0
-                spacing: Theme.gutter
+                spacing: Theme.spacingXl
 
                 Card {
                     width: parent.width
@@ -1379,7 +1377,7 @@ Item {
             Column {
                 visible: page.currentSection === "devices"
                 width: visible ? parent.width : 0
-                spacing: Theme.gutter
+                spacing: Theme.spacingXl
 
                 // Device Selector Pill Bar when more than 1 phone is paired
                 Flow {
@@ -1395,15 +1393,13 @@ Item {
                             required property string name
                             required property bool online
                             readonly property bool selected: page.selectedDeviceIndex === index
-                            readonly property color fg: selected
-                                ? (Theme.graphite ? Theme.surface : Theme.secondaryContainerContent)
-                                : Theme.surfaceContent
+                            readonly property color fg: Theme.surfaceContent
                             height: 36
                             width: deviceTabRow.implicitWidth + 24
                             radius: Theme.pill(height)
                             activeFocusOnTab: true
                             color: selected
-                                ? (Theme.graphite ? Theme.surfaceContent : Theme.secondaryContainer)
+                                ? Theme.heroWash
                                 : Theme.surfaceContainerHigh
                             border.width: Theme.focusVisible(deviceTabPill) ? 2 : (Theme.graphite || selected ? 1 : 0)
                             border.color: Theme.focusVisible(deviceTabPill) ? Theme.primary : (selected ? Theme.primary : Theme.outlineVariant)
@@ -1696,7 +1692,7 @@ Item {
             Column {
                 visible: page.currentSection === "camera_audio"
                 width: visible ? parent.width : 0
-                spacing: Theme.gutter
+                spacing: Theme.spacingXl
 
                 Card {
                     width: parent.width
@@ -1846,10 +1842,10 @@ Item {
 
                         ListRow {
                             width: parent.width
-                            visible: page.onMac && Webcam.outputTarget === "liveloop"
+                            visible: page.onMac && (Webcam.outputTarget === "native" || Webcam.outputTarget === "liveloop")
                             iconPath: Icons.video
                             title: qsTr("Start camera when an app uses Waypair Camera")
-                            description: qsTr("Keep Waypair Link running in the background and select a connected paired phone. Phone approval is still required. After enabling or reopening Waypair Link, close and reopen the camera in the other app.")
+                            description: qsTr("Keep Waypair Link running and select a connected paired phone. With the selected camera output installed and ready, a fresh request from a video app asks your phone for approval and starts a new session only after approval. After enabling this option, close and reopen the camera in the video app.")
                             Toggle {
                                 checked: Webcam.autoDemand
                                 Accessible.name: qsTr("Start camera when an app uses Waypair Camera")
@@ -1858,9 +1854,9 @@ Item {
                         }
                         ListRow {
                             width: parent.width
-                            visible: page.onMac && Webcam.outputTarget === "liveloop" && Webcam.autoDemand && !Webcam.demandArmed
+                            visible: page.onMac && (Webcam.outputTarget === "native" || Webcam.outputTarget === "liveloop") && Webcam.autoDemand && !Webcam.demandArmed
                             title: qsTr("Automatic camera start is paused")
-                            description: qsTr("After Stop, phone refusal, or a lost camera session, rearm here and reopen the camera in the other app.")
+                            description: qsTr("Stop or declining on the phone blocks automatic start while any app keeps this camera open. Close the camera in every app, then reopen it for a fresh request and phone approval. If automatic start stays paused, rearm here before reopening.")
                             Button {
                                 text: qsTr("Rearm automatic start")
                                 onClicked: Webcam.configureAutoDemand(true)
@@ -2182,7 +2178,7 @@ Item {
             Column {
                 visible: page.currentSection === "notifications"
                 width: visible ? parent.width : 0
-                spacing: Theme.gutter
+                spacing: Theme.spacingXl
 
                 Card {
                     width: parent.width
@@ -2364,7 +2360,7 @@ Item {
             Column {
                 visible: page.currentSection === "files_sync"
                 width: visible ? parent.width : 0
-                spacing: Theme.gutter
+                spacing: Theme.spacingXl
 
                 Card {
                     width: parent.width
@@ -2668,7 +2664,7 @@ Item {
             Column {
                 visible: page.currentSection === "shortcuts"
                 width: visible ? parent.width : 0
-                spacing: Theme.gutter
+                spacing: Theme.spacingXl
 
                 // System-wide hotkeys aren't registered on macOS (mac/tray.rs update_hotkeys).
                 Card {
@@ -3169,7 +3165,7 @@ Item {
             Column {
                 visible: page.currentSection === "storage"
                 width: visible ? parent.width : 0
-                spacing: Theme.gutter
+                spacing: Theme.spacingXl
 
                 Card {
                     width: parent.width
@@ -3452,7 +3448,7 @@ Item {
             Column {
                 visible: page.currentSection === "connection"
                 width: visible ? parent.width : 0
-                spacing: Theme.gutter
+                spacing: Theme.spacingXl
 
                 Card {
                     width: parent.width

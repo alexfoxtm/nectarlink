@@ -11,7 +11,7 @@ FocusScope {
     signal toggled(bool checked)
 
     implicitWidth: 46
-    implicitHeight: 28
+    implicitHeight: 36
     activeFocusOnTab: true
     opacity: enabled ? 1 : 0.38
 
@@ -41,7 +41,9 @@ FocusScope {
 
     Rectangle {
         id: track
-        anchors.fill: parent
+        anchors.centerIn: parent
+        width: parent.width
+        height: 28
         radius: Theme.graphite ? Theme.radiusSm : height / 2
         color: Theme.glass
             ? (toggle.checked
@@ -80,8 +82,8 @@ FocusScope {
     }
     Rectangle {
         anchors.fill: track
-        anchors.margins: -3
-        radius: track.radius + 3
+        anchors.margins: -4
+        radius: track.radius + 4
         color: "transparent"
         border.width: 2
         border.color: Theme.primary

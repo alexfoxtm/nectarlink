@@ -3,7 +3,7 @@ import QtQuick
 import app.nectarlink
 
 // A pill button. Variants: "fill" (primary action), "tonal", "outline",
-// "text". Sizes: "md" (40 px) and "sm" (32 px). Works with mouse, touch and
+// "text". Sizes: "md" (40 px) and "sm" (36 px). Works with mouse, touch and
 // keyboard (Tab to focus, Enter or Space to press).
 FocusScope {
     id: button
@@ -39,8 +39,8 @@ FocusScope {
         return Theme.surfaceContent
     }
 
-    implicitHeight: small ? 32 : 40
-    implicitWidth: row.implicitWidth + (variant === "text" ? 20 : (small ? 26 : 36))
+    implicitHeight: small ? 36 : 40
+    implicitWidth: Math.max(36, row.implicitWidth + (variant === "text" ? 20 : (small ? 26 : 36)))
     activeFocusOnTab: true
     opacity: enabled ? 1 : 0.38
 
@@ -79,7 +79,7 @@ FocusScope {
         id: body
         width: parent.width
         height: parent.height
-        radius: Theme.pill(height)
+        radius: Theme.controlRadius
         color: button.background
         Behavior on color { enabled: !Theme.reduceMotion; ColorAnimation { duration: Theme.fadeFast } }
         border.width: button.variant === "outline" || (Theme.glass && (button.variant === "tonal" || button.variant === "fill")) ? 1 : 0
@@ -132,7 +132,7 @@ FocusScope {
                 text: button.text
                 role: "label"
                 color: button.foreground
-                size: Theme.graphite ? 11 : (button.small ? 13 : 14)
+                size: button.small ? 13 : 14
                 font.underline: Theme.graphite && button.variant === "text"
                 maximumLineCount: 1
                 elide: Text.ElideRight
@@ -143,8 +143,8 @@ FocusScope {
     // Keyboard focus ring.
     Rectangle {
         anchors.fill: body
-        anchors.margins: -3
-        radius: body.radius + 3
+        anchors.margins: -4
+        radius: body.radius + 4
         color: "transparent"
         border.width: 2
         border.color: Theme.primary

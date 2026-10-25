@@ -6,5 +6,5 @@ import app.nectarlink
 Rectangle {
     implicitWidth: 1
     implicitHeight: 1
-    color: Theme.outlineVariant
+    color: Theme.panelBorder
 }

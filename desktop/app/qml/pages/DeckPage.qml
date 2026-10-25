@@ -7,6 +7,12 @@ import app.nectarlink
 // preview live PC states (volume, mic mute, media), and test actions locally.
 Item {
     id: page
+
+    Rectangle {
+        anchors.fill: parent
+        color: Theme.canvasColor
+        z: -1
+    }
     property bool active: false
     onActiveChanged: DeckController.setPageActive(active)
     Component.onCompleted: if (active) DeckController.setPageActive(true)
@@ -170,20 +176,22 @@ Item {
 
     Flickable {
         anchors.fill: parent
-        contentHeight: mainCol.height + Theme.contentPadding * 2
+        contentHeight: mainCol.height + Theme.spacingXl * 2
         boundsBehavior: Flickable.StopAtBounds
         clip: true
 
         Column {
             id: mainCol
-            width: Math.min(960, parent.width - Theme.contentPadding * 2)
-            x: Math.max(Theme.contentPadding, (parent.width - width) / 2)
-            y: Theme.contentPadding
-            spacing: Theme.gutter
+            width: Math.min(1120, parent.width - Theme.spacingXl * 2)
+            x: Math.max(Theme.spacingXl, (parent.width - width) / 2)
+            y: Theme.spacingXl
+            spacing: Theme.spacingLg
 
             // ---- Header & Live PC Status ----
             Card {
                 width: parent.width
+                radius: Theme.heroRadius
+                color: Theme.heroWash
                 Column {
                     width: parent.width
                     spacing: 14
@@ -194,7 +202,7 @@ Item {
                         Column {
                             width: parent.width - headerActions.width - 12
                             spacing: 4
-                            Txt { text: qsTr("Control Deck"); role: "title" }
+                            Txt { text: qsTr("Control Deck"); role: "title"; size: 24 }
                             Txt {
                                 width: parent.width
                                 wrapMode: Text.WordWrap
@@ -293,12 +301,12 @@ Item {
             // ---- Page Tabs & Page Management ----
             Item {
                 width: parent.width
-                height: 38
+                height: pageTabsRow.height + pageActionsRow.height + Theme.spacingMd
 
-                Row {
+                Flow {
                     id: pageTabsRow
-                    anchors.left: parent.left
-                    anchors.verticalCenter: parent.verticalCenter
+                    width: parent.width
+                    anchors.top: parent.top
                     spacing: 8
 
                     Repeater {
@@ -328,8 +336,9 @@ Item {
                 }
 
                 Row {
+                    id: pageActionsRow
                     anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.bottom: parent.bottom
                     spacing: 8
 
                     Button {
@@ -358,8 +367,8 @@ Item {
             Grid {
                 id: tileGrid
                 width: parent.width
-                columns: width >= 760 ? 4 : 3
-                spacing: 12
+                columns: page.width >= 1080 ? 2 : 1
+                spacing: Theme.spacingLg
 
                 readonly property real cellWidth: (width - spacing * (columns - 1)) / columns
 
@@ -391,14 +400,13 @@ Item {
                         Rectangle {
                             id: tileCard
                             anchors.fill: parent
-                            radius: Theme.radiusMd
-                            color: Theme.graphite
-                                ? (tileHover.hovered ? Theme.surfaceContainer : "transparent")
-                                : (tileHover.hovered ? Theme.surfaceContainerHigh : Theme.tileColor)
-                            border.width: isBeingDragged || Theme.focusVisible(tileSlot) ? 2 : (Theme.graphite ? 1 : 0)
+                            radius: Theme.cardRadius
+                            color: tileHover.hovered ? Theme.insetColor
+                                : (Theme.glass || Theme.hive ? Theme.tileColor : Theme.panelColor)
+                            border.width: isBeingDragged || Theme.focusVisible(tileSlot) ? 2 : 1
                             border.color: isBeingDragged || Theme.focusVisible(tileSlot)
                                 ? Theme.primary
-                                : (tileSlot.highlighted ? Theme.surfaceContent : Theme.outlineVariant)
+                                : (tileSlot.highlighted ? Theme.surfaceContent : Theme.panelBorder)
                             scale: isBeingDragged ? Theme.pressScale : 1.0
                             Behavior on scale { enabled: !Theme.reduceMotion; NumberAnimation { duration: Theme.fadeFast } }
                             Behavior on color { enabled: !Theme.reduceMotion; ColorAnimation { duration: Theme.fadeFast } }
@@ -454,12 +462,19 @@ Item {
                                     enabled: !tileSlot.macGap
                                     anchors.right: parent.right
                                     anchors.verticalCenter: parent.verticalCenter
-                                    width: 28; height: 28
-                                    radius: 14
+                                    width: 36; height: 36
+                                    radius: 18
                                     activeFocusOnTab: true
                                     color: testHover.hovered ? Theme.surfaceContainerHighest : "transparent"
-                                    border.width: Theme.focusVisible(testBtn) ? 2 : 0
-                                    border.color: Theme.primary
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        anchors.margins: -4
+                                        radius: testBtn.radius + 4
+                                        color: "transparent"
+                                        border.width: 2
+                                        border.color: Theme.focusColor
+                                        visible: Theme.focusVisible(testBtn)
+                                    }
                                     opacity: tileHover.hovered || testHover.hovered || testBtn.activeFocus ? 1 : 0.55
                                     Accessible.role: Accessible.Button
                                     Accessible.name: qsTr("Test %1").arg(tileSlot.modelData.label)
@@ -890,12 +905,21 @@ Item {
                             id: iconCell
                             required property string modelData
                             readonly property bool chosen: editorSheet.tileIcon === modelData
-                            width: 27; height: 27
+                            width: 36; height: 36
                             radius: Theme.radiusSm
                             activeFocusOnTab: true
                             color: chosen ? Theme.secondaryContainer : Theme.surfaceContainerHigh
-                            border.width: chosen || Theme.focusVisible(iconCell) ? 2 : 0
+                            border.width: chosen ? 2 : 0
                             border.color: Theme.primary
+                            Rectangle {
+                                anchors.fill: parent
+                                anchors.margins: -4
+                                radius: iconCell.radius + 4
+                                color: "transparent"
+                                border.width: 2
+                                border.color: Theme.focusColor
+                                visible: Theme.focusVisible(iconCell)
+                            }
                             Accessible.role: Accessible.RadioButton
                             Accessible.name: modelData
                             Accessible.checked: chosen

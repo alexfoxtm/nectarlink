@@ -12,8 +12,8 @@ Item {
     property color focusColor
     signal clicked()
 
-    implicitWidth: Math.max(filled ? 168 : 120, label.implicitWidth + 44)
-    implicitHeight: 44
+    implicitWidth: Math.max(filled ? 168 : 120, label.implicitWidth + 32)
+    implicitHeight: 40
     activeFocusOnTab: true
     opacity: enabled ? 1 : 0.5
 
@@ -26,12 +26,11 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        radius: height / 2
+        radius: 12
         color: button.filled ? button.fill : "transparent"
         border.width: button.filled ? 0 : 1
         border.color: Qt.rgba(button.ink.r, button.ink.g, button.ink.b, 0.22)
-        scale: area.pressed ? 0.97 : 1
-        Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+        // Keep the label and hit target stable while pressed.
 
         Rectangle {
             anchors.fill: parent
@@ -43,8 +42,8 @@ Item {
     }
     Rectangle {
         anchors.fill: parent
-        anchors.margins: -3
-        radius: height / 2
+        anchors.margins: -4
+        radius: 12
         color: "transparent"
         border.width: 2
         border.color: button.focusColor
@@ -55,7 +54,7 @@ Item {
         anchors.centerIn: parent
         text: button.text
         font.family: "Figtree"
-        font.pixelSize: 15
+        font.pixelSize: 14
         font.weight: Font.DemiBold
         color: button.ink
     }

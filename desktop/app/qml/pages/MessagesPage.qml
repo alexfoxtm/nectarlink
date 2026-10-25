@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import QtQuick
 import QtQuick.Dialogs
+import QtQuick.Controls as Controls
+import QtQuick.Window
 import app.nectarlink
 
 // Messages: the phone's SMS and mirrored MessagingStyle chat conversations on
@@ -8,6 +10,14 @@ import app.nectarlink
 // or reply inline from the PC (sent through the phone).
 Item {
     id: page
+    readonly property bool wideContent: width >= 1080
+    readonly property real pageInset: Theme.spacingXl
+
+    Rectangle {
+        anchors.fill: parent
+        color: Theme.canvasColor
+        z: -1
+    }
     property bool active: true
     // The phone shown (the one on Home).
     property string deviceId
@@ -239,7 +249,7 @@ Item {
             width: 40; height: 40
             stroke: 1.5
             path: Icons.messages
-            color: Theme.surfaceContentVariant
+            color: Messages.status === "failed" ? Theme.error : Theme.surfaceContentVariant
         }
         Txt {
             width: parent.width
@@ -277,794 +287,876 @@ Item {
         visible: Messages.status === "loading" && page.threads.length === 0 && !Messages.hasChatThreads
     }
 
-    // ---- Conversations ----
-    Item {
-        id: list
-        visible: page.threads.length > 0 || Messages.hasChatThreads || (page.ready && page.deviceId.length > 0)
-        width: Math.min(340, Math.max(260, page.width * 0.34))
-        height: parent.height
+    // Keep the conversation list available while compact chat chrome grows.
+    Flickable {
+        id: conversationContent
+        anchors.fill: parent
+        contentWidth: width
+        flickableDirection: Flickable.VerticalFlick
+        contentHeight: Math.max(height, chat.y + chat.height + page.pageInset)
+        boundsBehavior: Flickable.StopAtBounds
+        clip: true
+        readonly property var focusWindow: page.Window.window
 
+        // The compact outer scroller must reveal focus as well as expose a scrollbar.
+        function revealFocusedItem() {
+            const item = focusWindow ? focusWindow.activeFocusItem : null
+            if (page.wideContent || !page.active || !item || !item.visible)
+                return
+            let target = item
+            let ancestor = item
+            while (ancestor && ancestor !== contentItem) {
+                if (ancestor === composer || ancestor === attachmentBar
+                    || ancestor === chatHeader || ancestor === conversationSearch
+                    || ancestor === searchBox || ancestor === listHeader)
+                    target = ancestor
+                ancestor = ancestor.parent
+            }
+            if (!ancestor)
+                return
+            const position = target.mapToItem(contentItem, 0, 0)
+            const top = position.y - 8
+            const bottom = position.y + target.height + 8
+            let nextY = contentY
+            if (top < contentY)
+                nextY = top
+            else if (bottom > contentY + height)
+                nextY = bottom - height
+            contentY = Math.max(0, Math.min(Math.max(0, contentHeight - height), nextY))
+        }
+        onContentHeightChanged: Qt.callLater(revealFocusedItem)
+        onHeightChanged: Qt.callLater(revealFocusedItem)
+        onWidthChanged: Qt.callLater(revealFocusedItem)
+        Connections {
+            target: conversationContent.focusWindow
+            function onActiveFocusItemChanged() {
+                Qt.callLater(conversationContent.revealFocusedItem)
+            }
+        }
+        Connections {
+            target: composer
+            function onHeightChanged() {
+                Qt.callLater(conversationContent.revealFocusedItem)
+            }
+        }
+        Controls.ScrollBar.vertical: Controls.ScrollBar {
+            Accessible.name: qsTr("Scroll conversations and messages")
+        }
+
+        // ---- Conversations ----
         Item {
-            id: listHeader
-            width: parent.width
-            height: 56
-            Txt {
-                anchors.left: parent.left
-                anchors.leftMargin: 20
-                anchors.verticalCenter: parent.verticalCenter
-                text: qsTr("Conversations")
-                role: "title"
-            }
-            IconButton {
-                id: newButton
-                anchors.right: parent.right
-                anchors.rightMargin: 10
-                anchors.verticalCenter: parent.verticalCenter
-                iconPath: Icons.plus
-                label: qsTr("New message (Ctrl+N)")
-                tonal: page.composing
-                enabled: page.ready
-                onClicked: page.startNew()
-            }
-            IconButton {
-                anchors.right: newButton.left
-                anchors.verticalCenter: parent.verticalCenter
-                iconPath: Icons.refresh
-                label: qsTr("Refresh")
-                enabled: Messages.status !== "loading"
-                onClicked: Messages.refresh()
-            }
-        }
+            id: list
+            visible: page.threads.length > 0 || Messages.hasChatThreads || (page.ready && page.deviceId.length > 0)
+            x: page.pageInset
+            y: page.pageInset
+            width: page.wideContent ? 340 : page.width - page.pageInset * 2
+            height: page.wideContent ? page.height - page.pageInset * 2 : Math.min(200, page.height * 0.30)
 
-        // Search: by name, number, app, or the latest text.
-        Rectangle {
-            id: searchBox
-            anchors.top: listHeader.bottom
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.leftMargin: 16
-            anchors.rightMargin: 16
-            height: 38
-            radius: Theme.graphite ? Theme.radiusSm : height / 2
-            color: Theme.graphite ? "transparent" : (Theme.glass ? Theme.tileColor : Theme.surfaceContainerHighest)
-            border.width: search.activeFocus ? 2 : (Theme.graphite || Theme.glass ? 1 : 0)
-            border.color: search.activeFocus ? Theme.primary : (Theme.glass ? Theme.cardBorder : Theme.outlineVariant)
-            Icon {
-                id: searchIcon
-                anchors.left: parent.left
-                anchors.leftMargin: 12
-                anchors.verticalCenter: parent.verticalCenter
-                width: 16; height: 16
-                path: Icons.search
-                color: Theme.surfaceContentVariant
+            Rectangle {
+                anchors.fill: parent
+                radius: Theme.cardRadius
+                color: Theme.glass || Theme.hive ? Theme.cardColor : Theme.panelColor
+                border.width: 1
+                border.color: Theme.hive ? Theme.cardBorder : Theme.panelBorder
+                z: -1
             }
-            TextInput {
-                id: search
-                anchors.left: searchIcon.right
-                anchors.leftMargin: 8
-                anchors.right: clearSearch.left
-                anchors.verticalCenter: parent.verticalCenter
-                font.family: Theme.fontUi
-                font.pixelSize: 14
-                color: Theme.surfaceContent
-                selectionColor: Theme.primaryContainer
-                selectedTextColor: Theme.primaryContainerContent
-                clip: true
-                Accessible.name: qsTr("Search conversations")
-                Keys.onEscapePressed: (event) => {
-                    event.accepted = text.length > 0
-                    text = ""
-                }
-                Txt {
-                    anchors.verticalCenter: parent.verticalCenter
-                    visible: search.text.length === 0
-                    role: "body"
-                    muted: true
-                    text: qsTr("Search")
-                }
-            }
-            IconButton {
-                id: clearSearch
-                anchors.right: parent.right
-                anchors.rightMargin: 2
-                anchors.verticalCenter: parent.verticalCenter
-                width: 32; height: 32
-                visible: search.text.length > 0
-                iconPath: Icons.close
-                label: qsTr("Clear search")
-                onClicked: search.text = ""
-            }
-        }
 
-        // Calm app filter chips when MessagingStyle chat conversations are present.
-        Flickable {
-            id: appFilterBar
-            anchors.top: searchBox.bottom
-            anchors.topMargin: visible ? 8 : 0
-            anchors.left: parent.left
-            anchors.right: parent.right
-            height: visible ? 34 : 0
-            visible: Messages.hasChatThreads && page.availableApps.length > 2
-            contentWidth: filterRow.implicitWidth + 32
-            clip: true
-            boundsBehavior: Flickable.StopAtBounds
-
-            Row {
-                id: filterRow
-                x: 16
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: 6
-                Repeater {
-                    model: page.availableApps
-                    delegate: Chip {
-                        required property var modelData
-                        text: modelData.label
-                        selected: Messages.appFilter === modelData.key
-                        interactive: true
-                        onClicked: Messages.filterByApp(modelData.key)
-                    }
-                }
-            }
-        }
-
-        ListView {
-            id: threadList
-            anchors.top: appFilterBar.bottom
-            anchors.topMargin: 8
-            anchors.bottom: parent.bottom
-            width: parent.width
-            clip: true
-            boundsBehavior: Flickable.StopAtBounds
-            model: page.shownThreads
-            delegate: ThreadRow {
-                width: threadList.width
-                thread: modelData
-            }
-            Txt {
-                anchors.centerIn: parent
-                visible: (page.ready || Messages.hasChatThreads) && page.shownThreads.length === 0
-                role: "body"
-                muted: true
-                text: page.query.length > 0 ? qsTr("No conversations match.") : qsTr("No conversations yet.")
-            }
-        }
-        Divider { anchors.right: parent.right; width: 1; height: parent.height }
-    }
-
-    // ---- The open conversation, or a new one ----
-    Item {
-        id: chat
-        anchors.left: list.right
-        anchors.right: parent.right
-        height: parent.height
-        visible: list.visible
-
-        // Drag-and-drop image onto an open SMS conversation or new SMS.
-        DropArea {
-            id: mmsDropArea
-            anchors.fill: parent
-            enabled: (!!page.openThread || page.composing) && !composer.isChat && !composer.groupSms
-            onDropped: (drop) => {
-                if (drop.hasUrls && drop.urls.length > 0) {
-                    if (Messages.attachFile(drop.urls[0].toString())) {
-                        drop.acceptProposedAction()
-                        composer.focusText()
-                    }
-                }
-            }
-        }
-
-        Rectangle {
-            anchors.fill: parent
-            anchors.margins: 16
-            z: 10
-            visible: mmsDropArea.containsDrag
-            radius: Theme.radiusLg
-            color: Qt.rgba(Theme.primaryContainer.r, Theme.primaryContainer.g, Theme.primaryContainer.b, 0.90)
-            border.width: 2
-            border.color: Theme.primary
-            Column {
-                anchors.centerIn: parent
-                spacing: 8
-                Icon {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    width: 32; height: 32
-                    path: Icons.photo
-                    color: Theme.primaryContainerContent
-                }
-                Txt {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    role: "title"
-                    color: Theme.primaryContainerContent
-                    text: qsTr("Drop image to attach (MMS)")
-                }
-                Txt {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    role: "bodySmall"
-                    color: Theme.primaryContainerContent
-                    text: qsTr("PNG, JPEG, WebP, GIF, or BMP up to 900 KB")
-                }
-            }
-        }
-
-        Txt {
-            anchors.centerIn: parent
-            visible: !page.openThread && !page.composing && list.visible
-            role: "body"
-            muted: true
-            text: qsTr("Select a conversation")
-        }
-
-        Item {
-            id: chatHeader
-            visible: !!page.openThread || page.composing
-            width: parent.width
-            height: 64
-            IconButton {
-                id: backButton
-                anchors.left: parent.left
-                anchors.leftMargin: 12
-                anchors.verticalCenter: parent.verticalCenter
-                iconPath: Icons.back
-                label: qsTr("Back to conversations (Esc)")
-                onClicked: page.closeChat()
-            }
-            Column {
-                anchors.left: backButton.right
-                anchors.leftMargin: 8
-                anchors.right: callThreadButton.visible ? callThreadButton.left
-                    : deleteChatButton.visible ? deleteChatButton.left : parent.right
-                anchors.rightMargin: (callThreadButton.visible || deleteChatButton.visible) ? 8 : 24
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: 2
-                visible: !page.composing
-                Row {
-                    width: parent.width
-                    spacing: 8
-                    Txt {
-                        id: headerTitleTxt
-                        width: Math.min(implicitWidth, parent.width - (headerAppPill.visible ? headerAppPill.width + 8 : 0))
-                        text: page.openThread ? page.openThread.title : ""
-                        role: "title"
-                        elide: Text.ElideRight
-                    }
-                    Rectangle {
-                        id: headerAppPill
-                        anchors.verticalCenter: headerTitleTxt.verticalCenter
-                        visible: !!page.openThread && !!page.openThread.isChat
-                        height: 20
-                        width: headerAppPillLabel.implicitWidth + 14
-                        radius: 10
-                        color: Theme.secondaryContainer
-                        Txt {
-                            id: headerAppPillLabel
-                            anchors.centerIn: parent
-                            role: "label"
-                            size: 11
-                            color: Theme.secondaryContainerContent
-                            text: page.openThread && page.openThread.appName ? page.openThread.appName : Messages.currentAppName
-                        }
-                    }
-                }
-                Txt {
-                    width: parent.width
-                    visible: page.openThread && !page.openThread.isChat && page.openThread.title !== page.openThread.addresses
-                    text: !page.openThread ? "" : page.openThread.addresses
-                    role: "bodySmall"
-                    muted: true
-                    elide: Text.ElideRight
-                }
-            }
-            IconButton {
-                id: callThreadButton
-                anchors.right: parent.right
-                anchors.rightMargin: 14
-                anchors.verticalCenter: parent.verticalCenter
-                visible: !page.composing && !!page.openThread && !page.openThread.isChat && !page.openThread.group
-                    && page.openThread.addresses.length > 0 && PhoneCall.canDial
-                enabled: !PhoneCall.dialing
-                iconPath: Icons.call
-                label: page.openThread ? qsTr("Call %1").arg(page.openThread.title) : qsTr("Call")
-                onClicked: if (page.openThread) PhoneCall.dial(page.openThread.addresses)
-            }
-            IconButton {
-                id: deleteChatButton
-                anchors.right: parent.right
-                anchors.rightMargin: 14
-                anchors.verticalCenter: parent.verticalCenter
-                visible: !page.composing && !!page.openThread && !!page.openThread.isChat
-                iconPath: Icons.trash
-                label: qsTr("Remove conversation from PC")
-                onClicked: if (page.openThread) Messages.deleteChatThread(page.openThread.id)
-            }
-            // New message: who to.
-            Row {
-                anchors.left: backButton.right
-                anchors.leftMargin: 8
-                anchors.right: parent.right
-                anchors.rightMargin: 24
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: 12
-                visible: page.composing
-                Txt { anchors.verticalCenter: parent.verticalCenter; text: qsTr("To"); role: "title" }
-                TextInput {
-                    id: toField
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: parent.width - 40
-                    font.family: Theme.fontUi
-                    font.pixelSize: 15
-                    color: Theme.surfaceContent
-                    selectionColor: Theme.primaryContainer
-                    selectedTextColor: Theme.primaryContainerContent
-                    clip: true
-                    Accessible.name: qsTr("Name or phone number")
-                    Keys.onReturnPressed: {
-                        if (page.recipientMatches.length > 0 && !/\d/.test(toField.text)) {
-                            toField.text = page.recipientMatches[0].number
-                        }
-                        composer.focusText()
-                    }
-                    Txt {
-                        anchors.verticalCenter: parent.verticalCenter
-                        visible: toField.text.length === 0
-                        role: "body"
-                        muted: true
-                        text: qsTr("Name or phone number")
-                    }
-                }
-            }
-            Divider { anchors.bottom: parent.bottom; width: parent.width }
-        }
-
-        // Contact suggestions when typing a name or number in "To".
-        Rectangle {
-            id: contactSuggestions
-            z: 2
-            anchors.top: chatHeader.bottom
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.leftMargin: 24
-            anchors.rightMargin: 24
-            anchors.topMargin: 6
-            visible: page.composing && page.recipientMatches.length > 0
-            height: suggestionColumn.height + 12
-            radius: Theme.radiusLg
-            color: Theme.surfaceContainerHigh
-            border.width: 1
-            border.color: Theme.outlineVariant
-
-            Column {
-                id: suggestionColumn
-                y: 6
+            Item {
+                id: listHeader
                 width: parent.width
-                Repeater {
-                    model: page.recipientMatches
-                    delegate: Item {
-                        id: srow
-                        required property var modelData
-                        width: suggestionColumn.width
-                        height: 52
-                        activeFocusOnTab: true
-                        Accessible.role: Accessible.ListItem
-                        Accessible.name: modelData.name + ", " + modelData.number
-                        Accessible.onPressAction: choose()
-                        function choose() {
-                            toField.text = modelData.number
-                            composer.focusText()
-                        }
-                        Keys.onPressed: (event) => {
-                            if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
-                                srow.choose()
-                                event.accepted = true
-                            }
-                        }
-                        Rectangle {
-                            anchors.fill: parent
-                            anchors.leftMargin: 6
-                            anchors.rightMargin: 6
-                            radius: Theme.radiusMd
-                            color: sHover.hovered
-                                ? Qt.rgba(Theme.surfaceContent.r, Theme.surfaceContent.g, Theme.surfaceContent.b, 0.08)
-                                : "transparent"
-                            border.width: Theme.focusVisible(srow) ? 2 : 0
-                            border.color: Theme.primary
-                        }
-                        Item {
-                            id: sFace
-                            x: 16
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: 34; height: 34
-                            RoundedImage {
-                                anchors.fill: parent
-                                radius: width / 2
-                                visible: srow.modelData.photo.length > 0 && status === Image.Ready
-                                source: srow.modelData.photo
-                                sourceSize: Qt.size(68, 68)
-                                fillMode: Image.PreserveAspectCrop
-                            }
-                            Avatar {
-                                anchors.fill: parent
-                                visible: srow.modelData.photo.length === 0
-                                name: srow.modelData.name
-                                hue: page.hueOf(srow.modelData.name)
-                            }
-                        }
-                        Column {
-                            anchors.left: sFace.right
-                            anchors.leftMargin: 12
-                            anchors.right: parent.right
-                            anchors.rightMargin: 16
-                            anchors.verticalCenter: parent.verticalCenter
-                            Txt {
-                                width: parent.width
-                                text: srow.modelData.name
-                                role: "body"
-                                weight: 500
-                                elide: Text.ElideRight
-                            }
-                            Txt {
-                                width: parent.width
-                                text: srow.modelData.label.length > 0
-                                    ? srow.modelData.label + " · " + srow.modelData.number
-                                    : srow.modelData.number
-                                role: "bodySmall"
-                                muted: true
-                                elide: Text.ElideRight
-                            }
-                        }
-                        HoverHandler { id: sHover; cursorShape: Qt.PointingHandCursor }
-                        TapHandler { onTapped: srow.choose() }
-                    }
-                }
-            }
-        }
-
-        Row {
-            id: conversationSearch
-            anchors.top: chatHeader.bottom
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.margins: 16
-            height: visible ? 40 : 0
-            spacing: 8
-            visible: !!page.openThread
-            TextInput {
-                id: bodySearch
-                width: Math.max(80, parent.width - matchCount.width - previousMatch.width - nextMatch.width - clearBodySearchButton.width - 32)
-                height: parent.height
-                verticalAlignment: TextInput.AlignVCenter
-                font.family: Theme.fontUi
-                font.pixelSize: 14
-                color: Theme.surfaceContent
-                selectionColor: Theme.primaryContainer
-                selectedTextColor: Theme.primaryContainerContent
-                clip: true
-                Accessible.name: qsTr("Search loaded messages in this conversation")
-                Keys.onEscapePressed: (event) => {
-                    event.accepted = text.length > 0
-                    page.clearBodySearch()
-                }
-                Keys.onReturnPressed: page.moveBodyMatch(1)
+                height: 56
                 Txt {
+                    anchors.left: parent.left
+                    anchors.leftMargin: 20
                     anchors.verticalCenter: parent.verticalCenter
-                    visible: bodySearch.text.length === 0
-                    text: qsTr("Search loaded messages")
-                    muted: true
+                    text: qsTr("Conversations")
+                    role: "title"
+                    size: 18
+                }
+                IconButton {
+                    id: newButton
+                    anchors.right: parent.right
+                    anchors.rightMargin: 10
+                    anchors.verticalCenter: parent.verticalCenter
+                    iconPath: Icons.plus
+                    label: qsTr("New message (Ctrl+N)")
+                    tonal: page.composing
+                    enabled: page.ready
+                    onClicked: page.startNew()
+                }
+                IconButton {
+                    anchors.right: newButton.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    iconPath: Icons.refresh
+                    label: qsTr("Refresh")
+                    enabled: Messages.status !== "loading"
+                    onClicked: Messages.refresh()
                 }
             }
-            Txt {
-                id: matchCount
-                anchors.verticalCenter: parent.verticalCenter
-                text: page.bodyQuery.length === 0 ? "" : page.bodyMatches.length === 0
-                    ? qsTr("No matches") : qsTr("%1 of %2").arg(page.bodyMatch + 1).arg(page.bodyMatches.length)
-                Accessible.name: text
-                muted: true
-            }
-            Button {
-                id: previousMatch
-                text: qsTr("Previous")
-                enabled: page.bodyMatches.length > 0
-                onClicked: page.moveBodyMatch(-1)
-            }
-            Button {
-                id: nextMatch
-                text: qsTr("Next")
-                enabled: page.bodyMatches.length > 0
-                onClicked: page.moveBodyMatch(1)
-            }
-            IconButton {
-                id: clearBodySearchButton
-                width: 32; height: 32
-                iconPath: Icons.close
-                label: qsTr("Clear message search")
-                enabled: bodySearch.text.length > 0
-                onClicked: { page.clearBodySearch(); bodySearch.forceActiveFocus() }
-            }
-        }
 
-        ListView {
-            id: messageList
-            anchors.top: conversationSearch.bottom
-            anchors.bottom: attachmentBar.visible ? attachmentBar.top : composer.top
-            anchors.bottomMargin: 8
-            width: parent.width
-            visible: !!page.openThread
-            clip: true
-            spacing: 6
-            cacheBuffer: 960
-            // A short conversation sits at the bottom, by the box.
-            topMargin: Math.max(16, height - contentHeight - bottomMargin)
-            bottomMargin: 8
-            boundsBehavior: Flickable.StopAtBounds
-            model: page.messages
-            // The latest at the bottom; scrolling up loads older ones.
-            property int lastCount: 0
-            property string lastThreadId: ""
-            property real savedBottomOffset: -1
-            onCountChanged: {
-                const threadSwitched = Messages.thread !== lastThreadId
-                lastThreadId = Messages.thread
-                if (threadSwitched || lastCount === 0) {
-                    savedBottomOffset = -1
-                    Qt.callLater(positionViewAtEnd)
-                } else if (savedBottomOffset >= 0 && count > lastCount) {
-                    const off = savedBottomOffset
-                    savedBottomOffset = -1
-                    Qt.callLater(() => {
-                        contentY = Math.max(originY, contentHeight - off)
-                    })
-                } else if (count > lastCount) {
-                    Qt.callLater(positionViewAtEnd)
-                }
-                lastCount = count
-            }
-            function loadOlderAtBeginning() {
-                if (page.active && page.bodyQuery.length === 0 && page.openThread
-                    && Messages.device === page.deviceId && Messages.thread === page.openThread.id
-                    && lastThreadId === Messages.thread && atYBeginning
-                    && Messages.more && count > 0 && !Messages.loadingOlder) {
-                    savedBottomOffset = contentHeight - contentY
-                    Messages.loadOlder()
-                }
-            }
-            onAtYBeginningChanged: loadOlderAtBeginning()
-            header: Item {
-                width: messageList.width
-                height: Messages.loadingOlder ? 40 : 0
-                Spinner { anchors.centerIn: parent; visible: Messages.loadingOlder }
-            }
-            delegate: Bubble {
-                width: messageList.width
-                message: modelData
-                searchCurrent: index === page.matchedMessageIndex
-                previous: index > 0 ? page.messages[index - 1] : null
-            }
-            Txt {
-                anchors.centerIn: parent
-                width: Math.min(parent.width - 48, 420)
-                horizontalAlignment: Text.AlignHCenter
-                wrapMode: Text.WordWrap
-                visible: page.openThread && page.messages.length === 0 && (page.ready || Messages.currentIsChat)
-                role: "body"
-                muted: true
-                text: Messages.currentIsChat
-                    ? qsTr("No mirrored messages yet")
-                    : qsTr("No messages")
-            }
-        }
-
-        // Staged MMS image attachment preview card.
-        Rectangle {
-            id: attachmentBar
-            visible: (!!page.openThread || page.composing) && !composer.isChat && Messages.hasAttachment
-            anchors.left: composer.left
-            anchors.right: composer.right
-            anchors.bottom: composer.top
-            anchors.bottomMargin: 8
-            height: 64
-            radius: Theme.radiusMd
-            color: Theme.surfaceContainerHigh
-            border.width: 1
-            border.color: Messages.attachmentError.length > 0 ? Theme.error : Theme.outlineVariant
-
-            RoundedImage {
-                id: attThumb
-                x: 8
-                anchors.verticalCenter: parent.verticalCenter
-                width: 48; height: 48
-                radius: Theme.radiusSm
-                visible: Messages.attachmentPreview.length > 0
-                source: Messages.attachmentPreview
-                sourceSize: Qt.size(96, 96)
-                fillMode: Image.PreserveAspectCrop
-            }
-            Column {
-                anchors.left: attThumb.visible ? attThumb.right : parent.left
-                anchors.leftMargin: 12
-                anchors.right: removeAttBtn.left
-                anchors.rightMargin: 8
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: 2
-                Txt {
-                    width: parent.width
-                    role: "bodySmall"
-                    weight: 600
-                    elide: Text.ElideRight
-                    text: Messages.attachmentName
-                }
-                Txt {
-                    width: parent.width
-                    role: "caption"
-                    color: Messages.attachmentError.length > 0 ? Theme.error : Theme.surfaceContentVariant
-                    elide: Text.ElideRight
-                    text: Messages.attachmentError.length > 0
-                        ? Messages.attachmentError
-                        : qsTr("%1 · Sent as MMS").arg(Messages.attachmentSize)
-                }
-            }
-            IconButton {
-                id: removeAttBtn
-                anchors.right: parent.right
-                anchors.rightMargin: 6
-                anchors.verticalCenter: parent.verticalCenter
-                width: 32; height: 32
-                iconPath: Icons.close
-                label: qsTr("Remove attachment")
-                onClicked: Messages.clearAttachment()
-            }
-        }
-
-        // Writing a text or inline chat reply.
-        Rectangle {
-            id: composer
-            visible: !!page.openThread || page.composing
-            readonly property bool isChat: Messages.currentIsChat && !page.composing
-            readonly property bool groupSms: !isChat && !!page.openThread && page.openThread.group
-            readonly property bool chatReplyDisabled: isChat && !Messages.currentCanReply
-            readonly property bool inputDisabled: groupSms || chatReplyDisabled
-            readonly property bool validAttachment: !isChat && Messages.hasAttachment && Messages.attachmentError.length === 0
-            readonly property bool hasAttachmentError: !isChat && Messages.hasAttachment && Messages.attachmentError.length > 0
-            readonly property bool canSend: !Messages.sending
-                && !inputDisabled
-                && !hasAttachmentError
-                && (isChat ? Messages.currentCanReply : page.ready)
-                && (input.text.trim().length > 0 || validAttachment)
-                && (!page.composing || toField.text.trim().length > 0)
-            function focusText() { input.forceActiveFocus() }
-            function send() {
-                if (!canSend)
-                    return
-                if (page.composing)
-                    Messages.sendTo(toField.text, input.text)
-                else
-                    Messages.send(input.text)
-                input.text = ""
-                page.composing = false
-                toField.text = ""
-            }
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.bottom: parent.bottom
-            anchors.margins: 16
-            height: Math.min(Math.max(input.contentHeight + 22, 48), 160)
-            radius: Theme.graphite ? Theme.radiusSm : 24
-            color: Theme.graphite ? "transparent" : Theme.surfaceContainerHighest
-            border.width: input.activeFocus ? 2 : 1
-            border.color: input.activeFocus ? Theme.primary : Theme.outlineVariant
-
-            IconButton {
-                id: attachButton
+            // Search: by name, number, app, or the latest text.
+            Rectangle {
+                id: searchBox
+                anchors.top: listHeader.bottom
                 anchors.left: parent.left
-                anchors.leftMargin: 6
-                anchors.bottom: parent.bottom
-                anchors.bottomMargin: 6
-                visible: !composer.isChat && !composer.groupSms
-                enabled: page.ready && !Messages.sending
-                iconPath: Icons.photo
-                label: qsTr("Attach image (MMS)")
-                onClicked: imageFileDialog.open()
-                TapHandler {
-                    acceptedButtons: Qt.RightButton
-                    onTapped: {
-                        if (Messages.pasteClipboardImage())
-                            composer.focusText()
-                    }
+                anchors.right: parent.right
+                anchors.leftMargin: 16
+                anchors.rightMargin: 16
+                height: 38
+                radius: Theme.controlRadius
+                color: Theme.graphite ? "transparent" : (Theme.glass ? Theme.tileColor : Theme.surfaceContainerHighest)
+                border.width: search.activeFocus ? 2 : (Theme.graphite || Theme.glass ? 1 : 0)
+                border.color: search.activeFocus ? Theme.primary : (Theme.glass ? Theme.cardBorder : Theme.outlineVariant)
+                Icon {
+                    id: searchIcon
+                    anchors.left: parent.left
+                    anchors.leftMargin: 12
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 16; height: 16
+                    path: Icons.search
+                    color: Theme.surfaceContentVariant
                 }
-            }
-
-            Flickable {
-                id: inputScroll
-                anchors.left: attachButton.visible ? attachButton.right : parent.left
-                anchors.leftMargin: attachButton.visible ? 4 : 18
-                anchors.right: sendButton.left
-                anchors.rightMargin: 8
-                anchors.top: parent.top
-                anchors.topMargin: 11
-                anchors.bottom: parent.bottom
-                anchors.bottomMargin: 11
-                contentHeight: input.contentHeight
-                clip: true
-                boundsBehavior: Flickable.StopAtBounds
-                TextEdit {
-                    id: input
-                    width: inputScroll.width
-                    wrapMode: TextEdit.Wrap
-                    readOnly: composer.inputDisabled
+                TextInput {
+                    id: search
+                    anchors.left: searchIcon.right
+                    anchors.leftMargin: 8
+                    anchors.right: clearSearch.left
+                    anchors.verticalCenter: parent.verticalCenter
                     font.family: Theme.fontUi
                     font.pixelSize: 14
                     color: Theme.surfaceContent
                     selectionColor: Theme.primaryContainer
                     selectedTextColor: Theme.primaryContainerContent
-                    Accessible.name: composer.isChat
-                        ? qsTr("Reply in %1").arg(Messages.currentAppName)
-                        : qsTr("Text message")
-                    // Enter sends; Shift+Enter starts a new line; Ctrl+V pastes clipboard image when available.
-                    Keys.onPressed: (event) => {
-                        if (!composer.isChat && !composer.groupSms
-                            && ((event.key === Qt.Key_V && (event.modifiers & Qt.ControlModifier))
-                                || event.matches(StandardKey.Paste))) {
-                            if (Messages.pasteClipboardImage()) {
-                                event.accepted = true
-                                return
-                            }
-                        }
-                        if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && !(event.modifiers & Qt.ShiftModifier)) {
-                            composer.send()
-                            event.accepted = true
-                        }
-                    }
-                    onCursorRectangleChanged: {
-                        if (cursorRectangle.y < inputScroll.contentY)
-                            inputScroll.contentY = cursorRectangle.y
-                        else if (cursorRectangle.y + cursorRectangle.height > inputScroll.contentY + inputScroll.height)
-                            inputScroll.contentY = cursorRectangle.y + cursorRectangle.height - inputScroll.height
+                    clip: true
+                    Accessible.name: qsTr("Search conversations")
+                    Keys.onEscapePressed: (event) => {
+                        event.accepted = text.length > 0
+                        text = ""
                     }
                     Txt {
-                        visible: input.text.length === 0
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: search.text.length === 0
                         role: "body"
                         muted: true
-                        elide: Text.ElideRight
-                        width: input.width
-                        text: composer.chatReplyDisabled
-                            ? qsTr("Replies are available while the notification is active on your phone")
-                            : composer.isChat
-                                ? qsTr("Reply in %1…").arg(Messages.currentAppName)
-                                : composer.groupSms
-                                    ? qsTr("Group texts can't be sent from the PC yet")
-                                    : Messages.hasAttachment
-                                        ? qsTr("Add a caption (optional)…")
-                                        : qsTr("Text message")
+                        text: qsTr("Search")
+                    }
+                }
+                IconButton {
+                    id: clearSearch
+                    anchors.right: parent.right
+                    anchors.rightMargin: 2
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 32; height: 32
+                    visible: search.text.length > 0
+                    iconPath: Icons.close
+                    label: qsTr("Clear search")
+                    onClicked: search.text = ""
+                }
+            }
+
+            // Calm app filter chips when MessagingStyle chat conversations are present.
+            Flickable {
+                id: appFilterBar
+                anchors.top: searchBox.bottom
+                anchors.topMargin: visible ? 8 : 0
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: visible ? 34 : 0
+                visible: Messages.hasChatThreads && page.availableApps.length > 2
+                contentWidth: filterRow.implicitWidth + 32
+                clip: true
+                boundsBehavior: Flickable.StopAtBounds
+
+                Row {
+                    id: filterRow
+                    x: 16
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 6
+                    Repeater {
+                        model: page.availableApps
+                        delegate: Chip {
+                            required property var modelData
+                            text: modelData.label
+                            selected: Messages.appFilter === modelData.key
+                            interactive: true
+                            onClicked: Messages.filterByApp(modelData.key)
+                        }
                     }
                 }
             }
-            IconButton {
-                id: sendButton
-                anchors.right: parent.right
-                anchors.rightMargin: 6
+
+            ListView {
+                id: threadList
+                anchors.top: appFilterBar.bottom
+                anchors.topMargin: 8
                 anchors.bottom: parent.bottom
-                anchors.bottomMargin: 6
-                iconPath: Icons.send
-                label: qsTr("Send")
-                tonal: composer.canSend
-                enabled: composer.canSend
-                onClicked: composer.send()
+                width: parent.width
+                clip: true
+                boundsBehavior: Flickable.StopAtBounds
+                model: page.shownThreads
+                delegate: ThreadRow {
+                    width: threadList.width
+                    thread: modelData
+                }
+                Txt {
+                    anchors.centerIn: parent
+                    visible: (page.ready || Messages.hasChatThreads) && page.shownThreads.length === 0
+                    role: "body"
+                    muted: true
+                    text: page.query.length > 0 ? qsTr("No conversations match.") : qsTr("No conversations yet.")
+                }
+            }    }
+
+        // ---- The open conversation, or a new one ----
+        Item {
+            id: chat
+            x: page.wideContent ? list.x + list.width + Theme.spacingLg : page.pageInset
+            y: page.wideContent ? page.pageInset : list.y + list.height + Theme.spacingLg
+            width: page.width - x - page.pageInset
+            // 376px worst-case chrome (160px composer + MMS) plus 72px history.
+            height: !page.wideContent && (!!page.openThread || page.composing)
+                ? Math.max(448, page.height - y - page.pageInset)
+                : page.height - y - page.pageInset
+
+            Rectangle {
+                anchors.fill: parent
+                radius: Theme.cardRadius
+                color: Theme.glass || Theme.hive ? Theme.cardColor : Theme.panelColor
+                border.width: 1
+                border.color: Theme.hive ? Theme.cardBorder : Theme.panelBorder
+                z: -1
             }
-            Spinner {
-                anchors.centerIn: sendButton
-                visible: Messages.sending
+
+            visible: list.visible
+
+            // Drag-and-drop image onto an open SMS conversation or new SMS.
+            DropArea {
+                id: mmsDropArea
+                anchors.fill: parent
+                enabled: (!!page.openThread || page.composing) && !composer.isChat && !composer.groupSms
+                onDropped: (drop) => {
+                    if (drop.hasUrls && drop.urls.length > 0) {
+                        if (Messages.attachFile(drop.urls[0].toString())) {
+                            drop.acceptProposedAction()
+                            composer.focusText()
+                        }
+                    }
+                }
             }
-            // Long texts: how many SMS they take.
+
+            Rectangle {
+                anchors.fill: parent
+                anchors.margins: 16
+                z: 10
+                visible: mmsDropArea.containsDrag
+                radius: Theme.radiusLg
+                color: Qt.rgba(Theme.primaryContainer.r, Theme.primaryContainer.g, Theme.primaryContainer.b, 0.90)
+                border.width: 2
+                border.color: Theme.primary
+                Column {
+                    anchors.centerIn: parent
+                    spacing: 8
+                    Icon {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        width: 32; height: 32
+                        path: Icons.photo
+                        color: Theme.primaryContainerContent
+                    }
+                    Txt {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        role: "title"
+                        color: Theme.primaryContainerContent
+                        text: qsTr("Drop image to attach (MMS)")
+                    }
+                    Txt {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        role: "bodySmall"
+                        color: Theme.primaryContainerContent
+                        text: qsTr("PNG, JPEG, WebP, GIF, or BMP up to 900 KB")
+                    }
+                }
+            }
+
             Txt {
-                anchors.right: parent.right
-                anchors.rightMargin: 16
-                anchors.bottom: attachmentBar.visible ? attachmentBar.top : parent.top
-                anchors.bottomMargin: 4
-                visible: !composer.isChat && input.text.length > 120
-                role: "bodySmall"
+                anchors.centerIn: parent
+                visible: !page.openThread && !page.composing && list.visible
+                role: "body"
                 muted: true
-                text: qsTr("%1 characters · %n text(s)", "", page.smsCount(input.text)).arg(input.text.length)
+                text: qsTr("Select a conversation")
+            }
+
+            Item {
+                id: chatHeader
+                visible: !!page.openThread || page.composing
+                width: parent.width
+                height: 64
+                IconButton {
+                    id: backButton
+                    anchors.left: parent.left
+                    anchors.leftMargin: 12
+                    anchors.verticalCenter: parent.verticalCenter
+                    iconPath: Icons.back
+                    label: qsTr("Back to conversations (Esc)")
+                    onClicked: page.closeChat()
+                }
+                Column {
+                    anchors.left: backButton.right
+                    anchors.leftMargin: 8
+                    anchors.right: callThreadButton.visible ? callThreadButton.left
+                        : deleteChatButton.visible ? deleteChatButton.left : parent.right
+                    anchors.rightMargin: (callThreadButton.visible || deleteChatButton.visible) ? 8 : 24
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 2
+                    visible: !page.composing
+                    Row {
+                        width: parent.width
+                        spacing: 8
+                        Txt {
+                            id: headerTitleTxt
+                            width: Math.min(implicitWidth, parent.width - (headerAppPill.visible ? headerAppPill.width + 8 : 0))
+                            text: page.openThread ? page.openThread.title : ""
+                            role: "title"
+                            elide: Text.ElideRight
+                        }
+                        Rectangle {
+                            id: headerAppPill
+                            anchors.verticalCenter: headerTitleTxt.verticalCenter
+                            visible: !!page.openThread && !!page.openThread.isChat
+                            height: 20
+                            width: headerAppPillLabel.implicitWidth + 14
+                            radius: 10
+                            color: Theme.secondaryContainer
+                            Txt {
+                                id: headerAppPillLabel
+                                anchors.centerIn: parent
+                                role: "label"
+                                size: 11
+                                color: Theme.secondaryContainerContent
+                                text: page.openThread && page.openThread.appName ? page.openThread.appName : Messages.currentAppName
+                            }
+                        }
+                    }
+                    Txt {
+                        width: parent.width
+                        visible: page.openThread && !page.openThread.isChat && page.openThread.title !== page.openThread.addresses
+                        text: !page.openThread ? "" : page.openThread.addresses
+                        role: "bodySmall"
+                        muted: true
+                        elide: Text.ElideRight
+                    }
+                }
+                IconButton {
+                    id: callThreadButton
+                    anchors.right: parent.right
+                    anchors.rightMargin: 14
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: !page.composing && !!page.openThread && !page.openThread.isChat && !page.openThread.group
+                        && page.openThread.addresses.length > 0 && PhoneCall.canDial
+                    enabled: !PhoneCall.dialing
+                    iconPath: Icons.call
+                    label: page.openThread ? qsTr("Call %1").arg(page.openThread.title) : qsTr("Call")
+                    onClicked: if (page.openThread) PhoneCall.dial(page.openThread.addresses)
+                }
+                IconButton {
+                    id: deleteChatButton
+                    anchors.right: parent.right
+                    anchors.rightMargin: 14
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: !page.composing && !!page.openThread && !!page.openThread.isChat
+                    iconPath: Icons.trash
+                    label: qsTr("Remove conversation from PC")
+                    onClicked: if (page.openThread) Messages.deleteChatThread(page.openThread.id)
+                }
+                // New message: who to.
+                Row {
+                    anchors.left: backButton.right
+                    anchors.leftMargin: 8
+                    anchors.right: parent.right
+                    anchors.rightMargin: 24
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 12
+                    visible: page.composing
+                    Txt { anchors.verticalCenter: parent.verticalCenter; text: qsTr("To"); role: "title" }
+                    TextInput {
+                        id: toField
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: parent.width - 40
+                        font.family: Theme.fontUi
+                        font.pixelSize: 15
+                        color: Theme.surfaceContent
+                        selectionColor: Theme.primaryContainer
+                        selectedTextColor: Theme.primaryContainerContent
+                        clip: true
+                        Accessible.name: qsTr("Name or phone number")
+                        Keys.onReturnPressed: {
+                            if (page.recipientMatches.length > 0 && !/\d/.test(toField.text)) {
+                                toField.text = page.recipientMatches[0].number
+                            }
+                            composer.focusText()
+                        }
+                        Txt {
+                            anchors.verticalCenter: parent.verticalCenter
+                            visible: toField.text.length === 0
+                            role: "body"
+                            muted: true
+                            text: qsTr("Name or phone number")
+                        }
+                    }
+                }
+                Divider { anchors.bottom: parent.bottom; width: parent.width }
+            }
+
+            // Contact suggestions when typing a name or number in "To".
+            Rectangle {
+                id: contactSuggestions
+                z: 2
+                anchors.top: chatHeader.bottom
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.leftMargin: 24
+                anchors.rightMargin: 24
+                anchors.topMargin: 6
+                visible: page.composing && page.recipientMatches.length > 0
+                height: suggestionColumn.height + 12
+                radius: Theme.radiusLg
+                color: Theme.surfaceContainerHigh
+                border.width: 1
+                border.color: Theme.outlineVariant
+
+                Column {
+                    id: suggestionColumn
+                    y: 6
+                    width: parent.width
+                    Repeater {
+                        model: page.recipientMatches
+                        delegate: Item {
+                            id: srow
+                            required property var modelData
+                            width: suggestionColumn.width
+                            height: 52
+                            activeFocusOnTab: true
+                            Accessible.role: Accessible.ListItem
+                            Accessible.name: modelData.name + ", " + modelData.number
+                            Accessible.onPressAction: choose()
+                            function choose() {
+                                toField.text = modelData.number
+                                composer.focusText()
+                            }
+                            Keys.onPressed: (event) => {
+                                if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+                                    srow.choose()
+                                    event.accepted = true
+                                }
+                            }
+                            Rectangle {
+                                anchors.fill: parent
+                                anchors.leftMargin: 6
+                                anchors.rightMargin: 6
+                                radius: Theme.radiusMd
+                                color: sHover.hovered
+                                    ? Qt.rgba(Theme.surfaceContent.r, Theme.surfaceContent.g, Theme.surfaceContent.b, 0.08)
+                                    : "transparent"
+                                border.width: Theme.focusVisible(srow) ? 2 : 0
+                                border.color: Theme.primary
+                            }
+                            Item {
+                                id: sFace
+                                x: 16
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 34; height: 34
+                                RoundedImage {
+                                    anchors.fill: parent
+                                    radius: width / 2
+                                    visible: srow.modelData.photo.length > 0 && status === Image.Ready
+                                    source: srow.modelData.photo
+                                    sourceSize: Qt.size(68, 68)
+                                    fillMode: Image.PreserveAspectCrop
+                                }
+                                Avatar {
+                                    anchors.fill: parent
+                                    visible: srow.modelData.photo.length === 0
+                                    name: srow.modelData.name
+                                    hue: page.hueOf(srow.modelData.name)
+                                }
+                            }
+                            Column {
+                                anchors.left: sFace.right
+                                anchors.leftMargin: 12
+                                anchors.right: parent.right
+                                anchors.rightMargin: 16
+                                anchors.verticalCenter: parent.verticalCenter
+                                Txt {
+                                    width: parent.width
+                                    text: srow.modelData.name
+                                    role: "body"
+                                    weight: 500
+                                    elide: Text.ElideRight
+                                }
+                                Txt {
+                                    width: parent.width
+                                    text: srow.modelData.label.length > 0
+                                        ? srow.modelData.label + " · " + srow.modelData.number
+                                        : srow.modelData.number
+                                    role: "bodySmall"
+                                    muted: true
+                                    elide: Text.ElideRight
+                                }
+                            }
+                            HoverHandler { id: sHover; cursorShape: Qt.PointingHandCursor }
+                            TapHandler { onTapped: srow.choose() }
+                        }
+                    }
+                }
+            }
+
+            Row {
+                id: conversationSearch
+                anchors.top: chatHeader.bottom
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.margins: 16
+                height: visible ? 40 : 0
+                spacing: 8
+                visible: !!page.openThread
+                TextInput {
+                    id: bodySearch
+                    width: Math.max(80, parent.width - matchCount.width - previousMatch.width - nextMatch.width - clearBodySearchButton.width - 32)
+                    height: parent.height
+                    verticalAlignment: TextInput.AlignVCenter
+                    font.family: Theme.fontUi
+                    font.pixelSize: 14
+                    color: Theme.surfaceContent
+                    selectionColor: Theme.primaryContainer
+                    selectedTextColor: Theme.primaryContainerContent
+                    clip: true
+                    Accessible.name: qsTr("Search loaded messages in this conversation")
+                    Keys.onEscapePressed: (event) => {
+                        event.accepted = text.length > 0
+                        page.clearBodySearch()
+                    }
+                    Keys.onReturnPressed: page.moveBodyMatch(1)
+                    Txt {
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: bodySearch.text.length === 0
+                        text: qsTr("Search loaded messages")
+                        muted: true
+                    }
+                }
+                Txt {
+                    id: matchCount
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: page.bodyQuery.length === 0 ? "" : page.bodyMatches.length === 0
+                        ? qsTr("No matches") : qsTr("%1 of %2").arg(page.bodyMatch + 1).arg(page.bodyMatches.length)
+                    Accessible.name: text
+                    muted: true
+                }
+                Button {
+                    id: previousMatch
+                    text: qsTr("Previous")
+                    enabled: page.bodyMatches.length > 0
+                    onClicked: page.moveBodyMatch(-1)
+                }
+                Button {
+                    id: nextMatch
+                    text: qsTr("Next")
+                    enabled: page.bodyMatches.length > 0
+                    onClicked: page.moveBodyMatch(1)
+                }
+                IconButton {
+                    id: clearBodySearchButton
+                    width: 32; height: 32
+                    iconPath: Icons.close
+                    label: qsTr("Clear message search")
+                    enabled: bodySearch.text.length > 0
+                    onClicked: { page.clearBodySearch(); bodySearch.forceActiveFocus() }
+                }
+            }
+
+            ListView {
+                id: messageList
+                anchors.top: conversationSearch.bottom
+                anchors.bottom: attachmentBar.visible ? attachmentBar.top : composer.top
+                anchors.bottomMargin: 8
+                width: parent.width
+                visible: !!page.openThread
+                clip: true
+                spacing: 6
+                cacheBuffer: 960
+                // A short conversation sits at the bottom, by the box.
+                topMargin: Math.max(16, height - contentHeight - bottomMargin)
+                bottomMargin: 8
+                boundsBehavior: Flickable.StopAtBounds
+                model: page.messages
+                // The latest at the bottom; scrolling up loads older ones.
+                property int lastCount: 0
+                property string lastThreadId: ""
+                property real savedBottomOffset: -1
+                onCountChanged: {
+                    const threadSwitched = Messages.thread !== lastThreadId
+                    lastThreadId = Messages.thread
+                    if (threadSwitched || lastCount === 0) {
+                        savedBottomOffset = -1
+                        Qt.callLater(positionViewAtEnd)
+                    } else if (savedBottomOffset >= 0 && count > lastCount) {
+                        const off = savedBottomOffset
+                        savedBottomOffset = -1
+                        Qt.callLater(() => {
+                            contentY = Math.max(originY, contentHeight - off)
+                        })
+                    } else if (count > lastCount) {
+                        Qt.callLater(positionViewAtEnd)
+                    }
+                    lastCount = count
+                }
+                function loadOlderAtBeginning() {
+                    if (page.active && page.bodyQuery.length === 0 && page.openThread
+                        && Messages.device === page.deviceId && Messages.thread === page.openThread.id
+                        && lastThreadId === Messages.thread && atYBeginning
+                        && Messages.more && count > 0 && !Messages.loadingOlder) {
+                        savedBottomOffset = contentHeight - contentY
+                        Messages.loadOlder()
+                    }
+                }
+                onAtYBeginningChanged: loadOlderAtBeginning()
+                header: Item {
+                    width: messageList.width
+                    height: Messages.loadingOlder ? 40 : 0
+                    Spinner { anchors.centerIn: parent; visible: Messages.loadingOlder }
+                }
+                delegate: Bubble {
+                    width: messageList.width
+                    message: modelData
+                    searchCurrent: index === page.matchedMessageIndex
+                    previous: index > 0 ? page.messages[index - 1] : null
+                }
+                Txt {
+                    anchors.centerIn: parent
+                    width: Math.min(parent.width - 48, 420)
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
+                    visible: page.openThread && page.messages.length === 0 && (page.ready || Messages.currentIsChat)
+                    role: "body"
+                    muted: true
+                    text: Messages.currentIsChat
+                        ? qsTr("No mirrored messages yet")
+                        : qsTr("No messages")
+                }
+            }
+
+            // Staged MMS image attachment preview card.
+            Rectangle {
+                id: attachmentBar
+                visible: (!!page.openThread || page.composing) && !composer.isChat && Messages.hasAttachment
+                anchors.left: composer.left
+                anchors.right: composer.right
+                anchors.bottom: composer.top
+                anchors.bottomMargin: 8
+                height: 64
+                radius: Theme.radiusMd
+                color: Theme.surfaceContainerHigh
+                border.width: 1
+                border.color: Messages.attachmentError.length > 0 ? Theme.error : Theme.outlineVariant
+
+                RoundedImage {
+                    id: attThumb
+                    x: 8
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 48; height: 48
+                    radius: Theme.radiusSm
+                    visible: Messages.attachmentPreview.length > 0
+                    source: Messages.attachmentPreview
+                    sourceSize: Qt.size(96, 96)
+                    fillMode: Image.PreserveAspectCrop
+                }
+                Column {
+                    anchors.left: attThumb.visible ? attThumb.right : parent.left
+                    anchors.leftMargin: 12
+                    anchors.right: removeAttBtn.left
+                    anchors.rightMargin: 8
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 2
+                    Txt {
+                        width: parent.width
+                        role: "bodySmall"
+                        weight: 600
+                        elide: Text.ElideRight
+                        text: Messages.attachmentName
+                    }
+                    Txt {
+                        width: parent.width
+                        role: "caption"
+                        color: Messages.attachmentError.length > 0 ? Theme.error : Theme.surfaceContentVariant
+                        elide: Text.ElideRight
+                        text: Messages.attachmentError.length > 0
+                            ? Messages.attachmentError
+                            : qsTr("%1 · Sent as MMS").arg(Messages.attachmentSize)
+                    }
+                }
+                IconButton {
+                    id: removeAttBtn
+                    anchors.right: parent.right
+                    anchors.rightMargin: 6
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 32; height: 32
+                    iconPath: Icons.close
+                    label: qsTr("Remove attachment")
+                    onClicked: Messages.clearAttachment()
+                }
+            }
+
+            // Writing a text or inline chat reply.
+            Rectangle {
+                id: composer
+                visible: !!page.openThread || page.composing
+                readonly property bool isChat: Messages.currentIsChat && !page.composing
+                readonly property bool groupSms: !isChat && !!page.openThread && page.openThread.group
+                readonly property bool chatReplyDisabled: isChat && !Messages.currentCanReply
+                readonly property bool inputDisabled: groupSms || chatReplyDisabled
+                readonly property bool validAttachment: !isChat && Messages.hasAttachment && Messages.attachmentError.length === 0
+                readonly property bool hasAttachmentError: !isChat && Messages.hasAttachment && Messages.attachmentError.length > 0
+                readonly property bool canSend: !Messages.sending
+                    && !inputDisabled
+                    && !hasAttachmentError
+                    && (isChat ? Messages.currentCanReply : page.ready)
+                    && (input.text.trim().length > 0 || validAttachment)
+                    && (!page.composing || toField.text.trim().length > 0)
+                function focusText() { input.forceActiveFocus() }
+                function send() {
+                    if (!canSend)
+                        return
+                    if (page.composing)
+                        Messages.sendTo(toField.text, input.text)
+                    else
+                        Messages.send(input.text)
+                    input.text = ""
+                    page.composing = false
+                    toField.text = ""
+                }
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                anchors.margins: 16
+                height: Math.min(Math.max(input.contentHeight + 22, 48), 160)
+                radius: Theme.graphite ? Theme.radiusSm : 24
+                color: Theme.graphite ? "transparent" : Theme.surfaceContainerHighest
+                border.width: input.activeFocus ? 2 : 1
+                border.color: input.activeFocus ? Theme.primary : Theme.outlineVariant
+
+                IconButton {
+                    id: attachButton
+                    anchors.left: parent.left
+                    anchors.leftMargin: 6
+                    anchors.bottom: parent.bottom
+                    anchors.bottomMargin: 6
+                    visible: !composer.isChat && !composer.groupSms
+                    enabled: page.ready && !Messages.sending
+                    iconPath: Icons.photo
+                    label: qsTr("Attach image (MMS)")
+                    onClicked: imageFileDialog.open()
+                    TapHandler {
+                        acceptedButtons: Qt.RightButton
+                        onTapped: {
+                            if (Messages.pasteClipboardImage())
+                                composer.focusText()
+                        }
+                    }
+                }
+
+                Flickable {
+                    id: inputScroll
+                    anchors.left: attachButton.visible ? attachButton.right : parent.left
+                    anchors.leftMargin: attachButton.visible ? 4 : 18
+                    anchors.right: sendButton.left
+                    anchors.rightMargin: 8
+                    anchors.top: parent.top
+                    anchors.topMargin: 11
+                    anchors.bottom: parent.bottom
+                    anchors.bottomMargin: 11
+                    contentHeight: input.contentHeight
+                    clip: true
+                    boundsBehavior: Flickable.StopAtBounds
+                    TextEdit {
+                        id: input
+                        width: inputScroll.width
+                        wrapMode: TextEdit.Wrap
+                        readOnly: composer.inputDisabled
+                        font.family: Theme.fontUi
+                        font.pixelSize: 14
+                        color: Theme.surfaceContent
+                        selectionColor: Theme.primaryContainer
+                        selectedTextColor: Theme.primaryContainerContent
+                        Accessible.name: composer.isChat
+                            ? qsTr("Reply in %1").arg(Messages.currentAppName)
+                            : qsTr("Text message")
+                        // Enter sends; Shift+Enter starts a new line; Ctrl+V pastes clipboard image when available.
+                        Keys.onPressed: (event) => {
+                            if (!composer.isChat && !composer.groupSms
+                                && ((event.key === Qt.Key_V && (event.modifiers & Qt.ControlModifier))
+                                    || event.matches(StandardKey.Paste))) {
+                                if (Messages.pasteClipboardImage()) {
+                                    event.accepted = true
+                                    return
+                                }
+                            }
+                            if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter) && !(event.modifiers & Qt.ShiftModifier)) {
+                                composer.send()
+                                event.accepted = true
+                            }
+                        }
+                        onCursorRectangleChanged: {
+                            if (cursorRectangle.y < inputScroll.contentY)
+                                inputScroll.contentY = cursorRectangle.y
+                            else if (cursorRectangle.y + cursorRectangle.height > inputScroll.contentY + inputScroll.height)
+                                inputScroll.contentY = cursorRectangle.y + cursorRectangle.height - inputScroll.height
+                        }
+                        Txt {
+                            visible: input.text.length === 0
+                            role: "body"
+                            muted: true
+                            elide: Text.ElideRight
+                            width: input.width
+                            text: composer.chatReplyDisabled
+                                ? qsTr("Replies are available while the notification is active on your phone")
+                                : composer.isChat
+                                    ? qsTr("Reply in %1…").arg(Messages.currentAppName)
+                                    : composer.groupSms
+                                        ? qsTr("Group texts can't be sent from the PC yet")
+                                        : Messages.hasAttachment
+                                            ? qsTr("Add a caption (optional)…")
+                                            : qsTr("Text message")
+                        }
+                    }
+                }
+                IconButton {
+                    id: sendButton
+                    anchors.right: parent.right
+                    anchors.rightMargin: 6
+                    anchors.bottom: parent.bottom
+                    anchors.bottomMargin: 6
+                    iconPath: Icons.send
+                    label: qsTr("Send")
+                    tonal: composer.canSend
+                    enabled: composer.canSend
+                    onClicked: composer.send()
+                }
+                Spinner {
+                    anchors.centerIn: sendButton
+                    visible: Messages.sending
+                }
+                // Long texts: how many SMS they take.
+                Txt {
+                    anchors.right: parent.right
+                    anchors.rightMargin: 16
+                    anchors.bottom: attachmentBar.visible ? attachmentBar.top : parent.top
+                    anchors.bottomMargin: 4
+                    visible: !composer.isChat && input.text.length > 120
+                    role: "bodySmall"
+                    muted: true
+                    text: qsTr("%1 characters · %n text(s)", "", page.smsCount(input.text)).arg(input.text.length)
+                }
             }
         }
+
     }
 
     // A conversation in the list.
@@ -1096,7 +1188,7 @@ Item {
             anchors.fill: parent
             anchors.leftMargin: 8
             anchors.rightMargin: 8
-            radius: Theme.radiusLg
+            radius: Theme.controlRadius
             color: row.selected ? Theme.secondaryContainer
                  : rowHover.hovered ? Qt.rgba(Theme.surfaceContent.r, Theme.surfaceContent.g, Theme.surfaceContent.b, 0.06)
                  : "transparent"

@@ -20,7 +20,7 @@ FocusScope {
     readonly property real fraction: to > from ? (Math.max(from, Math.min(to, value)) - from) / (to - from) : 0
 
     implicitWidth: 200
-    implicitHeight: 24
+    implicitHeight: 36
     activeFocusOnTab: enabled
     opacity: enabled ? 1 : 0.38
 

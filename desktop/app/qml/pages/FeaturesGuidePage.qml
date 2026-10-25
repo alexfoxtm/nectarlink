@@ -593,17 +593,19 @@ Item {
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.leftMargin: 28
-        anchors.rightMargin: 28
-        anchors.topMargin: 16
-        anchors.bottomMargin: 20
-        spacing: 14
+        anchors.leftMargin: Math.max(24, Math.round((guide.width - 1040) / 2))
+        anchors.rightMargin: Math.max(24, Math.round((guide.width - 1040) / 2))
+        anchors.topMargin: 24
+        anchors.bottomMargin: 24
+        spacing: 24
 
         // C.1 & C.5: Clean header without duplicate "Features guide" heading,
         // with compact "Read the full guide ›" link and "Setup walkthrough" action.
-        RowLayout {
+        GridLayout {
             Layout.fillWidth: true
-            spacing: 12
+            columns: guide.width < 760 ? 1 : 3
+            columnSpacing: 12
+            rowSpacing: 12
 
             Txt {
                 Layout.fillWidth: true
@@ -615,8 +617,8 @@ Item {
 
             Rectangle {
                 implicitWidth: fullGuideRow.implicitWidth + 16
-                implicitHeight: 32
-                radius: Theme.radiusSm
+                implicitHeight: 36
+                radius: Theme.controlRadius
                 color: fullGuideHover.hovered
                     ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.12)
                     : "transparent"
@@ -667,12 +669,12 @@ Item {
         Rectangle {
             Layout.fillWidth: true
             implicitWidth: 640
-            implicitHeight: 42
-            radius: Theme.radiusMd
+            implicitHeight: Math.max(56, connectedHint.implicitHeight + 32)
+            radius: Theme.cardRadius
             visible: !guide.hasConnectedPhone
-            color: Theme.surfaceContainerLow
+            color: Theme.heroWash
             border.width: 1
-            border.color: Theme.outlineVariant
+            border.color: Theme.panelBorder
 
             RowLayout {
                 anchors.fill: parent
@@ -688,11 +690,12 @@ Item {
                 }
 
                 Txt {
+                    id: connectedHint
                     Layout.fillWidth: true
                     text: qsTr("Connect your phone to see which features are ready")
                     role: "body"
                     color: Theme.surfaceContent
-                    elide: Text.ElideRight
+                    wrapMode: Text.WordWrap
                 }
             }
         }
@@ -707,7 +710,7 @@ Item {
                 height: 40
                 implicitWidth: 640
                 implicitHeight: 40
-                radius: Theme.radiusMd
+                radius: Theme.controlRadius
                 color: Theme.surfaceContainerLow
                 border.width: searchInput.activeFocus ? 2 : 1
                 border.color: searchInput.activeFocus ? Theme.primary : Theme.outlineVariant
@@ -730,7 +733,7 @@ Item {
                         Layout.fillWidth: true
                         color: Theme.surfaceContent
                         font.family: Theme.fontUi
-                        font.pixelSize: 13
+                        font.pixelSize: 14
                         selectByMouse: true
                         clip: true
                         Accessible.name: "Search features guide"
@@ -767,11 +770,11 @@ Item {
                     delegate: Rectangle {
                         required property var modelData
                         readonly property bool selected: guide.selectedArea === modelData.id
-                        height: 30
+                        height: 36
                         width: chipText.implicitWidth + 24
                         implicitWidth: chipText.implicitWidth + 24
-                        implicitHeight: 30
-                        radius: 15
+                        implicitHeight: 36
+                        radius: Theme.controlRadius
                         color: selected ? Theme.secondaryContainer : Theme.surfaceContainerLow
                         border.width: 1
                         border.color: selected ? Theme.primary : Theme.outlineVariant
@@ -828,7 +831,7 @@ Item {
                             height: 38
                             implicitWidth: 38
                             implicitHeight: 38
-                            radius: Theme.radiusMd
+                            radius: Theme.cardRadius
                             color: Theme.secondaryContainer
                             opacity: statusInfo.macGap ? 0.55 : 1
 
@@ -904,8 +907,8 @@ Item {
                             Rectangle {
                                 id: showBtn
                                 implicitWidth: showLabel.implicitWidth + 24
-                                implicitHeight: 30
-                                radius: Theme.radiusSm
+                                implicitHeight: 36
+                                radius: Theme.controlRadius
                                 color: showHover.hovered
                                     ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.18)
                                     : Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.10)
@@ -934,8 +937,8 @@ Item {
                             Rectangle {
                                 id: learnBtn
                                 implicitWidth: learnLabel.implicitWidth + 12
-                                implicitHeight: 30
-                                radius: Theme.radiusSm
+                                implicitHeight: 36
+                                radius: Theme.controlRadius
                                 color: "transparent"
 
                                 HoverHandler {
@@ -1056,7 +1059,7 @@ Item {
                     height: 36
                     implicitWidth: 36
                     implicitHeight: 36
-                    radius: Theme.radiusMd
+                    radius: Theme.cardRadius
                     color: Theme.secondaryContainer
 
                     Icon {

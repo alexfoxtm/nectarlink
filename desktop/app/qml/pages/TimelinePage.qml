@@ -7,6 +7,12 @@ import app.nectarlink
 // voice recordings, and screen mirroring / webcam sessions).
 Item {
     id: page
+
+    Rectangle {
+        anchors.fill: parent
+        color: Theme.canvasColor
+        z: -1
+    }
     property bool active: true
     property bool confirmClearAll: false
     property bool deviceMenuOpen: false
@@ -121,9 +127,9 @@ Item {
     Column {
         id: headerCol
         visible: TimelineModel.hasAny
-        width: Math.min(860, parent.width - Theme.contentPadding * 2)
-        x: Math.max(Theme.contentPadding, (parent.width - width) / 2)
-        y: Theme.contentPadding
+        width: Math.min(1040, parent.width - Theme.spacingXl * 2)
+        x: Math.max(Theme.spacingXl, (parent.width - width) / 2)
+        y: Theme.spacingXl
         spacing: 12
 
         // Search bar + Clear all button
@@ -137,14 +143,14 @@ Item {
                 anchors.right: clearBtn.visible ? clearBtn.left : parent.right
                 anchors.rightMargin: clearBtn.visible ? 10 : 0
                 height: 40
-                radius: Theme.graphite ? Theme.radiusSm : height / 2
-                color: Theme.graphite ? "transparent" : Theme.surfaceContainerHigh
+                radius: Theme.controlRadius
+                color: Theme.insetColor
                 border.width: searchInput.activeFocus ? 2 : 1
                 border.color: searchInput.activeFocus ? Theme.primary : Theme.outlineVariant
 
                 Icon {
                     id: searchIcon
-                    x: 14
+                    x: Theme.spacingLg
                     anchors.verticalCenter: parent.verticalCenter
                     width: 16; height: 16
                     path: Icons.search
@@ -412,8 +418,9 @@ Item {
     ListView {
         id: listView
         anchors.top: headerCol.bottom
-        anchors.topMargin: 12
+        anchors.topMargin: Theme.spacingLg
         anchors.bottom: parent.bottom
+        anchors.bottomMargin: Theme.spacingXl
         width: headerCol.width
         x: headerCol.x
         clip: true
@@ -466,11 +473,11 @@ Item {
             Rectangle {
                 id: itemCard
                 width: parent.width
-                height: Math.max(62, textCol.implicitHeight + 24)
-                radius: Theme.radiusMd
-                color: Theme.cardColor
-                border.width: Theme.graphite ? 1 : 0
-                border.color: Theme.cardBorder
+                height: Math.max(64, textCol.implicitHeight + Theme.spacingXxl)
+                radius: Theme.cardRadius
+                color: Theme.glass || Theme.hive ? Theme.cardColor : Theme.panelColor
+                border.width: 1
+                border.color: Theme.hive ? Theme.cardBorder : Theme.panelBorder
 
                 // Leading thumbnail or kind icon
                 Item {

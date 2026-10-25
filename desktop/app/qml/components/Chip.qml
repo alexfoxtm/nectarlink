@@ -13,7 +13,7 @@ Rectangle {
 
     implicitHeight: 30
     implicitWidth: row.implicitWidth + 24
-    radius: Theme.pill(height)
+    radius: Theme.controlRadius
     color: Theme.graphite
         ? (selected ? Theme.surfaceContent : "transparent")
         : (Theme.glass
@@ -50,8 +50,8 @@ Rectangle {
 
     Rectangle {
         anchors.fill: parent
-        anchors.margins: -3
-        radius: chip.radius + 3
+        anchors.margins: -4
+        radius: chip.radius + 4
         color: "transparent"
         border.width: 2
         border.color: Theme.primary
@@ -61,7 +61,7 @@ Rectangle {
     Row {
         id: row
         anchors.centerIn: parent
-        spacing: 6
+        spacing: Theme.spacingXs
         Icon {
             visible: chip.iconPath.length > 0
             anchors.verticalCenter: parent.verticalCenter

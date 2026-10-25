@@ -15,12 +15,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
@@ -71,6 +73,7 @@ import app.nectarlink.android.core.Device
 import app.nectarlink.android.ui.home.canControlPc
 import app.nectarlink.android.ui.home.canOpenDeck
 import app.nectarlink.android.ui.remote.RemoteMode
+import app.nectarlink.android.ui.theme.WaypairDesign
 import app.nectarlink.core.Link
 import app.nectarlink.core.MediaAction
 import java.text.SimpleDateFormat
@@ -138,33 +141,34 @@ fun DeskScreen(
         contentColor = Color(0xFFEAECEF),
         modifier = modifier.fillMaxSize(),
     ) {
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 20.dp, vertical = 20.dp),
+                .padding(WaypairDesign.spacingLg),
+            verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingLg),
         ) {
             // Top bar: PC connection status + Exit button
             Row(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.TopCenter),
+                    .fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Surface(
-                    shape = CircleShape,
-                    color = if (device.online) Color(0xFF0E2217) else Color(0xFF16181E),
+                    shape = RoundedCornerShape(WaypairDesign.controlRadius),
+                    modifier = Modifier.weight(1f),
+                    color = if (device.online) Color(0xFF1A1A1D) else Color(0xFF16181E),
                     border = BorderStroke(
                         1.dp,
-                        if (device.online) Color(0xFF2EA05E) else Color(0xFF2B2F3A),
+                        if (device.online) Color(0xFF47484D) else Color(0xFF2B2F3A),
                     ),
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        val dotColor = if (device.online) Color(0xFF4ADE80) else Color(0xFF9CA3AF)
+                        val dotColor = if (device.online) Color(0xFFE8EAED) else Color(0xFF9CA3AF)
                         Spacer(
                             modifier = Modifier
                                 .size(8.dp)
@@ -177,15 +181,17 @@ fun DeskScreen(
                         Text(
                             text = linkDetail,
                             style = MaterialTheme.typography.labelLarge,
-                            color = if (device.online) Color(0xFFB8F5CD) else Color(0xFFD1D5DB),
+                            color = if (device.online) Color(0xFFE8EAED) else Color(0xFFD1D5DB),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
 
+                Spacer(Modifier.width(WaypairDesign.spacingMd))
                 OutlinedButton(
                     onClick = onBack,
+                    modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
                     border = BorderStroke(1.dp, Color(0xFF282C37)),
                 ) {
                     Text(stringResource(R.string.desk_exit), color = Color(0xFFD1D5DB))
@@ -196,10 +202,11 @@ fun DeskScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .align(Alignment.Center)
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
                     .offset { IntOffset(shiftX, shiftY) },
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+                verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingLg, Alignment.CenterVertically),
             ) {
                 DeskClockDisplay()
 
@@ -227,69 +234,75 @@ fun DeskScreen(
                     }
 
                     Surface(
-                        shape = RoundedCornerShape(26.dp),
+                        shape = RoundedCornerShape(WaypairDesign.cardRadius),
                         color = Color(0xFF0E1015),
                         border = BorderStroke(1.dp, Color(0xFF222631)),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Column(
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingMd),
                         ) {
-                            Row(
+                            Column(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
+                                verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingMd),
                             ) {
-                                // Album art or music badge
-                                if (artBitmap != null) {
-                                    Image(
-                                        bitmap = artBitmap,
-                                        contentDescription = null,
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier
-                                            .size(48.dp)
-                                            .clip(RoundedCornerShape(12.dp)),
-                                    )
-                                } else {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(48.dp)
-                                            .clip(RoundedCornerShape(12.dp))
-                                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Icon(
-                                            painter = painterResource(R.drawable.ic_music),
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(WaypairDesign.spacingMd),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    // Album art or music badge
+                                    if (artBitmap != null) {
+                                        Image(
+                                            bitmap = artBitmap,
                                             contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(20.dp),
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier
+                                                .size(48.dp)
+                                                .clip(RoundedCornerShape(12.dp)),
+                                        )
+                                    } else {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(48.dp)
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Icon(
+                                                painter = painterResource(R.drawable.ic_music),
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(20.dp),
+                                            )
+                                        }
+                                    }
+
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                                    ) {
+                                        Text(
+                                            text = songTitle,
+                                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                                            color = if (activeSummary != null) Color(0xFFF3F4F6) else MaterialTheme.colorScheme.primary,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                        Text(
+                                            text = subtitleText,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = Color(0xFF9CA3AF),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
                                         )
                                     }
-                                }
 
-                                Column(
-                                    modifier = Modifier.weight(1f),
-                                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                                ) {
-                                    Text(
-                                        text = songTitle,
-                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                                        color = if (activeSummary != null) Color(0xFFF3F4F6) else MaterialTheme.colorScheme.primary,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                    Text(
-                                        text = subtitleText,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = Color(0xFF9CA3AF),
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
                                 }
-
                                 Row(
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(WaypairDesign.spacingSm, Alignment.End),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     FilledTonalIconButton(
@@ -304,7 +317,7 @@ fun DeskScreen(
                                             containerColor = Color(0xFF1B1F2A),
                                             contentColor = Color(0xFFE5E7EB),
                                         ),
-                                        modifier = Modifier.size(38.dp),
+                                        modifier = Modifier.size(WaypairDesign.touchTarget),
                                     ) {
                                         Icon(
                                             painterResource(R.drawable.ic_skip_previous),
@@ -326,7 +339,7 @@ fun DeskScreen(
                                             containerColor = MaterialTheme.colorScheme.primaryContainer,
                                             contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                                         ),
-                                        modifier = Modifier.size(42.dp),
+                                        modifier = Modifier.size(WaypairDesign.touchTarget),
                                     ) {
                                         Icon(
                                             painterResource(
@@ -348,7 +361,7 @@ fun DeskScreen(
                                             containerColor = Color(0xFF1B1F2A),
                                             contentColor = Color(0xFFE5E7EB),
                                         ),
-                                        modifier = Modifier.size(38.dp),
+                                        modifier = Modifier.size(WaypairDesign.touchTarget),
                                     ) {
                                         Icon(
                                             painterResource(R.drawable.ic_skip_next),
@@ -368,7 +381,7 @@ fun DeskScreen(
                                 ) {
                                     IconButton(
                                         onClick = { core.setPcAudio(device.id, null, !deckState.muted) },
-                                        modifier = Modifier.size(32.dp),
+                                        modifier = Modifier.size(WaypairDesign.touchTarget),
                                     ) {
                                         Icon(
                                             painterResource(
@@ -444,13 +457,12 @@ fun DeskScreen(
             // Bottom Dock Bar: Symmetric 2×2 Grid of Equal-Width Quick Action Pills
             Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.BottomCenter),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                    .fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingMd),
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(WaypairDesign.spacingMd),
                 ) {
                     DeskActionButton(
                         label = stringResource(R.string.desk_pc_screen),
@@ -467,7 +479,7 @@ fun DeskScreen(
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(WaypairDesign.spacingMd),
                 ) {
                     DeskActionButton(
                         label = stringResource(R.string.action_deck_pc),
@@ -499,7 +511,7 @@ private fun DeskActionButton(
     FilledTonalButton(
         onClick = onClick,
         enabled = enabled,
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(WaypairDesign.controlRadius),
         colors = ButtonDefaults.filledTonalButtonColors(
             containerColor = if (isSecondary) Color(0xFF12141B) else Color(0xFF171B24),
             contentColor = if (isSecondary) Color(0xFFD1D5DB) else Color(0xFFF3F4F6),
@@ -511,13 +523,11 @@ private fun DeskActionButton(
             if (isSecondary) Color(0xFF262A36) else Color(0xFF2B3140),
         ),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 13.dp),
-        modifier = modifier,
+        modifier = modifier.heightIn(min = WaypairDesign.touchTarget),
     ) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelLarge,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
         )
     }
 }

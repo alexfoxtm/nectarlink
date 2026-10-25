@@ -685,10 +685,12 @@ Window {
         anchors.top: parent.top
         anchors.right: parent.right
         anchors.margins: 12
-        width: toolbarFlow.width + 8
-        height: toolbarFlow.height + 6
-        radius: 20
-        color: Qt.rgba(0, 0, 0, 0.68)
+        width: toolbarFlow.width + 12
+        height: toolbarFlow.height + 12
+        radius: Theme.cardRadius
+        color: Theme.panelColor
+        border.width: 1
+        border.color: Theme.panelBorder
         visible: win.phase === "showing" && video.frameSize.width > 0
         onVisibleChanged: if (!visible && overflowSheet && overflowSheet.opened) overflowSheet.close()
         // Group label for screen readers; the buttons keep their own
@@ -741,7 +743,7 @@ Window {
             items.push(b)
             if (!win.info.app && !win.settingsWindow)
                 items.push(3 * b + 2 * s)
-            const limit = Math.max(b, win.width - 2 * anchors.margins - 8)
+            const limit = Math.max(b, win.width - 2 * anchors.margins - 12)
             let widest = 0
             let x = 0
             for (const w of items) {
@@ -758,14 +760,14 @@ Window {
             id: toolbarFlow
             anchors.centerIn: parent
             width: toolbar.flowWidth
-            spacing: 2
+            spacing: 4
 
             IconButton {
                 id: overflowBtn
                 visible: toolbar.overflowMode
                 objectName: "mirrorOverflow"
                 iconPath: Icons.more
-                iconColor: "white"
+                iconColor: Theme.surfaceContent
                 label: qsTr("More toolbar buttons")
                 onClicked: overflowSheet.open()
             }
@@ -774,7 +776,7 @@ Window {
                 objectName: "mirrorCopyShot"
                 visible: !toolbar.overflowMode && win.canCopyScreenshot
                 iconPath: Icons.copy
-                iconColor: "white"
+                iconColor: Theme.surfaceContent
                 label: qsTr("Copy screenshot (%1)").arg(win.onMac ? "⌘⇧C" : "Ctrl+Shift+C")
                 onClicked: if (win.canCopyScreenshot) Mirror.screenshotClipboard(win.mirrorKey)
             }
@@ -783,14 +785,14 @@ Window {
                 objectName: "mirrorSaveShot"
                 visible: !toolbar.overflowMode
                 iconPath: Icons.camera
-                iconColor: "white"
+                iconColor: Theme.surfaceContent
                 label: qsTr("Save screenshot (%1)").arg(win.onMac ? "⌘S" : "Ctrl+S")
                 onClicked: Mirror.screenshotFile(win.mirrorKey)
             }
             IconButton {
                 id: recordBtn
                 iconPath: win.info.recording === true ? Icons.stopSquare : Icons.record
-                iconColor: win.info.recording === true ? Theme.error : "white"
+                iconColor: win.info.recording === true ? Theme.error : Theme.surfaceContent
                 label: (win.info.recording === true ? qsTr("Stop recording (%1)") : qsTr("Record video (%1)"))
                     .arg(win.onMac ? "⌘R" : "Ctrl+R")
                 onClicked: Mirror.toggleRecording(win.mirrorKey)
@@ -803,7 +805,7 @@ Window {
                 rightPadding: 6
                 role: "code"
                 size: 12
-                color: "white"
+                color: Theme.surfaceContent
                 text: win.formatDuration(win.recordingElapsedSecs)
             }
             IconButton {
@@ -811,7 +813,8 @@ Window {
                 objectName: "mirrorStayAwake"
                 visible: !win.settingsWindow
                 iconPath: Icons.coffee
-                iconColor: win.info.stayAwake === true ? Theme.primary : "white"
+                tonal: win.info.stayAwake === true
+                iconColor: win.info.stayAwake === true ? Theme.secondaryContainerContent : Theme.surfaceContent
                 label: win.info.stayAwake === true
                     ? qsTr("Phone stays awake while mirroring (turn off)")
                     : qsTr("Keep phone awake while mirroring")
@@ -822,7 +825,8 @@ Window {
                 objectName: "mirrorScreenOff"
                 visible: win.canScreenOff
                 iconPath: Icons.screenOff
-                iconColor: win.info.screenOff === true ? Theme.primary : "white"
+                tonal: win.info.screenOff === true
+                iconColor: win.info.screenOff === true ? Theme.secondaryContainerContent : Theme.surfaceContent
                 label: win.info.screenOff === true
                     ? qsTr("Turn phone screen back on")
                     : qsTr("Turn phone screen off while mirroring")
@@ -833,7 +837,7 @@ Window {
                 objectName: "mirrorSound"
                 visible: win.info.sound === true && !win.settingsWindow
                 iconPath: Mirror.muted ? Icons.soundOff : Icons.speaker
-                iconColor: "white"
+                iconColor: Theme.surfaceContent
                 label: Mirror.muted ? qsTr("Play the phone's sound here") : qsTr("Mute the phone's sound here")
                 onClicked: if (!win.settingsWindow) Mirror.toggleSound()
             }
@@ -843,7 +847,7 @@ Window {
                 objectName: "mirrorNaturalSize"
                 visible: win.canResetNaturalSize
                 iconPath: Icons.phone
-                iconColor: "white"
+                iconColor: Theme.surfaceContent
                 label: qsTr("Restore natural size")
                 onClicked: {
                     win.resetToNaturalSize()
@@ -855,7 +859,7 @@ Window {
                 iconPath: win.fullScreen
                     ? "M9 3v6H3M15 3v6h6M9 21v-6H3M15 21v-6h6"
                     : "M3 9V3h6M21 9V3h-6M3 15v6h6M21 15v6h-6"
-                iconColor: "white"
+                iconColor: Theme.surfaceContent
                 label: (win.fullScreen ? qsTr("Exit full screen (%1)") : qsTr("Full screen (%1)"))
                     .arg(win.onMac ? "⌃⌘F" : "F11")
                 onClicked: win.toggleFullScreen()
@@ -880,7 +884,7 @@ Window {
                     objectName: "mirrorNavBack"
                     enabled: win.canNavigate
                     iconPath: Icons.back
-                    iconColor: "white"
+                    iconColor: Theme.surfaceContent
                     label: qsTr("Back")
                     Accessible.description: win.canControl ? "" : win.accessibleControlDescription
                     onClicked: win.pressNav("back")
@@ -890,7 +894,7 @@ Window {
                     objectName: "mirrorNavHome"
                     enabled: win.canNavigate
                     iconPath: Icons.home
-                    iconColor: "white"
+                    iconColor: Theme.surfaceContent
                     label: qsTr("Home")
                     Accessible.description: win.canControl ? "" : win.accessibleControlDescription
                     onClicked: win.pressNav("home")
@@ -900,7 +904,7 @@ Window {
                     objectName: "mirrorNavRecents"
                     enabled: win.canNavigate
                     iconPath: Icons.history
-                    iconColor: "white"
+                    iconColor: Theme.surfaceContent
                     label: qsTr("Recent apps")
                     Accessible.description: win.canControl ? "" : win.accessibleControlDescription
                     onClicked: win.pressNav("recents")
@@ -1003,7 +1007,7 @@ Window {
         width: Math.min(parent.width - 24, noticeTxt.implicitWidth + 24)
         height: noticeTxt.implicitHeight + 12
         radius: height / 2
-        color: Qt.rgba(0, 0, 0, 0.78)
+        color: Qt.rgba(0, 0, 0, 0.90)
         visible: opacity > 0
         opacity: pillText.length > 0 ? 1 : 0
         Behavior on opacity { enabled: !Theme.reduceMotion; NumberAnimation { duration: Theme.fadeFast } }
@@ -1037,10 +1041,10 @@ Window {
         width: win.tinyControlHint ? Math.min(parent.width - 8, 40)
             : parent.width - (win.compactControlHint ? 16 : 24)
         height: win.tinyControlHint ? 26 : win.compactControlHint ? 40 : Math.max(hint.implicitHeight + 20, 48)
-        radius: win.tinyControlHint ? Theme.pill(height) : Theme.radiusMd
+        radius: win.tinyControlHint ? Theme.pill(height) : Theme.controlRadius
         visible: win.phase === "showing" && video.frameSize.width > 0 && !hintClose.closed
             && (win.settingsWindow || !win.canControl)
-        color: Qt.rgba(0, 0, 0, 0.72)
+        color: Qt.rgba(0, 0, 0, 0.90)
 
         SequentialAnimation {
             id: hintPulse

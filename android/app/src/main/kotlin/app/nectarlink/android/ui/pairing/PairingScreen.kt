@@ -7,6 +7,7 @@ import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,6 +17,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
@@ -23,6 +27,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -52,6 +59,7 @@ import androidx.compose.ui.unit.sp
 import app.nectarlink.android.R
 import app.nectarlink.android.core.CoreState
 import app.nectarlink.android.core.PairingState
+import app.nectarlink.android.ui.theme.WaypairDesign
 import app.nectarlink.android.ui.theme.LocalAppFonts
 import app.nectarlink.android.ui.theme.LocalReducedMotion
 import app.nectarlink.core.DiscoveredDevice
@@ -101,78 +109,96 @@ fun PairingScreen(
         }
     }
 
-    Column(
-        Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 24.dp, vertical = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
+    Box(
+        Modifier.fillMaxSize().background(WaypairDesign.canvasColor()).safeDrawingPadding().imePadding(),
+        contentAlignment = Alignment.TopCenter,
     ) {
-        Spacer(Modifier.height(24.dp))
-        Text(
-            text = when (pairing) {
-                is PairingState.Comparing, is PairingState.Confirmed -> stringResource(R.string.pair_check_code)
-                is PairingState.Paired -> stringResource(R.string.pair_done_title)
-                is PairingState.Failed -> stringResource(R.string.pair_failed_title)
-                else -> when {
-                    showing -> stringResource(R.string.pair_show_title)
-                    nearby -> stringResource(R.string.pair_nearby_title)
-                    else -> stringResource(R.string.pair_title)
-                }
-            },
-            style = MaterialTheme.typography.headlineMedium,
-            textAlign = TextAlign.Center,
-        )
-        Spacer(Modifier.height(20.dp))
+        Column(
+            Modifier.widthIn(max = 600.dp).fillMaxSize().padding(WaypairDesign.spacingLg),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(WaypairDesign.heroRadius),
+                color = WaypairDesign.heroWash(),
+                contentColor = MaterialTheme.colorScheme.onSurface,
+            ) {
+                Text(
+                    text = when (pairing) {
+                        is PairingState.Comparing, is PairingState.Confirmed -> stringResource(R.string.pair_check_code)
+                        is PairingState.Paired -> stringResource(R.string.pair_done_title)
+                        is PairingState.Failed -> stringResource(R.string.pair_failed_title)
+                        else -> when {
+                            showing -> stringResource(R.string.pair_show_title)
+                            nearby -> stringResource(R.string.pair_nearby_title)
+                            else -> stringResource(R.string.pair_title)
+                        }
+                    },
+                    style = MaterialTheme.typography.headlineMedium,
+                    textAlign = TextAlign.Start,
+                    modifier = Modifier.padding(WaypairDesign.spacingXl),
+                )
+            }
+            Spacer(Modifier.height(WaypairDesign.spacingLg))
 
-        AnimatedContent(
-            targetState = Triple(pairing, nearby, showing),
-            transitionSpec = {
-                if (reducedMotion) {
-                    EnterTransition.None togetherWith ExitTransition.None
-                } else {
-                    fadeIn() togetherWith fadeOut()
-                }
-            },
-            modifier = Modifier.weight(1f),
-            label = "pairing",
-        ) { (current, showNearby, showCode) ->
-            when (current) {
-                PairingState.Idle -> when {
-                    showCode -> ShowCode(actions)
-                    showNearby -> NearbyList(state.discovered, actions::pairNearby)
-                    else -> Scan(actions::join)
-                }
-                PairingState.Joining -> Working(stringResource(R.string.pair_joining))
-                is PairingState.Connecting ->
-                    Working(stringResource(R.string.pair_connecting, state.nameOf(current.peer) ?: ""))
-                is PairingState.Comparing -> Compare(state.nameOf(current.peer), current.code, actions::confirm)
-                is PairingState.Confirmed -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CodeDigits(current.code)
-                    Spacer(Modifier.height(24.dp))
-                    Working(stringResource(R.string.pair_waiting, state.nameOf(current.peer) ?: ""))
-                }
-                is PairingState.Paired -> Outcome(true, stringResource(R.string.pair_done, current.name))
-                is PairingState.Failed -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Outcome(false, failureText(current.failure))
-                    Spacer(Modifier.height(16.dp))
-                    Button(onClick = actions::reset) { Text(stringResource(R.string.action_try_again)) }
+            AnimatedContent(
+                targetState = Triple(pairing, nearby, showing),
+                transitionSpec = {
+                    if (reducedMotion) {
+                        EnterTransition.None togetherWith ExitTransition.None
+                    } else {
+                        fadeIn() togetherWith fadeOut()
+                    }
+                },
+                modifier = Modifier.weight(1f),
+                label = "pairing",
+            ) { (current, showNearby, showCode) ->
+                when (current) {
+                    PairingState.Idle -> when {
+                        showCode -> ShowCode(actions)
+                        showNearby -> NearbyList(state.discovered, actions::pairNearby)
+                        else -> Scan(actions::join)
+                    }
+                    PairingState.Joining -> Working(stringResource(R.string.pair_joining))
+                    is PairingState.Connecting ->
+                        Working(stringResource(R.string.pair_connecting, state.nameOf(current.peer) ?: ""))
+                    is PairingState.Comparing -> Compare(state.nameOf(current.peer), current.code, actions::confirm)
+                    is PairingState.Confirmed -> Column(
+                        Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        CodeDigits(current.code)
+                        Spacer(Modifier.height(24.dp))
+                        Working(stringResource(R.string.pair_waiting, state.nameOf(current.peer) ?: ""))
+                    }
+                    is PairingState.Paired -> Outcome(true, stringResource(R.string.pair_done, current.name))
+                    is PairingState.Failed -> Column(
+                        Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Outcome(false, failureText(current.failure))
+                        Spacer(Modifier.height(16.dp))
+                        Button(onClick = actions::reset, modifier = Modifier.heightIn(min = WaypairDesign.touchTarget)) { Text(stringResource(R.string.action_try_again)) }
+                    }
                 }
             }
-        }
 
-        if (pairing == PairingState.Idle) {
-            if (!showing) {
-                FilledTonalButton(onClick = { nearby = !nearby }) {
-                    Text(stringResource(if (nearby) R.string.action_scan_instead else R.string.action_pair_nearby))
+            if (pairing == PairingState.Idle) {
+                if (!showing) {
+                    FilledTonalButton(onClick = { nearby = !nearby }, modifier = Modifier.heightIn(min = WaypairDesign.touchTarget)) {
+                        Text(stringResource(if (nearby) R.string.action_scan_instead else R.string.action_pair_nearby))
+                    }
+                }
+                TextButton(onClick = {
+                    showing = !showing
+                    nearby = false
+                }, modifier = Modifier.heightIn(min = WaypairDesign.touchTarget)) {
+                    Text(stringResource(if (showing) R.string.action_scan_instead else R.string.action_show_code))
                 }
             }
-            TextButton(onClick = {
-                showing = !showing
-                nearby = false
-            }) {
-                Text(stringResource(if (showing) R.string.action_scan_instead else R.string.action_show_code))
+            if (cancellable && pairing !is PairingState.Paired) {
+                TextButton(onClick = { actions.reset(); onDone() }, modifier = Modifier.heightIn(min = WaypairDesign.touchTarget)) { Text(stringResource(R.string.action_cancel)) }
             }
-        }
-        if (cancellable && pairing !is PairingState.Paired) {
-            TextButton(onClick = { actions.reset(); onDone() }) { Text(stringResource(R.string.action_cancel)) }
         }
     }
 }
@@ -182,7 +208,10 @@ fun PairingScreen(
 private fun ShowCode(actions: PairingActions) {
     var link by androidx.compose.runtime.remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) { link = actions.showCode() }
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
         Text(
             stringResource(R.string.pair_show_hint),
             style = MaterialTheme.typography.bodyLarge,
@@ -195,7 +224,7 @@ private fun ShowCode(actions: PairingActions) {
             modifier = Modifier
                 .fillMaxWidth(0.8f)
                 .aspectRatio(1f)
-                .clip(androidx.compose.foundation.shape.RoundedCornerShape(20.dp))
+                .clip(RoundedCornerShape(WaypairDesign.cardRadius))
                 .background(androidx.compose.ui.graphics.Color.White)
                 .padding(16.dp)
                 .semantics { contentDescription = label },
@@ -259,8 +288,8 @@ private fun Scan(onLink: (String) -> Unit) {
                 .weight(1f, fill = false)
                 .fillMaxWidth()
                 .aspectRatio(1f)
-                .clip(MaterialTheme.shapes.extraLarge)
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                .clip(RoundedCornerShape(WaypairDesign.heroRadius))
+                .background(WaypairDesign.insetColor()),
         )
     }
 }
@@ -284,8 +313,9 @@ private fun NearbyList(devices: List<DiscoveredDevice>, onPair: (String) -> Unit
             if (devices.isEmpty()) {
                 item(key = "discovery-status") {
                     Surface(
-                        shape = MaterialTheme.shapes.large,
-                        color = MaterialTheme.colorScheme.surfaceContainer,
+                        shape = RoundedCornerShape(WaypairDesign.cardRadius),
+                        color = WaypairDesign.panelColor(),
+                        border = BorderStroke(1.dp, WaypairDesign.panelBorder()),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Row(
@@ -314,17 +344,18 @@ private fun NearbyList(devices: List<DiscoveredDevice>, onPair: (String) -> Unit
             }
             items(devices, key = { it.id }) { device ->
                 Surface(
-                    shape = MaterialTheme.shapes.large,
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    shape = RoundedCornerShape(WaypairDesign.cardRadius),
+                    color = WaypairDesign.panelColor(),
+                    border = BorderStroke(1.dp, WaypairDesign.panelBorder()),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.heightIn(min = 64.dp).padding(WaypairDesign.spacingLg), verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             device.name ?: stringResource(R.string.your_pc),
                             style = MaterialTheme.typography.titleMedium,
                             modifier = Modifier.weight(1f),
                         )
-                        Button(onClick = { onPair(device.id) }) { Text(stringResource(R.string.action_pair)) }
+                        Button(onClick = { onPair(device.id) }, modifier = Modifier.heightIn(min = WaypairDesign.touchTarget)) { Text(stringResource(R.string.action_pair)) }
                     }
                 }
             }
@@ -334,7 +365,10 @@ private fun NearbyList(devices: List<DiscoveredDevice>, onPair: (String) -> Unit
 
 @Composable
 private fun Compare(peerName: String?, code: String, onConfirm: (Boolean) -> Unit) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
         Text(
             stringResource(R.string.pair_compare_hint, peerName ?: stringResource(R.string.your_pc)),
             style = MaterialTheme.typography.bodyMedium,
@@ -344,11 +378,11 @@ private fun Compare(peerName: String?, code: String, onConfirm: (Boolean) -> Uni
         Spacer(Modifier.height(24.dp))
         CodeDigits(code)
         Spacer(Modifier.height(32.dp))
-        Button(onClick = { onConfirm(true) }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+        Button(onClick = { onConfirm(true) }, modifier = Modifier.fillMaxWidth().heightIn(min = WaypairDesign.touchTarget)) {
             Text(stringResource(R.string.action_codes_match))
         }
         Spacer(Modifier.height(8.dp))
-        OutlinedButton(onClick = { onConfirm(false) }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+        OutlinedButton(onClick = { onConfirm(false) }, modifier = Modifier.fillMaxWidth().heightIn(min = WaypairDesign.touchTarget)) {
             Text(stringResource(R.string.action_codes_differ))
         }
     }
@@ -357,14 +391,15 @@ private fun Compare(peerName: String?, code: String, onConfirm: (Boolean) -> Uni
 @Composable
 private fun CodeDigits(code: String) {
     Row(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.semantics { contentDescription = code.toList().joinToString(" ") },
+        horizontalArrangement = Arrangement.spacedBy(WaypairDesign.spacingXs),
+        modifier = Modifier.widthIn(max = 400.dp).fillMaxWidth()
+            .semantics { contentDescription = code.toList().joinToString(" ") },
     ) {
         code.forEach { digit ->
             Surface(
-                shape = MaterialTheme.shapes.medium,
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                modifier = Modifier.size(width = 44.dp, height = 56.dp),
+                shape = RoundedCornerShape(WaypairDesign.controlRadius),
+                color = WaypairDesign.insetColor(),
+                modifier = Modifier.weight(1f).heightIn(min = 56.dp),
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Text(digit.toString(), fontFamily = LocalAppFonts.current.mono, fontSize = 26.sp, fontWeight = FontWeight.Bold)

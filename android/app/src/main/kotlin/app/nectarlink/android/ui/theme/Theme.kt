@@ -30,6 +30,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -40,6 +41,54 @@ import androidx.core.view.WindowCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+
+/** Geometry shared with desktop Theme.qml; colors continue to follow the selected theme. */
+object WaypairDesign {
+    val spacingXs = 4.dp
+    val spacingSm = 8.dp
+    val spacingMd = 12.dp
+    val spacingLg = 16.dp
+    val spacingXl = 24.dp
+    val spacingXxl = 32.dp
+    val controlRadius = 12.dp
+    val cardRadius = 16.dp
+    val heroRadius = 24.dp
+    val touchTarget = 48.dp
+
+    @Composable
+    fun canvasColor(): Color = MaterialTheme.colorScheme.surface
+
+    @Composable
+    fun panelColor(): Color {
+        val scheme = MaterialTheme.colorScheme
+        return when {
+            LocalAmoledTheme.current -> scheme.surfaceContainer
+            darkSurface(scheme.surface) -> scheme.surfaceContainerLow
+            else -> Color.White
+        }
+    }
+
+    @Composable
+    fun panelBorder(): Color {
+        val scheme = MaterialTheme.colorScheme
+        return scheme.outlineVariant.copy(alpha = if (darkSurface(scheme.surface)) 0.65f else 0.50f)
+    }
+
+    @Composable
+    fun insetColor(): Color = MaterialTheme.colorScheme.surfaceContainerLow
+
+    @Composable
+    fun heroWash(): Color {
+        val scheme = MaterialTheme.colorScheme
+        return lerp(panelColor(), scheme.primary, if (darkSurface(scheme.surface)) 0.12f else 0.08f)
+    }
+
+    @Composable
+    fun focusColor(): Color = MaterialTheme.colorScheme.primary
+
+    private fun darkSurface(color: Color): Boolean =
+        color.red * 0.299f + color.green * 0.587f + color.blue * 0.114f < 0.5f
+}
 
 val LocalReducedMotion = compositionLocalOf { false }
 val LocalGlassTheme = compositionLocalOf { false }
@@ -325,37 +374,14 @@ private fun ColorScheme.toAmoledScheme(glass: Boolean): ColorScheme = copy(
     outlineVariant = if (glass) Color.White.copy(alpha = 0.12f) else Color(0xFF22252E),
 )
 
-/** Shapes from the tokens: Glass and Bloom are smoothly rounded, Hive a little firmer, Graphite crisp. */
-private fun shapes(graphite: Boolean, glass: Boolean, hive: Boolean) = when {
-    hive -> Shapes(
-        extraSmall = RoundedCornerShape(6.dp),
-        small = RoundedCornerShape(10.dp),
-        medium = RoundedCornerShape(14.dp),
-        large = RoundedCornerShape(18.dp),
-        extraLarge = RoundedCornerShape(24.dp),
-    )
-    graphite -> Shapes(
-        extraSmall = RoundedCornerShape(2.dp),
-        small = RoundedCornerShape(3.dp),
-        medium = RoundedCornerShape(4.dp),
-        large = RoundedCornerShape(4.dp),
-        extraLarge = RoundedCornerShape(6.dp),
-    )
-    glass -> Shapes(
-        extraSmall = RoundedCornerShape(10.dp),
-        small = RoundedCornerShape(14.dp),
-        medium = RoundedCornerShape(20.dp),
-        large = RoundedCornerShape(24.dp),
-        extraLarge = RoundedCornerShape(30.dp),
-    )
-    else -> Shapes(
-        extraSmall = RoundedCornerShape(8.dp),
-        small = RoundedCornerShape(12.dp),
-        medium = RoundedCornerShape(16.dp),
-        large = RoundedCornerShape(20.dp),
-        extraLarge = RoundedCornerShape(28.dp),
-    )
-}
+/** Shared native geometry, independent of the user's palette or color mode. */
+private fun shapes() = Shapes(
+    extraSmall = RoundedCornerShape(6.dp),
+    small = RoundedCornerShape(WaypairDesign.controlRadius),
+    medium = RoundedCornerShape(WaypairDesign.cardRadius),
+    large = RoundedCornerShape(WaypairDesign.heroRadius),
+    extraLarge = RoundedCornerShape(WaypairDesign.heroRadius),
+)
 
 /** Frosted Switch colors when Glass mode is active, or standard Material 3 Switch colors otherwise. */
 @Composable
@@ -450,7 +476,7 @@ fun NectarlinkTheme(
     }
     val assets = context.assets
     val fonts = remember(assets) { AppFonts(assets) }
-    val currentShapes = remember(graphite, glass, hive) { shapes(graphite, glass, hive) }
+    val currentShapes = remember { shapes() }
     val currentTypography = remember(fonts, graphite) { typography(fonts, graphite) }
     CompositionLocalProvider(
         LocalAppFonts provides fonts,
@@ -488,7 +514,7 @@ fun NectarlinkTheme(
  * Single-pass cached card background with a subtle uniform hairline border and no top-edge glare.
  */
 fun Modifier.liquidGlassCard(
-    cornerRadius: Dp = 24.dp,
+    cornerRadius: Dp = WaypairDesign.cardRadius,
     isGlass: Boolean,
     baseColor: Color,
     @Suppress("UNUSED_PARAMETER") tintColor: Color = Color.Transparent,
@@ -561,7 +587,7 @@ fun glassModalScrimColor(): Color =
  * Lightweight zero-RenderNode interior well for bento strips and inner rows.
  */
 fun Modifier.bentoWell(
-    cornerRadius: Dp = 16.dp,
+    cornerRadius: Dp = WaypairDesign.cardRadius,
     fillColor: Color,
     borderColor: Color = Color.Transparent,
 ): Modifier = this.drawWithCache {

@@ -9,8 +9,13 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
+import app.nectarlink.android.ui.theme.WaypairDesign
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -53,6 +58,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.unit.dp
 import app.nectarlink.android.R
 import app.nectarlink.android.calls.PhoneCalls
@@ -93,7 +99,7 @@ private data class ResolvedGuideCard(
     val fixButtonLabel: String?,
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun FeaturesGuideScreen(
     state: CoreState,
@@ -225,22 +231,36 @@ fun FeaturesGuideScreen(
 
     Surface(
         modifier = modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background,
+        color = WaypairDesign.canvasColor(),
     ) {
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .windowInsetsPadding(WindowInsets.safeDrawing)
+                .wrapContentWidth(Alignment.CenterHorizontally)
+                .widthIn(max = 600.dp)
                 .glassModalBlur(isGlass && activeLearnMoreEntry != null),
             contentPadding = PaddingValues(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 36.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingMd),
         ) {
             item(key = "guide_header", contentType = "guide_header") {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .liquidGlassCard(
+                            cornerRadius = WaypairDesign.heroRadius,
+                            isGlass = isGlass,
+                            baseColor = WaypairDesign.heroWash(),
+                            tintColor = MaterialTheme.colorScheme.primary,
+                            outlineColor = WaypairDesign.panelBorder(),
+                        )
+                        .padding(WaypairDesign.spacingLg),
+                    verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingMd),
+                ) {
+                    FlowRow(
                         modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        horizontalArrangement = Arrangement.spacedBy(WaypairDesign.spacingSm),
+                        verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingXs),
                     ) {
                         TextButton(
                             onClick = onBack,
@@ -261,7 +281,7 @@ fun FeaturesGuideScreen(
                     )
                     Text(
                         text = stringResource(R.string.guide_subtitle),
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
 
@@ -271,7 +291,7 @@ fun FeaturesGuideScreen(
                                 .fillMaxWidth()
                                 .bentoWell(
                                     cornerRadius = 16.dp,
-                                    fillColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    fillColor = WaypairDesign.insetColor(),
                                 )
                                 .padding(horizontal = 14.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -279,7 +299,7 @@ fun FeaturesGuideScreen(
                         ) {
                             Text(
                                 text = stringResource(R.string.guide_connect_pc_banner),
-                                style = MaterialTheme.typography.bodySmall,
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.weight(1f),
                             )
@@ -303,11 +323,10 @@ fun FeaturesGuideScreen(
                             .fillMaxWidth()
                             .semantics { contentDescription = searchDesc },
                     )
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(WaypairDesign.spacingSm),
+                        verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingXs),
                     ) {
                         FeatureArea.entries.forEach { area ->
                             val selected = area == selectedArea
@@ -333,6 +352,8 @@ fun FeaturesGuideScreen(
                                         fillColor = chipBg,
                                         borderColor = chipBorder,
                                     )
+                                    .heightIn(min = WaypairDesign.touchTarget)
+                                    .semantics { this.selected = selected }
                                     .clickable(role = Role.Tab) { selectedAreaId = area.id }
                                     .padding(horizontal = 14.dp, vertical = 8.dp),
                                 contentAlignment = Alignment.Center,
@@ -354,11 +375,11 @@ fun FeaturesGuideScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .liquidGlassCard(
-                                cornerRadius = 24.dp,
+                                cornerRadius = WaypairDesign.cardRadius,
                                 isGlass = isGlass,
-                                baseColor = MaterialTheme.colorScheme.surfaceContainer,
+                                baseColor = WaypairDesign.panelColor(),
                                 tintColor = MaterialTheme.colorScheme.primary,
-                                outlineColor = if (isGlass) MaterialTheme.colorScheme.outlineVariant else Color.Transparent,
+                                outlineColor = WaypairDesign.panelBorder(),
                             )
                             .padding(20.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -369,7 +390,7 @@ fun FeaturesGuideScreen(
                         )
                         Text(
                             text = stringResource(R.string.guide_empty_body),
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
@@ -421,6 +442,7 @@ fun FeaturesGuideScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FeatureGuideCard(
     card: ResolvedGuideCard,
@@ -436,13 +458,13 @@ private fun FeatureGuideCard(
         modifier = Modifier
             .fillMaxWidth()
             .liquidGlassCard(
-                cornerRadius = 26.dp,
+                cornerRadius = WaypairDesign.cardRadius,
                 isGlass = isGlass,
-                baseColor = MaterialTheme.colorScheme.surfaceContainer,
+                baseColor = WaypairDesign.panelColor(),
                 tintColor = MaterialTheme.colorScheme.primary,
-                outlineColor = if (isGlass) MaterialTheme.colorScheme.outlineVariant else Color.Transparent,
+                outlineColor = WaypairDesign.panelBorder(),
             )
-            .padding(18.dp),
+            .padding(WaypairDesign.spacingLg),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         // Title on its own full-width line, with status badge directly underneath when shown
@@ -458,7 +480,7 @@ private fun FeatureGuideCard(
 
         Text(
             text = card.summary,
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
@@ -467,7 +489,7 @@ private fun FeatureGuideCard(
                 .fillMaxWidth()
                 .bentoWell(
                     cornerRadius = 16.dp,
-                    fillColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    fillColor = WaypairDesign.insetColor(),
                 )
                 .padding(horizontal = 14.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -479,7 +501,7 @@ private fun FeatureGuideCard(
             )
             Text(
                 text = card.needsLine,
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -503,67 +525,33 @@ private fun FeatureGuideCard(
                 card.externalSteps.forEach { stepText ->
                     Text(
                         text = stepText,
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSecondaryContainer,
                     )
                 }
             }
         }
 
-        // Single row of actions: "Show me" (tonal) and "Learn more" (text), plus filled action button when needed
-        Row(
+        FlowRow(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(WaypairDesign.spacingSm),
+            verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingXs),
         ) {
             if (card.showMeTarget != null) {
-                Box(
-                    modifier = Modifier
-                        .bentoWell(
-                            cornerRadius = 20.dp,
-                            fillColor = MaterialTheme.colorScheme.secondaryContainer,
-                        )
-                        .clickable(role = Role.Button) { onShowMe(card.showMeTarget) }
-                        .padding(horizontal = 16.dp, vertical = 9.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = showMeLabel,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                    )
-                }
+                FilledTonalButton(
+                    onClick = { onShowMe(card.showMeTarget) },
+                    modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
+                ) { Text(showMeLabel) }
             }
-            Box(
-                modifier = Modifier
-                    .clickable(role = Role.Button, onClick = onLearnMore)
-                    .padding(horizontal = 12.dp, vertical = 9.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = learnMoreLabel,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
-            Spacer(Modifier.weight(1f))
+            TextButton(
+                onClick = onLearnMore,
+                modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
+            ) { Text(learnMoreLabel) }
             if (card.fixAction != null && card.fixButtonLabel != null) {
-                Box(
-                    modifier = Modifier
-                        .bentoWell(
-                            cornerRadius = 20.dp,
-                            fillColor = MaterialTheme.colorScheme.primary,
-                        )
-                        .clickable(role = Role.Button) { onRunFix(card.fixAction) }
-                        .padding(horizontal = 16.dp, vertical = 9.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = card.fixButtonLabel,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onPrimary,
-                    )
-                }
+                Button(
+                    onClick = { onRunFix(card.fixAction) },
+                    modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
+                ) { Text(card.fixButtonLabel) }
             }
         }
     }
@@ -637,7 +625,7 @@ private fun FeatureLearnMoreSheetContent(
         }
         Text(
             text = stringResource(entry.summaryRes),
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
@@ -739,7 +727,7 @@ private fun CallsBluetoothSettingsAction() {
             text = stringResource(
                 if (available) R.string.guide_calls_bluetooth_hint else R.string.guide_calls_bluetooth_unavailable,
             ),
-            style = MaterialTheme.typography.bodySmall,
+            style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
@@ -759,7 +747,7 @@ private fun GuideSectionBlock(
         items.forEach { line ->
             Text(
                 text = line,
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }

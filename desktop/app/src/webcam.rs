@@ -177,6 +177,10 @@ impl State {
         {
             return false;
         }
+        if self.output_target != target {
+            self.demand.active = false;
+            self.demand.attempted = false;
+        }
         self.output_target = target;
         true
     }
@@ -319,6 +323,8 @@ struct Demand {
     allowed: bool,
     armed: bool,
     active: bool,
+    /// An approval attempt belongs to this consumer episode, even after Stop/decline.
+    attempted: bool,
     request: Option<u64>,
     sink: Option<u64>,
     /// Only the exact cleanup created by a clean last-consumer departure may defer a reopen.
@@ -331,6 +337,11 @@ impl Demand {
         if self.active { return false; }
         self.active = true;
         self.enabled && self.armed && self.cleanup.is_none()
+    }
+    fn finish_episode(&mut self) -> bool {
+        if !self.active { return false; }
+        self.active = false;
+        std::mem::take(&mut self.attempted)
     }
     fn cleaned(&mut self, generation: u64) -> bool {
         if self.cleanup != Some(generation) { return false; }
@@ -1072,10 +1083,12 @@ async fn complete_camera_request(generation: u64) {
                         persist_demand(s.demand.enabled, false);
                         s.demand.block();
                     }
-                    s.retire_camera_request(generation) && s.demand.cleaned(generation)
+                    if s.retire_camera_request(generation) && s.demand.cleaned(generation) {
+                        Some(s.output_target)
+                    } else { None }
                 });
                 core_host::host().hub.changed(Changes::WEBCAM);
-                if restart { start_demand_for_selected(); }
+                if let Some(target) = restart { start_demand_for_target(target); }
                 return;
             }
             Next::Done => {
@@ -1139,33 +1152,35 @@ fn block_demand() {
 }
 
 #[cfg(target_os = "macos")]
-fn start_demand_for_selected() {
+fn start_demand_for_target(target: OutputTarget) {
     // Never use selected_phone(): its UI convenience fallback may choose another phone.
-    let preferred = state(|s| s.preferred_phone);
+    let preferred = state(|s| (s.output_target == target).then_some(s.preferred_phone).flatten());
     let phone = preferred.filter(|id| core_host::host().hub.read(|app| {
         app.devices.iter().any(|d| d.id == *id && matches!(d.link, nectarlink_core::LinkState::Online { .. }))
     }));
-    if let Some(phone) = phone { start_with_origin(Some(phone), true); }
+    if let Some(phone) = phone { start_with_origin(Some(phone), Some(target)); }
 }
 
 #[cfg(target_os = "macos")]
-pub(crate) fn consumer_demand(active: bool) {
+pub(crate) fn consumer_demand(native: bool, active: bool) {
+    let target = if native { OutputTarget::NativeCamera } else { OutputTarget::WaypairCamera };
     if active {
-        let allowed = state(|s| s.demand.active_edge());
+        let allowed = state(|s| s.output_target == target && s.demand.active_edge());
         if !allowed { return; }
-        start_demand_for_selected();
+        start_demand_for_target(target);
     } else {
         let cleanup = state(|s| {
-            if !s.demand.active { return None; }
-            s.demand.active = false;
+            if s.output_target != target || !s.demand.active { return None; }
             let owned = s.demand.owns(s.request.as_ref().map(|r| r.generation), s.sink_generation);
-            if !owned { return None; }
-            // Only a normal final-consumer exit rearms a completed demand episode.
+            // Stop/decline blocks this entire episode; a fresh episode may ask again.
+            let attempted = s.demand.finish_episode();
+            if !owned && !attempted { return None; }
+            // Only a final-consumer exit rearms a completed demand episode.
             let rearm = s.demand.enabled && persist_demand(true, true);
             s.demand.block();
             s.demand.armed = rearm;
-            let cleanup = stop_camera_state(s);
-            if rearm { s.demand.cleanup = s.request.as_ref().map(|request| request.generation); }
+            let cleanup = if owned { stop_camera_state(s) } else { None };
+            if rearm && owned { s.demand.cleanup = s.request.as_ref().map(|request| request.generation); }
             cleanup
         });
         finish_stop(cleanup);
@@ -1174,11 +1189,12 @@ pub(crate) fn consumer_demand(active: bool) {
 
 #[cfg(target_os = "macos")]
 pub fn start(device: Option<DeviceId>) {
-    start_with_origin(device, false);
+    start_with_origin(device, None);
 }
 
 #[cfg(target_os = "macos")]
-fn start_with_origin(device: Option<DeviceId>, demand: bool) {
+fn start_with_origin(device: Option<DeviceId>, demand_target: Option<OutputTarget>) {
+    let demand = demand_target.is_some();
     let Some(device) = device.or_else(selected_phone) else {
         return;
     };
@@ -1186,6 +1202,7 @@ fn start_with_origin(device: Option<DeviceId>, demand: bool) {
         return;
     };
     let generation = state(|s| {
+        if demand_target.is_some_and(|target| s.output_target != target) { return None; }
         if s.shutting_down || s.liveloop_setup_busy || s.request.is_some() || s.sink_generation.is_some() {
             return None;
         }
@@ -1205,11 +1222,13 @@ fn start_with_origin(device: Option<DeviceId>, demand: bool) {
         }
         if demand {
             if !s.demand.enabled || !s.demand.armed || !s.demand.active
-                || s.output_target != OutputTarget::WaypairCamera || s.preferred_phone != Some(device)
+                || !matches!(s.output_target, OutputTarget::NativeCamera | OutputTarget::WaypairCamera)
+                || s.preferred_phone != Some(device)
             { return None; }
             // Persist before sending anything: a crash/relaunch cannot retry this episode.
             if !persist_demand(s.demand.enabled, false) { return None; }
             s.demand.armed = false;
+            s.demand.attempted = true;
         }
         let generation = s.begin_camera_request(device, false)?;
         if demand { s.demand.request = Some(generation); }
@@ -1230,6 +1249,7 @@ fn start_with_origin(device: Option<DeviceId>, demand: bool) {
 #[cfg(target_os = "macos")]
 pub fn stop() {
     let cleanup = state(|s| {
+        if s.demand.enabled && s.demand.active { s.demand.attempted = true; }
         if s.demand.enabled { persist_demand(true, false); }
         s.demand.block();
         stop_camera_state(s)
@@ -2137,7 +2157,7 @@ mod tests {
 
 #[cfg(all(test, target_os = "macos"))]
 mod demand_tests {
-    use super::Demand;
+    use super::{Demand, OutputTarget, State};
     #[test]
     fn source_cycle_has_one_exact_owner_and_retains_other_consumers() {
         let mut demand = Demand { enabled: true, armed: true, ..Default::default() };
@@ -2157,6 +2177,45 @@ mod demand_tests {
         assert!(demand.cleaned(21)); // Successful matching cleanup schedules one request.
         assert!(!demand.cleaned(21)); // Repeated retirement never schedules a second request.
         assert!(!demand.active_edge());
+    }
+    #[test]
+    fn completed_episode_may_rearm_only_after_the_last_consumer_leaves() {
+        let mut demand = Demand { enabled: true, armed: true, ..Default::default() };
+        assert!(demand.active_edge()); // First presence snapshot after a late host launch.
+        for _ in 0..3 { assert!(!demand.active_edge()); } // Reannouncements are one episode.
+        demand.armed = false;
+        demand.attempted = true;
+        demand.request = Some(8);
+        demand.block(); // Stop or decline retains the episode but clears ownership.
+        assert!(!demand.owns(Some(8), None));
+        for _ in 0..3 { assert!(!demand.active_edge()); } // No same-episode retry.
+        assert!(demand.finish_episode());
+        assert!(!demand.finish_episode());
+        demand.armed = true; // Only after successful persistence at final departure.
+        demand.cleanup = Some(8);
+        assert!(!demand.active_edge()); // Fresh consumer waits for exact old cleanup.
+        assert!(!demand.cleaned(7));
+        assert!(demand.cleaned(8));
+        assert!(!demand.cleaned(8)); // Cleanup schedules at most one fresh request.
+    }
+    #[test]
+    fn inactive_edges_and_output_changes_do_not_inherit_a_stopped_episode() {
+        let mut s = State::default();
+        s.demand = Demand { enabled: true, armed: false, ..Default::default() };
+        assert!(!s.demand.active_edge());
+        assert!(!s.demand.finish_episode()); // Presence alone never counts as an attempt.
+        assert!(!s.demand.finish_episode());
+        assert!(!s.demand.armed);
+        s.demand.active = true;
+        s.demand.attempted = true;
+        s.demand.cleanup = Some(9);
+        assert!(s.select_output_target(OutputTarget::WaypairCamera));
+        assert!(!s.demand.active);
+        assert!(!s.demand.attempted);
+        assert!(!s.demand.finish_episode()); // Old target departure cannot rearm this one.
+        assert!(!s.demand.cleaned(8));
+        assert!(!s.demand.cleaned(9)); // No active consumer or saved arm on new target.
+        assert!(!s.demand.owns(Some(9), Some(10)));
     }
     #[test]
     fn stop_or_revoke_cannot_restart_or_stop_a_manual_successor() {

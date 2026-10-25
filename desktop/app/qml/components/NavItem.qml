@@ -2,18 +2,19 @@
 import QtQuick
 import app.nectarlink
 
-// A navigation rail destination: an icon in a pill indicator above a label.
+// A destination adapts from a compact rail to a labeled desktop sidebar.
 FocusScope {
     id: item
     property string iconPath
     property string text
     property bool selected: false
+    property bool expanded: false
     readonly property alias hovered: mouse.containsMouse
     property bool activeHover: mouse.containsMouse
     signal clicked
 
     implicitWidth: 72
-    implicitHeight: 56
+    implicitHeight: expanded ? 40 : 52
     activeFocusOnTab: true
 
     Accessible.role: Accessible.PageTab
@@ -31,8 +32,9 @@ FocusScope {
         id: pill
         anchors.horizontalCenter: parent.horizontalCenter
         y: 2
-        width: 52; height: 30
-        radius: Theme.pill(height)
+        width: item.expanded ? item.width : 52
+        height: item.expanded ? 36 : 30
+        radius: Theme.controlRadius
         color: "transparent"
         scale: mouse.pressed ? Theme.pressScale : 1.0
         Behavior on scale { enabled: !Theme.reduceMotion; NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
@@ -40,16 +42,12 @@ FocusScope {
         Rectangle {
             anchors.centerIn: parent
             height: parent.height
-            width: item.selected ? parent.width : (item.activeHover ? 42 : 24)
+            width: item.selected || item.activeHover ? parent.width : 24
             radius: parent.radius
-            color: item.selected
-                ? (Theme.glass
-                    ? Qt.tint(Qt.rgba(1, 1, 1, Theme.dark ? 0.14 : 0.62), Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Theme.dark ? 0.28 : 0.22))
-                    : Theme.indicator)
-                : Theme.surfaceContent
+            color: item.selected ? Theme.heroWash : Theme.surfaceContent
             opacity: item.selected ? 1.0 : (item.activeHover ? 0.08 : 0.0)
-            border.width: Theme.glass && item.selected ? 1 : 0
-            border.color: Qt.rgba(1, 1, 1, Theme.dark ? 0.28 : 0.78)
+            border.width: item.selected ? 1 : 0
+            border.color: Theme.panelBorder
             Behavior on width {
                 enabled: !Theme.reduceMotion
                 NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
@@ -65,9 +63,12 @@ FocusScope {
         }
 
         Icon {
-            anchors.centerIn: parent
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.horizontalCenter: item.expanded ? undefined : parent.horizontalCenter
+            x: item.expanded ? Theme.spacingMd : 0
+            width: 20; height: 20
             path: item.iconPath
-            color: item.selected ? Theme.indicatorContent : (item.activeHover ? Theme.surfaceContent : Theme.surfaceContentVariant)
+            color: item.selected ? Theme.primary : (item.activeHover ? Theme.surfaceContent : Theme.surfaceContentVariant)
             scale: item.selected ? 1.05 : (item.activeHover ? 1.02 : 1.0)
             Behavior on scale {
                 enabled: !Theme.reduceMotion
@@ -80,11 +81,18 @@ FocusScope {
         }
     }
     Txt {
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.top: pill.bottom
-        anchors.topMargin: 4
+        anchors.left: item.expanded ? pill.left : parent.left
+        anchors.right: item.expanded ? pill.right : parent.right
+        anchors.leftMargin: item.expanded ? 44 : 0
+        anchors.rightMargin: item.expanded ? Theme.spacingMd : 0
+        anchors.top: item.expanded ? pill.top : pill.bottom
+        anchors.topMargin: item.expanded ? 0 : 4
+        height: item.expanded ? pill.height : implicitHeight
+        horizontalAlignment: item.expanded ? Text.AlignLeft : Text.AlignHCenter
+        verticalAlignment: Text.AlignVCenter
+        elide: Text.ElideRight
         text: item.text
-        role: "caption"
+        role: item.expanded ? "body" : "caption"
         weight: Theme.graphite ? 400 : (item.selected ? 600 : 500)
         color: item.selected || item.activeHover ? Theme.surfaceContent : Theme.surfaceContentVariant
         Behavior on color {
@@ -94,11 +102,11 @@ FocusScope {
     }
     Rectangle {
         anchors.fill: pill
-        anchors.margins: -3
-        radius: pill.radius + 3
+        anchors.margins: -4
+        radius: pill.radius + 4
         color: "transparent"
         border.width: 2
-        border.color: Theme.primary
+        border.color: Theme.focusColor
         visible: Theme.focusVisible(item)
     }
     MouseArea {

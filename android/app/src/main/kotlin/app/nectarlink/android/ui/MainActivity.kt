@@ -23,9 +23,15 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.border
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
@@ -49,9 +55,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithCache
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -83,6 +89,7 @@ import app.nectarlink.android.ui.recorder.RecorderScreen
 import app.nectarlink.android.ui.remote.RemoteMode
 import app.nectarlink.android.ui.remote.RemoteScreen
 import app.nectarlink.android.ui.settings.SettingsScreen
+import app.nectarlink.android.ui.theme.WaypairDesign
 import app.nectarlink.android.ui.theme.Appearance
 import app.nectarlink.android.ui.theme.GlassBackdrop
 import app.nectarlink.android.ui.theme.LocalReducedMotion
@@ -166,7 +173,7 @@ class MainActivity : ComponentActivity() {
             ) {
                 // Every screen sits on the theme's background, not the
                 // window's (which can't follow the app's own light/dark choice).
-                Surface(color = MaterialTheme.colorScheme.background) {
+                Surface(color = WaypairDesign.canvasColor()) {
                     App(
                         core = core,
                         state = state,
@@ -802,8 +809,7 @@ private fun App(
                     val hiveInviteShown by preferences.hiveInviteShown.collectAsStateWithLifecycle()
                     val saveableStateHolder = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
 
-                    // Only apply top scaffold padding here so LazyColumns in HomeScreen/SettingsScreen
-                    // (which have bottom = 104.dp contentPadding) glide smoothly behind the floating glass dock.
+                    // Respect the measured dock height so large text never covers the last action.
                     // Tabs slide toward the side of the tab you picked, on a soft spring.
                     AnimatedContent(
                         targetState = tab,
@@ -827,7 +833,7 @@ private fun App(
                         },
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(top = padding.calculateTopPadding())
+                            .padding(top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding())
                             .glassBackdropSource(glassBackdrop, enabled = isGlass),
                         label = "main_tab",
                     ) { shownTab ->
@@ -1039,18 +1045,20 @@ private fun FloatingBottomPillDock(
         scheme.surfaceContainerHighest.copy(alpha = 0.92f)
     } else {
         // Solid: the list scrolls under it, and text showed through.
-        scheme.surfaceContainerHigh
+        WaypairDesign.panelColor()
     }
-    val rimColor = if (isGlass) scheme.outlineVariant else scheme.outlineVariant.copy(alpha = 0.45f)
+    val rimColor = WaypairDesign.panelBorder()
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.navigationBars)
-            .padding(horizontal = 24.dp, vertical = 8.dp),
+            .padding(horizontal = WaypairDesign.spacingLg, vertical = WaypairDesign.spacingSm),
         contentAlignment = Alignment.Center,
     ) {
         androidx.compose.foundation.layout.Row(
             modifier = Modifier
+                .widthIn(max = 600.dp)
+                .fillMaxWidth()
                 .selectableGroup()
                 .then(
                     if (isGlass) {
@@ -1059,7 +1067,7 @@ private fun FloatingBottomPillDock(
                         Modifier.liquidGlass(
                             backdrop = backdrop,
                             enabled = true,
-                            cornerRadius = 30.dp,
+                            cornerRadius = WaypairDesign.heroRadius,
                             tint = scheme.surface.copy(alpha = if (dark) 0.42f else 0.50f),
                             fallbackColor = baseFill,
                             rimColor = androidx.compose.ui.graphics.Color.White,
@@ -1067,7 +1075,7 @@ private fun FloatingBottomPillDock(
                         )
                     } else {
                         Modifier.liquidGlassCard(
-                            cornerRadius = 30.dp,
+                            cornerRadius = WaypairDesign.heroRadius,
                             isGlass = false,
                             baseColor = baseFill,
                             tintColor = scheme.primary,
@@ -1080,6 +1088,7 @@ private fun FloatingBottomPillDock(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             FloatingDockTabPill(
+                modifier = Modifier.weight(1f),
                 selected = selectedTab == Tab.Home,
                 onClick = { onSelectTab(Tab.Home) },
                 iconRes = R.drawable.ic_home,
@@ -1092,6 +1101,7 @@ private fun FloatingBottomPillDock(
                 reducedMotion = reducedMotion,
             )
             FloatingDockTabPill(
+                modifier = Modifier.weight(1f),
                 selected = selectedTab == Tab.Settings,
                 onClick = { onSelectTab(Tab.Settings) },
                 iconRes = R.drawable.ic_settings,
@@ -1111,22 +1121,13 @@ private fun FloatingDockTabPill(
     label: String,
     statusDotColor: androidx.compose.ui.graphics.Color?,
     reducedMotion: Boolean,
+    modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
-    val scaleState = androidx.compose.animation.core.animateFloatAsState(
-        targetValue = if (selected) 1f else 0.95f,
-        animationSpec = if (reducedMotion) {
-            androidx.compose.animation.core.snap()
-        } else {
-            androidx.compose.animation.core.spring(
-                dampingRatio = 0.72f,
-                stiffness = androidx.compose.animation.core.Spring.StiffnessMedium,
-                visibilityThreshold = 0.005f,
-            )
-        },
-        visibilityThreshold = 0.005f,
-        label = "pill_scale",
-    )
+    val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val focused by interactionSource.collectIsFocusedAsState()
+    val focusColor = WaypairDesign.focusColor()
+    val tabShape = RoundedCornerShape(WaypairDesign.controlRadius)
     val bgColorState = androidx.compose.animation.animateColorAsState(
         targetValue = if (selected) scheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent,
         animationSpec = if (reducedMotion) {
@@ -1138,18 +1139,15 @@ private fun FloatingDockTabPill(
     )
     val contentColor = if (selected) scheme.onPrimaryContainer else scheme.onSurfaceVariant
     androidx.compose.foundation.layout.Row(
-        modifier = Modifier
+        modifier = modifier
+            .border(2.dp, if (focused) focusColor else androidx.compose.ui.graphics.Color.Transparent, tabShape)
+            .clip(tabShape)
             .semantics {
                 role = Role.Tab
                 this.selected = selected
             }
-            .graphicsLayer {
-                val s = scaleState.value
-                scaleX = s
-                scaleY = s
-            }
             .drawWithCache {
-                val r = 24.dp.toPx()
+                val r = WaypairDesign.controlRadius.toPx()
                 val cr = androidx.compose.ui.geometry.CornerRadius(r, r)
                 onDrawBehind {
                     val bg = bgColorState.value
@@ -1159,11 +1157,12 @@ private fun FloatingDockTabPill(
                 }
             }
             .clickable(
-                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                indication = null,
+                interactionSource = interactionSource,
+                indication = LocalIndication.current,
                 onClick = onClick,
             )
-            .padding(horizontal = 18.dp, vertical = 9.dp),
+            .heightIn(min = WaypairDesign.touchTarget)
+            .padding(horizontal = WaypairDesign.spacingLg, vertical = WaypairDesign.spacingMd),
         horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1171,12 +1170,13 @@ private fun FloatingDockTabPill(
             painter = painterResource(iconRes),
             contentDescription = null,
             tint = contentColor,
-            modifier = Modifier.size(18.dp),
+            modifier = Modifier.size(24.dp),
         )
         Text(
             text = label,
             color = contentColor,
             style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier.weight(1f),
         )
         if (statusDotColor != null) {
             androidx.compose.foundation.layout.Spacer(

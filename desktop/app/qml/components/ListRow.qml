@@ -33,7 +33,7 @@ Item {
         anchors.right: row.stackTrailing ? parent.right : trailingSlot.left
         anchors.rightMargin: row.stackTrailing ? 0 : 16
         y: row.stackTrailing ? 12 : Math.round((row.height - height) / 2)
-        spacing: 2
+        spacing: Theme.spacingXs
         Txt {
             width: parent.width
             text: row.title

@@ -101,6 +101,7 @@ internal class CameraEncoder(
     @Volatile var supports4k: Boolean = supports4k(this.context, cameraFacing)
         private set
     @Volatile private var targetHeight: Int = normalizeHeight(initialHeight, supports4k)
+    @Volatile private var advertisedMaxHeight: Int = if (supports4k) 2160 else 1080
     @Volatile private var activeCodec: ActiveCodec? = null
     // Surface work is serialized. An unproven original cleanup keeps this Entry reserved.
     private var codecCleanupFailed = false
@@ -250,6 +251,7 @@ internal class CameraEncoder(
             cameraFacing = normalized
             // The other camera may not do 4K (front cameras often don't).
             supports4k = supports4k(context, normalized)
+            advertisedMaxHeight = if (supports4k) 2160 else 1080
             targetHeight = normalizeHeight(targetHeight, supports4k)
             bindCamera()
         }
@@ -305,6 +307,11 @@ internal class CameraEncoder(
         val desiredWidth = widthForHeight(desiredHeight)
         val desiredSize = Size(desiredWidth, desiredHeight)
         val resSelector = ResolutionSelector.Builder()
+            .apply {
+                if (desiredHeight > 1080) {
+                    setAllowedResolutionMode(ResolutionSelector.PREFER_HIGHER_RESOLUTION_OVER_CAPTURE_RATE)
+                }
+            }
             .setAspectRatioStrategy(AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY)
             .setResolutionStrategy(
                 ResolutionStrategy(
@@ -323,7 +330,7 @@ internal class CameraEncoder(
 
         val facingForRequest = cameraFacing
         encPreview.setSurfaceProvider(surfaceExecutor) { request ->
-            if (!running || !ownsEntry()) {
+            if (!running || !ownsEntry() || encoderPreview !== encPreview) {
                 request.willNotProvideSurface()
                 return@setSurfaceProvider
             }
@@ -344,6 +351,25 @@ internal class CameraEncoder(
 
             val srcW = request.resolution.width
             val srcH = request.resolution.height
+            val capturedHeight = supportedCaptureHeight(srcW, srcH, desiredHeight)
+            if (capturedHeight != desiredHeight) {
+                request.willNotProvideSurface()
+                main.post {
+                    if (!running || !ownsEntry() || encoderPreview !== encPreview) return@post
+                    advertisedMaxHeight = capturedHeight ?: 0
+                    if (desiredHeight > 1080) {
+                        supports4k = false
+                        updateState { it.copy(supports4k = false) }
+                    }
+                    if (capturedHeight == null) stop()
+                    else {
+                        targetHeight = capturedHeight
+                        bindCamera()
+                    }
+                }
+                return@setSurfaceProvider
+            }
+            advertisedMaxHeight = maxOf(advertisedMaxHeight, desiredHeight)
             val outH = desiredHeight
             val outW = widthForHeight(outH)
             val started = startCodecForResolution(srcW, srcH, outW, outH, facingForRequest)
@@ -353,7 +379,13 @@ internal class CameraEncoder(
                 request.willNotProvideSurface()
                 if (cleaned && targetHeight > 1080) {
                     // Fall back from 4K to 1080p if the codec rejected 4K.
-                    main.post { setResolutionHeight(1080) }
+                    main.post {
+                        if (!running || !ownsEntry() || encoderPreview !== encPreview) return@post
+                        supports4k = false
+                        advertisedMaxHeight = 1080
+                        updateState { it.copy(supports4k = false) }
+                        setResolutionHeight(1080)
+                    }
                 } else {
                     stop()
                 }
@@ -489,7 +521,9 @@ internal class CameraEncoder(
                 setInteger(MediaFormat.KEY_COLOR_RANGE, MediaFormat.COLOR_RANGE_LIMITED)
                 setInteger(MediaFormat.KEY_COLOR_TRANSFER, MediaFormat.COLOR_TRANSFER_SDR_VIDEO)
             }
-            val codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
+            val codecName = MediaCodecList(MediaCodecList.REGULAR_CODECS).findEncoderForFormat(format)
+                ?: error("No AVC encoder supports ${outWidth}x${outHeight} at $fps fps")
+            val codec = MediaCodec.createByCodecName(codecName)
             allocatedCodec = codec
             codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
             val codecSurface = codec.createInputSurface()
@@ -556,7 +590,7 @@ internal class CameraEncoder(
         }
 
         private fun drainLoop() {
-            val maxHeight = if (supports4k) 2160u else 1080u
+            val maxHeight = advertisedMaxHeight.toUInt()
             val cfgBytes = ownedContext?.let {
                 app.nectarlink.core.webcamOwnedConfig(it, width.toUInt(), height.toUInt(), camera, fps.toUInt(), maxHeight)
             } ?: webcamConfig(width.toUInt(), height.toUInt(), camera, fps.toUInt(), maxHeight)
@@ -631,6 +665,18 @@ internal class CameraEncoder(
             else -> 1280
         }
 
+        /** Highest requested preset that the actual CameraX source can supply without upscaling. */
+        internal fun supportedCaptureHeight(sourceWidth: Int, sourceHeight: Int, requestedHeight: Int): Int? {
+            val longSide = maxOf(sourceWidth, sourceHeight)
+            val shortSide = minOf(sourceWidth, sourceHeight)
+            return when {
+                requestedHeight >= 2160 && longSide >= 3840 && shortSide >= 2160 -> 2160
+                requestedHeight >= 1080 && longSide >= 1920 && shortSide >= 1080 -> 1080
+                requestedHeight >= 720 && longSide >= 1280 && shortSide >= 720 -> 720
+                else -> null
+            }
+        }
+
         fun bitrateForHeight(height: Int): Int = when {
             height >= 2160 -> 20_000_000
             height >= 1080 -> 8_000_000
@@ -676,7 +722,7 @@ internal class CameraEncoder(
                         info.supportedTypes.any { it.equals(MediaFormat.MIMETYPE_VIDEO_AVC, ignoreCase = true) } &&
                         runCatching {
                             info.getCapabilitiesForType(MediaFormat.MIMETYPE_VIDEO_AVC)
-                                .videoCapabilities?.isSizeSupported(3840, 2160) == true
+                                .videoCapabilities?.areSizeAndRateSupported(3840, 2160, 30.0) == true
                         }.getOrDefault(false)
                 }
             }.getOrDefault(false)
@@ -728,7 +774,7 @@ internal class CameraEncoder(
                 }.getOrDefault(4f)
             }
 
-        /** Checks whether any hardware AVC encoder on this device supports 3840×2160. */
+        /** Checks whether an AVC encoder on this device supports 3840×2160 at 30 fps. */
         fun supports4kEncoder(): Boolean = cachedSupports4k
 
         private val uhdCache = java.util.concurrent.ConcurrentHashMap<String, Boolean>()

@@ -51,6 +51,36 @@ static BOOL deviceUIDMatches(CMIODeviceID device) {
     return matches;
 }
 
+static CFTypeRef copyProperty(CMIOObjectID object, CMIOObjectPropertySelector selector,
+                              CFTypeID expectedType);
+
+// The original prototype uses the same UUIDs with a 720p-only sink. Never
+// authorize a UHD producer against that older installed protocol.
+static BOOL nativeFormatMatches(CMFormatDescriptionRef format, NSUInteger index) {
+    if (!format || CFGetTypeID(format) != CMFormatDescriptionGetTypeID() ||
+        CMFormatDescriptionGetMediaType(format) != kCMMediaType_Video ||
+        CMFormatDescriptionGetMediaSubType(format) != kCVPixelFormatType_32BGRA) return NO;
+    const int widths[] = {1280, 1920, WP_CAMERA_WIDTH};
+    const int heights[] = {720, 1080, WP_CAMERA_HEIGHT};
+    CMVideoDimensions size = CMVideoFormatDescriptionGetDimensions(format);
+    return index < 3 && size.width == widths[index] && size.height == heights[index];
+}
+static BOOL nativeStreamMatches(CMIOStreamID stream, BOOL sink) {
+    CFArrayRef formats = (CFArrayRef)copyProperty(stream, kCMIOStreamPropertyFormatDescriptions,
+                                                 CFArrayGetTypeID());
+    if (!formats) return NO;
+    BOOL valid = CFArrayGetCount(formats) == (sink ? 1 : 3);
+    for (CFIndex i = 0; valid && i < CFArrayGetCount(formats); ++i)
+        valid = nativeFormatMatches((CMFormatDescriptionRef)CFArrayGetValueAtIndex(formats, i), sink ? 2 : i);
+    CFRelease(formats);
+    CMFormatDescriptionRef current = (CMFormatDescriptionRef)copyProperty(stream,
+        kCMIOStreamPropertyFormatDescription, CMFormatDescriptionGetTypeID());
+    BOOL currentValid = sink ? nativeFormatMatches(current, 2) :
+        (nativeFormatMatches(current, 0) || nativeFormatMatches(current, 1) || nativeFormatMatches(current, 2));
+    if (current) CFRelease(current);
+    return valid && currentValid;
+}
+
 int32_t wp_camera_is_registered(void) {
     UInt32 *devices = NULL, count = 0, matches = 0;
     CMIODeviceID device = 0;
@@ -62,18 +92,21 @@ int32_t wp_camera_is_registered(void) {
     UInt32 *streams = NULL, streamCount = 0;
     if (!copyIDs(device, address(kCMIODevicePropertyStreams, kCMIODevicePropertyScopeInput),
         &streams, &streamCount)) return 0;
+    BOOL sourceValid = streamCount == 1 && nativeStreamMatches(streams[0], NO);
     free(streams);
-    if (streamCount != 1) return 0;
+    if (!sourceValid) return 0;
     streams = NULL; streamCount = 0;
     if (!copyIDs(device, address(kCMIODevicePropertyStreams, kCMIODevicePropertyScopeOutput),
         &streams, &streamCount)) return 0;
+    BOOL sinkValid = streamCount == 1 && nativeStreamMatches(streams[0], YES);
     free(streams);
-    return streamCount == 1 ? 1 : 0;
+    return sinkValid ? 1 : 0;
 }
 
 int32_t wp_camera_open(WPCameraProducer **out) {
     if (!out) return WP_CAMERA_INVALID;
     *out = NULL;
+    if (wp_camera_is_registered() != 1) return WP_CAMERA_NOT_INSTALLED;
     UInt32 *devices = NULL, count = 0;
     if (!copyIDs(kCMIOObjectSystemObject,
                  address(kCMIOHardwarePropertyDevices, kCMIOObjectPropertyScopeGlobal),

@@ -40,4 +40,20 @@ class CameraEncoderTest {
         assertEquals(8_000_000, CameraEncoder.bitrateForHeight(1080))
         assertEquals(20_000_000, CameraEncoder.bitrateForHeight(2160))
     }
+    @Test
+    fun `actual camera source supports UHD in either orientation without upscaling`() {
+        assertEquals(2160, CameraEncoder.supportedCaptureHeight(3840, 2160, 2160))
+        assertEquals(2160, CameraEncoder.supportedCaptureHeight(2160, 3840, 2160))
+        assertEquals(2160, CameraEncoder.supportedCaptureHeight(4096, 2160, 2160))
+        assertEquals(1080, CameraEncoder.supportedCaptureHeight(3840, 2160, 1080))
+    }
+
+    @Test
+    fun `lower camera source downgrades to genuine preset or refuses capture`() {
+        assertEquals(1080, CameraEncoder.supportedCaptureHeight(1920, 1080, 2160))
+        assertEquals(1080, CameraEncoder.supportedCaptureHeight(3264, 2448, 2160))
+        assertEquals(720, CameraEncoder.supportedCaptureHeight(1280, 720, 2160))
+        assertEquals(720, CameraEncoder.supportedCaptureHeight(720, 1280, 1080))
+        assertEquals(null, CameraEncoder.supportedCaptureHeight(640, 480, 2160))
+    }
 }

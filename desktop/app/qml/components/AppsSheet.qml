@@ -42,7 +42,7 @@ Sheet {
 
     Column {
         width: parent.width
-        spacing: 14
+        spacing: 16
 
         Item {
             width: parent.width
@@ -51,9 +51,12 @@ Sheet {
                 id: title
                 anchors.left: parent.left
                 anchors.right: refresh.left
+                anchors.rightMargin: 12
                 anchors.verticalCenter: parent.verticalCenter
                 text: qsTr("Open an app from %1").arg(sheet.phoneName)
-                role: "headline"
+                role: "title"
+                size: 24
+                weight: Font.DemiBold
                 elide: Text.ElideRight
             }
             IconButton {
@@ -70,10 +73,19 @@ Sheet {
         Rectangle {
             width: parent.width
             height: 40
-            radius: Theme.graphite ? Theme.radiusSm : height / 2
-            color: Theme.graphite ? "transparent" : Theme.surfaceContainerHighest
-            border.width: search.activeFocus ? 2 : (Theme.graphite ? 1 : 0)
-            border.color: search.activeFocus ? Theme.primary : Theme.outlineVariant
+            radius: Theme.controlRadius
+            color: Theme.panelColor
+            border.width: 1
+            border.color: Theme.outlineVariant
+            Rectangle {
+                anchors.fill: parent
+                anchors.margins: -4
+                radius: parent.radius + 4
+                color: "transparent"
+                border.width: 2
+                border.color: Theme.focusColor
+                visible: Theme.focusVisible(search)
+            }
             Icon {
                 id: searchIcon
                 anchors.left: parent.left
@@ -126,7 +138,7 @@ Sheet {
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.WordWrap
                 role: "body"
-                muted: true
+                color: sheet.loadState === "failed" ? Theme.error : Theme.surfaceContentVariant
                 text: sheet.loadState === "failed" ? Mirror.appsError
                     : sheet.loadState === "ready" ? (sheet.query.length > 0 ? qsTr("No apps match.") : qsTr("No apps to open."))
                     : qsTr("Getting the phone's apps…")
@@ -167,14 +179,14 @@ Sheet {
                         Rectangle {
                             anchors.fill: parent
                             anchors.margins: 2
-                            radius: Theme.radiusMd
+                            radius: Theme.cardRadius
                             color: Theme.surfaceContent
                             opacity: recentTap.pressed ? 0.12 : (recentHover.hovered ? 0.06 : 0)
                         }
                         Rectangle {
                             anchors.fill: parent
                             anchors.margins: 2
-                            radius: Theme.radiusMd
+                            radius: Theme.cardRadius
                             color: "transparent"
                             border.width: Theme.focusVisible(recentCell) ? 2 : 0
                             border.color: Theme.primary
@@ -256,14 +268,14 @@ Sheet {
                 Rectangle {
                     anchors.fill: parent
                     anchors.margins: 4
-                    radius: Theme.radiusMd
+                    radius: Theme.cardRadius
                     color: Theme.surfaceContent
                     opacity: tap.pressed ? 0.12 : (hover.hovered ? 0.06 : 0)
                 }
                 Rectangle {
                     anchors.fill: parent
                     anchors.margins: 4
-                    radius: Theme.radiusMd
+                    radius: Theme.cardRadius
                     color: "transparent"
                     border.width: Theme.focusVisible(cell) ? 2 : 0
                     border.color: Theme.primary

@@ -20,9 +20,9 @@ Rectangle {
     readonly property Item selectedItem: (selectedIndex >= 0 && selectedIndex < segRepeater.count)
         ? segRepeater.itemAt(selectedIndex) : null
 
-    implicitHeight: 36
+    implicitHeight: 42
     implicitWidth: row.implicitWidth + 6
-    radius: Theme.graphite ? Theme.radiusSm : Theme.pill(height)
+    radius: Theme.controlRadius
     color: Theme.graphite
         ? "transparent"
         : (Theme.glass ? Qt.rgba(1, 1, 1, Theme.dark ? 0.08 : 0.44) : Theme.surfaceContainerHigh)
@@ -41,7 +41,7 @@ Rectangle {
         y: 3
         width: segmented.selectedItem ? segmented.selectedItem.width : 0
         height: segmented.height - 6
-        radius: Theme.graphite ? Math.max(2, Theme.radiusSm - 2) : Theme.pill(height)
+        radius: Math.max(2, Theme.controlRadius - 3)
         color: Theme.graphite
             ? Theme.surfaceContent
             : (Theme.glass
@@ -71,7 +71,7 @@ Rectangle {
                 required property var modelData
                 required property int index
                 readonly property bool selected: modelData.value === segmented.value
-                width: label.implicitWidth + 26
+                width: Math.max(36, label.implicitWidth + 26)
                 height: segmented.height - 6
                 activeFocusOnTab: true
                 scale: segMouse.pressed && !Theme.reduceMotion ? Theme.pressScale : 1.0
@@ -92,12 +92,12 @@ Rectangle {
                 }
                 Rectangle {
                     anchors.fill: parent
-                    radius: Theme.graphite ? Math.max(2, Theme.radiusSm - 2) : Theme.pill(height)
+                    radius: Math.max(2, Theme.controlRadius - 3)
                     color: "transparent"
                     Rectangle {
                         anchors.fill: parent
-                        anchors.margins: -3
-                        radius: parent.radius + 3
+                        anchors.margins: -4
+                        radius: parent.radius + 4
                         color: "transparent"
                         border.width: 2
                         border.color: Theme.primary

@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -35,6 +36,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -89,6 +91,7 @@ import app.nectarlink.android.core.Core
 import app.nectarlink.android.core.Device
 import app.nectarlink.android.ui.home.PcAudioOutputsDialog
 import app.nectarlink.android.ui.theme.LocalReducedMotion
+import app.nectarlink.android.ui.theme.WaypairDesign
 import app.nectarlink.core.DeckLayout
 import app.nectarlink.core.DeckPage
 import app.nectarlink.core.DeckState
@@ -207,7 +210,7 @@ fun DeckScreen(
                 if (!fullScreen && !isLandscape) {
                     Text(
                         stringResource(R.string.deck_hint, device.name),
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
@@ -216,6 +219,7 @@ fun DeckScreen(
             }
             OutlinedButton(
                 onClick = { fullScreen = !fullScreen },
+                modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
             ) {
                 Text(
@@ -306,17 +310,12 @@ fun DeckScreen(
                 }
             } else {
                 val largeFont = LocalConfiguration.current.fontScale >= 1.2f
-                val columns = when {
-                    isLandscape -> if (largeFont) 3 else 4
-                    largeFont -> 2
-                    else -> 3
-                }
                 LazyVerticalGrid(
-                    columns = GridCells.Fixed(columns),
+                    columns = GridCells.Adaptive(minSize = if (largeFont) 144.dp else 112.dp),
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(WaypairDesign.spacingMd),
+                    verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingMd),
                 ) {
                     items(page.tiles, key = { it.id }) { tile ->
                         DeckTileButton(
@@ -376,12 +375,13 @@ private fun DeckAudioHeaderBar(
     val volumeLabel = stringResource(R.string.pc_audio_volume)
 
     Surface(
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainer,
+        shape = RoundedCornerShape(WaypairDesign.cardRadius),
+        color = WaypairDesign.panelColor(),
+        border = BorderStroke(1.dp, WaypairDesign.panelBorder()),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+            modifier = Modifier.fillMaxWidth().padding(WaypairDesign.spacingLg),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             Row(
@@ -391,6 +391,7 @@ private fun DeckAudioHeaderBar(
             ) {
                 FilledTonalButton(
                     onClick = { onSetPcAudio(null, !liveState.muted) },
+                    modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                 ) {
                     Text(
@@ -428,6 +429,7 @@ private fun DeckAudioHeaderBar(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .heightIn(min = WaypairDesign.touchTarget)
                         .clickable(role = Role.Button) { showOutputs = true }
                         .padding(horizontal = 4.dp, vertical = 2.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -435,7 +437,7 @@ private fun DeckAudioHeaderBar(
                 ) {
                     Text(
                         text = stringResource(R.string.pc_audio_output, defaultOutput.name),
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -470,7 +472,7 @@ private fun DeckBanner(
     onDismiss: (() -> Unit)? = null,
 ) {
     Surface(
-        shape = MaterialTheme.shapes.large,
+        shape = RoundedCornerShape(WaypairDesign.cardRadius),
         color = MaterialTheme.colorScheme.secondaryContainer,
         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
     ) {
@@ -484,7 +486,7 @@ private fun DeckBanner(
                 Text(title, style = MaterialTheme.typography.titleSmall)
                 if (text != null) {
                     Spacer(Modifier.height(2.dp))
-                    Text(text, style = MaterialTheme.typography.bodySmall)
+                    Text(text, style = MaterialTheme.typography.bodyMedium)
                 }
             }
             if (onDismiss != null) {
@@ -592,7 +594,7 @@ private fun DeckTileButton(
     val tileHeight = ((if (compact) 98 else 118) * fontScale).dp
 
     Surface(
-        shape = MaterialTheme.shapes.large,
+        shape = RoundedCornerShape(WaypairDesign.cardRadius),
         color = palette.bg.copy(alpha = if (enabled) 1f else 0.55f),
         contentColor = palette.fg,
         border = BorderStroke(
@@ -601,7 +603,7 @@ private fun DeckTileButton(
         ),
         modifier = Modifier
             .fillMaxWidth()
-            .height(tileHeight)
+            .heightIn(min = tileHeight)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
@@ -634,8 +636,8 @@ private fun DeckTileButton(
     ) {
         Column(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 11.dp, vertical = 10.dp),
+                .fillMaxWidth()
+                .padding(WaypairDesign.spacingMd),
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
             Row(
@@ -681,8 +683,6 @@ private fun DeckTileButton(
                 style = if (compact) MaterialTheme.typography.labelLarge else MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = palette.fg,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
             )
         }
     }

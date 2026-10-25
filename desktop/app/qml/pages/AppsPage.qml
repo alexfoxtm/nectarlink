@@ -77,8 +77,8 @@ Item {
         id: unavailablePlaceholder
         objectName: "appsUnavailablePlaceholder"
         anchors.centerIn: parent
-        width: Math.min(parent.width - Theme.contentPadding * 2, 420)
-        spacing: 12
+        width: Math.max(0, Math.min(parent.width - 32, 420))
+        spacing: 16
         visible: page.deviceId.length === 0 || !page.available
         Accessible.ignored: !visible
         Icon {
@@ -149,20 +149,26 @@ Item {
         id: content
         visible: page.deviceId.length > 0 && page.available
         anchors.fill: parent
-        anchors.leftMargin: Theme.contentPadding
-        anchors.rightMargin: Theme.contentPadding
-        anchors.topMargin: 8
+        anchors.leftMargin: page.width < 640 ? 16 : 24
+        anchors.rightMargin: page.width < 640 ? 16 : 24
+        anchors.topMargin: 24
 
-        Row {
+        Column {
             id: phoneContext
             objectName: "appsPhoneContext"
             anchors.top: parent.top
             width: parent.width
-            height: 24
+            spacing: 4
 
             Txt {
+                width: parent.width
+                role: "title"
+                size: 24
+                weight: Font.DemiBold
+                text: qsTr("Phone apps")
+            }
+            Txt {
                 width: Math.min(parent.width, 320)
-                anchors.verticalCenter: parent.verticalCenter
                 role: "bodySmall"
                 muted: true
                 objectName: "appsPhoneName"
@@ -178,19 +184,28 @@ Item {
             id: toolbar
             objectName: "appsToolbar"
             anchors.top: phoneContext.bottom
-            anchors.topMargin: 8
+            anchors.topMargin: 16
             width: parent.width
             height: 40
-            spacing: 8
+            spacing: 12
 
             Rectangle {
                 objectName: "appsSearchSurface"
                 width: Math.min(460, parent.width - refresh.width - parent.spacing)
                 height: parent.height
-                radius: Theme.graphite ? Theme.radiusSm : 12
-                color: Theme.surfaceContainerHighest
-                border.width: search.activeFocus ? 1 : (Theme.graphite ? 1 : 0)
-                border.color: search.activeFocus ? Theme.primary : Theme.outlineVariant
+                radius: Theme.controlRadius
+                color: Theme.panelColor
+                border.width: 1
+                border.color: Theme.outlineVariant
+                Rectangle {
+                    anchors.fill: parent
+                    anchors.margins: -4
+                    radius: parent.radius + 4
+                    color: "transparent"
+                    border.width: 2
+                    border.color: Theme.focusColor
+                    visible: Theme.focusVisible(search)
+                }
                 Icon {
                     id: searchIcon
                     anchors.left: parent.left
@@ -263,7 +278,7 @@ Item {
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.WordWrap
                 role: "body"
-                muted: true
+                color: page.loadState === "failed" ? Theme.error : Theme.surfaceContentVariant
                 text: page.loadState === "failed" ? Mirror.appsError
                     : page.loadState === "ready" ? (page.query.length > 0 ? qsTr("No apps match.") : qsTr("No apps to open."))
                     : qsTr("Getting the phone's apps…")
@@ -376,14 +391,14 @@ Item {
         Rectangle {
             anchors.fill: parent
             anchors.margins: 4
-            radius: Theme.radiusMd
+            radius: Theme.cardRadius
             color: Theme.surfaceContent
             opacity: tap.pressed ? 0.12 : (hover.hovered ? 0.06 : 0)
         }
         Rectangle {
             anchors.fill: parent
             anchors.margins: 4
-            radius: Theme.radiusMd
+            radius: Theme.cardRadius
             color: "transparent"
             border.width: Theme.focusVisible(cell) ? 2 : 0
             border.color: Theme.primary
@@ -394,7 +409,7 @@ Item {
             spacing: 6
             Item {
                 anchors.horizontalCenter: parent.horizontalCenter
-                width: 44; height: 53
+                width: 44; height: 60
                 Image {
                     id: icon
                     anchors.top: parent.top
@@ -415,14 +430,16 @@ Item {
                     name: cell.app.label || ""
                 }
                 // Open in a window on this PC.
-                Rectangle {
+                Txt {
                     visible: cell.isOpen
                     anchors.horizontalCenter: parent.horizontalCenter
                     anchors.top: parent.top
                     anchors.topMargin: 47
-                    width: 6; height: 6
-                    radius: 3
+                    role: "caption"
+                    size: 11
                     color: Theme.primary
+                    text: qsTr("Open")
+                    Accessible.ignored: true
                 }
             }
             Txt {

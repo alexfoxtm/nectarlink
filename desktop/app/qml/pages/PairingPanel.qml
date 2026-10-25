@@ -49,13 +49,13 @@ Item {
     Column {
         id: content
         width: parent.width
-        spacing: panel.compact ? 10 : 14
+        spacing: panel.compact ? 12 : 16
 
         // ---- Header ----
         Txt {
             width: parent.width
             horizontalAlignment: Text.AlignHCenter
-            role: "displaySmall"
+            role: "title"
             size: 24
             wrapMode: Text.WordWrap
             visible: !panel.compact || panel.state_ === "comparing" || panel.state_ === "paired" || panel.state_ === "failed" || panel.showNearby
@@ -92,15 +92,16 @@ Item {
                     width: 28; height: 28
                 }
             }
-            Row {
-                anchors.horizontalCenter: parent.horizontalCenter
-                spacing: 14
+            Column {
+                width: parent.width
+                spacing: 8
                 Repeater {
                     model: [qsTr("Install Waypair Link"), qsTr("Tap “Pair with PC”"), qsTr("Scan this code")]
                     delegate: Row {
                         required property int index
                         required property string modelData
-                        spacing: 6
+                        width: parent.width
+                        spacing: 8
                         Rectangle {
                             width: 20; height: 20; radius: Theme.graphite ? Theme.radiusXs : 10
                             color: Theme.graphite ? "transparent" : Theme.secondaryContainer
@@ -108,7 +109,7 @@ Item {
                             border.color: Theme.outlineVariant
                             Txt { anchors.centerIn: parent; text: index + 1; role: "caption"; weight: 700 }
                         }
-                        Txt { anchors.verticalCenter: parent.verticalCenter; text: modelData; role: "bodySmall"; muted: true }
+                        Txt { width: parent.width - 28; anchors.verticalCenter: parent.verticalCenter; text: modelData; role: "bodySmall"; muted: true; wrapMode: Text.WordWrap }
                     }
                 }
             }
@@ -130,15 +131,14 @@ Item {
             }
         }
 
-        // ---- Compact horizontal QR layout (used in Walkthrough Step 4) ----
-        Row {
+        // ---- Compact QR layout (wraps in a narrow walkthrough pane) ----
+        Flow {
             width: parent.width
             spacing: 24
             visible: panel.compact && (panel.state_ === "hosting" || panel.state_ === "starting" || panel.state_ === "idle") && !panel.showNearby
 
             Item {
                 width: 164; height: 164
-                anchors.verticalCenter: parent.verticalCenter
                 QrCode {
                     anchors.fill: parent
                     visible: panel.state_ === "hosting"
@@ -155,8 +155,7 @@ Item {
             }
 
             Column {
-                width: Math.max(180, parent.width - 188)
-                anchors.verticalCenter: parent.verticalCenter
+                width: panel.width < 440 ? parent.width : parent.width - 188
                 spacing: 10
 
                 Txt {
@@ -173,6 +172,7 @@ Item {
                         delegate: Row {
                             required property int index
                             required property string modelData
+                            width: parent.width
                             spacing: 8
                             Rectangle {
                                 width: 20; height: 20; radius: Theme.graphite ? Theme.radiusXs : 10
@@ -181,7 +181,7 @@ Item {
                                 border.color: Theme.outlineVariant
                                 Txt { anchors.centerIn: parent; text: index + 1; role: "caption"; weight: 700 }
                             }
-                            Txt { anchors.verticalCenter: parent.verticalCenter; text: modelData; role: "bodySmall"; muted: true }
+                            Txt { width: parent.width - 28; anchors.verticalCenter: parent.verticalCenter; text: modelData; role: "bodySmall"; muted: true; wrapMode: Text.WordWrap }
                         }
                     }
                 }
@@ -225,10 +225,10 @@ Item {
                     required property var modelData
                     width: parent.width
                     height: 56
-                    radius: Theme.radiusMd
-                    color: Theme.tileColor
-                    border.width: Theme.graphite ? 1 : 0
-                    border.color: Theme.outlineVariant
+                    radius: Theme.cardRadius
+                    color: Theme.panelColor
+                    border.width: 1
+                    border.color: Theme.panelBorder
                     Avatar {
                         id: deviceIcon
                         anchors.left: parent.left; anchors.leftMargin: 12

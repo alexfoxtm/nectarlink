@@ -39,7 +39,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -62,7 +61,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
-import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.PlainTooltip
@@ -101,7 +99,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
 import app.nectarlink.android.NectarlinkApplication
 import app.nectarlink.android.R
@@ -127,6 +124,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.nectarlink.android.sms.PhoneSms
 import app.nectarlink.android.ui.guide.GuideHighlightTarget
+import app.nectarlink.android.ui.theme.WaypairDesign
 import app.nectarlink.android.ui.theme.LocalGlassTheme
 import app.nectarlink.android.ui.theme.LocalReducedMotion
 import app.nectarlink.android.ui.theme.bentoWell
@@ -303,46 +301,55 @@ fun HomeScreen(
         state = listState,
         modifier = modifier.glassModalBlur(isGlass && anyModalOpen),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(
-            start = 20.dp,
-            top = 16.dp,
-            end = 20.dp,
-            bottom = 104.dp,
+            start = WaypairDesign.spacingLg,
+            top = WaypairDesign.spacingLg,
+            end = WaypairDesign.spacingLg,
+            bottom = WaypairDesign.spacingXl,
         ),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingMd),
     ) {
         item(key = "home_header", contentType = "header") {
-            Row(Modifier.padding(top = 8.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(
+                Modifier.fillMaxWidth().padding(bottom = WaypairDesign.spacingSm),
+                verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingSm),
+            ) {
                 Text(
                     stringResource(R.string.home_title),
-                    style = MaterialTheme.typography.headlineLarge,
-                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.headlineMedium,
                 )
-                TextButton(
-                    onClick = onOpenFeaturesGuide,
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(WaypairDesign.spacingSm),
                 ) {
-                    Text(stringResource(R.string.home_guide_title))
-                }
-                // Reconnects and syncs with the PCs; spins once to say so.
-                val spin = remember { androidx.compose.animation.core.Animatable(0f) }
-                val scope = rememberCoroutineScope()
-                IconButton(onClick = {
-                    onRefresh()
-                    if (!reducedMotion) {
-                        scope.launch {
-                            spin.snapTo(0f)
-                            spin.animateTo(360f, androidx.compose.animation.core.tween(700))
-                        }
+                    TextButton(
+                        onClick = onOpenFeaturesGuide,
+                        modifier = Modifier.weight(1f).heightIn(min = WaypairDesign.touchTarget),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                    ) {
+                        Text(stringResource(R.string.home_guide_title))
                     }
-                }) {
-                    Icon(
-                        painterResource(R.drawable.ic_refresh),
-                        contentDescription = stringResource(R.string.action_refresh),
-                        modifier = Modifier.graphicsLayer { rotationZ = spin.value },
-                    )
-                }
-                FilledTonalIconButton(onClick = onPairNew) {
-                    Icon(painterResource(R.drawable.ic_qr), contentDescription = stringResource(R.string.action_pair_new))
+                    // Reconnects and syncs with the PCs; spins once to say so.
+                    val spin = remember { androidx.compose.animation.core.Animatable(0f) }
+                    val scope = rememberCoroutineScope()
+                    IconButton(modifier = Modifier.size(WaypairDesign.touchTarget), onClick = {
+                        onRefresh()
+                        if (!reducedMotion) {
+                            scope.launch {
+                                spin.snapTo(0f)
+                                spin.animateTo(360f, androidx.compose.animation.core.tween(700))
+                            }
+                        }
+                    }) {
+                        Icon(
+                            painterResource(R.drawable.ic_refresh),
+                            contentDescription = stringResource(R.string.action_refresh),
+                            modifier = Modifier.graphicsLayer { rotationZ = spin.value },
+                        )
+                    }
+                    FilledTonalIconButton(onClick = onPairNew, modifier = Modifier.size(WaypairDesign.touchTarget)) {
+                        Icon(painterResource(R.drawable.ic_qr), contentDescription = stringResource(R.string.action_pair_new))
+                    }
                 }
             }
         }
@@ -860,11 +867,11 @@ private fun WhatsNewFeaturesGuideCard(
         modifier = Modifier
             .fillMaxWidth()
             .liquidGlassCard(
-                cornerRadius = 24.dp,
+                cornerRadius = WaypairDesign.cardRadius,
                 isGlass = isGlass,
-                baseColor = MaterialTheme.colorScheme.secondaryContainer,
+                baseColor = WaypairDesign.panelColor(),
                 tintColor = MaterialTheme.colorScheme.primary,
-                outlineColor = if (isGlass) MaterialTheme.colorScheme.outlineVariant else Color.Transparent,
+                outlineColor = WaypairDesign.panelBorder(),
             )
             .padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -872,12 +879,12 @@ private fun WhatsNewFeaturesGuideCard(
         Text(
             text = stringResource(R.string.home_whats_new_guide),
             style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSecondaryContainer,
+            color = MaterialTheme.colorScheme.onSurface,
         )
         Text(
             text = stringResource(R.string.home_guide_card_body),
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSecondaryContainer,
+            color = MaterialTheme.colorScheme.onSurface,
         )
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -905,11 +912,11 @@ private fun HiveInviteCard(onTry: () -> Unit, onDismiss: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .liquidGlassCard(
-                cornerRadius = 24.dp,
+                cornerRadius = WaypairDesign.cardRadius,
                 isGlass = isGlass,
-                baseColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                baseColor = WaypairDesign.panelColor(),
                 tintColor = MaterialTheme.colorScheme.primary,
-                outlineColor = if (isGlass) MaterialTheme.colorScheme.outlineVariant else Color.Transparent,
+                outlineColor = WaypairDesign.panelBorder(),
             )
             .padding(16.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -964,24 +971,24 @@ private fun NoPairedPcCard(
             .fillMaxWidth()
             .guideHighlightRing(highlighted)
             .liquidGlassCard(
-                cornerRadius = 28.dp,
+                cornerRadius = WaypairDesign.heroRadius,
                 isGlass = isGlass,
-                baseColor = MaterialTheme.colorScheme.primaryContainer,
+                baseColor = WaypairDesign.heroWash(),
                 tintColor = MaterialTheme.colorScheme.primary,
-                outlineColor = if (isGlass) MaterialTheme.colorScheme.outlineVariant else Color.Transparent,
+                outlineColor = WaypairDesign.panelBorder(),
             )
-            .padding(22.dp),
+            .padding(WaypairDesign.spacingXl),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text(
             text = stringResource(R.string.home_no_pc_paired),
-            style = MaterialTheme.typography.headlineSmall,
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
+            style = MaterialTheme.typography.headlineMedium,
+            color = MaterialTheme.colorScheme.onSurface,
         )
         Text(
             text = stringResource(R.string.home_no_pc_body),
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
+            color = MaterialTheme.colorScheme.onSurface,
         )
         Spacer(Modifier.height(4.dp))
         FlowRow(
@@ -1121,11 +1128,11 @@ private fun PermissionsSetupCard(
         modifier = Modifier
             .fillMaxWidth()
             .liquidGlassCard(
-                cornerRadius = 28.dp,
+                cornerRadius = WaypairDesign.cardRadius,
                 isGlass = isGlass,
-                baseColor = MaterialTheme.colorScheme.surfaceContainer,
+                baseColor = WaypairDesign.panelColor(),
                 tintColor = MaterialTheme.colorScheme.primary,
-                outlineColor = if (isGlass) MaterialTheme.colorScheme.outlineVariant else Color.Transparent,
+                outlineColor = WaypairDesign.panelBorder(),
             )
             .padding(20.dp),
     ) {
@@ -1338,11 +1345,11 @@ private fun PeerCard(
         modifier = Modifier
             .fillMaxWidth()
             .liquidGlassCard(
-                cornerRadius = 28.dp,
+                cornerRadius = WaypairDesign.cardRadius,
                 isGlass = isGlass,
-                baseColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                baseColor = WaypairDesign.panelColor(),
                 tintColor = MaterialTheme.colorScheme.primary,
-                outlineColor = if (isGlass) MaterialTheme.colorScheme.outlineVariant else Color.Transparent,
+                outlineColor = WaypairDesign.panelBorder(),
             )
             .padding(22.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -1444,23 +1451,23 @@ private fun PcCard(
     val isGlass = LocalGlassTheme.current
     val reducedMotion = LocalReducedMotion.current
     androidx.compose.runtime.CompositionLocalProvider(
-        androidx.compose.material3.LocalContentColor provides MaterialTheme.colorScheme.onPrimaryContainer,
+        androidx.compose.material3.LocalContentColor provides MaterialTheme.colorScheme.onSurface,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .animateContentSize(tween(if (reducedMotion) 0 else 220))
                 .liquidGlassCard(
-                    cornerRadius = 28.dp,
+                    cornerRadius = WaypairDesign.cardRadius,
                     isGlass = isGlass,
-                    baseColor = MaterialTheme.colorScheme.primaryContainer,
+                    baseColor = WaypairDesign.panelColor(),
                     tintColor = MaterialTheme.colorScheme.primary,
-                    outlineColor = if (isGlass) MaterialTheme.colorScheme.outlineVariant else Color.Transparent,
+                    outlineColor = WaypairDesign.panelBorder(),
                 )
-                .padding(22.dp),
+                .padding(WaypairDesign.spacingLg),
         ) {
             val context = LocalContext.current
-            val ink = MaterialTheme.colorScheme.onPrimaryContainer
+            val ink = MaterialTheme.colorScheme.onSurface
             val primaryBtn = ButtonDefaults.buttonColors(
                 disabledContainerColor = ink.copy(alpha = 0.08f),
                 disabledContentColor = ink.copy(alpha = 0.38f),
@@ -1482,10 +1489,9 @@ private fun PcCard(
             val controlPcEnabled = device.canControlPc()
             val deckEnabled = device.canOpenDeck()
             val ownedCameraPermissionMissing = device.online &&
-                !WebcamService.hasPermission(context) &&
-                (context.applicationContext as app.nectarlink.android.NectarlinkApplication)
-                    .core.webcamRequiresOwned(device.id)
-            val webcamEnabled = device.canOpenWebcam() || ownedCameraPermissionMissing
+                device.webcamLockedOnPhonePermission() &&
+                !WebcamService.hasPermission(context)
+            val webcamEnabled = device.canOpenWebcam()
             val browsePcEnabled = device.canBrowsePcFiles()
             // Offline-greyed actions carry no reason; the status dot and wake UI explain those.
             val controlPcReason = unsupportedReason.takeIf { device.online && !controlPcEnabled }
@@ -1520,7 +1526,7 @@ private fun PcCard(
                         colors = tonal,
                         onClick = { onWake(device.id) },
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 4.dp),
-                        modifier = Modifier.heightIn(min = 32.dp),
+                        modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
                     ) {
                         Text(
                             stringResource(R.string.action_wake_pc),
@@ -1562,8 +1568,8 @@ private fun PcCard(
                 // 1. Primary Workspace Bento Grid (2x2): Control PC, Deck, Desk Mode, Webcam
                 Text(
                     text = stringResource(R.string.home_section_screen),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = ink.copy(alpha = 0.68f),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(start = 2.dp),
                 )
                 Row(
@@ -1576,7 +1582,7 @@ private fun PcCard(
                             enabled = controlPcEnabled,
                             colors = primaryBtn,
                             onClick = { onRemote(device.id) },
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp)
+                            modifier = Modifier.fillMaxWidth().heightIn(min = WaypairDesign.touchTarget)
                                 .capabilityReason(controlPcReason),
                         ) {
                             Icon(
@@ -1594,7 +1600,7 @@ private fun PcCard(
                             enabled = deckEnabled,
                             colors = tonal,
                             onClick = { onDeck(device.id) },
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp)
+                            modifier = Modifier.fillMaxWidth().heightIn(min = WaypairDesign.touchTarget)
                                 .capabilityReason(deckReason),
                         ) {
                             Icon(
@@ -1616,7 +1622,7 @@ private fun PcCard(
                         enabled = device.online,
                         colors = tonal,
                         onClick = { onDesk(device.id) },
-                        modifier = Modifier.weight(1f).heightIn(min = 44.dp),
+                        modifier = Modifier.weight(1f).heightIn(min = WaypairDesign.touchTarget),
                     ) {
                         Icon(
                             imageVector = DeskClockIcon,
@@ -1632,7 +1638,7 @@ private fun PcCard(
                             enabled = webcamEnabled,
                             colors = tonal,
                             onClick = { onWebcam(device.id) },
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)
+                            modifier = Modifier.fillMaxWidth().heightIn(min = WaypairDesign.touchTarget)
                                 .capabilityReason(webcamReason),
                         ) {
                             Icon(
@@ -1651,8 +1657,8 @@ private fun PcCard(
                 // 2. Files & Clipboard Bento Strip (Always visible, no hidden expander)
                 Text(
                     text = stringResource(R.string.home_section_transfer),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = ink.copy(alpha = 0.68f),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(start = 2.dp, top = 2.dp),
                 )
                 Column(
@@ -1675,7 +1681,7 @@ private fun PcCard(
                             enabled = if (device.online) device.has("files.send") else true,
                             colors = tonal,
                             onClick = { pickFiles.launch(arrayOf("*/*")) },
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(1f).heightIn(min = WaypairDesign.touchTarget),
                         ) {
                             Icon(
                                 imageVector = SendArrowIcon,
@@ -1690,7 +1696,7 @@ private fun PcCard(
                             enabled = if (device.online) device.has("files.send") else true,
                             colors = tonal,
                             onClick = { pickFolder.launch(null) },
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(1f).heightIn(min = WaypairDesign.touchTarget),
                         ) {
                             Icon(
                                 imageVector = FolderIcon,
@@ -1711,7 +1717,7 @@ private fun PcCard(
                             enabled = if (device.online) device.usable("clipboard.auto_phone_to_pc") else true,
                             colors = tonal,
                             onClick = { context.startActivity(SendActivity.sendClipboardIntent(context, device.id)) },
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(1f).heightIn(min = WaypairDesign.touchTarget),
                         ) {
                             Icon(
                                 imageVector = ClipboardIcon,
@@ -1727,7 +1733,7 @@ private fun PcCard(
                                 enabled = browsePcEnabled,
                                 colors = tonal,
                                 onClick = { onBrowsePcFiles(device.id) },
-                                modifier = Modifier.fillMaxWidth().capabilityReason(browsePcReason),
+                                modifier = Modifier.fillMaxWidth().heightIn(min = WaypairDesign.touchTarget).capabilityReason(browsePcReason),
                             ) {
                                 Icon(
                                     imageVector = PcFolderIcon,
@@ -1759,8 +1765,8 @@ private fun PcCard(
                 // 4. Utilities & Power Row (Voice Memo, Ring PC, Lock, Sleep)
                 Text(
                     text = stringResource(R.string.home_section_system),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = ink.copy(alpha = 0.68f),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(start = 2.dp, top = 2.dp),
                 )
                 Row(
@@ -1772,7 +1778,7 @@ private fun PcCard(
                         enabled = device.online,
                         colors = tonal,
                         onClick = { onRecord(device.id) },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).heightIn(min = WaypairDesign.touchTarget),
                     ) {
                         Icon(
                             imageVector = MicIcon,
@@ -1790,7 +1796,7 @@ private fun PcCard(
                             ringing = !ringing
                             onRing(device.id, ringing)
                         },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).heightIn(min = WaypairDesign.touchTarget),
                     ) {
                         Icon(
                             imageVector = BellIcon,
@@ -1812,7 +1818,7 @@ private fun PcCard(
                             colors = outlined,
                             border = outline,
                             onClick = { onPower(device.id, false) },
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(1f).heightIn(min = WaypairDesign.touchTarget),
                         ) {
                             ButtonLabel(stringResource(R.string.action_lock_pc))
                         }
@@ -1822,7 +1828,7 @@ private fun PcCard(
                             colors = outlined,
                             border = outline,
                             onClick = { onPower(device.id, true) },
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(1f).heightIn(min = WaypairDesign.touchTarget),
                         ) {
                             ButtonLabel(stringResource(R.string.action_sleep_pc))
                         }
@@ -1948,7 +1954,7 @@ private fun PcAudioCardSection(
                             else app.nectarlink.core.MediaAction.PLAY,
                         )
                     },
-                    modifier = Modifier.size(32.dp),
+                    modifier = Modifier.size(WaypairDesign.touchTarget),
                 ) {
                     Icon(
                         painter = painterResource(if (mediaSummary.playing) R.drawable.ic_pause else R.drawable.ic_play),
@@ -1961,7 +1967,7 @@ private fun PcAudioCardSection(
                 }
                 IconButton(
                     onClick = { pcMedia?.pressed(app.nectarlink.core.MediaAction.NEXT) },
-                    modifier = Modifier.size(32.dp),
+                    modifier = Modifier.size(WaypairDesign.touchTarget),
                 ) {
                     Icon(
                         painter = painterResource(R.drawable.ic_skip_next),
@@ -2069,7 +2075,7 @@ private fun PcAudioCardSection(
         ) {
             IconButton(
                 onClick = { onSetPcAudio(null, !deckState.muted) },
-                modifier = Modifier.size(32.dp),
+                modifier = Modifier.size(WaypairDesign.touchTarget),
             ) {
                 Icon(
                     painter = painterResource(if (deckState.muted) R.drawable.ic_sound_off else R.drawable.ic_speaker),
@@ -2232,11 +2238,11 @@ private fun ClipboardHistoryCard(
         modifier = Modifier
             .fillMaxWidth()
             .liquidGlassCard(
-                cornerRadius = 28.dp,
+                cornerRadius = WaypairDesign.cardRadius,
                 isGlass = isGlass,
-                baseColor = MaterialTheme.colorScheme.surfaceContainer,
+                baseColor = WaypairDesign.panelColor(),
                 tintColor = MaterialTheme.colorScheme.primary,
-                outlineColor = if (isGlass) MaterialTheme.colorScheme.outlineVariant else Color.Transparent,
+                outlineColor = WaypairDesign.panelBorder(),
             )
             .clickable(role = Role.Button, onClick = onOpen)
             .padding(20.dp),
@@ -2255,7 +2261,7 @@ private fun ClipboardHistoryCard(
                 TextButton(
                     onClick = { revealLatest = !revealLatest },
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                    modifier = Modifier.heightIn(min = 28.dp),
+                    modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
                 ) {
                     Text(
                         stringResource(
@@ -2490,11 +2496,11 @@ private fun LocalSendCard(
         modifier = Modifier
             .fillMaxWidth()
             .liquidGlassCard(
-                cornerRadius = 28.dp,
+                cornerRadius = WaypairDesign.cardRadius,
                 isGlass = isGlass,
-                baseColor = MaterialTheme.colorScheme.surfaceContainer,
+                baseColor = WaypairDesign.panelColor(),
                 tintColor = MaterialTheme.colorScheme.primary,
-                outlineColor = if (isGlass) MaterialTheme.colorScheme.outlineVariant else Color.Transparent,
+                outlineColor = WaypairDesign.panelBorder(),
             )
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -2510,7 +2516,7 @@ private fun LocalSendCard(
             )
             IconButton(
                 onClick = onRefresh,
-                modifier = Modifier.size(32.dp),
+                modifier = Modifier.size(WaypairDesign.touchTarget),
             ) {
                 Icon(
                     painterResource(R.drawable.ic_refresh),
@@ -2593,11 +2599,11 @@ private fun SendQueueCard(
         modifier = Modifier
             .fillMaxWidth()
             .liquidGlassCard(
-                cornerRadius = 28.dp,
+                cornerRadius = WaypairDesign.cardRadius,
                 isGlass = isGlass,
-                baseColor = MaterialTheme.colorScheme.surfaceContainer,
+                baseColor = WaypairDesign.panelColor(),
                 tintColor = MaterialTheme.colorScheme.primary,
-                outlineColor = if (isGlass) MaterialTheme.colorScheme.outlineVariant else Color.Transparent,
+                outlineColor = WaypairDesign.panelBorder(),
             )
             .padding(20.dp),
     ) {
@@ -2614,7 +2620,7 @@ private fun SendQueueCard(
                 TextButton(
                     onClick = onCancelAll,
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                    modifier = Modifier.heightIn(min = 28.dp),
+                    modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
                 ) {
                     Text(
                         stringResource(R.string.send_queue_cancel_all),
@@ -2626,7 +2632,7 @@ private fun SendQueueCard(
                 TextButton(
                     onClick = onClearFinished,
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                    modifier = Modifier.heightIn(min = 28.dp),
+                    modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
                 ) {
                     Text(
                         stringResource(R.string.send_queue_clear),
@@ -2772,7 +2778,7 @@ private fun SendQueueRow(
                 is FfiQueueStatus.Waiting, is FfiQueueStatus.Sending -> {
                     IconButton(
                         onClick = onCancel,
-                        modifier = Modifier.size(32.dp),
+                        modifier = Modifier.size(WaypairDesign.touchTarget),
                     ) {
                         Icon(
                             imageVector = CloseQueueIcon,
@@ -2830,11 +2836,11 @@ private fun TransfersCard(
         modifier = Modifier
             .fillMaxWidth()
             .liquidGlassCard(
-                cornerRadius = 28.dp,
+                cornerRadius = WaypairDesign.cardRadius,
                 isGlass = isGlass,
-                baseColor = MaterialTheme.colorScheme.surfaceContainer,
+                baseColor = WaypairDesign.panelColor(),
                 tintColor = MaterialTheme.colorScheme.primary,
-                outlineColor = if (isGlass) MaterialTheme.colorScheme.outlineVariant else Color.Transparent,
+                outlineColor = WaypairDesign.panelBorder(),
             )
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -3006,11 +3012,11 @@ private fun TimelineCard(
         modifier = Modifier
             .fillMaxWidth()
             .liquidGlassCard(
-                cornerRadius = 28.dp,
+                cornerRadius = WaypairDesign.cardRadius,
                 isGlass = isGlass,
-                baseColor = MaterialTheme.colorScheme.surfaceContainer,
+                baseColor = WaypairDesign.panelColor(),
                 tintColor = MaterialTheme.colorScheme.primary,
-                outlineColor = if (isGlass) MaterialTheme.colorScheme.outlineVariant else Color.Transparent,
+                outlineColor = WaypairDesign.panelBorder(),
             )
             .clickable(role = Role.Button, onClick = onOpen)
             .padding(20.dp),
@@ -3025,7 +3031,7 @@ private fun TimelineCard(
                 TextButton(
                     onClick = { revealLatest = !revealLatest },
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                    modifier = Modifier.heightIn(min = 28.dp),
+                    modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
                 ) {
                     Text(
                         stringResource(
@@ -3900,17 +3906,10 @@ private val CloseQueueIcon: ImageVector by lazy {
 // leaves too little room for labels like "Browse PC files" on narrow phones.
 private val CardButtonPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp)
 
-// One line that shrinks a little on narrow phones or with large font sizes
-// before it would ever cut a word off.
+// Preserve the user's text size and let action rows grow on narrow panes.
 @Composable
 private fun ButtonLabel(text: String) {
-    val size = LocalTextStyle.current.fontSize.takeIf { it.isSpecified } ?: 14.sp
-    Text(
-        text,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        autoSize = TextAutoSize.StepBased(minFontSize = 11.sp, maxFontSize = size, stepSize = 0.5.sp),
-    )
+    Text(text)
 }
 
 /** The localized fallback label for a queue item whose title is empty. */

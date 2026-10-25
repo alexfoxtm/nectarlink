@@ -4,11 +4,11 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 static RUNNING: AtomicBool = AtomicBool::new(false);
 unsafe extern "C" {
-    fn wp_camera_demand_start(callback: extern "C" fn(bool));
+    fn wp_camera_demand_start(callback: extern "C" fn(bool, bool));
     fn wp_camera_demand_stop();
 }
-extern "C" fn changed(active: bool) {
-    if RUNNING.load(Ordering::Acquire) { crate::webcam::consumer_demand(active); }
+extern "C" fn changed(native: bool, active: bool) {
+    if RUNNING.load(Ordering::Acquire) { crate::webcam::consumer_demand(native, active); }
 }
 pub fn start() {
     if !RUNNING.swap(true, Ordering::AcqRel) {

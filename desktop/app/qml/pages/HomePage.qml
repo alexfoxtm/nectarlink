@@ -239,12 +239,12 @@ Item {
 
         Column {
             id: column
-            readonly property real maxContentWidth: 1680
+            readonly property real maxContentWidth: 1440
             width: Math.min(parent.width - Theme.contentPadding * 2, maxContentWidth)
             x: Math.round((parent.width - width) / 2)
             y: Theme.contentPadding
-            // macOS hybrid: tighter section rhythm; other platforms unchanged.
-            spacing: page.macTidy ? Math.max(8, Theme.gutter - 4) : Theme.gutter
+            // Generous group spacing keeps the live device and its actions first.
+            spacing: Theme.spacingXl
 
             // Gentle "What's new" banner for returning or upgraded users.
             Card {
@@ -452,8 +452,9 @@ Item {
             }
 
             // Device switcher (only with more than one device).
-            Row {
-                spacing: 8
+            Flow {
+                width: column.width
+                spacing: Theme.spacingSm
                 visible: DeviceList.count > 1
                 Repeater {
                     model: DeviceList
@@ -579,7 +580,7 @@ Item {
         }
     }
 
-    component DeviceHome: Row {
+    component DeviceHome: Grid {
         id: home
         required property string deviceId
         required property string name
@@ -660,12 +661,14 @@ Item {
         // update-phone-app prompt.
         readonly property bool provenCable: home.displayPath === "usb" && home.usbMedium === "physical"
 
-        spacing: Theme.gutter
-        readonly property real sideWidth: Math.round(Math.min(450, Math.max(320, home.width * 0.34)))
+        columns: width >= 1080 ? 2 : 1
+        spacing: Theme.spacingXl
+        readonly property real sideWidth: columns === 2
+            ? Math.round(Math.min(380, Math.max(320, home.width * 0.32))) : home.width
 
         Column {
-            width: home.width - home.sideWidth - home.spacing
-            spacing: Theme.gutter
+            width: home.columns === 2 ? home.width - home.sideWidth - home.spacing : home.width
+            spacing: Theme.spacingXl
 
             // ---- Hero ----
             Rectangle {
@@ -707,16 +710,16 @@ Item {
                 }
                 readonly property bool hasGlanceSummary: true
                 height: wide
-                    ? Math.max(188, Math.max(phoneArt.height, Math.max(identityCol.height, summaryPanel.height)) + (page.macTidy ? 28 : 36))
+                    ? Math.max(216, Math.max(phoneArt.height, Math.max(identityCol.height, summaryPanel.height)) + 48)
                     : topHeroRow.height + 1 + summaryPanel.height + 60
                 Behavior on height {
                     enabled: home.canAnimateHero
                     NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
                 }
-                radius: Theme.radiusXl
-                color: Theme.heroColor
-                border.width: (Theme.graphite || Theme.amoled) && !Theme.glass ? 1 : 0
-                border.color: Theme.outlineVariant
+                radius: Theme.heroRadius
+                color: Theme.heroWash
+                border.width: 1
+                border.color: Theme.panelBorder
                 Behavior on color { ColorAnimation { duration: Theme.fadeNormal } }
 
                 GlassRim { radius: heroCard.radius }
@@ -1263,14 +1266,13 @@ Item {
             }
 
             // ---- Quick actions ----
-            // macOS hybrid: primary Mirror/transfer tiles keep full prominence;
-            // the grid breathes less on Mac. Four-column threshold stays at
-            // 640 px so LockChip reasons keep their proven width (H3).
+            // Primary phone actions keep their order and capability explanations.
+            // Two columns retain readable labels beside the details column.
             Grid {
                 id: actions
                 width: parent.width
-                columns: width > 640 ? 4 : 2
-                spacing: page.macTidy ? 8 : 12
+                columns: width >= 880 ? 4 : 2
+                spacing: Theme.spacingMd
                 readonly property real tileWidth: (width - spacing * (columns - 1)) / columns
                 // Polished reflow: tiles ease when the grid reflows outside
                 // resize/reduceMotion (existing gates plus the Mac gate). No
@@ -1284,6 +1286,7 @@ Item {
                     width: actions.tileWidth
                     deviceOnline: home.online
                     title: qsTr("Mirror screen")
+                    accented: true
                     subtitle: ""
                     iconPath: Icons.mirror
                     // The Mac receives the phone's screen; it does not inject input.
@@ -1849,7 +1852,7 @@ Item {
         // ---- Details ----
         Column {
             width: home.sideWidth
-            spacing: Theme.gutter
+            spacing: Theme.spacingXl
 
             // The call in progress on the phone.
             Binding { target: PhoneCall; property: "device"; value: home.deviceId; when: home.visible; restoreMode: Binding.RestoreNone }
@@ -3268,20 +3271,20 @@ Item {
                                            || (playableWhenAddonMissing && feature.state === "locked" && feature.action === "enableAddon")
                                            || (queueableWhenOffline && (!tile.deviceOnline || feature.state === "unknown") && feature.state !== "locked" && feature.state !== "unsupported"))
 
-        height: (tile.subtitle.length > 0 || !tile.available) ? 96 : 82
+        height: (tile.subtitle.length > 0 || !tile.available) ? 112 : 104
         activeFocusOnTab: available
-        radius: Theme.radiusLg
+        radius: Theme.cardRadius
         color: tile.active
             ? Theme.primary
             : (tile.accented && !Theme.graphite
-                ? Qt.tint(Theme.tileColor, Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Theme.dark ? 0.14 : 0.10))
-                : Theme.tileColor)
-        border.width: Theme.focusVisible(tile) ? 2 : ((tile.accented || Theme.graphite) && !Theme.glass ? 1 : 0)
+                ? Theme.heroWash
+                : Theme.panelColor)
+        border.width: Theme.focusVisible(tile) ? 2 : 1
         border.color: Theme.focusVisible(tile)
             ? Theme.primary
             : (tile.accented && !Theme.graphite
                 ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Theme.dark ? 0.36 : 0.30)
-                : (Theme.ambientBlurActive ? Theme.cardBorder : Theme.outlineVariant))
+                : Theme.panelBorder)
         scale: tap.pressed && available ? Theme.pressScale : 1
         Behavior on color { enabled: !Theme.reduceMotion; ColorAnimation { duration: Theme.fadeFast } }
         Behavior on scale { enabled: !Theme.reduceMotion; NumberAnimation { duration: 170; easing.type: Easing.OutBack } }
@@ -3307,8 +3310,8 @@ Item {
         }
         Column {
             anchors.fill: parent
-            anchors.margins: 12
-            spacing: 8
+            anchors.margins: Theme.spacingLg
+            spacing: Theme.spacingSm
             Rectangle {
                 width: 32; height: 32
                 radius: Theme.graphite ? Theme.radiusSm : Theme.radiusMd

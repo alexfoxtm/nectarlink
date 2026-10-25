@@ -281,10 +281,10 @@ FocusScope {
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.leftMargin: 28
-        anchors.rightMargin: 28
+        anchors.leftMargin: 24
+        anchors.rightMargin: 24
         anchors.topMargin: Theme.topBarHeight + 4
-        anchors.bottomMargin: 20
+        anchors.bottomMargin: 24
         spacing: 16
 
         // Single top progress header: 7-segment progress bar + Skip setup action
@@ -355,18 +355,18 @@ FocusScope {
                 width: Math.min(bodyFlick.width, 640)
                 x: Math.floor((bodyFlick.width - width) / 2)
                 y: Math.max(4, Math.floor((bodyFlick.height - implicitHeight) / 2))
-                spacing: 12
+                spacing: 24
 
-                // Unified Honeycomb Cell Stage (fixed height across all 7 steps)
+                // Existing step illustration on a quiet, theme-aware hero surface.
                 Rectangle {
                     Layout.fillWidth: true
                     Layout.preferredHeight: 148
                     implicitWidth: 640
                     implicitHeight: 148
-                    radius: Theme.radiusLg
-                    color: Theme.surfaceContainerLow
+                    radius: Theme.heroRadius
+                    color: Theme.heroWash
                     border.width: 1
-                    border.color: Theme.outlineVariant
+                    border.color: Theme.panelBorder
 
                     Canvas {
                         id: honeycombCanvas
@@ -689,6 +689,7 @@ FocusScope {
                         Layout.fillWidth: true
                         text: walkthrough.stepTitles[walkthrough.step] || ""
                         role: "headline"
+                        size: 30
                         wrapMode: Text.WordWrap
                     }
 
@@ -704,7 +705,7 @@ FocusScope {
                 // Single Unified Card per step
                 Card {
                     Layout.fillWidth: true
-                    padding: 18
+                    padding: 24
                     implicitHeight: stepCardBody.implicitHeight + padding * 2
 
                     ColumnLayout {

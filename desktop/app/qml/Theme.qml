@@ -222,6 +222,25 @@ QtObject {
     readonly property color buttonShadow: graphite ? palette.buttonShadow : "transparent"
     readonly property color scrim: Qt.rgba(0, 0, 0, dark ? 0.5 : 0.32)
 
+    // Shared native presentation roles. Palette ownership remains with the user's theme.
+    readonly property color canvasColor: surface
+    readonly property color panelColor: amoled ? surfaceContainer : (dark ? surfaceContainerLow : "#FFFFFF")
+    readonly property color panelBorder: Qt.rgba(outlineVariant.r, outlineVariant.g, outlineVariant.b, dark ? 0.65 : 0.50)
+    readonly property color insetColor: surfaceContainerLow
+    readonly property color heroWash: Qt.tint(panelColor, Qt.rgba(primary.r, primary.g, primary.b, dark ? 0.12 : 0.08))
+    readonly property color focusColor: primary
+    readonly property int controlRadius: 12
+    readonly property int cardRadius: 16
+    readonly property int heroRadius: 24
+    readonly property int spacingXs: 4
+    readonly property int spacingSm: 8
+    readonly property int spacingMd: 12
+    readonly property int spacingLg: 16
+    readonly property int spacingXl: 24
+    readonly property int spacingXxl: 32
+    readonly property int sidebarWidth: 224
+    readonly property int compactRailWidth: 80
+
     // ---- Shape ----
     readonly property var shape: graphite ? Tokens.data.themes.graphite.shape
         : (hive ? Tokens.data.themes.hive.shape : Tokens.data.themes.bloom.shape)
@@ -246,7 +265,7 @@ QtObject {
     readonly property var layout: Tokens.data.layout.desktop
     readonly property int railWidth: layout.railWidth
     readonly property int topBarHeight: layout.topBarHeight
-    readonly property int contentPadding: layout.contentPadding
+    readonly property int contentPadding: spacingXl
     readonly property int gutter: layout.gutter
     function space(step) { return Tokens.data.spacing.scale[step] }
 

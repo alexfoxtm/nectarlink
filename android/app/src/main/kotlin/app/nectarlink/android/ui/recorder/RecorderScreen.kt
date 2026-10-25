@@ -9,6 +9,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -22,12 +23,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -74,6 +75,7 @@ import app.nectarlink.android.recorder.RecorderService
 import app.nectarlink.android.recorder.SavedRecording
 import app.nectarlink.android.ui.theme.LocalAppFonts
 import app.nectarlink.android.ui.theme.LocalReducedMotion
+import app.nectarlink.android.ui.theme.WaypairDesign
 import kotlin.math.sin
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -157,7 +159,7 @@ fun RecorderScreen(
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        contentPadding = PaddingValues(WaypairDesign.spacingLg),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         // Header: Back, PC name, online dot
@@ -175,7 +177,7 @@ fun RecorderScreen(
                 Spacer(Modifier.width(4.dp))
                 Text(
                     device.name,
-                    style = MaterialTheme.typography.titleLarge,
+                    style = MaterialTheme.typography.headlineSmall,
                     modifier = Modifier.weight(1f),
                 )
                 val dotColor = if (device.online) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
@@ -191,10 +193,10 @@ fun RecorderScreen(
         if (!hasMicPermission) {
             item(key = "mic_permission", contentType = "permission_banner") {
                 Surface(
-                    shape = MaterialTheme.shapes.extraLarge,
+                    shape = RoundedCornerShape(WaypairDesign.cardRadius),
                     color = MaterialTheme.colorScheme.secondaryContainer,
                 ) {
-                    Column(Modifier.fillMaxWidth().padding(20.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(WaypairDesign.spacingLg)) {
                         Text(
                             stringResource(R.string.recorder_permission_title),
                             style = MaterialTheme.typography.titleMedium,
@@ -224,15 +226,15 @@ fun RecorderScreen(
         if (!device.online) {
             item(key = "offline_notice", contentType = "offline_banner") {
                 Surface(
-                    shape = MaterialTheme.shapes.large,
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    shape = RoundedCornerShape(WaypairDesign.cardRadius),
+                    color = WaypairDesign.insetColor(),
                 ) {
                     Column(Modifier.fillMaxWidth().padding(16.dp)) {
                         Text(
                             stringResource(R.string.transfer_waiting, device.name),
                             style = MaterialTheme.typography.titleSmall,
                         )
-                        Spacer(Modifier.height(2.dp))
+                        Spacer(Modifier.height(WaypairDesign.spacingXs))
                         Text(
                             stringResource(R.string.recorder_offline_hint, device.name),
                             style = MaterialTheme.typography.bodySmall,
@@ -246,7 +248,7 @@ fun RecorderScreen(
         // Main Recorder Card: elapsed time, live level meter, big record/pause/stop buttons, markers
         item(key = "recorder_card", contentType = "recorder_card") {
             Surface(
-                shape = MaterialTheme.shapes.extraLarge,
+                shape = RoundedCornerShape(WaypairDesign.heroRadius),
                 color = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
             ) {
@@ -297,10 +299,10 @@ fun RecorderScreen(
                                 }
                             },
                             modifier = Modifier
-                                .height(64.dp)
+                                .heightIn(min = 64.dp)
                                 .fillMaxWidth(0.75f)
                                 .semantics { contentDescription = startDesc },
-                            shape = CircleShape,
+                            shape = RoundedCornerShape(WaypairDesign.controlRadius),
                         ) {
                             Text(
                                 stringResource(R.string.recorder_start),
@@ -324,7 +326,7 @@ fun RecorderScreen(
                                     }
                                 },
                                 modifier = Modifier
-                                    .height(56.dp)
+                                    .heightIn(min = 56.dp)
                                     .weight(1f)
                                     .semantics { contentDescription = pauseResumeLabel },
                             ) {
@@ -339,7 +341,7 @@ fun RecorderScreen(
                                     contentColor = MaterialTheme.colorScheme.onError,
                                 ),
                                 modifier = Modifier
-                                    .height(56.dp)
+                                    .heightIn(min = 56.dp)
                                     .weight(1f)
                                     .semantics { contentDescription = stopLabel },
                             ) {
@@ -379,7 +381,7 @@ fun RecorderScreen(
                                     markerText = ""
                                 },
                                 modifier = Modifier
-                                    .height(52.dp)
+                                    .heightIn(min = 52.dp)
                                     .semantics { contentDescription = addMarkerDesc },
                             ) {
                                 Text(addMarkerDesc)
@@ -478,6 +480,7 @@ private fun LevelMeter(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun RecordingRow(
     recording: SavedRecording,
@@ -506,8 +509,9 @@ private fun RecordingRow(
     }
 
     Surface(
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainer,
+        shape = RoundedCornerShape(WaypairDesign.cardRadius),
+        color = WaypairDesign.panelColor(),
+        border = BorderStroke(1.dp, WaypairDesign.panelBorder()),
     ) {
         Column(Modifier.fillMaxWidth().padding(16.dp)) {
             Text(
@@ -524,15 +528,20 @@ private fun RecordingRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(WaypairDesign.spacingSm),
+                verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingSm),
+            ) {
                 FilledTonalButton(
                     onClick = onPlayToggle,
+                    modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
                     contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
                 ) {
                     Text(stringResource(if (playing) R.string.action_stop else R.string.media_play))
                 }
                 OutlinedButton(
                     onClick = onSend,
+                    modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
                     contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
                 ) {
                     Text(
@@ -542,9 +551,9 @@ private fun RecordingRow(
                         ),
                     )
                 }
-                Spacer(Modifier.weight(1f))
                 TextButton(
                     onClick = onDelete,
+                    modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                 ) {
                     Text(stringResource(R.string.recorder_delete))

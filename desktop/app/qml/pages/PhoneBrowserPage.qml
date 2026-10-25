@@ -12,6 +12,12 @@ import app.nectarlink
 // listing.
 Item {
     id: page
+
+    Rectangle {
+        anchors.fill: parent
+        color: Theme.canvasColor
+        z: -1
+    }
     property bool active: false
     property string deviceId
     property string deviceName
@@ -206,8 +212,20 @@ Item {
     Item {
         id: toolbar
         visible: page.browsing
-        width: parent.width
-        height: visible ? 56 : 0
+        x: Theme.spacingXl
+        y: Theme.spacingXl
+        width: parent.width - Theme.spacingXl * 2
+        height: visible ? 64 : 0
+
+        Rectangle {
+            anchors.fill: parent
+            radius: Theme.cardRadius
+            color: Theme.glass || Theme.hive ? Theme.cardColor : Theme.panelColor
+            border.width: 1
+            border.color: Theme.hive ? Theme.cardBorder : Theme.panelBorder
+            z: -1
+        }
+
         readonly property bool compact: width < 540
 
         IconButton {
@@ -311,7 +329,9 @@ Item {
     Item {
         id: filterBar
         anchors.top: toolbar.bottom
-        width: parent.width
+        anchors.topMargin: Theme.spacingMd
+        x: Theme.spacingXl
+        width: parent.width - Theme.spacingXl * 2
         visible: page.consented && page.status === "ready" && PhoneBrowser.loadedCount > 0
         height: visible ? nameFilter.implicitHeight + sortChoice.implicitHeight + 18 : 0
 
@@ -355,7 +375,8 @@ Item {
     Item {
         id: truncatedNote
         anchors.top: filterBar.bottom
-        width: parent.width
+        x: Theme.spacingXl
+        width: parent.width - Theme.spacingXl * 2
         visible: page.listShown && PhoneBrowser.truncated
         height: visible ? 32 : 0
         Row {
@@ -383,8 +404,21 @@ Item {
     Item {
         id: content
         anchors.top: truncatedNote.bottom
+        anchors.topMargin: Theme.spacingMd
         anchors.bottom: parent.bottom
-        width: parent.width
+        anchors.bottomMargin: Theme.spacingXl
+        x: Theme.spacingXl
+        width: parent.width - Theme.spacingXl * 2
+
+        Rectangle {
+            anchors.fill: parent
+            radius: Theme.cardRadius
+            color: Theme.glass || Theme.hive ? Theme.cardColor : Theme.panelColor
+            border.width: 1
+            border.color: Theme.hive ? Theme.cardBorder : Theme.panelBorder
+            z: -1
+        }
+
 
         Spinner {
             anchors.centerIn: parent
@@ -407,7 +441,8 @@ Item {
                     : page.stateKind === "denied" ? Icons.lock
                     : page.stateKind === "failed" || page.stateKind === "invalid" ? Icons.warning
                     : Icons.folder
-                color: Theme.surfaceContentVariant
+                color: page.stateKind === "failed" || page.stateKind === "invalid"
+                    ? Theme.error : Theme.surfaceContentVariant
             }
             Txt {
                 width: parent.width
@@ -563,7 +598,7 @@ Item {
         readonly property bool savingThis: PhoneBrowser.saving && page.savingPath === row.path
 
         width: entryList.width
-        height: 52
+        height: 56
 
         Accessible.role: Accessible.ListItem
         Accessible.name: row.name
@@ -579,7 +614,7 @@ Item {
             anchors.rightMargin: 8
             anchors.topMargin: 1
             anchors.bottomMargin: 1
-            radius: Theme.graphite ? Theme.radiusSm : Theme.radiusMd
+            radius: Theme.controlRadius
             color: rowMouse.containsMouse
                 ? Qt.rgba(Theme.surfaceContent.r, Theme.surfaceContent.g, Theme.surfaceContent.b, 0.06)
                 : "transparent"
@@ -607,7 +642,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             width: 32; height: 32
             radius: Theme.radiusSm
-            color: Theme.surfaceContainerHigh
+            color: Theme.insetColor
             Icon {
                 anchors.centerIn: parent
                 width: 18; height: 18

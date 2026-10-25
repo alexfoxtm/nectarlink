@@ -4,8 +4,8 @@ import QtQuick.Shapes
 import app.nectarlink
 
 // The installer's and the uninstaller's window (src/setup.rs). One window,
-// three moments: welcome, working, done. Its own fixed colors (honey on warm
-// paper, or on charcoal), following the system's light or dark mode.
+// three moments: welcome, working, done. Its own Graphite presentation
+// follows the system mode without depending on application preferences.
 NativeWindow {
     id: window
 
@@ -14,22 +14,14 @@ NativeWindow {
     readonly property bool animate: !Setup.reduceMotion
     readonly property string phase: Setup.phase
 
-    readonly property color bg: dark ? "#121214" : "#FFF8F3"
-    readonly property color ink: dark ? "#EDE6DD" : "#1F1B16"
-    readonly property color muted: dark ? "#A39A90" : "#6B5E52"
-    readonly property color honey: dark ? "#FFB95F" : "#8A5100"
-    readonly property color onHoney: dark ? "#2C1600" : "#FFFFFF"
+    readonly property color bg: dark ? "#0D0D0E" : "#F5F2EB"
+    readonly property color ink: dark ? "#E8EAED" : "#1A1918"
+    readonly property color muted: dark ? "#9A9CA1" : "#5E5A54"
+    readonly property color honey: ink
+    readonly property color onHoney: bg
     readonly property color track: dark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(0.12, 0.10, 0.08, 0.08)
     readonly property color danger: dark ? "#F0A39C" : "#9E2B25"
-    readonly property color panel: dark ? "#1C1B1D" : "#FFFFFF"
-    // Removing: the comb goes grey and dim.
-    readonly property color comb: removing
-        ? (dark ? Qt.rgba(1, 1, 1, 0.09) : Qt.rgba(0.30, 0.26, 0.22, 0.06))
-        : (dark ? Qt.rgba(1.0, 0.73, 0.37, 0.22) : Qt.rgba(0.54, 0.32, 0.0, 0.085))
-    readonly property color combGlow: removing
-        ? (dark ? Qt.rgba(0.55, 0.52, 0.48, 0.55) : Qt.rgba(0.72, 0.68, 0.62, 0.55))
-        : (dark ? Qt.rgba(1.0, 0.62, 0.18, 0.75) : Qt.rgba(1.0, 0.72, 0.37, 0.80))
-
+    readonly property color panel: dark ? "#0B0B0C" : "#FFFFFF"
     readonly property string action: removing ? "remove"
         : Setup.kind === "update" ? "update"
         : Setup.kind === "reinstall" ? "reinstall"
@@ -78,13 +70,14 @@ NativeWindow {
         Keys.onReturnPressed: if (!disclosure.open && window.phase !== "working") window.primary()
         Keys.onEnterPressed: if (!disclosure.open && window.phase !== "working") window.primary()
 
-        HiveBackdrop {
-            anchors.fill: parent
-            animate: window.animate
-            lineColor: window.comb
-            glowColor: window.combGlow
-            strength: window.removing ? 0.7 : 1
-            origin: Qt.point(width / 2, window.phase === "done" && !window.removing ? 40 : 112)
+        Rectangle {
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.margins: 24
+            height: 152
+            radius: 24
+            color: Qt.tint(window.panel, Qt.rgba(window.ink.r, window.ink.g, window.ink.b, window.dark ? 0.12 : 0.08))
         }
 
         // There is no title bar, so the window moves from anywhere that
@@ -197,7 +190,7 @@ NativeWindow {
                 width: parent.width
                 horizontalAlignment: Text.AlignHCenter
                 font.family: "Figtree"
-                font.pixelSize: 28
+                font.pixelSize: 30
                 font.weight: Font.DemiBold
                 color: window.ink
                 text: window.phase === "failed"
@@ -328,7 +321,7 @@ NativeWindow {
                 width: parent.width
                 horizontalAlignment: Text.AlignHCenter
                 font.family: "Figtree"
-                font.pixelSize: 28
+                font.pixelSize: 30
                 font.weight: Font.DemiBold
                 color: window.ink
                 text: window.removing ? qsTr("Waypair Link is uninstalled") : qsTr("Waypair Link is ready")
@@ -425,7 +418,7 @@ NativeWindow {
                 anchors.centerIn: parent
                 width: 500
                 height: notes.implicitHeight + 64
-                radius: 20
+                radius: 24
                 color: window.panel
                 border.width: 1
                 border.color: Qt.rgba(window.ink.r, window.ink.g, window.ink.b, 0.10)

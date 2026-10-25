@@ -87,12 +87,12 @@ Item {
         id: card
         anchors.horizontalCenter: parent.horizontalCenter
         y: Math.max(56, Math.round(parent.height * 0.12))
-        width: Math.min(580, parent.width - 48)
+        width: Math.min(640, parent.width - Theme.spacingXl * 2)
         height: cardColumn.height
-        radius: Theme.radiusLg
-        color: Theme.surfaceContainerHigh
+        radius: Theme.heroRadius
+        color: Theme.panelColor
         border.width: 1
-        border.color: Theme.outlineVariant
+        border.color: Theme.panelBorder
         clip: true
 
         Column {
@@ -102,7 +102,7 @@ Item {
             // ---- Search bar ----
             Item {
                 width: parent.width
-                height: 54
+                height: 64
 
                 Icon {
                     id: searchIcon
@@ -183,7 +183,7 @@ Item {
                     radius: Theme.radiusXs
                     color: Theme.surfaceContainerHighest
                     border.width: 1
-                    border.color: Theme.outlineVariant
+                    border.color: Theme.panelBorder
                     activeFocusOnTab: true
 
                     function activate() {
@@ -235,17 +235,18 @@ Item {
             // ---- Results list ----
             Item {
                 width: parent.width
-                height: palette.items.length > 0 ? Math.min(resultsList.contentHeight + 12, 360) : 72
+                height: palette.items.length > 0
+                    ? Math.min(resultsList.contentHeight + 16, Math.max(120, palette.height - card.y - 160), 384) : 88
 
                 ListView {
                     id: resultsList
                     anchors.fill: parent
-                    anchors.margins: 6
+                    anchors.margins: Theme.spacingSm
                     clip: true
                     boundsBehavior: Flickable.StopAtBounds
                     visible: palette.items.length > 0
                     model: palette.items
-                    spacing: 2
+                    spacing: Theme.spacingXs
 
                     delegate: Rectangle {
                         id: row
@@ -257,12 +258,12 @@ Item {
                             ? qsTr("Not yet available on Mac") : (modelData.subtitle || "")
 
                         width: resultsList.width
-                        height: 52
-                        radius: Theme.radiusSm
+                        height: 60
+                        radius: Theme.controlRadius
                         color: selected
-                            ? Theme.secondaryContainer
+                            ? Theme.heroWash
                             : rowHover.hovered
-                              ? Theme.surfaceContainerHighest
+                              ? Theme.insetColor
                               : "transparent"
 
                         Accessible.role: Accessible.ListItem
@@ -325,6 +326,7 @@ Item {
                                 width: parent.width
                                 text: row.modelData.title || ""
                                 role: "label"
+                                elide: Text.ElideRight
                                 size: 14
                                 color: row.selected ? Theme.secondaryContainerContent : Theme.surfaceContent
                             }
@@ -334,6 +336,7 @@ Item {
                                 visible: row.explanation.length > 0
                                 text: row.explanation
                                 role: "caption"
+                                elide: Text.ElideRight
                                 size: 12
                                 muted: !row.selected
                                 color: row.selected ? Theme.secondaryContainerContent : Theme.surfaceContentVariant
@@ -380,7 +383,7 @@ Item {
             // ---- Footer ----
             Item {
                 width: parent.width
-                height: 32
+                height: 40
 
                 Txt {
                     anchors.left: parent.left

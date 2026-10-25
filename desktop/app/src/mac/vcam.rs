@@ -51,7 +51,7 @@ pub fn is_registered() -> bool {
 }
 pub fn status_text() -> String {
     if is_registered() {
-        return tr!("Webcam", "Waypair Camera is ready · 720p at 30 fps.");
+        return tr!("Webcam", "Waypair Camera is ready · 720p, 1080p and 4K at 30 fps.");
     }
     if !extension_payload_present() {
         return tr!("Webcam", "The camera extension is not included in this app. Setup is unavailable.");

@@ -27,8 +27,9 @@ static NSDictionary *durationDictionary(void) {
 @property(nonatomic, strong) CMIOExtensionStream *stream;
 @property(nonatomic, weak) WPDevice *owner;
 @property(nonatomic) BOOL sink;
+@property(nonatomic) NSUInteger activeFormatIndex;
 @property(atomic, readonly) NSArray<CMIOExtensionStreamFormat *> *formats;
-- (instancetype)initWithFormat:(CMIOExtensionStreamFormat *)format;
+- (instancetype)initWithFormats:(NSArray<CMIOExtensionStreamFormat *> *)formats;
 @end
 
 @interface WPDevice : NSObject <CMIOExtensionDeviceSource>
@@ -44,8 +45,12 @@ static NSDictionary *durationDictionary(void) {
 @property(nonatomic) uint64_t generation;
 @property(nonatomic) CVPixelBufferRef latest;
 @property(nonatomic) uint64_t latestTime;
+@property(nonatomic) uint64_t lastDemandAnnouncement;
 @property(nonatomic) CVPixelBufferRef black;
 @property(nonatomic) CMVideoFormatDescriptionRef format;
+@property(nonatomic) CVPixelBufferPoolRef outputPool;
+- (CVPixelBufferRef)copySourceImage;
+- (BOOL)selectSourceFormat:(CMIOExtensionStreamFormat *)format error:(NSError **)error;
 - (instancetype)initWithQueue:(dispatch_queue_t)queue error:(NSError **)error;
 - (BOOL)authorizeProducer:(CMIOExtensionClient *)client;
 - (void)stopProducer;
@@ -55,9 +60,9 @@ static NSDictionary *durationDictionary(void) {
 @end
 
 @implementation WPStream
-- (instancetype)initWithFormat:(CMIOExtensionStreamFormat *)format {
+- (instancetype)initWithFormats:(NSArray<CMIOExtensionStreamFormat *> *)formats {
     self = [super init];
-    if (self) _formats = @[format];
+    if (self) _formats = formats;
     return self;
 }
 - (NSArray<CMIOExtensionStreamFormat *> *)formats { return _formats; }
@@ -76,7 +81,7 @@ static NSDictionary *durationDictionary(void) {
                                                          error:(NSError **)error {
     (void)error;
     CMIOExtensionStreamProperties *p = [[CMIOExtensionStreamProperties alloc] initWithDictionary:@{}];
-    if ([requested containsObject:CMIOExtensionPropertyStreamActiveFormatIndex]) p.activeFormatIndex = @0;
+    if ([requested containsObject:CMIOExtensionPropertyStreamActiveFormatIndex]) p.activeFormatIndex = @(self.activeFormatIndex);
     if ([requested containsObject:CMIOExtensionPropertyStreamFrameDuration]) p.frameDuration = durationDictionary();
     if ([requested containsObject:CMIOExtensionPropertyStreamMaxFrameDuration]) p.maxFrameDuration = durationDictionary();
     if (self.sink) {
@@ -88,14 +93,19 @@ static NSDictionary *durationDictionary(void) {
     return p;
 }
 - (BOOL)setStreamProperties:(CMIOExtensionStreamProperties *)properties error:(NSError **)error {
-    // Exactly one negotiated format and frame rate in this first slice.
-    if ((properties.activeFormatIndex && properties.activeFormatIndex.unsignedIntegerValue != 0) ||
+    // Sink remains UHD; source consumers may negotiate any advertised output.
+    if ((properties.activeFormatIndex && properties.activeFormatIndex.unsignedIntegerValue >= self.formats.count) ||
         (properties.frameDuration && CMTimeCompare(CMTimeMakeFromDictionary(
             (__bridge CFDictionaryRef)properties.frameDuration), CMTimeMake(1, WP_CAMERA_FPS)) != 0) ||
         (properties.maxFrameDuration && CMTimeCompare(CMTimeMakeFromDictionary(
             (__bridge CFDictionaryRef)properties.maxFrameDuration), CMTimeMake(1, WP_CAMERA_FPS)) != 0)) {
-        if (error) *error = wpError(@"Only 1280×720 at 30 fps is available.");
+        if (error) *error = wpError(@"Select an advertised format at 30 fps.");
         return NO;
+    }
+    if (properties.activeFormatIndex && !self.sink) {
+        NSUInteger index = properties.activeFormatIndex.unsignedIntegerValue;
+        if (![self.owner selectSourceFormat:self.formats[index] error:error]) return NO;
+        self.activeFormatIndex = index;
     }
     if (self.sink && properties.sinkEndOfData.boolValue) [self.owner stopProducer];
     return YES;
@@ -113,7 +123,9 @@ static NSDictionary *durationDictionary(void) {
         self.owner.sinkRunning = YES;
         self.owner.generation += 1;
     } else {
-        self.owner.sourceStarts += 1;
+        if (self.owner.sourceStarts++ == 0)
+            CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+                CFSTR("com.waypair.camera.consumerActive"), NULL, NULL, true);
     }
     [self.owner ensureTimer];
     return YES;
@@ -123,8 +135,10 @@ static NSDictionary *durationDictionary(void) {
     if (self.sink) [self.owner stopProducer];
     else if (self.owner.sourceStarts > 0) {
         self.owner.sourceStarts -= 1;
-        if (self.owner.sourceStarts == 0 && self.owner.latest) {
-            CVPixelBufferRelease(self.owner.latest); self.owner.latest = NULL;
+        if (self.owner.sourceStarts == 0) {
+            if (self.owner.latest) { CVPixelBufferRelease(self.owner.latest); self.owner.latest = NULL; }
+            CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+                CFSTR("com.waypair.camera.consumerInactive"), NULL, NULL, true);
         }
     }
     return YES;
@@ -136,37 +150,29 @@ static NSDictionary *durationDictionary(void) {
     self = [super init];
     if (!self) return nil;
     _queue = queue;
-    OSStatus status = CMVideoFormatDescriptionCreate(kCFAllocatorDefault, kCVPixelFormatType_32BGRA,
-        WP_CAMERA_WIDTH, WP_CAMERA_HEIGHT, NULL, &_format);
-    NSDictionary *attrs = @{(id)kCVPixelBufferIOSurfacePropertiesKey: @{}};
-    if (status == noErr) status = CVPixelBufferCreate(kCFAllocatorDefault,
-        WP_CAMERA_WIDTH, WP_CAMERA_HEIGHT, kCVPixelFormatType_32BGRA,
-        (__bridge CFDictionaryRef)attrs, &_black);
-    if (status != noErr || !_black) {
-        if (error) *error = wpError(@"Could not allocate camera format/black buffer.");
-        return nil;
+    NSMutableArray<CMIOExtensionStreamFormat *> *formats = [NSMutableArray array];
+    CMTime duration = CMTimeMake(1, WP_CAMERA_FPS);
+    const int widths[] = {1280, 1920, WP_CAMERA_WIDTH};
+    const int heights[] = {720, 1080, WP_CAMERA_HEIGHT};
+    for (NSUInteger i = 0; i < 3; ++i) {
+        CMVideoFormatDescriptionRef description = NULL;
+        if (CMVideoFormatDescriptionCreate(kCFAllocatorDefault, kCVPixelFormatType_32BGRA,
+            widths[i], heights[i], NULL, &description) != noErr) {
+            if (error) *error = wpError(@"Could not allocate camera format.");
+            return nil;
+        }
+        [formats addObject:[[CMIOExtensionStreamFormat alloc] initWithFormatDescription:description
+            maxFrameDuration:duration minFrameDuration:duration validFrameDurations:nil]];
+        CFRelease(description);
     }
-    if (CVPixelBufferLockBaseAddress(_black, 0) != kCVReturnSuccess) {
-        if (error) *error = wpError(@"Could not lock camera black buffer.");
-        return nil;
-    }
-    size_t pitch = CVPixelBufferGetBytesPerRow(_black);
-    uint8_t *pixels = CVPixelBufferGetBaseAddress(_black);
-    memset(pixels, 0, pitch * WP_CAMERA_HEIGHT);
-    for (size_t y = 0; y < WP_CAMERA_HEIGHT; ++y)
-        for (size_t x = 0; x < WP_CAMERA_WIDTH; ++x) pixels[y * pitch + x * 4 + 3] = 255;
-    CVPixelBufferUnlockBaseAddress(_black, 0);
+    if (![self selectSourceFormat:formats[0] error:error]) return nil;
     _device = [[CMIOExtensionDevice alloc] initWithLocalizedName:@"Waypair Camera"
         deviceID:[[NSUUID alloc] initWithUUIDString:@WP_CAMERA_DEVICE_UUID] legacyDeviceID:nil source:self];
-    CMTime duration = CMTimeMake(1, WP_CAMERA_FPS);
-    CMIOExtensionStreamFormat *format = [[CMIOExtensionStreamFormat alloc]
-        initWithFormatDescription:_format maxFrameDuration:duration minFrameDuration:duration
-        validFrameDurations:nil];
-    _source = [[WPStream alloc] initWithFormat:format]; _source.owner = self;
+    _source = [[WPStream alloc] initWithFormats:formats]; _source.owner = self;
     _source.stream = [[CMIOExtensionStream alloc] initWithLocalizedName:@"Waypair Camera"
         streamID:[[NSUUID alloc] initWithUUIDString:@WP_CAMERA_SOURCE_UUID]
         direction:CMIOExtensionStreamDirectionSource clockType:CMIOExtensionStreamClockTypeHostTime source:_source];
-    _sink = [[WPStream alloc] initWithFormat:format]; _sink.owner = self; _sink.sink = YES;
+    _sink = [[WPStream alloc] initWithFormats:@[formats.lastObject]]; _sink.owner = self; _sink.sink = YES;
     _sink.stream = [[CMIOExtensionStream alloc] initWithLocalizedName:@"Waypair Camera Producer"
         streamID:[[NSUUID alloc] initWithUUIDString:@WP_CAMERA_SINK_UUID]
         direction:CMIOExtensionStreamDirectionSink clockType:CMIOExtensionStreamClockTypeHostTime source:_sink];
@@ -178,6 +184,67 @@ static NSDictionary *durationDictionary(void) {
     if (_latest) CVPixelBufferRelease(_latest);
     if (_black) CVPixelBufferRelease(_black);
     if (_format) CFRelease(_format);
+    if (_outputPool) CVPixelBufferPoolRelease(_outputPool);
+}
+// Called on the provider's serialized queue. Allocate before replacing the active output.
+- (BOOL)selectSourceFormat:(CMIOExtensionStreamFormat *)format error:(NSError **)error {
+    CMVideoDimensions size = CMVideoFormatDescriptionGetDimensions(format.formatDescription);
+    NSDictionary *attrs = @{(id)kCVPixelBufferIOSurfacePropertiesKey: @{},
+        (id)kCVPixelBufferWidthKey: @(size.width), (id)kCVPixelBufferHeightKey: @(size.height),
+        (id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA)};
+    CVPixelBufferRef black = NULL;
+    CVPixelBufferPoolRef output = NULL;
+    if (CVPixelBufferCreate(kCFAllocatorDefault, size.width, size.height, kCVPixelFormatType_32BGRA,
+        (__bridge CFDictionaryRef)attrs, &black) != kCVReturnSuccess ||
+        CVPixelBufferPoolCreate(kCFAllocatorDefault, NULL, (__bridge CFDictionaryRef)attrs, &output) != kCVReturnSuccess ||
+        CVPixelBufferLockBaseAddress(black, 0) != kCVReturnSuccess) {
+        if (black) CVPixelBufferRelease(black);
+        if (output) CVPixelBufferPoolRelease(output);
+        if (error) *error = wpError(@"Could not allocate selected camera output.");
+        return NO;
+    }
+    uint8_t *pixels = CVPixelBufferGetBaseAddress(black);
+    size_t pitch = CVPixelBufferGetBytesPerRow(black);
+    memset(pixels, 0, pitch * size.height);
+    for (int y = 0; y < size.height; ++y)
+        for (int x = 0; x < size.width; ++x) pixels[y * pitch + x * 4 + 3] = 255;
+    CVPixelBufferUnlockBaseAddress(black, 0);
+    if (_black) CVPixelBufferRelease(_black);
+    if (_outputPool) CVPixelBufferPoolRelease(_outputPool);
+    if (_format) CFRelease(_format);
+    _black = black; _outputPool = output;
+    _format = (CMVideoFormatDescriptionRef)CFRetain(format.formatDescription);
+    return YES;
+}
+- (CVPixelBufferRef)copySourceImage {
+    if (!_latest) return CVPixelBufferRetain(_black);
+    // UHD sink input is aspect-fitted by the host; only scale to the consumer's selected size.
+    if (CVPixelBufferGetWidth(_latest) == CVPixelBufferGetWidth(_black) &&
+        CVPixelBufferGetHeight(_latest) == CVPixelBufferGetHeight(_black)) return CVPixelBufferRetain(_latest);
+    CVPixelBufferRef output = NULL;
+    NSDictionary *limit = @{(id)kCVPixelBufferPoolAllocationThresholdKey: @4};
+    if (CVPixelBufferPoolCreatePixelBufferWithAuxAttributes(kCFAllocatorDefault, _outputPool,
+        (__bridge CFDictionaryRef)limit, &output) != kCVReturnSuccess) return NULL;
+    if (CVPixelBufferLockBaseAddress(_latest, kCVPixelBufferLock_ReadOnly) != kCVReturnSuccess) {
+        CVPixelBufferRelease(output); return NULL;
+    }
+    if (CVPixelBufferLockBaseAddress(output, 0) != kCVReturnSuccess) {
+        CVPixelBufferUnlockBaseAddress(_latest, kCVPixelBufferLock_ReadOnly);
+        CVPixelBufferRelease(output); return NULL;
+    }
+    size_t width = CVPixelBufferGetWidth(output), height = CVPixelBufferGetHeight(output);
+    size_t sourceWidth = CVPixelBufferGetWidth(_latest), sourceHeight = CVPixelBufferGetHeight(_latest);
+    size_t sourcePitch = CVPixelBufferGetBytesPerRow(_latest), pitch = CVPixelBufferGetBytesPerRow(output);
+    const uint8_t *source = CVPixelBufferGetBaseAddress(_latest);
+    uint8_t *destination = CVPixelBufferGetBaseAddress(output);
+    for (size_t y = 0; y < height; ++y) {
+        const uint32_t *row = (const uint32_t *)(source + (y * sourceHeight / height) * sourcePitch);
+        uint32_t *out = (uint32_t *)(destination + y * pitch);
+        for (size_t x = 0; x < width; ++x) out[x] = row[x * sourceWidth / width];
+    }
+    CVPixelBufferUnlockBaseAddress(output, 0);
+    CVPixelBufferUnlockBaseAddress(_latest, kCVPixelBufferLock_ReadOnly);
+    return output;
 }
 - (NSSet<CMIOExtensionProperty> *)availableProperties {
     return [NSSet setWithObject:CMIOExtensionPropertyDeviceModel];
@@ -240,6 +307,14 @@ static NSDictionary *durationDictionary(void) {
         return;
     }
     uint64_t now = hostNS();
+    // Reannounce source presence so a host launched after the consumer sees it.
+    // Host Demand.active_edge deduplicates snapshots throughout Stop/decline.
+    if (_sourceStarts && (now < _lastDemandAnnouncement ||
+        now - _lastDemandAnnouncement >= NSEC_PER_SEC)) {
+        _lastDemandAnnouncement = now;
+        CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+            CFSTR("com.waypair.camera.consumerActive"), NULL, NULL, true);
+    }
     if (_latest && (now < _latestTime || now - _latestTime > WP_CAMERA_MAX_AGE_NS)) {
         CVPixelBufferRelease(_latest); _latest = NULL; _latestTime = 0;
     }
@@ -289,11 +364,14 @@ static NSDictionary *durationDictionary(void) {
     if (!_sourceStarts) return;
     CMSampleTimingInfo timing = {CMTimeMake(1, WP_CAMERA_FPS), CMTimeMake((int64_t)now, 1000000000), kCMTimeInvalid};
     CMSampleBufferRef sample = NULL;
-    if (CMSampleBufferCreateReadyWithImageBuffer(kCFAllocatorDefault, _latest ?: _black,
+    CVPixelBufferRef image = [self copySourceImage];
+    if (!image) return;
+    if (CMSampleBufferCreateReadyWithImageBuffer(kCFAllocatorDefault, image,
         _format, &timing, &sample) == noErr && sample) {
         [_source.stream sendSampleBuffer:sample discontinuity:0 hostTimeInNanoseconds:now];
         CFRelease(sample);
     }
+    CVPixelBufferRelease(image);
 }
 @end
 

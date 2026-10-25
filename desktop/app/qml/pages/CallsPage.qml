@@ -7,6 +7,14 @@ import app.nectarlink
 // started here go through the phone.
 Item {
     id: page
+    readonly property bool wideContent: width >= 1080
+    readonly property real pageInset: Theme.spacingXl
+
+    Rectangle {
+        anchors.fill: parent
+        color: Theme.canvasColor
+        z: -1
+    }
     property bool active: false
     // The phone shown (the one on Home).
     property string deviceId
@@ -214,8 +222,19 @@ Item {
     Item {
         id: list
         visible: !page.phoneOffline
-        width: Math.min(370, Math.max(280, page.width * 0.36))
-        height: parent.height
+        x: page.pageInset
+        y: page.pageInset
+        width: page.wideContent ? 370 : page.width - page.pageInset * 2
+        height: page.wideContent ? page.height - page.pageInset * 2 : Math.min(300, page.height * 0.48)
+
+        Rectangle {
+            anchors.fill: parent
+            radius: Theme.cardRadius
+            color: Theme.glass || Theme.hive ? Theme.cardColor : Theme.panelColor
+            border.width: 1
+            border.color: Theme.hive ? Theme.cardBorder : Theme.panelBorder
+            z: -1
+        }
 
         Item {
             id: listHeader
@@ -252,7 +271,7 @@ Item {
             anchors.leftMargin: 16
             anchors.rightMargin: 16
             height: 38
-            radius: Theme.graphite ? Theme.radiusSm : height / 2
+            radius: Theme.controlRadius
             color: Theme.graphite ? "transparent" : (Theme.glass ? Theme.tileColor : Theme.surfaceContainerHighest)
             border.width: search.activeFocus ? 2 : (Theme.graphite || Theme.glass ? 1 : 0)
             border.color: search.activeFocus ? Theme.primary : (Theme.glass ? Theme.cardBorder : Theme.outlineVariant)
@@ -322,14 +341,14 @@ Item {
             Column {
                 anchors.centerIn: parent
                 width: parent.width - 40
-                spacing: 10
+                spacing: Theme.spacingMd
                 visible: page.callLog.length === 0 && PhoneCall.logStatus !== "loading" && PhoneCall.logStatus !== "ready"
                 Icon {
                     anchors.horizontalCenter: parent.horizontalCenter
                     width: 32; height: 32
                     stroke: 1.5
                     path: Icons.call
-                    color: Theme.surfaceContentVariant
+                    color: PhoneCall.logStatus === "failed" ? Theme.error : Theme.surfaceContentVariant
                 }
                 Txt {
                     width: parent.width
@@ -408,14 +427,14 @@ Item {
             Column {
                 anchors.centerIn: parent
                 width: parent.width - 40
-                spacing: 10
+                spacing: Theme.spacingMd
                 visible: page.contacts.length === 0 && PhoneCall.contactsStatus !== "loading" && PhoneCall.contactsStatus !== "ready"
                 Icon {
                     anchors.horizontalCenter: parent.horizontalCenter
                     width: 32; height: 32
                     stroke: 1.5
                     path: Icons.person
-                    color: Theme.surfaceContentVariant
+                    color: PhoneCall.contactsStatus === "failed" ? Theme.error : Theme.surfaceContentVariant
                 }
                 Txt {
                     width: parent.width
@@ -470,17 +489,16 @@ Item {
                 }
             }
         }
-
-        Divider { anchors.right: parent.right; width: 1; height: parent.height }
     }
 
     // ---- Right pane: Active call, selected contact, and keypad dialer ----
     Flickable {
         id: rightPane
         visible: !page.phoneOffline
-        anchors.left: list.right
-        anchors.right: parent.right
-        height: parent.height
+        x: page.wideContent ? list.x + list.width + Theme.spacingLg : page.pageInset
+        y: page.wideContent ? page.pageInset : list.y + list.height + Theme.spacingLg
+        width: page.width - x - page.pageInset
+        height: page.height - y - page.pageInset
         contentHeight: Math.max(height, rightColumn.height + Theme.contentPadding * 2)
         boundsBehavior: Flickable.StopAtBounds
         clip: true
@@ -489,7 +507,7 @@ Item {
             id: rightColumn
             width: Math.min(380, rightPane.width - Theme.contentPadding * 2)
             x: Math.max(Theme.contentPadding, (rightPane.width - width) / 2)
-            y: Math.max(Theme.contentPadding, (rightPane.height - height) / 2)
+            y: Theme.spacingXl
             spacing: 16
 
             // Active call on the phone (reuses CallCard).
@@ -1171,7 +1189,7 @@ Item {
                 anchors.fill: parent
                 anchors.leftMargin: 8
                 anchors.rightMargin: 8
-                radius: Theme.radiusLg
+                radius: Theme.controlRadius
                 color: callHover.hovered
                     ? Qt.rgba(Theme.surfaceContent.r, Theme.surfaceContent.g, Theme.surfaceContent.b, 0.06)
                     : "transparent"
@@ -1339,7 +1357,7 @@ Item {
                 anchors.fill: parent
                 anchors.leftMargin: 8
                 anchors.rightMargin: 8
-                radius: Theme.radiusLg
+                radius: Theme.controlRadius
                 color: crow.selected ? Theme.secondaryContainer
                     : contactHover.hovered ? Qt.rgba(Theme.surfaceContent.r, Theme.surfaceContent.g, Theme.surfaceContent.b, 0.06)
                     : "transparent"

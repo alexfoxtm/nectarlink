@@ -12,7 +12,7 @@ Text {
 
     readonly property var spec: Theme.typography[role] || Theme.typography.body
     readonly property bool isDisplay: role === "displayLarge" || role === "displaySmall" || role === "headline"
-    // Graphite labels are mono, uppercase and tracked (docs/design/README.md).
+    // Graphite keeps its bundled mono labels; sentence case stays readable in controls.
     readonly property bool graphiteLabel: Theme.graphite && (role === "label" || role === "caption")
 
     // Pixel size; set this (not font.pixelSize) to resize, so the role's
@@ -31,8 +31,8 @@ Text {
     font.pixelSize: Math.max(1, Math.round(size))
     font.weight: weight
     font.variableAxes: family === Theme.fontUi ? { "wght": weight } : {}
-    font.letterSpacing: (graphiteLabel ? Theme.labelStyle.tracking : spec.tracking) * size
-    font.capitalization: graphiteLabel ? Font.AllUppercase : Font.MixedCase
+    font.letterSpacing: (graphiteLabel ? 0 : spec.tracking) * size
+    font.capitalization: Font.MixedCase
     // Token line heights are CSS-style (a multiple of the font size), not
     // a multiple of the font's own line spacing.
     lineHeight: Math.round(Math.max(1, Math.round(size)) * spec.lineHeight)

@@ -91,6 +91,8 @@ pub enum Requirement {
     WindowsBuildAtLeast(u32),
     /// Only desktops advertising owned camera require the peer to implement it.
     WebcamOwnedIfAdvertised,
+    /// An owned preview receiver, or the legacy Windows virtual-camera add-on.
+    WebcamOutputReady,
     /// This connection path is enabled (e.g. Away mode for relays).
     Path(ConnectionPath),
     /// The user allows this for the device (see [`DEVICE_TOGGLES`]).
@@ -571,6 +573,16 @@ fn check(req: &Requirement, ctx: &Context<'_>) -> Check {
             }
             _ => Check::Met,
         },
+        Requirement::WebcamOutputReady => {
+            if ctx.desktop.caps.contains("camera.webcam.owned.v1") {
+                Check::Met
+            } else {
+                match check(&Requirement::WindowsBuildAtLeast(22000), ctx) {
+                    Check::Met => check(&desktop("addon.vcam", Unlock::Addon("vcam")), ctx),
+                    blocked => blocked,
+                }
+            }
+        }
         Requirement::WebcamOwnedIfAdvertised => {
             if !ctx.desktop.caps.contains("camera.webcam.owned.v1")
                 || ctx.phone.caps.contains("camera.webcam.owned.v1")
@@ -1085,9 +1097,8 @@ pub const FEATURES: &[FeatureDef] = &[
         requires: &[
             phone("camera.stream", Unlock::Permission(Permission::Camera)),
             desktop("camera.virtual", UPDATE),
-            desktop("addon.vcam", Unlock::Addon("vcam")),
+            Requirement::WebcamOutputReady,
             Requirement::WebcamOwnedIfAdvertised,
-            WindowsBuildAtLeast(22000),
             DeviceToggle("webcam"),
         ],
         partial: None,
@@ -1422,6 +1433,50 @@ mod tests {
             Some(locked(UpgradeAction::GrantPermission(Permission::Camera), Effort::Instant))
         );
         assert_eq!(unsupported.sole_missing_permission("camera.webcam"), None);
+    }
+
+    #[test]
+    fn owned_camera_preview_needs_no_virtual_camera_addon() {
+        let mac = facts(
+            DeviceKind::Desktop, "macos", "15.0", PowerLevel::NotApplicable,
+            &["camera.virtual", "camera.webcam.owned.v1"],
+        );
+        let phone = facts(
+            DeviceKind::Phone, "android", "16", PowerLevel::Basic,
+            &["camera.stream", "camera.webcam.owned.v1"],
+        );
+        assert_eq!(matrix_with(&phone, &mac, &HashMap::new()).state("camera.webcam"),
+            Some(FeatureState::Available));
+        let permission_missing = facts(
+            DeviceKind::Phone, "android", "16", PowerLevel::Basic,
+            &["camera.webcam.owned.v1"],
+        );
+        let locked = matrix_with(&permission_missing, &mac, &HashMap::new());
+        assert_eq!(locked.sole_missing_permission("camera.webcam"), Some(Permission::Camera));
+    }
+
+    #[test]
+    fn owned_camera_preview_preserves_backend_peer_and_toggle_fences() {
+        let phone = facts(
+            DeviceKind::Phone, "android", "16", PowerLevel::Basic,
+            &["camera.stream", "camera.webcam.owned.v1"],
+        );
+        let incomplete = facts(
+            DeviceKind::Desktop, "macos", "15.0", PowerLevel::NotApplicable,
+            &["camera.webcam.owned.v1"],
+        );
+        assert_ne!(matrix_with(&phone, &incomplete, &HashMap::new()).state("camera.webcam"),
+            Some(FeatureState::Available));
+        let ready = facts(
+            DeviceKind::Desktop, "macos", "15.0", PowerLevel::NotApplicable,
+            &["camera.virtual", "camera.webcam.owned.v1"],
+        );
+        let old_phone = facts(DeviceKind::Phone, "android", "16", PowerLevel::Basic, &["camera.stream"]);
+        assert_ne!(matrix_with(&old_phone, &ready, &HashMap::new()).state("camera.webcam"),
+            Some(FeatureState::Available));
+        let toggles = HashMap::from([("webcam".to_owned(), false)]);
+        assert_ne!(matrix_with(&phone, &ready, &toggles).state("camera.webcam"),
+            Some(FeatureState::Available));
     }
 
     #[test]

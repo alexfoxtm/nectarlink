@@ -7,11 +7,13 @@ import android.util.Log
 import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.SurfaceView
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -33,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import app.nectarlink.android.R
 import app.nectarlink.android.media.PcFileSource
+import app.nectarlink.android.ui.theme.WaypairDesign
 import app.nectarlink.core.WatchFileOffer
 
 /** A video file playing on the phone (Play on phone): whether it plays, and play or pause. */
@@ -164,13 +167,19 @@ fun FileWatchView(
         // Taps over the picture show and hide the controls.
         Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { onTap() } })
         if (failed) {
-            Text(
-                text = stringResource(R.string.watch_file_failed),
-                style = MaterialTheme.typography.bodyLarge,
-                color = Color.White,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(24.dp),
-            )
+            Box(
+                modifier = Modifier
+                    .padding(WaypairDesign.spacingXl)
+                    .background(Color.Black.copy(alpha = 0.88f), RoundedCornerShape(WaypairDesign.cardRadius)),
+            ) {
+                Text(
+                    text = stringResource(R.string.watch_file_failed),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = Color.White,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(WaypairDesign.spacingLg),
+                )
+            }
         }
     }
 }

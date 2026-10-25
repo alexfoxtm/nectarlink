@@ -13,6 +13,10 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
+import app.nectarlink.android.ui.theme.WaypairDesign
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -228,16 +232,32 @@ fun SettingsScreen(
     if (!notificationFilterOpen) {
     LazyColumn(
         state = listState,
-        modifier = modifier.glassModalBlur(isGlass && anyDialogOpen),
+        modifier = modifier
+            .fillMaxWidth()
+            .wrapContentWidth(Alignment.CenterHorizontally)
+            .widthIn(max = 600.dp)
+            .glassModalBlur(isGlass && anyDialogOpen),
         contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 104.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingMd),
     ) {
         item(key = "header", contentType = "header") {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .liquidGlassCard(
+                        cornerRadius = WaypairDesign.heroRadius,
+                        isGlass = isGlass,
+                        baseColor = WaypairDesign.heroWash(),
+                        tintColor = MaterialTheme.colorScheme.primary,
+                        outlineColor = WaypairDesign.panelBorder(),
+                    )
+                    .padding(WaypairDesign.spacingLg),
+                verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingMd),
+            ) {
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingSm),
+                    horizontalArrangement = Arrangement.spacedBy(WaypairDesign.spacingMd),
                 ) {
                     Text(
                         stringResource(R.string.settings_title),
@@ -258,6 +278,7 @@ fun SettingsScreen(
                             selected = selected,
                             onClick = { focusedAppsPcId = null; activeCategory = id },
                             label = { Text(stringResource(label)) },
+                            modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
                             // Solid like the cards: the row sits right on the
                             // background (Hive's comb showed through).
                             colors = FilterChipDefaults.filterChipColors(
@@ -278,12 +299,19 @@ fun SettingsScreen(
                     highlighted = pulsingSectionKey == "devices",
                 ) {
                     val context = LocalContext.current
+                    if (state.devices.isEmpty()) {
+                        Text(
+                            stringResource(R.string.home_no_pc_paired),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     state.devices.forEachIndexed { index, device ->
                         if (index > 0) {
                             SettingRowDivider()
                         }
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
                                 Column(Modifier.weight(1f).padding(end = 12.dp)) {
                                     Text(device.name, style = MaterialTheme.typography.titleSmall)
                                     val dotColor = if (device.online) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
@@ -298,7 +326,7 @@ fun SettingsScreen(
                                         )
                                         Text(
                                             stringResource(if (device.online) R.string.connected else R.string.not_connected),
-                                            style = MaterialTheme.typography.bodySmall,
+                                            style = MaterialTheme.typography.bodyMedium,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
                                     }
@@ -306,12 +334,12 @@ fun SettingsScreen(
                                 OutlinedButton(onClick = { confirmUnpair = device }) { Text(stringResource(R.string.action_unpair)) }
                             }
                             val storageToggleTitle = stringResource(R.string.storage_pc_toggle)
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
                                 Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                                    Text(storageToggleTitle, style = MaterialTheme.typography.bodyMedium)
+                                    Text(storageToggleTitle, style = MaterialTheme.typography.bodyLarge)
                                     Text(
                                         stringResource(R.string.storage_pc_toggle_hint),
-                                        style = MaterialTheme.typography.bodySmall,
+                                        style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
@@ -329,12 +357,12 @@ fun SettingsScreen(
                             }
                             if (!device.isAndroid) {
                                 val micToggleTitle = stringResource(R.string.mic_pc_toggle)
-                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
                                     Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                                        Text(micToggleTitle, style = MaterialTheme.typography.bodyMedium)
+                                        Text(micToggleTitle, style = MaterialTheme.typography.bodyLarge)
                                         Text(
                                             stringResource(R.string.mic_pc_toggle_hint),
-                                            style = MaterialTheme.typography.bodySmall,
+                                            style = MaterialTheme.typography.bodyMedium,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
                                     }
@@ -367,7 +395,7 @@ fun SettingsScreen(
                 ) {
                     Text(
                         stringResource(R.string.settings_apps_service_hint),
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     ElevatedAccess()
@@ -381,7 +409,7 @@ fun SettingsScreen(
                     Section(device.name, highlighted = focusedAppsPcId == device.id) {
                         Text(
                             stringResource(if (device.online) R.string.connected else R.string.not_connected),
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         if (device.kind == app.nectarlink.core.DeviceKind.DESKTOP || device.kind == app.nectarlink.core.DeviceKind.LAPTOP) {
@@ -409,12 +437,12 @@ fun SettingsScreen(
                             }
                         }
                         val mirroringToggleTitle = stringResource(R.string.mirroring_pc_toggle)
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
                             Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                                Text(mirroringToggleTitle, style = MaterialTheme.typography.bodyMedium)
+                                Text(mirroringToggleTitle, style = MaterialTheme.typography.bodyLarge)
                                 Text(
                                     stringResource(R.string.mirroring_pc_toggle_hint),
-                                    style = MaterialTheme.typography.bodySmall,
+                                    style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
@@ -427,12 +455,12 @@ fun SettingsScreen(
                         }
                         if (device.kind == app.nectarlink.core.DeviceKind.DESKTOP || device.kind == app.nectarlink.core.DeviceKind.LAPTOP) {
                             val controlToggleTitle = stringResource(R.string.phone_control_pc_toggle)
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
                                 Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                                    Text(controlToggleTitle, style = MaterialTheme.typography.bodyMedium)
+                                    Text(controlToggleTitle, style = MaterialTheme.typography.bodyLarge)
                                     Text(
                                         stringResource(R.string.phone_control_pc_toggle_hint),
-                                        style = MaterialTheme.typography.bodySmall,
+                                        style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
@@ -447,12 +475,12 @@ fun SettingsScreen(
                         }
                         if (device.kind == app.nectarlink.core.DeviceKind.DESKTOP || device.kind == app.nectarlink.core.DeviceKind.LAPTOP) {
                             val wayModeToggleTitle = stringResource(R.string.way_mode_toggle)
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
                                 Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                                    Text(wayModeToggleTitle, style = MaterialTheme.typography.bodyMedium)
+                                    Text(wayModeToggleTitle, style = MaterialTheme.typography.bodyLarge)
                                     Text(
                                         stringResource(R.string.way_mode_toggle_hint),
-                                        style = MaterialTheme.typography.bodySmall,
+                                        style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
@@ -472,10 +500,10 @@ fun SettingsScreen(
                                     device.online && device.mirroringEnabled && state.elevated &&
                                     Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                                    Text(stringResource(R.string.settings_window_access_title), style = MaterialTheme.typography.bodyMedium)
+                                    Text(stringResource(R.string.settings_window_access_title), style = MaterialTheme.typography.bodyLarge)
                                     Text(
                                         stringResource(R.string.settings_window_access_hint),
-                                        style = MaterialTheme.typography.bodySmall,
+                                        style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                     if (settingsWindowActive) {
@@ -501,7 +529,7 @@ fun SettingsScreen(
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text(
                                     stringResource(R.string.keyboard_recovery_required),
-                                    style = MaterialTheme.typography.bodySmall,
+                                    style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.error,
                                 )
                                 if (canResumeControl) {
@@ -512,13 +540,13 @@ fun SettingsScreen(
                                     }
                                     Text(
                                         stringResource(R.string.phone_control_resume_hint),
-                                        style = MaterialTheme.typography.bodySmall,
+                                        style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 } else {
                                     Text(
                                         stringResource(R.string.phone_control_resume_unavailable),
-                                        style = MaterialTheme.typography.bodySmall,
+                                        style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
@@ -530,7 +558,7 @@ fun SettingsScreen(
             if (appComputers.isEmpty()) {
                 item(key = "apps_empty", contentType = "section") {
                     Section(stringResource(R.string.settings_apps_screen)) {
-                        Text(stringResource(R.string.settings_apps_screen_empty), style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(R.string.settings_apps_screen_empty), style = MaterialTheme.typography.bodyLarge)
                         TextButton(onClick = { activeCategory = "devices" }) {
                             Text(stringResource(R.string.settings_devices))
                         }
@@ -541,7 +569,7 @@ fun SettingsScreen(
             item(key = "remote", contentType = "section") {
                 Section(stringResource(R.string.settings_remote)) {
                     val sensitivityTitle = stringResource(R.string.settings_touchpad_sensitivity)
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
                         Text(
                             sensitivityTitle,
                             style = MaterialTheme.typography.titleSmall,
@@ -549,7 +577,7 @@ fun SettingsScreen(
                         )
                         Text(
                             stringResource(R.string.settings_touchpad_sensitivity_value, touchpadSensitivity),
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
@@ -644,12 +672,12 @@ fun SettingsScreen(
             item(key = "connection", contentType = "section") {
                 Section(stringResource(R.string.settings_connection)) {
                     val mobileDataTitle = stringResource(R.string.guide_away_title)
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
                         Column(Modifier.weight(1f).padding(end = 12.dp)) {
                             Text(mobileDataTitle, style = MaterialTheme.typography.titleSmall)
                             Text(
                                 stringResource(R.string.settings_mobile_data_body),
-                                style = MaterialTheme.typography.bodySmall,
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
@@ -669,12 +697,12 @@ fun SettingsScreen(
                     highlighted = pulsingSectionKey == "background",
                 ) {
                     val runInBackgroundTitle = stringResource(R.string.settings_run_in_background)
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
                         Column(Modifier.weight(1f).padding(end = 12.dp)) {
                             Text(runInBackgroundTitle, style = MaterialTheme.typography.titleSmall)
                             Text(
                                 stringResource(R.string.settings_run_in_background_hint),
-                                style = MaterialTheme.typography.bodySmall,
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
@@ -694,13 +722,13 @@ fun SettingsScreen(
                         ) {
                             Text(
                                 stringResource(R.string.background_restriction_warning),
-                                style = MaterialTheme.typography.bodySmall,
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             if (oemGuide != null) {
                                 Text(
                                     oemGuide,
-                                    style = MaterialTheme.typography.bodySmall,
+                                    style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
@@ -726,12 +754,12 @@ fun SettingsScreen(
                     highlighted = pulsingSectionKey == "localsend",
                 ) {
                     val localsendTitle = stringResource(R.string.settings_localsend_title)
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
                         Column(Modifier.weight(1f).padding(end = 12.dp)) {
                             Text(localsendTitle, style = MaterialTheme.typography.titleSmall)
                             Text(
                                 stringResource(R.string.settings_localsend_subtitle),
-                                style = MaterialTheme.typography.bodySmall,
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
@@ -792,12 +820,12 @@ fun SettingsScreen(
                     if (appearance.theme == "hive") {
                         SettingRowDivider()
                         val combTitle = stringResource(R.string.settings_comb_motion)
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
                             Column(Modifier.weight(1f).padding(end = 12.dp)) {
                                 Text(combTitle, style = MaterialTheme.typography.titleSmall)
                                 Text(
                                     stringResource(R.string.settings_comb_motion_hint),
-                                    style = MaterialTheme.typography.bodySmall,
+                                    style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
@@ -812,12 +840,12 @@ fun SettingsScreen(
                     if (appearance.theme == "graphite" && appearance.mode != "light") {
                         SettingRowDivider()
                         val amoledTitle = stringResource(R.string.settings_amoled)
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
                             Column(Modifier.weight(1f).padding(end = 12.dp)) {
                                 Text(amoledTitle, style = MaterialTheme.typography.titleSmall)
                                 Text(
                                     stringResource(R.string.settings_amoled_hint),
-                                    style = MaterialTheme.typography.bodySmall,
+                                    style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
@@ -833,12 +861,12 @@ fun SettingsScreen(
                         SettingRowDivider()
                         val artworkSync = appearance.seed == "artwork"
                         val artworkColorLabel = stringResource(R.string.settings_theme_artwork_color)
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
                             Column(Modifier.weight(1f).padding(end = 12.dp)) {
                                 Text(stringResource(R.string.settings_theme_artwork_color), style = MaterialTheme.typography.titleSmall)
                                 Text(
                                     stringResource(R.string.settings_theme_artwork_body),
-                                    style = MaterialTheme.typography.bodySmall,
+                                    style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
@@ -856,12 +884,12 @@ fun SettingsScreen(
                         if (!artworkSync && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                             SettingRowDivider()
                             val dynamicColorTitle = stringResource(R.string.settings_dynamic_color)
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
                                 Column(Modifier.weight(1f).padding(end = 12.dp)) {
                                     Text(dynamicColorTitle, style = MaterialTheme.typography.titleSmall)
                                     Text(
                                         stringResource(R.string.settings_dynamic_color_hint),
-                                        style = MaterialTheme.typography.bodySmall,
+                                        style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
@@ -909,7 +937,7 @@ fun SettingsScreen(
                                     androidx.compose.foundation.layout.Box(
                                         contentAlignment = Alignment.Center,
                                         modifier = Modifier
-                                            .size(38.dp)
+                                            .size(WaypairDesign.touchTarget)
                                             .drawBehind {
                                                 drawCircle(color = seed.color)
                                                 val strokePx = borderWidth.toPx()
@@ -950,7 +978,7 @@ fun SettingsScreen(
                                             1.dp,
                                             if (appearance.amoled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
                                         ),
-                                        modifier = Modifier.height(38.dp),
+                                        modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
                                     ) {
                                         Row(
                                             modifier = Modifier.padding(start = 12.dp, end = 6.dp),
@@ -991,7 +1019,7 @@ fun SettingsScreen(
                 ) {
                     Text(
                         stringResource(R.string.settings_apps_service_clipboard_hint),
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     TextButton(onClick = {
@@ -1002,12 +1030,12 @@ fun SettingsScreen(
                     }
                     SettingRowDivider()
                     val suggestionsTitle = stringResource(R.string.settings_clipboard_suggestions)
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
                         Column(Modifier.weight(1f).padding(end = 12.dp)) {
                             Text(suggestionsTitle, style = MaterialTheme.typography.titleSmall)
                             Text(
                                 stringResource(R.string.settings_clipboard_suggestions_hint),
-                                style = MaterialTheme.typography.bodySmall,
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
@@ -1020,12 +1048,12 @@ fun SettingsScreen(
                     }
                     SettingRowDivider()
                     val copiedLinksTitle = stringResource(R.string.settings_copied_link_offers)
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
                         Column(Modifier.weight(1f).padding(end = 12.dp)) {
                             Text(copiedLinksTitle, style = MaterialTheme.typography.titleSmall)
                             Text(
                                 stringResource(R.string.settings_copied_link_offers_hint),
-                                style = MaterialTheme.typography.bodySmall,
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
@@ -1049,7 +1077,7 @@ fun SettingsScreen(
                         Text(stringResource(R.string.data_notifications_title), style = MaterialTheme.typography.titleSmall)
                         Text(
                             stringResource(R.string.data_notifications_subtitle),
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
@@ -1057,12 +1085,12 @@ fun SettingsScreen(
 
                     // 2. Clipboard history
                     val clipboardHistoryTitle = stringResource(R.string.data_clipboard_title)
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
                         Column(Modifier.weight(1f).padding(end = 12.dp)) {
                             Text(clipboardHistoryTitle, style = MaterialTheme.typography.titleSmall)
                             Text(
                                 stringResource(R.string.data_clipboard_subtitle),
-                                style = MaterialTheme.typography.bodySmall,
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             if (state.clipboardHistory.isNotEmpty()) {
@@ -1096,7 +1124,7 @@ fun SettingsScreen(
                     Text(stringResource(R.string.data_timeline_title), style = MaterialTheme.typography.titleSmall)
                     Text(
                         stringResource(R.string.data_timeline_subtitle),
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Choice(
@@ -1116,12 +1144,12 @@ fun SettingsScreen(
                     SettingRowDivider()
 
                     // 4. Message cache
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
                         Column(Modifier.weight(1f).padding(end = 12.dp)) {
                             Text(stringResource(R.string.data_messages_title), style = MaterialTheme.typography.titleSmall)
                             Text(
                                 stringResource(R.string.data_messages_subtitle),
-                                style = MaterialTheme.typography.bodySmall,
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
@@ -1134,12 +1162,12 @@ fun SettingsScreen(
                     SettingRowDivider()
 
                     // 5. Photo thumbnails & camera cache
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
                         Column(Modifier.weight(1f).padding(end = 12.dp)) {
                             Text(stringResource(R.string.data_photos_title), style = MaterialTheme.typography.titleSmall)
                             Text(
                                 stringResource(R.string.data_photos_subtitle),
-                                style = MaterialTheme.typography.bodySmall,
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
@@ -1152,12 +1180,12 @@ fun SettingsScreen(
                     SettingRowDivider()
 
                     // 6. Received-file history
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
                         Column(Modifier.weight(1f).padding(end = 12.dp)) {
                             Text(stringResource(R.string.data_received_files_title), style = MaterialTheme.typography.titleSmall)
                             Text(
                                 stringResource(R.string.data_received_files_subtitle),
-                                style = MaterialTheme.typography.bodySmall,
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
@@ -1172,7 +1200,7 @@ fun SettingsScreen(
                     // 7. Clear everything
                     Text(
                         stringResource(R.string.data_clear_everything_hint),
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     OutlinedButton(onClick = { confirmClearEverything = true }) {
@@ -1185,16 +1213,16 @@ fun SettingsScreen(
                 Section(stringResource(R.string.waypair_extras_title)) {
                     Text(
                         stringResource(R.string.waypair_extras_body),
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     SettingRowDivider()
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
                         Column(Modifier.weight(1f).padding(end = 12.dp)) {
                             Text(stringResource(R.string.waypair_extras_filters_title), style = MaterialTheme.typography.titleSmall)
                             Text(
                                 stringResource(R.string.waypair_extras_filters_body),
-                                style = MaterialTheme.typography.bodySmall,
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
@@ -1207,7 +1235,7 @@ fun SettingsScreen(
                         Text(stringResource(R.string.waypair_extras_ring_title), style = MaterialTheme.typography.titleSmall)
                         Text(
                             stringResource(R.string.waypair_extras_ring_body),
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
@@ -1216,7 +1244,7 @@ fun SettingsScreen(
                         Text(stringResource(R.string.waypair_extras_updates_title), style = MaterialTheme.typography.titleSmall)
                         Text(
                             stringResource(R.string.waypair_extras_updates_body),
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
@@ -1225,12 +1253,12 @@ fun SettingsScreen(
 
             item(key = "about", contentType = "section") {
                 Section(stringResource(R.string.settings_about)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
                         Column(Modifier.weight(1f).padding(end = 12.dp)) {
                             Text(stringResource(R.string.guide_title), style = MaterialTheme.typography.titleSmall)
                             Text(
                                 stringResource(R.string.settings_guide_card_body),
-                                style = MaterialTheme.typography.bodySmall,
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
@@ -1239,12 +1267,12 @@ fun SettingsScreen(
                         }
                     }
                     SettingRowDivider()
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
                         Column(Modifier.weight(1f).padding(end = 12.dp)) {
                             Text(stringResource(R.string.guide_open_walkthrough), style = MaterialTheme.typography.titleSmall)
                             Text(
                                 stringResource(R.string.settings_walkthrough_body),
-                                style = MaterialTheme.typography.bodySmall,
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
@@ -1253,12 +1281,12 @@ fun SettingsScreen(
                         }
                     }
                     SettingRowDivider()
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
                         Column(Modifier.weight(1f).padding(end = 12.dp)) {
                             Text(stringResource(R.string.about_licenses_title), style = MaterialTheme.typography.titleSmall)
                             Text(
                                 stringResource(R.string.about_licenses_body),
-                                style = MaterialTheme.typography.bodySmall,
+                                style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
@@ -1267,7 +1295,7 @@ fun SettingsScreen(
                         }
                     }
                     SettingRowDivider()
-                    Text(stringResource(R.string.about_version, "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"), style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.about_version, "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"), style = MaterialTheme.typography.bodyLarge)
                     CheckForUpdates(updater)
                 }
             }
@@ -1385,12 +1413,12 @@ private fun openDeveloperOptionsSettings(context: Context) {
 @Composable
 private fun NotificationAccess(granted: Boolean, onChooseFilter: () -> Unit) {
     val context = LocalContext.current
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
         Column(Modifier.weight(1f).padding(end = 12.dp)) {
             Text(stringResource(R.string.notifications_title), style = MaterialTheme.typography.titleSmall)
             Text(
                 stringResource(if (granted) R.string.notifications_on else R.string.notifications_off),
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -1405,10 +1433,10 @@ private fun NotificationAccess(granted: Boolean, onChooseFilter: () -> Unit) {
         Text(stringResource(R.string.waypair_extras_filters_action))
     }
     if (!granted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
             Text(
                 stringResource(R.string.notifications_restricted),
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f),
             )
@@ -1433,12 +1461,12 @@ private fun CompanionWakeAccess(
         }
         onAccessChanged()
     }
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
         Column(Modifier.weight(1f).padding(end = 12.dp)) {
             Text(stringResource(R.string.companion_wake_title), style = MaterialTheme.typography.titleSmall)
             Text(
                 stringResource(if (associated) R.string.companion_wake_on else R.string.companion_wake_off),
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -1475,12 +1503,12 @@ private fun CompanionWakeAccess(
 @Composable
 private fun DndAccess(granted: Boolean) {
     val context = LocalContext.current
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
         Column(Modifier.weight(1f).padding(end = 12.dp)) {
             Text(stringResource(R.string.dnd_access_title), style = MaterialTheme.typography.titleSmall)
             Text(
                 stringResource(if (granted) R.string.dnd_access_on else R.string.dnd_access_off),
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -1497,12 +1525,12 @@ private fun DndAccess(granted: Boolean) {
 @Composable
 private fun WriteSettingsAccess(granted: Boolean) {
     val context = LocalContext.current
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
         Column(Modifier.weight(1f).padding(end = 12.dp)) {
             Text(stringResource(R.string.write_settings_title), style = MaterialTheme.typography.titleSmall)
             Text(
                 stringResource(if (granted) R.string.write_settings_on else R.string.write_settings_off),
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -1519,12 +1547,12 @@ private fun WriteSettingsAccess(granted: Boolean) {
 @Composable
 private fun ControlAccess(on: Boolean) {
     val context = LocalContext.current
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
         Column(Modifier.weight(1f).padding(end = 12.dp)) {
             Text(stringResource(R.string.control_title), style = MaterialTheme.typography.titleSmall)
             Text(
                 stringResource(if (on) R.string.control_on else R.string.control_off),
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -1536,10 +1564,10 @@ private fun ControlAccess(on: Boolean) {
         }
     }
     if (!on && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
             Text(
                 stringResource(R.string.notifications_restricted),
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f).padding(end = 12.dp),
             )
@@ -1556,7 +1584,7 @@ private fun ElevatedAccess() {
     val state by Elevated.state.collectAsStateWithLifecycle()
     var steps by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
             Column(Modifier.weight(1f).padding(end = 12.dp)) {
                 Text(stringResource(R.string.settings_apps_service_status), style = MaterialTheme.typography.titleSmall)
                 Text(
@@ -1574,7 +1602,7 @@ private fun ElevatedAccess() {
                             }
                         },
                     ),
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -1614,7 +1642,7 @@ private fun ElevatedAccess() {
         if (rootOffered) {
             Text(
                 stringResource(R.string.elevated_root_hint),
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             OutlinedButton(onClick = { scope.launch { Elevated.setUpWithRoot() } }) {
@@ -1657,12 +1685,12 @@ private fun RuntimePermissionAccess(
             openAppInfoSettings(context)
         }
     }
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
         Column(Modifier.weight(1f).padding(end = 12.dp)) {
             Text(title, style = MaterialTheme.typography.titleSmall)
             Text(
                 if (granted) textOn else textOff,
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -1689,7 +1717,7 @@ private fun PhotosAccess(
             openAppInfoSettings(context)
         }
     }
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
         Column(Modifier.weight(1f).padding(end = 12.dp)) {
             Text(stringResource(R.string.photos_title), style = MaterialTheme.typography.titleSmall)
             Text(
@@ -1700,7 +1728,7 @@ private fun PhotosAccess(
                         else -> R.string.photos_off
                     },
                 ),
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -1729,12 +1757,12 @@ private fun StorageAccess(
     val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) onAddSafFolder(uri)
     }
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
         Column(Modifier.weight(1f).padding(end = 12.dp)) {
             Text(stringResource(R.string.storage_all_files_title), style = MaterialTheme.typography.titleSmall)
             Text(
                 stringResource(if (allFiles) R.string.storage_all_files_on else R.string.storage_all_files_off),
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -1746,12 +1774,12 @@ private fun StorageAccess(
         }
     }
     if (!allFiles) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
             Column(Modifier.weight(1f).padding(end = 12.dp)) {
                 Text(stringResource(R.string.storage_saf_title), style = MaterialTheme.typography.titleSmall)
                 Text(
                     stringResource(R.string.storage_saf_hint),
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -1760,8 +1788,8 @@ private fun StorageAccess(
             }
         }
         safFolders.forEach { name ->
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                Text(name, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
+                Text(name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                 TextButton(onClick = { onRemoveSafFolder(name) }) {
                     Text(stringResource(R.string.storage_remove_folder))
                 }
@@ -1772,13 +1800,8 @@ private fun StorageAccess(
 
 @Composable
 private fun SettingRowDivider() {
-    val isGlass = LocalGlassTheme.current
     HorizontalDivider(
-        color = if (isGlass) {
-            MaterialTheme.colorScheme.outlineVariant
-        } else {
-            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
-        },
+        color = WaypairDesign.panelBorder(),
     )
 }
 
@@ -1795,7 +1818,7 @@ private fun Section(
     ) {
         Text(
             title,
-            style = MaterialTheme.typography.labelLarge,
+            style = MaterialTheme.typography.titleLarge,
             color = if (highlighted) scheme.primary else scheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 4.dp),
         )
@@ -1803,14 +1826,14 @@ private fun Section(
             modifier = Modifier
                 .fillMaxWidth()
                 .liquidGlassCard(
-                    cornerRadius = if (isGlass) 24.dp else 16.dp,
+                    cornerRadius = WaypairDesign.cardRadius,
                     isGlass = isGlass,
-                    baseColor = if (highlighted) scheme.secondaryContainer else scheme.surfaceContainer,
+                    baseColor = if (highlighted) scheme.secondaryContainer else WaypairDesign.panelColor(),
                     tintColor = scheme.primary,
                     outlineColor = when {
                         highlighted -> scheme.primary
                         isGlass -> scheme.outlineVariant
-                        else -> androidx.compose.ui.graphics.Color.Transparent
+                        else -> WaypairDesign.panelBorder()
                     },
                 )
                 .padding(16.dp),
@@ -1834,6 +1857,7 @@ private fun Choice(options: List<Pair<String, String>>, selected: String, onSele
     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
         options.forEachIndexed { index, (value, label) ->
             SegmentedButton(
+                modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
                 selected = value == selected,
                 onClick = { onSelect(value) },
                 shape = SegmentedButtonDefaults.itemShape(index, options.size),
@@ -1874,8 +1898,8 @@ private fun LocalHotspotAccess() {
         app.nectarlink.android.toggles.LocalHotspotController.Status.CANCELLED -> R.string.local_hotspot_cancelled
         app.nectarlink.android.toggles.LocalHotspotController.Status.FAILED -> R.string.local_hotspot_failed
     })
-    Text(reason, style = MaterialTheme.typography.bodyMedium)
-    Text(stringResource(R.string.local_hotspot_ios), style = MaterialTheme.typography.bodySmall)
+    Text(reason, style = MaterialTheme.typography.bodyLarge)
+    Text(stringResource(R.string.local_hotspot_ios), style = MaterialTheme.typography.bodyMedium)
     val enabled = status in setOf(
         app.nectarlink.android.toggles.LocalHotspotController.Status.READY,
         app.nectarlink.android.toggles.LocalHotspotController.Status.CONFIG_CHANGED,

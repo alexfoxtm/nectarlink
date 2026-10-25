@@ -8,15 +8,18 @@
 static CFStringRef const activeName = CFSTR("com.adrbn.LiveLoop.consumerActive");
 static CFStringRef const inactiveName = CFSTR("com.adrbn.LiveLoop.consumerInactive");
 static pthread_mutex_t observerLock = PTHREAD_MUTEX_INITIALIZER;
-static void (*edgeCallback)(bool) = NULL;
+static CFStringRef const nativeActiveName = CFSTR("com.waypair.camera.consumerActive");
+static CFStringRef const nativeInactiveName = CFSTR("com.waypair.camera.consumerInactive");
+static void (*edgeCallback)(bool, bool) = NULL;
 static void demandChanged(CFNotificationCenterRef center, void *observer,
                           CFStringRef name, const void *object, CFDictionaryRef userInfo) {
     (void)center; (void)observer; (void)object; (void)userInfo;
     pthread_mutex_lock(&observerLock);
-    if (edgeCallback) edgeCallback(CFEqual(name, activeName));
+    if (edgeCallback) edgeCallback(CFEqual(name, nativeActiveName) || CFEqual(name, nativeInactiveName),
+        CFEqual(name, activeName) || CFEqual(name, nativeActiveName));
     pthread_mutex_unlock(&observerLock);
 }
-void wp_camera_demand_start(void (*callback)(bool)) {
+void wp_camera_demand_start(void (*callback)(bool, bool)) {
     pthread_mutex_lock(&observerLock);
     if (!edgeCallback) {
         edgeCallback = callback;
@@ -24,6 +27,10 @@ void wp_camera_demand_start(void (*callback)(bool)) {
         CFNotificationCenterAddObserver(center, &edgeCallback, demandChanged, activeName, NULL,
                                         CFNotificationSuspensionBehaviorDeliverImmediately);
         CFNotificationCenterAddObserver(center, &edgeCallback, demandChanged, inactiveName, NULL,
+                                        CFNotificationSuspensionBehaviorDeliverImmediately);
+        CFNotificationCenterAddObserver(center, &edgeCallback, demandChanged, nativeActiveName, NULL,
+                                        CFNotificationSuspensionBehaviorDeliverImmediately);
+        CFNotificationCenterAddObserver(center, &edgeCallback, demandChanged, nativeInactiveName, NULL,
                                         CFNotificationSuspensionBehaviorDeliverImmediately);
     }
     pthread_mutex_unlock(&observerLock);

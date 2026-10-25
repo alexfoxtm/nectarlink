@@ -29,7 +29,8 @@ BUNDLED_LIST = "BUNDLED-COMPONENTS.txt"
 MACHO = {b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe", b"\xfe\xed\xfa\xcf", b"\xfe\xed\xfa\xce", b"\xca\xfe\xba\xbe",
          b"\xbe\xba\xfe\xca", b"\xca\xfe\xba\xbf", b"\xbf\xba\xfe\xca"}
 # Waypair's own executables; every other Mach-O needs a notice.
-OWN_CODE = {("MacOS", "nectarlink-desktop"), ("Helpers", "WaypairUpdater.app", "Contents", "MacOS", "WaypairUpdater")}
+OWN_CODE = {("MacOS", "nectarlink-desktop"), ("Helpers", "WaypairUpdater.app", "Contents", "MacOS", "WaypairUpdater"),
+            ("Library", "SystemExtensions", "com.waypair.mac.CameraExtension.systemextension", "Contents", "MacOS", "WaypairCameraExtension")}
 LICENSE_NAME = re.compile(r"^(LICEN[CS]E|COPYING|NOTICE|UNLICENSE)|^[\w.+-]*GPL[\w.+-]*\.txt$", re.IGNORECASE)
 SPDX_ID = re.compile(r"^[A-Za-z0-9.+-]+$")
 # Waypair holds no commercial Qt license, so that choice is never taken.

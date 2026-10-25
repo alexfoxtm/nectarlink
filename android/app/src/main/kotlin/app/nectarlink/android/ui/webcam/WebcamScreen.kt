@@ -5,6 +5,7 @@ import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,11 +19,13 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
@@ -59,6 +62,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.nectarlink.android.R
 import app.nectarlink.android.core.Device
 import app.nectarlink.android.ui.detached
+import app.nectarlink.android.ui.theme.WaypairDesign
 import app.nectarlink.android.webcam.WebcamService
 import java.util.Locale
 
@@ -155,7 +159,7 @@ fun WebcamScreen(
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        contentPadding = PaddingValues(WaypairDesign.spacingLg),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         // Header: Back icon button, PC name, online dot
@@ -173,7 +177,7 @@ fun WebcamScreen(
                 Spacer(Modifier.width(4.dp))
                 Text(
                     device.name,
-                    style = MaterialTheme.typography.titleLarge,
+                    style = MaterialTheme.typography.headlineSmall,
                     modifier = Modifier.weight(1f),
                 )
                 Surface(
@@ -188,10 +192,10 @@ fun WebcamScreen(
         if (!hasCameraPermission) {
             item {
                 Surface(
-                    shape = MaterialTheme.shapes.extraLarge,
+                    shape = RoundedCornerShape(WaypairDesign.cardRadius),
                     color = MaterialTheme.colorScheme.secondaryContainer,
                 ) {
-                    Column(Modifier.fillMaxWidth().padding(20.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(WaypairDesign.spacingLg)) {
                         Text(
                             stringResource(R.string.webcam_permission_title),
                             style = MaterialTheme.typography.titleMedium,
@@ -205,6 +209,7 @@ fun WebcamScreen(
                         )
                         Spacer(Modifier.height(12.dp))
                         Button(
+                            modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
                             onClick = {
                                 startAfterGrant = device.online
                                 askCamera.launch(Manifest.permission.CAMERA)
@@ -221,15 +226,15 @@ fun WebcamScreen(
         if (!device.online) {
             item {
                 Surface(
-                    shape = MaterialTheme.shapes.large,
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    shape = RoundedCornerShape(WaypairDesign.cardRadius),
+                    color = WaypairDesign.insetColor(),
                 ) {
                     Column(Modifier.fillMaxWidth().padding(16.dp)) {
                         Text(
                             stringResource(R.string.not_connected),
                             style = MaterialTheme.typography.titleSmall,
                         )
-                        Spacer(Modifier.height(2.dp))
+                        Spacer(Modifier.height(WaypairDesign.spacingXs))
                         Text(
                             stringResource(R.string.webcam_offline_hint, device.name),
                             style = MaterialTheme.typography.bodySmall,
@@ -246,7 +251,7 @@ fun WebcamScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(16f / 9f)
-                    .clip(MaterialTheme.shapes.extraLarge)
+                    .clip(RoundedCornerShape(WaypairDesign.heroRadius))
                     .background(Color(0xFF101216)),
                 contentAlignment = Alignment.Center,
             ) {
@@ -312,12 +317,13 @@ fun WebcamScreen(
         // Controls Card: Start/Stop, Front/Back switch, Torch (when camera has flash), Resolution, Zoom
         item {
             Surface(
-                shape = MaterialTheme.shapes.extraLarge,
-                color = MaterialTheme.colorScheme.surfaceContainer,
+                shape = RoundedCornerShape(WaypairDesign.cardRadius),
+                color = WaypairDesign.panelColor(),
+                border = BorderStroke(1.dp, WaypairDesign.panelBorder()),
                 contentColor = MaterialTheme.colorScheme.onSurface,
             ) {
                 Column(
-                    modifier = Modifier.fillMaxWidth().padding(20.dp),
+                    modifier = Modifier.fillMaxWidth().padding(WaypairDesign.spacingLg),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     // Primary Start/Stop + Flip camera + Torch (only shown when camera has flash)
@@ -327,6 +333,7 @@ fun WebcamScreen(
                     ) {
                         if (isStreamingHere) {
                             Button(
+                                modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
                                 onClick = { WebcamService.stopForEntry(session.entryToken) },
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = MaterialTheme.colorScheme.error,
@@ -337,6 +344,7 @@ fun WebcamScreen(
                             }
                         } else {
                             Button(
+                                modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
                                 enabled = device.online && (!requiresOwned || ownedEntryToken != null),
                                 onClick = {
                                     if (!hasCameraPermission) {
@@ -356,6 +364,7 @@ fun WebcamScreen(
                         }
 
                         FilledTonalButton(
+                            modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
                             onClick = {
                                 val next = if (session.camera == "front") "back" else "front"
                                 WebcamService.setCamera(next, context)
@@ -369,6 +378,7 @@ fun WebcamScreen(
 
                         if (session.hasFlash) {
                             OutlinedButton(
+                                modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
                                 enabled = isStreamingHere,
                                 onClick = { WebcamService.setTorch(!session.torchOn) },
                             ) {
@@ -381,7 +391,7 @@ fun WebcamScreen(
                         }
                     }
 
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    HorizontalDivider(color = WaypairDesign.panelBorder())
 
                     // Resolution picker: 720p, 1080p, and 4K (when supported)
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -389,7 +399,10 @@ fun WebcamScreen(
                             stringResource(R.string.webcam_resolution_label),
                             style = MaterialTheme.typography.labelLarge,
                         )
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(WaypairDesign.spacingSm),
+                            verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingSm),
+                        ) {
                             val res720p = stringResource(R.string.webcam_res_720p)
                             val res1080p = stringResource(R.string.webcam_res_1080p)
                             val res4k = stringResource(R.string.webcam_res_4k)
@@ -400,6 +413,7 @@ fun WebcamScreen(
                             }
                             for ((h, label) in resolutions) {
                                 FilterChip(
+                                    modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
                                     selected = session.resolution == h,
                                     onClick = { WebcamService.setResolutionHeight(h) },
                                     label = { Text(label) },
@@ -418,19 +432,25 @@ fun WebcamScreen(
                             zoomLabel,
                             style = MaterialTheme.typography.labelLarge,
                         )
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(WaypairDesign.spacingSm),
+                            verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingSm),
+                        ) {
                             FilterChip(
+                                modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
                                 selected = kotlin.math.abs(session.zoomRatio - 1f) < 0.08f,
                                 onClick = { WebcamService.setZoomRatio(1f) },
                                 label = { Text(stringResource(R.string.webcam_zoom_preset, 1)) },
                             )
                             FilterChip(
+                                modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
                                 selected = kotlin.math.abs(session.zoomRatio - 2f) < 0.08f,
                                 onClick = { WebcamService.setZoomRatio(2f.coerceAtMost(session.maxZoomRatio)) },
                                 label = { Text(stringResource(R.string.webcam_zoom_preset, 2)) },
                             )
                             if (session.maxZoomRatio >= 4f) {
                                 FilterChip(
+                                    modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
                                     selected = kotlin.math.abs(session.zoomRatio - 4f) < 0.08f,
                                     onClick = { WebcamService.setZoomRatio(4f.coerceAtMost(session.maxZoomRatio)) },
                                     label = { Text(stringResource(R.string.webcam_zoom_preset, 4)) },
