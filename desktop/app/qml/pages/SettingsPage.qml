@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import QtQuick
 import QtQuick.Dialogs
-import QtQuick.Controls as Controls
+import QtQuick.Controls.Basic as BasicControls
 import app.nectarlink
 
 // Settings: phone setup first, followed by feature settings and this computer.
@@ -1882,7 +1882,7 @@ Item {
                                    ? qsTr("Select OBS Virtual Camera in your video app. No preview window is needed.")
                                    : qsTr("Free OBS Virtual Camera requires its camera extension to be installed, allowed in System Settings, and ready."))
                                 : qsTr("Requires the Waypair native camera extension to be installed and ready.")
-                            Controls.ComboBox {
+                            BasicControls.ComboBox {
                                 id: cameraOutputSelector
                                 width: Math.max(0, cameraOutputRow.width - parent.x)
                                 model: [
