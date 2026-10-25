@@ -84,6 +84,7 @@ import app.nectarlink.android.toggles.PhoneToggles
 import app.nectarlink.android.update.AppUpdater
 import app.nectarlink.android.update.CheckForUpdates
 import app.nectarlink.android.core.BackgroundAccess
+import app.nectarlink.android.core.AppsPolicyStatus
 import app.nectarlink.android.core.CoreState
 import app.nectarlink.android.core.Device
 import androidx.compose.ui.draw.drawBehind
@@ -112,6 +113,8 @@ fun SettingsScreen(
     updater: AppUpdater,
     onSetPhoneControlEnabled: (pcId: String, enabled: Boolean) -> Unit,
     onSetWayModeEnabled: (pcId: String, enabled: Boolean) -> Unit,
+    onConfirmAppsAccess: (pcId: String) -> Unit,
+    onRefreshAppsPolicy: (pcId: String) -> Unit,
     onResumePhoneControl: (pcId: String) -> Unit,
     settingsQualificationPcIds: Set<String> = emptySet(),
     onAllowSettingsWindowOnce: (pcId: String) -> Unit = {},
@@ -166,6 +169,14 @@ fun SettingsScreen(
         )
     }
     val appComputers = state.devices.filter { !it.isAndroid }
+
+    androidx.compose.runtime.LaunchedEffect(activeCategory, state.status, appComputers.map { it.id }) {
+        if ((activeCategory == "all" || activeCategory == "apps_screen") &&
+            state.status is app.nectarlink.android.core.CoreStatus.Ready
+        ) {
+            appComputers.forEach { onRefreshAppsPolicy(it.id) }
+        }
+    }
 
     // Keep a screen of cards composed on each side, so scrolling back does not rebuild them.
     @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
@@ -374,11 +385,28 @@ fun SettingsScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         if (device.kind == app.nectarlink.core.DeviceKind.DESKTOP || device.kind == app.nectarlink.core.DeviceKind.LAPTOP) {
+                            val appsPolicyStatus = if (state.status is app.nectarlink.android.core.CoreStatus.Ready) {
+                                device.appsPolicyStatus
+                            } else {
+                                AppsPolicyStatus.UNKNOWN
+                            }
                             Text(
-                                stringResource(if (device.wayModeEnabled) R.string.settings_apps_saved_on else R.string.settings_apps_saved_off),
+                                stringResource(when (appsPolicyStatus) {
+                                    AppsPolicyStatus.UNKNOWN -> R.string.settings_apps_status_unknown
+                                    AppsPolicyStatus.OFF -> R.string.settings_apps_saved_off
+                                    AppsPolicyStatus.ALLOWED -> R.string.settings_apps_saved_on
+                                    AppsPolicyStatus.NEEDS_CONFIRMATION -> R.string.settings_apps_needs_confirmation
+                                }),
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = if (appsPolicyStatus == AppsPolicyStatus.UNKNOWN ||
+                                    appsPolicyStatus == AppsPolicyStatus.NEEDS_CONFIRMATION
+                                ) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                            if (appsPolicyStatus == AppsPolicyStatus.NEEDS_CONFIRMATION && device.wayModeEnabled) {
+                                FilledTonalButton(onClick = { onConfirmAppsAccess(device.id) }) {
+                                    Text(stringResource(R.string.settings_apps_confirm_access))
+                                }
+                            }
                         }
                         val mirroringToggleTitle = stringResource(R.string.mirroring_pc_toggle)
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {

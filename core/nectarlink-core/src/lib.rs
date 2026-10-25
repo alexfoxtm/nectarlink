@@ -86,7 +86,7 @@ pub use media::{MediaAction, MediaError};
 pub use mic::{MicSink, TOGGLE as MIC_TOGGLE};
 pub use mirror::{
     MirrorControl, MirrorControlContext, MirrorSend, MirrorSink, MirrorStream, MirrorView, PC_MIRROR_TOGGLE,
-    PHONE_CONTROL_TOGGLE, PhoneSettingsQualificationOwner,
+    PHONE_CONTROL_TOGGLE, PhoneAppWindowsPolicy, PhoneSettingsQualificationOwner,
 };
 pub use nectarlink_protocol::messages::clip::{
     IMAGE_TYPES as CLIP_IMAGE_TYPES, MAX_IMAGE_BYTES as CLIP_MAX_IMAGE_BYTES,

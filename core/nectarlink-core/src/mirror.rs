@@ -745,6 +745,13 @@ fn input_envelope(input: &MirrorInput, mirroring: u32) -> Result<Envelope> {
     Ok(nectarlink_protocol::messages::mirror_input_envelope(input, mirroring)?)
 }
 
+/// Local saved Apps policy for one paired PC; this is not capture or input readiness.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PhoneAppWindowsPolicy {
+    pub saved_enabled: bool,
+    pub confirmation_required: bool,
+}
+
 /// The phone owner's Stop on a PC's typing (screen input, session 0), per
 /// peer. Every admitted screen input carries the generation it was admitted
 /// under to the platform, which checks it again right before the OS sees it
@@ -2515,10 +2522,80 @@ impl Shared {
                 .is_some_and(|toggles| toggles.get(PHONE_APP_WINDOWS_TOGGLE) == Some(&true))
     }
 
+    /// Read-only local policy snapshot. Store errors are not a synthetic OFF or confirmation state.
+    pub(crate) fn phone_app_windows_policy(&self, peer: &DeviceId) -> Result<PhoneAppWindowsPolicy> {
+        if self.cancel.is_cancelled() {
+            return Err(Error::Offline);
+        }
+        if !is_local_phone(self) {
+            return Err(Error::Unsupported);
+        }
+        // Same fence -> Store order as a local grant transaction. Never call
+        // the saved bool helper here: it deliberately erases Store failures.
+        let fence = self.typing_fence();
+        let saved_enabled = self.store.phone_app_windows_saved(peer)?;
+        if self.cancel.is_cancelled() {
+            return Err(Error::Offline);
+        }
+        Ok(PhoneAppWindowsPolicy {
+            saved_enabled,
+            confirmation_required: saved_enabled && fence.current(peer).app_uncertain,
+        })
+    }
+
     /// Effective app-view allowance: saved Way Mode plus no app persistence
     /// uncertainty. Explicit input Stop is deliberately not part of this gate.
     pub(crate) fn phone_app_windows_admissible(&self, peer: &DeviceId) -> bool {
         self.phone_app_windows_enabled(peer) && !self.typing_fence().current(peer).app_uncertain
+    }
+
+    /// Explicit local confirmation only. Never turns an OFF or replacement grant ON.
+    pub(crate) fn confirm_phone_app_windows(&self, peer: &DeviceId, expected: u64) -> Result<()> {
+        if self.cancel.is_cancelled() || !is_local_phone(self) {
+            return Err(Error::Denied);
+        }
+        let mut fence = self.typing_fence();
+        let previous = fence.current(peer);
+        if expected == u64::MAX
+            || fence.next == u64::MAX
+            || previous.generation != expected
+            || !previous.app_uncertain
+        {
+            return Err(Error::Denied);
+        }
+        let expected_value = fence.persisted_value.as_deref().ok_or(Error::Denied)?;
+        let mut changed = fence.clone();
+        let generation = changed.advance();
+        changed.peers.insert(
+            *peer,
+            Typing {
+                generation,
+                stopped: previous.stopped,
+                app_uncertain: false,
+                owner_off: None,
+            },
+        );
+        let stored = StoredTypingFence {
+            version: 2,
+            next: changed.next,
+            floor: changed.floor,
+            peers: changed.peers.iter().map(|(id, typing)| (id.to_string(), *typing)).collect(),
+            node_running: Some(changed.node_running),
+            grant_journal: Some(1),
+        };
+        let value = serde_json::to_string(&stored)
+            .map_err(|error| Error::Internal(format!("can't encode mirror typing fence: {error}")))?;
+        if self.cancel.is_cancelled() {
+            return Err(Error::Denied);
+        }
+        // Holding the same fence -> Store order as grant writes, validate the
+        // saved ON row and exact original journal in the commit transaction.
+        // A failed transaction leaves the original denying fence untouched.
+        self.store.confirm_phone_app_windows(expected_value, &value, peer)?;
+        changed.persisted_value = Some(value);
+        changed.grant_intents_durable = true;
+        *fence = changed;
+        Ok(())
     }
 
     /// Commit a local phone-owner grant and its invalidating epoch atomically

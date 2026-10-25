@@ -969,6 +969,8 @@ private fun App(
                                     onSetPhoneControlEnabled = core::setPhoneControlEnabled,
                                     onResumePhoneControl = core::resumePhoneControl,
                                     onSetWayModeEnabled = core::setWayModeEnabled,
+                                    onConfirmAppsAccess = core::confirmAppsAccess,
+                                    onRefreshAppsPolicy = core::refreshAppsPolicy,
                                     settingsQualificationPcIds = settingsQualificationPcIds,
                                     onAllowSettingsWindowOnce = core::allowSettingsWindowOnce,
                                     onRevokeSettingsWindowAccess = core::revokeSettingsWindowAccess,

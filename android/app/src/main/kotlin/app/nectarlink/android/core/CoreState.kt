@@ -13,6 +13,7 @@ import app.nectarlink.core.Link
 import app.nectarlink.core.LocalSendPeer
 import app.nectarlink.core.PairedDevice
 import app.nectarlink.core.PairingFailure
+import app.nectarlink.core.PhoneAppWindowsPolicy
 import app.nectarlink.core.PowerLevel
 import app.nectarlink.core.TimelineEntry
 import app.nectarlink.core.Transfer
@@ -124,6 +125,20 @@ enum class WakeState {
     TimedOut,
 }
 
+/** Saved Apps policy only; ALLOWED does not assert provider, capture, or input readiness. */
+enum class AppsPolicyStatus {
+    UNKNOWN, OFF, ALLOWED, NEEDS_CONFIRMATION;
+
+    companion object {
+        fun fromPolicy(policy: PhoneAppWindowsPolicy?): AppsPolicyStatus = when {
+            policy == null -> UNKNOWN
+            !policy.savedEnabled -> OFF
+            policy.confirmationRequired -> NEEDS_CONFIRMATION
+            else -> ALLOWED
+        }
+    }
+}
+
 /** A paired device as the UI shows it. */
 @androidx.compose.runtime.Immutable
 data class Device(
@@ -157,6 +172,8 @@ data class Device(
     val phoneControlEnabled: Boolean = false,
     /** Persistent phone-owner permission for independently controlled Way Mode on this exact PC. */
     val wayModeEnabled: Boolean = false,
+    /** UNKNOWN on failed reads or Node replacement; never infer effective policy from the saved bool. */
+    val appsPolicyStatus: AppsPolicyStatus = AppsPolicyStatus.UNKNOWN,
 ) {
     /** A paired phone or tablet rather than a PC. */
     val isAndroid: Boolean
@@ -280,6 +297,7 @@ data class CoreState(
         mirroringOff: Set<String> = emptySet(),
         phoneControlAllowed: Set<String> = emptySet(),
         wayModeAllowed: Set<String> = emptySet(),
+        appsPolicies: Map<String, PhoneAppWindowsPolicy?> = emptyMap(),
     ): CoreState {
         val prevById = devices.associateBy { it.id }
         return copy(
@@ -293,6 +311,7 @@ data class CoreState(
                     mirroringEnabled = p.id !in mirroringOff,
                     phoneControlEnabled = p.id in phoneControlAllowed,
                     wayModeEnabled = p.id in wayModeAllowed,
+                    appsPolicyStatus = AppsPolicyStatus.fromPolicy(appsPolicies[p.id]),
                 )
             }.sortedWith(deviceOrder),
         )
@@ -343,6 +362,17 @@ data class CoreState(
 
     fun withWayModeEnabled(id: String, enabled: Boolean): CoreState =
         update(id) { it.copy(wayModeEnabled = enabled) }
+
+    fun withAppsPolicy(id: String, policy: PhoneAppWindowsPolicy?): CoreState =
+        update(id) {
+            it.copy(
+                wayModeEnabled = policy?.savedEnabled ?: false,
+                appsPolicyStatus = AppsPolicyStatus.fromPolicy(policy),
+            )
+        }
+
+    fun withoutAppsPolicies(): CoreState =
+        copy(devices = devices.map { it.copy(appsPolicyStatus = AppsPolicyStatus.UNKNOWN) })
 
     fun withTypingStopped(id: String, stopped: Boolean): CoreState =
         copy(typingStoppedPcIds = if (stopped) typingStoppedPcIds + id else typingStoppedPcIds - id)

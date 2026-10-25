@@ -1445,7 +1445,10 @@
     <string name="settings_apps_screen">Apps &amp; screen</string>
     <string name="settings_apps_screen_open">Apps, screen &amp; phone control</string>
     <string name="settings_apps_screen_empty">Pair a computer to choose its Apps and screen permissions.</string>
-    <string name="settings_apps_saved_on">Apps permission is saved. Opening a window still depends on the phone service and the current connection.</string>
+    <string name="settings_apps_status_unknown">Apps access could not be checked for this computer.</string>
+    <string name="settings_apps_needs_confirmation">Apps is saved on, but needs your confirmation on this phone. Confirm Apps access before this computer can open app windows. Phone control and Stop stay separate.</string>
+    <string name="settings_apps_confirm_access">Confirm Apps access</string>
+    <string name="settings_apps_saved_on">Apps access is allowed for this computer. Opening a window still depends on the phone service and the current connection. Phone control stays separate.</string>
     <string name="settings_apps_saved_off">Apps permission is off for this computer.</string>
     <string name="settings_apps_service">Apps service &amp; phone control</string>
     <string name="settings_apps_service_status">App windows service</string>

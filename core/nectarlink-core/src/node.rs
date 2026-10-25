@@ -3590,6 +3590,18 @@ impl Node {
         self.shared.phone_app_windows_enabled(&peer)
     }
 
+    /// Local read-only saved Apps policy, preserving Store and peer errors.
+    pub fn phone_app_windows_policy(&self, peer: DeviceId) -> Result<crate::PhoneAppWindowsPolicy> {
+        self.shared.phone_app_windows_policy(&peer)
+    }
+
+    /// Confirm only the still-saved ON Apps policy at the captured local epoch.
+    pub fn confirm_phone_app_windows(&self, peer: DeviceId, expected_typing_epoch: u64) -> Result<()> {
+        let result = self.shared.confirm_phone_app_windows(&peer, expected_typing_epoch);
+        self.shared.announce_phone_control(&peer);
+        result
+    }
+
     /// Validate an original receiving connection without granting capture/input.
     pub fn mirror_connection_current(&self, peer: DeviceId, connection: u64) -> bool {
         !self.shared.cancel.is_cancelled()

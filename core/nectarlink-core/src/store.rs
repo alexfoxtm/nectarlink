@@ -756,6 +756,61 @@ impl Store {
         })
     }
 
+    /// One coherent saved Apps read. Missing peers and unsupported roles remain errors.
+    pub(crate) fn phone_app_windows_saved(&self, peer: &DeviceId) -> Result<bool> {
+        let row = self.with(|c| {
+            c.query_row(
+                "SELECT p.kind, coalesce(t.enabled, 0) FROM peers p \
+                 LEFT JOIN peer_toggles t ON t.peer = p.id AND t.toggle = 'phone_app_windows' \
+                 WHERE p.id = ?1",
+                [peer.as_bytes().as_slice()],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?)),
+            )
+            .optional()
+        })?;
+        match row {
+            Some((kind, enabled)) if matches!(kind.as_str(), "desktop" | "laptop") => Ok(enabled),
+            Some(_) => Err(Error::Unsupported),
+            None => Err(Error::NotPaired),
+        }
+    }
+
+    /// Confirm an existing ON grant without ever writing a grant row. Deletion,
+    /// replacement OFF state or a changed persisted fence rejects the whole transaction.
+    pub(crate) fn confirm_phone_app_windows(
+        &self,
+        expected: &str,
+        value: &str,
+        peer: &DeviceId,
+    ) -> Result<()> {
+        let committed = self.with(|c| {
+            let tx = c.unchecked_transaction()?;
+            let allowed: bool = tx.query_row(
+                "SELECT EXISTS (SELECT 1 FROM peers p JOIN peer_toggles t ON t.peer = p.id \
+                 WHERE p.id = ?1 AND p.kind IN ('desktop', 'laptop') \
+                 AND t.toggle = 'phone_app_windows' AND t.enabled = 1)",
+                [peer.as_bytes().as_slice()],
+                |row| row.get(0),
+            )?;
+            if !allowed {
+                return Ok(false);
+            }
+            let changed = tx.execute(
+                "UPDATE meta SET value = ?1 WHERE key = 'mirror_typing_fence' AND value = ?2",
+                params![value, expected],
+            )?;
+            if changed != 1 {
+                return Ok(false);
+            }
+            tx.commit()?;
+            Ok(true)
+        })?;
+        if !committed {
+            return Err(Error::Denied);
+        }
+        Ok(())
+    }
+
     pub fn set_toggle(&self, id: &DeviceId, toggle: &str, enabled: bool) -> Result<()> {
         self.with(|c| {
             c.execute(

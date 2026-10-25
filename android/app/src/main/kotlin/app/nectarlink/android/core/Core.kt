@@ -50,6 +50,7 @@ import app.nectarlink.core.Link
 import app.nectarlink.core.NectarlinkException
 import app.nectarlink.core.NectarlinkNode
 import app.nectarlink.core.PhoneSettingsQualificationOwner
+import app.nectarlink.core.PhoneAppWindowsPolicy
 import app.nectarlink.core.NetworkRouteInfo
 import app.nectarlink.core.NodeOptions
 import app.nectarlink.core.Notification
@@ -526,6 +527,7 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
                             false
                         } else {
                             node = started
+                            _state.update { it.withoutAppsPolicies() }
                             isRunning = true
                             true
                         }
@@ -552,7 +554,6 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
                             }
                         }
                     }
-                    val pcToggles = perPcToggles(started, devices.map { it.id })
                     val clipHistEnabled = runCatching { started.clipboardHistoryEnabled() }.getOrDefault(true)
                     val clipHist = if (clipHistEnabled) {
                         runCatching { started.clipboardHistory(null) }.getOrDefault(emptyList())
@@ -573,30 +574,36 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
                     }
                     localsendMulticast?.runCatching { if (lsEnabled) acquire() else release() }
                     pruneOldTempCaches()
-                    _state.update { state ->
-                        val deviceState = if (devicesResult.isSuccess) {
-                            state.withDevices(
-                                devices,
-                                pcToggles.storageAllowed,
-                                pcToggles.micOff,
-                                pcToggles.mirroringOff,
-                                pcToggles.phoneControlAllowed,
-                                pcToggles.wayModeAllowed,
-                            ).withSessionDisplays(initialDisplays)
-                        } else state
-                        deviceState.copy(
-                            status = CoreStatus.Ready(started.deviceId()),
-                            sendQueue = initialQueue,
-                            clipboardHistoryEnabled = clipHistEnabled,
-                            clipboardHistory = clipHist,
-                            timeline = tlPage?.items ?: emptyList(),
-                            timelineTotal = tlPage?.total ?: 0u,
-                            timelineHasMore = tlPage?.hasMore ?: false,
-                            timelineRetentionDays = retention?.maxDays ?: 90u,
-                            localsendEnabled = lsEnabled,
-                            awayMode = initialAwayMode,
-                            localsendPeers = lsPeers,
-                        )
+                    synchronized(opsLock) {
+                        if (node === started) {
+                            val pcToggles = perPcToggles(started, devices.map { it.id })
+                            _state.update { state ->
+                                val deviceState = if (devicesResult.isSuccess) {
+                                    state.withDevices(
+                                        devices,
+                                        pcToggles.storageAllowed,
+                                        pcToggles.micOff,
+                                        pcToggles.mirroringOff,
+                                        pcToggles.phoneControlAllowed,
+                                        pcToggles.wayModeAllowed,
+                                        pcToggles.appsPolicies,
+                                    ).withSessionDisplays(initialDisplays)
+                                } else state
+                                deviceState.copy(
+                                    status = CoreStatus.Ready(started.deviceId()),
+                                    sendQueue = initialQueue,
+                                    clipboardHistoryEnabled = clipHistEnabled,
+                                    clipboardHistory = clipHist,
+                                    timeline = tlPage?.items ?: emptyList(),
+                                    timelineTotal = tlPage?.total ?: 0u,
+                                    timelineHasMore = tlPage?.hasMore ?: false,
+                                    timelineRetentionDays = retention?.maxDays ?: 90u,
+                                    localsendEnabled = lsEnabled,
+                                    awayMode = initialAwayMode,
+                                    localsendPeers = lsPeers,
+                                )
+                            }
+                        }
                     }
                     NotificationListener.instance?.refreshActive()
                     refreshDataRetention()
@@ -734,6 +741,7 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
                             startGuard.stop()
                             isRunning = false
                             node = null
+                            _state.update { it.withoutAppsPolicies() }
                         }
                     }
                 }
@@ -827,6 +835,7 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
             if (idleRetirement == null) {
                 isRunning = false
                 node = null
+                _state.update { it.withoutAppsPolicies() }
             }
             // Drain any pending operations so they don't replay on the next run.
             while (notificationOps.tryReceive().isSuccess) {}
@@ -966,40 +975,45 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
                         scope.launch { node?.networkChanged() }
                     }
                     val prevPhotos = _state.value.photoAccess
-                    val currentNode = node
-                    val pcToggles = currentNode?.let { perPcToggles(it, _state.value.devices.map { d -> d.id }) }
-                    _state.update {
-                        it.copy(
-                            notificationAccess = granted,
-                            backgroundUnrestricted = unrestricted,
-                            companionAssociated = companionAssociated,
-                            photoAccess = photoAccess,
-                            photoPartialAccess = photoPartialAccess,
-                            callAccess = callAccess,
-                            contactsAccess = contactsAccess,
-                            smsAccess = smsAccess,
-                            inputAccess = inputAccess,
-                            elevated = elevated,
-                            remoteInputRequested = if (inputAccess) false else it.remoteInputRequested,
-                            dndAccess = dndAccess,
-                            writeSettingsAccess = writeSettingsAccess,
-                            storageAllFilesAccess = storageAllFilesAccess,
-                            storageSafFolders = storageSafFolders,
-                            localNetwork = localNetwork,
-                            devices = if (pcToggles != null) {
-                                it.devices.map { d ->
-                                    d.copy(
-                                        storageEnabled = d.id in pcToggles.storageAllowed,
-                                        micEnabled = d.id !in pcToggles.micOff,
-                                        mirroringEnabled = d.id !in pcToggles.mirroringOff,
-                                        phoneControlEnabled = d.id in pcToggles.phoneControlAllowed,
-                                        wayModeEnabled = d.id in pcToggles.wayModeAllowed,
-                                    )
-                                }
-                            } else {
-                                it.devices
-                            },
-                        )
+                    synchronized(opsLock) {
+                        val currentNode = node
+                        val pcToggles = currentNode?.let { perPcToggles(it, _state.value.devices.map { d -> d.id }) }
+                        if (node === currentNode) {
+                            _state.update {
+                                it.copy(
+                                    notificationAccess = granted,
+                                    backgroundUnrestricted = unrestricted,
+                                    companionAssociated = companionAssociated,
+                                    photoAccess = photoAccess,
+                                    photoPartialAccess = photoPartialAccess,
+                                    callAccess = callAccess,
+                                    contactsAccess = contactsAccess,
+                                    smsAccess = smsAccess,
+                                    inputAccess = inputAccess,
+                                    elevated = elevated,
+                                    remoteInputRequested = if (inputAccess) false else it.remoteInputRequested,
+                                    dndAccess = dndAccess,
+                                    writeSettingsAccess = writeSettingsAccess,
+                                    storageAllFilesAccess = storageAllFilesAccess,
+                                    storageSafFolders = storageSafFolders,
+                                    localNetwork = localNetwork,
+                                    devices = if (pcToggles != null) {
+                                        it.devices.map { d ->
+                                            d.copy(
+                                                storageEnabled = d.id in pcToggles.storageAllowed,
+                                                micEnabled = d.id !in pcToggles.micOff,
+                                                mirroringEnabled = d.id !in pcToggles.mirroringOff,
+                                                phoneControlEnabled = d.id in pcToggles.phoneControlAllowed,
+                                                wayModeEnabled = d.id in pcToggles.wayModeAllowed,
+                                                appsPolicyStatus = AppsPolicyStatus.fromPolicy(pcToggles.appsPolicies[d.id]),
+                                            )
+                                        }
+                                    } else {
+                                        it.devices.map { d -> d.copy(appsPolicyStatus = AppsPolicyStatus.UNKNOWN) }
+                                    },
+                                )
+                            }
+                        }
                     }
                     if (!elevated) revokeAllSettingsQualifications()
                     if (granted && NotificationListener.instance == null) {
@@ -1439,6 +1453,7 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
         val mirroringOff: Set<String>,
         val phoneControlAllowed: Set<String>,
         val wayModeAllowed: Set<String>,
+        val appsPolicies: Map<String, PhoneAppWindowsPolicy?>,
     )
 
     private fun perPcToggles(node: NectarlinkNode, ids: List<String>): PerPcToggles {
@@ -1447,15 +1462,18 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
         val mirroringOff = mutableSetOf<String>()
         val phoneControlAllowed = mutableSetOf<String>()
         val wayModeAllowed = mutableSetOf<String>()
+        val appsPolicies = mutableMapOf<String, PhoneAppWindowsPolicy?>()
         for (id in ids) {
             val toggles = runCatching { node.deviceToggles(id) }.getOrNull() ?: continue
             if (toggles.any { it.name == PhoneStorage.TOGGLE_NAME && it.enabled }) storage += id
             if (toggles.any { it.name == app.nectarlink.android.mic.MicService.TOGGLE_NAME && !it.enabled }) micOff += id
             if (toggles.any { it.name == MIRRORING_TOGGLE && !it.enabled }) mirroringOff += id
             if (toggles.any { it.name == PHONE_CONTROL_TOGGLE && it.enabled }) phoneControlAllowed += id
-            if (runCatching { node.phoneAppWindowsEnabled(id) }.getOrDefault(false)) wayModeAllowed += id
+            val policy = runCatching { node.phoneAppWindowsPolicy(id) }.getOrNull()
+            appsPolicies[id] = policy
+            if (policy?.savedEnabled == true) wayModeAllowed += id
         }
-        return PerPcToggles(storage, micOff, mirroringOff, phoneControlAllowed, wayModeAllowed)
+        return PerPcToggles(storage, micOff, mirroringOff, phoneControlAllowed, wayModeAllowed, appsPolicies)
     }
 
     fun clearWebcamRequest(pcId: String? = null, ownedEntryToken: String? = null) {
@@ -3010,9 +3028,44 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
             if (device.isAndroid) return
             if (!enabled) appWindows.closeForPc(pcId)
             val result = runCatching { tappedNode.setPhoneAppWindowsEnabled(pcId, enabled) }
-            // The durable write is the source of truth; a read failure means no UI allow.
-            val actual = runCatching { tappedNode.phoneAppWindowsEnabled(pcId) }.getOrDefault(false)
-            _state.update { it.withWayModeEnabled(pcId, actual) }
+            // Read the same Node's strict policy; a failed read is UNKNOWN, never ready.
+            val actual = runCatching { tappedNode.phoneAppWindowsPolicy(pcId) }.getOrNull()
+            if (node === tappedNode) _state.update { it.withAppsPolicy(pcId, actual) }
+            result.onFailure { _messages.tryEmit(describe(it as? NectarlinkException ?: throw it)) }
+        }
+    }
+
+    /** Pure local status read: no reconnect, provider recovery, grant or Stop change. */
+    fun refreshAppsPolicy(pcId: String) {
+        val currentNode = node
+        synchronized(opsLock) {
+            if (node !== currentNode || _state.value.device(pcId) == null) return
+            val policy = runCatching { currentNode?.phoneAppWindowsPolicy(pcId) }.getOrNull()
+            if (node === currentNode) _state.update { it.withAppsPolicy(pcId, policy) }
+        }
+    }
+
+    /** Exact local confirmation intent; never route this through the ordinary switch-ON action. */
+    fun confirmAppsAccess(pcId: String) {
+        val tappedNode = node ?: return
+        synchronized(opsLock) {
+            if (node !== tappedNode || _state.value.device(pcId) == null) return
+            if (_state.value.status !is CoreStatus.Ready) {
+                _state.update { it.withAppsPolicy(pcId, null) }
+                return
+            }
+            // Sample before the strict read. Native confirmation rejects any
+            // intervening grant, Stop, retirement or re-pair generation.
+            val expected = runCatching { tappedNode.mirrorTypingEpoch(pcId) }.getOrNull()
+            val policy = if (expected != null) {
+                runCatching { tappedNode.phoneAppWindowsPolicy(pcId) }.getOrNull()
+            } else null
+            if (node !== tappedNode) return
+            _state.update { it.withAppsPolicy(pcId, policy) }
+            if (expected == null || policy?.savedEnabled != true || !policy.confirmationRequired) return
+            val result = runCatching { tappedNode.confirmPhoneAppWindows(pcId, expected) }
+            val actual = runCatching { tappedNode.phoneAppWindowsPolicy(pcId) }.getOrNull()
+            if (node === tappedNode) _state.update { it.withAppsPolicy(pcId, actual) }
             result.onFailure { _messages.tryEmit(describe(it as? NectarlinkException ?: throw it)) }
         }
     }

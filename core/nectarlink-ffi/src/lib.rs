@@ -1114,6 +1114,13 @@ pub struct PhoneSettingsQualificationOwner {
     pub offer: u64,
 }
 
+/// Phone-local saved Apps policy; neither field grants capture or input.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct PhoneAppWindowsPolicy {
+    pub saved_enabled: bool,
+    pub confirmation_required: bool,
+}
+
 /// Exact original phone input admission, retained through Android posting.
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct PhoneControlContext {
@@ -4472,6 +4479,20 @@ impl NectarlinkNode {
     /// error is false. Capability is implementation support, never this grant.
     pub fn phone_app_windows_enabled(&self, pc_id: String) -> bool {
         parse_id(&pc_id).is_ok_and(|id| self.node.phone_app_windows_enabled(id))
+    }
+
+    /// Local read-only policy for one exact paired PC; errors remain errors.
+    pub fn phone_app_windows_policy(&self, pc_id: String) -> Result<PhoneAppWindowsPolicy> {
+        let policy = self.node.phone_app_windows_policy(parse_id(&pc_id)?)?;
+        Ok(PhoneAppWindowsPolicy {
+            saved_enabled: policy.saved_enabled,
+            confirmation_required: policy.confirmation_required,
+        })
+    }
+
+    /// Explicit phone-local confirmation; cannot enable a missing or OFF saved grant.
+    pub fn confirm_phone_app_windows(&self, pc_id: String, expected_typing_epoch: u64) -> Result<()> {
+        Ok(self.node.confirm_phone_app_windows(parse_id(&pc_id)?, expected_typing_epoch)?)
     }
 
     pub fn mirror_connection_current(&self, pc_id: String, connection: u64) -> bool {

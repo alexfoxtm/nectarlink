@@ -9447,6 +9447,112 @@ async fn phone_app_windows_denies_unknown_and_stale_owners_but_preserves_indepen
 }
 
 #[cfg(feature = "test-support")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn phone_app_windows_policy_confirm_preserves_stop_without_rewriting_grant() {
+    let (pc, phone) = request_control_pair(true).await;
+    let pc_id = pc.node.device_id();
+    let off = phone.node.phone_app_windows_policy(pc_id).unwrap();
+    assert!(!off.saved_enabled && !off.confirmation_required);
+    let epoch = phone.node.mirror_typing_epoch(pc_id);
+    phone.node.set_mirroring_enabled(pc_id, false, epoch).unwrap();
+    phone.node.set_phone_app_windows_enabled(pc_id, true).unwrap();
+    phone.node.mirror_deny_typing(pc_id).unwrap();
+
+    let db = rusqlite::Connection::open(phone.dir.path().join("nectarlink.db")).unwrap();
+    db.execute_batch(
+        "CREATE TRIGGER fail_policy_grant BEFORE UPDATE ON peer_toggles \
+         WHEN NEW.toggle = 'phone_app_windows' \
+         BEGIN SELECT RAISE(ABORT, 'synthetic grant write failure'); END;",
+    )
+    .unwrap();
+    assert!(phone.node.set_phone_app_windows_enabled(pc_id, false).is_err());
+    let expected = phone.node.mirror_typing_epoch(pc_id);
+    let before: String = db
+        .query_row("SELECT value FROM meta WHERE key = 'mirror_typing_fence'", [], |row| row.get(0))
+        .unwrap();
+    let policy = phone.node.phone_app_windows_policy(pc_id).unwrap();
+    assert!(policy.saved_enabled && policy.confirmation_required);
+    assert_eq!(phone.node.phone_app_windows_policy(pc_id).unwrap(), policy);
+    assert_eq!(phone.node.mirror_typing_epoch(pc_id), expected, "policy queries never advance a fence");
+    let after_reads: String = db
+        .query_row("SELECT value FROM meta WHERE key = 'mirror_typing_fence'", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(before, after_reads, "policy queries never persist state");
+
+    // The grant UPDATE trigger remains armed: confirmation must update only the journal.
+    phone.node.confirm_phone_app_windows(pc_id, expected).unwrap();
+    let confirmed = phone.node.phone_app_windows_policy(pc_id).unwrap();
+    assert!(confirmed.saved_enabled && !confirmed.confirmation_required);
+    assert!(phone.node.mirror_typing_stopped(pc_id), "Apps confirmation never clears input Stop");
+    assert_ne!(phone.node.mirror_typing_epoch(pc_id), expected);
+    assert!(phone.node.device_toggles(pc_id).unwrap().iter().any(|(name, on)| *name == "mirroring" && !on));
+    db.execute_batch("DROP TRIGGER fail_policy_grant;").unwrap();
+    pc.node.shutdown().await;
+    phone.node.shutdown().await;
+}
+
+#[cfg(feature = "test-support")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn phone_app_windows_policy_confirm_rejects_stale_repair_off_and_store_errors() {
+    let (pc, phone) = request_control_pair(true).await;
+    let pc_id = pc.node.device_id();
+    phone.node.set_phone_app_windows_enabled(pc_id, true).unwrap();
+    let db = rusqlite::Connection::open(phone.dir.path().join("nectarlink.db")).unwrap();
+    db.execute_batch(
+        "PRAGMA foreign_keys = ON; \
+         CREATE TRIGGER fail_policy_grant BEFORE UPDATE ON peer_toggles \
+         WHEN NEW.toggle = 'phone_app_windows' \
+         BEGIN SELECT RAISE(ABORT, 'synthetic grant write failure'); END;",
+    )
+    .unwrap();
+    assert!(phone.node.set_phone_app_windows_enabled(pc_id, false).is_err());
+    db.execute_batch("DROP TRIGGER fail_policy_grant;").unwrap();
+    let expected = phone.node.mirror_typing_epoch(pc_id);
+    let before: String = db
+        .query_row("SELECT value FROM meta WHERE key = 'mirror_typing_fence'", [], |row| row.get(0))
+        .unwrap();
+    assert!(phone.node.confirm_phone_app_windows(pc_id, expected - 1).is_err());
+    assert!(phone.node.confirm_phone_app_windows(pc_id, u64::MAX).is_err());
+    assert!(phone.node.phone_app_windows_policy(nectarlink_core::DeviceId([0xE9; 32])).is_err());
+
+    db.execute_batch("ALTER TABLE peer_toggles RENAME TO held_policy_toggles;").unwrap();
+    let failed_read = phone.node.phone_app_windows_policy(pc_id);
+    let failed_confirm = phone.node.confirm_phone_app_windows(pc_id, expected);
+    db.execute_batch("ALTER TABLE held_policy_toggles RENAME TO peer_toggles;").unwrap();
+    assert!(failed_read.is_err(), "Store read failure is an error, not OFF or ALLOWED");
+    assert!(failed_confirm.is_err());
+    assert!(phone.node.phone_app_windows_policy(pc_id).unwrap().confirmation_required);
+
+    // Reproduce the real Store boundary: deletion/re-pair can precede forget_typing.
+    // Keep identical paired_at and metadata; the recreated grant is still default OFF.
+    db.execute(
+        "CREATE TEMP TABLE saved_policy_peer AS SELECT * FROM peers WHERE id = ?1",
+        [pc_id.as_bytes().as_slice()],
+    )
+    .unwrap();
+    db.execute("DELETE FROM peers WHERE id = ?1", [pc_id.as_bytes().as_slice()]).unwrap();
+    db.execute_batch("INSERT INTO peers SELECT * FROM saved_policy_peer;").unwrap();
+    let replacement = phone.node.phone_app_windows_policy(pc_id).unwrap();
+    assert!(!replacement.saved_enabled && !replacement.confirmation_required);
+    assert!(phone.node.confirm_phone_app_windows(pc_id, expected).is_err());
+    let grants: i64 = db
+        .query_row(
+            "SELECT count(*) FROM peer_toggles WHERE peer = ?1 AND toggle = 'phone_app_windows'",
+            [pc_id.as_bytes().as_slice()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(grants, 0, "confirmation must never create a replacement grant row");
+    let after: String = db
+        .query_row("SELECT value FROM meta WHERE key = 'mirror_typing_fence'", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(before, after, "rejected confirmations leave the original uncertain journal unchanged");
+    assert_eq!(phone.node.mirror_typing_epoch(pc_id), expected);
+    pc.node.shutdown().await;
+    phone.node.shutdown().await;
+}
+
+#[cfg(feature = "test-support")]
 async fn request_control_pair_with_pc_initial_credit() -> (TestDevice, TestDevice) {
     request_control_pair_with_pc_transport(None).await
 }
