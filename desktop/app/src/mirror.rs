@@ -1662,7 +1662,14 @@ pub fn load_apps(device: DeviceId) {
             }
             // A list on screen stays: it is a moment old, not wrong.
             Err(e) if shown => {
-                tracing::info!(error = %e, "can't refresh a phone's apps; keeping the last list");
+                let error_kind = match e {
+                    Error::Denied => "DENIED",
+                    Error::Unsupported => "UNSUPPORTED",
+                    Error::Offline | Error::NotPaired => "NOT_CONNECTED",
+                    Error::Timeout => "TIMEOUT",
+                    _ => "OTHER",
+                };
+                tracing::warn!(error_kind, "can't refresh a phone's apps; keeping the last list");
                 return;
             }
             Err(Error::Unsupported) => Apps::Failed(tr!(

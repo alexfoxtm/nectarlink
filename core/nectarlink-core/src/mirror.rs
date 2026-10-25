@@ -21,7 +21,7 @@ use std::sync::{
 
 use iroh::endpoint::{RecvStream, SendStream, VarInt};
 use nectarlink_protocol::{
-    DeviceId, Envelope, ErrorCode, PacketKind,
+    DeviceId, Envelope, ErrorCode, PacketKind, ProtocolError,
     messages::{
         MirrorAudioConfig, MirrorConfig, MirrorInput, MirrorPower, MirrorResize, MirrorSession, MirrorStart,
         PhoneApp, PhoneApps, StreamHeader, mirror, types,
@@ -482,6 +482,7 @@ fn prepare_start(
         if shared.with_current_mirror_session(original, || {
             shared.note_mirror_outgoing(&original.peer, options.session, request);
         }).is_none() {
+            tracing::warn!(stage = "local-registration", "owned app start refused");
             return Err(Error::Denied);
         }
     } else {
@@ -490,12 +491,43 @@ fn prepare_start(
     Ok((options, env))
 }
 
-async fn finish_start(shared: &Shared, session: &Session, options: MirrorStart, env: Envelope) -> Result<()> {
+async fn finish_start(
+    shared: &Shared,
+    session: &Session,
+    options: MirrorStart,
+    env: Envelope,
+    ordinary_owned_app: bool,
+) -> Result<()> {
     let request = options.request.expect("prepare_start allocated the request");
     let result = session
         .request(env, crate::session::REQUEST_TIMEOUT)
         .await
-        .and_then(|reply| reply.expect(types::OK).map_err(Error::from));
+        .and_then(|reply| {
+            let accepted = reply.expect(types::OK);
+            if ordinary_owned_app && let Err(ProtocolError::Remote { code, msg }) = &accepted {
+                let remote_code = match code {
+                    ErrorCode::Unsupported => "UNSUPPORTED",
+                    ErrorCode::Unpaired => "UNPAIRED",
+                    ErrorCode::VersionTooOld => "VERSION_TOO_OLD",
+                    ErrorCode::FrameTooLarge => "FRAME_TOO_LARGE",
+                    ErrorCode::BadMessage => "BAD_MESSAGE",
+                    ErrorCode::Denied => "DENIED",
+                    ErrorCode::Busy => "BUSY",
+                    ErrorCode::Internal => "INTERNAL",
+                    ErrorCode::NotFound => "NOT_FOUND",
+                    ErrorCode::Other(_) => "OTHER",
+                };
+                let reason = match (code, msg.as_str()) {
+                    (ErrorCode::Denied, "mirroring is off for this device") => "policy",
+                    (ErrorCode::Denied, "the app request was revoked or replaced") => "capture-admission",
+                    (ErrorCode::Denied, "the mirror connection was replaced") => "connection-replaced",
+                    (ErrorCode::Denied, "the app request was revoked while opening") => "capture-retired",
+                    _ => "other",
+                };
+                tracing::warn!(stage = "remote-reply", code = remote_code, reason, "owned app start refused");
+            }
+            accepted.map_err(Error::from)
+        });
     if result.is_err() {
         let mut outgoing = shared.mirror_outgoing.lock().unwrap_or_else(|e| e.into_inner());
         if outgoing.get(&(session.peer, options.session)).map(|owner| owner.request) == Some(request) {
@@ -507,7 +539,7 @@ async fn finish_start(shared: &Shared, session: &Session, options: MirrorStart, 
 
 pub(crate) async fn start(shared: &Shared, session: &Session, options: MirrorStart) -> Result<()> {
     let (options, env) = prepare_start(shared, session, options, None)?;
-    finish_start(shared, session, options, env).await
+    finish_start(shared, session, options, env, false).await
 }
 
 /// Publish the exact app view before the start request can wait for consent/reply.
@@ -559,9 +591,12 @@ async fn finish_owned_start(
         if scope.offer().is_some() {
             let _ = stop_scoped(session, view.mirroring, Some(request), scope.offer()).await;
         }
+        if scope == MirrorScope::Ordinary {
+            tracing::warn!(stage = "local-view-or-ready", "owned app start refused");
+        }
         return Err(Error::Denied);
     }
-    if let Err(error) = finish_start(shared, session, options, env).await {
+    if let Err(error) = finish_start(shared, session, options, env, scope == MirrorScope::Ordinary).await {
         // A timed-out start may still be completing at the source. Release
         // only the original wire request on its original connection.
         let _ = stop_scoped(session, view.mirroring, Some(request), scope.offer()).await;
@@ -570,6 +605,9 @@ async fn finish_owned_start(
     if !view.is_current() {
         // Close may have queued Stop before this Start reached the source.
         let _ = stop_scoped(session, view.mirroring, Some(request), scope.offer()).await;
+        if scope == MirrorScope::Ordinary {
+            tracing::warn!(stage = "local-post-reply", "owned app start refused");
+        }
         return Err(Error::Denied);
     }
     Ok(())
