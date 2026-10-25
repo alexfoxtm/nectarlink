@@ -1106,18 +1106,20 @@ pub fn keyboard_paste(device: DeviceId) {
     }
 }
 
-/// Opens one of the phone's apps in a window of its own (or does nothing
-/// when it's already open; reuses an ended window for that app).
-pub fn start_app(device: DeviceId, pkg: String, label: String) {
+/// Opens one of the phone's apps, reusing an ended window. An already-live
+/// app returns its exact window for local activation without another request.
+pub fn start_app(device: DeviceId, pkg: String, label: String) -> Option<Window> {
     if !APP_WINDOWS {
-        return;
+        return None;
     }
+    let mut existing = None;
     let window = state(|s| {
-        if s.windows.iter().any(|(w, shown)| {
+        if let Some((window, _)) = s.windows.iter().find(|(w, shown)| {
             w.device == device
                 && shown.pkg.as_deref() == Some(pkg.as_str())
                 && matches!(shown.phase, Phase::Asking | Phase::Showing)
         }) {
+            existing = Some(*window);
             return None;
         }
         record_recent(s, &device, &pkg);
@@ -1142,7 +1144,7 @@ pub fn start_app(device: DeviceId, pkg: String, label: String) {
         );
         Some((window, power(s, &device)))
     });
-    let Some((window, (stay_awake, screen_off))) = window else { return };
+    let Some((window, (stay_awake, screen_off))) = window else { return existing };
     request(
         window,
         MirrorStart {
@@ -1154,6 +1156,7 @@ pub fn start_app(device: DeviceId, pkg: String, label: String) {
             ..OPTIONS
         },
     );
+    None
 }
 
 /// Opens only the phone-owner-armed Settings route. No package or power options
@@ -4187,6 +4190,136 @@ mod mac_receive_fixture {
         });
     }
 
+    #[test]
+    fn existing_app_start_returns_exact_live_window_without_request() {
+        let _fixture = FIXTURE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        fixture_host();
+        assert!(crate::core_host::node().is_none(), "the existing fixture must not start a Node");
+        let window = Window { device: DeviceId([0x70; 32]), session: 0x7500_1001 };
+        let pkg = "org.example.fixture.calculator";
+        let snapshot = || {
+            super::state(|s| {
+                (
+                    s.saved.recent.clone(),
+                    s.requests.clone(),
+                    s.control_requests.clone(),
+                    s.streams.clone(),
+                    s.first_frames.clone(),
+                    s.saved.geometry.clone(),
+                    s.stay_awake.clone(),
+                    s.screen_off.clone(),
+                    s.active_window,
+                )
+            })
+        };
+        let counters = || {
+            (
+                super::NEXT_SESSION.load(std::sync::atomic::Ordering::Relaxed),
+                super::NEXT_REQUEST.load(std::sync::atomic::Ordering::Relaxed),
+            )
+        };
+        for phase in [Phase::Asking, Phase::Showing] {
+            super::state(|s| {
+                assert!(!s.windows.contains_key(&window));
+                s.windows.insert(
+                    window,
+                    Shown {
+                        phase: phase.clone(),
+                        app: Some("Synthetic calculator".into()),
+                        pkg: Some(pkg.into()),
+                        settings_qualification: false,
+                    },
+                );
+                s.requests.insert(window, 0xCA11);
+                s.control_requests.insert(window, 0xCA12);
+                s.streams.insert(window, 0xCA13);
+                s.first_frames.insert(window, 0xCA14);
+            });
+            let before = snapshot();
+            let generations = counters();
+            assert_eq!(
+                super::start_app(window.device, pkg.into(), "Do not replace the existing title".into()),
+                Some(window)
+            );
+            assert_eq!(snapshot(), before, "dedup must not alter recents, ownership, geometry or power");
+            assert_eq!(counters(), generations, "dedup must not allocate a session or request");
+            super::state(|s| {
+                let shown = s.windows.get(&window).unwrap();
+                assert_eq!(shown.phase, phase);
+                assert_eq!(shown.app.as_deref(), Some("Synthetic calculator"));
+                s.windows.remove(&window);
+                s.requests.remove(&window);
+                s.control_requests.remove(&window);
+                s.streams.remove(&window);
+                s.first_frames.remove(&window);
+            });
+        }
+    }
+
+    #[test]
+    fn existing_app_start_does_not_activate_other_peer_package_or_ended_window() {
+        let _fixture = FIXTURE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        fixture_host();
+        assert!(crate::core_host::node().is_none(), "the failure path must retain the no-Node guard");
+        let device = DeviceId([0x71; 32]);
+        let target = Window { device, session: 0x7500_2001 };
+        let wrong_peer = Window { device: DeviceId([0x72; 32]), session: 0x7500_2002 };
+        let wrong_pkg = Window { device, session: 0x7500_2003 };
+        let pkg = "org.example.fixture.calculator";
+        let previous_recent = super::state(|s| {
+            for window in [target, wrong_peer, wrong_pkg] {
+                assert!(!s.windows.contains_key(&window));
+            }
+            for (window, package, phase) in [
+                (target, pkg, Phase::Ended(None)),
+                (wrong_peer, pkg, Phase::Showing),
+                (wrong_pkg, "org.example.fixture.notes", Phase::Showing),
+            ] {
+                s.windows.insert(
+                    window,
+                    Shown {
+                        phase,
+                        app: Some("Synthetic app".into()),
+                        pkg: Some(package.into()),
+                        settings_qualification: false,
+                    },
+                );
+            }
+            s.requests.insert(wrong_peer, 0xCB01);
+            s.requests.insert(wrong_pkg, 0xCB02);
+            s.saved.recent.clone()
+        });
+        let generations = (
+            super::NEXT_SESSION.load(std::sync::atomic::Ordering::Relaxed),
+            super::NEXT_REQUEST.load(std::sync::atomic::Ordering::Relaxed),
+        );
+        assert_eq!(super::start_app(device, pkg.into(), "Synthetic calculator".into()), None);
+        super::state(|s| {
+            assert!(matches!(&s.windows[&target].phase, Phase::Ended(Some(reason)) if !reason.is_empty()));
+            assert!(!s.requests.contains_key(&target));
+            assert!(!s.request_nodes.contains_key(&target));
+            assert!(!s.control_requests.contains_key(&target));
+            assert!(!s.streams.contains_key(&target));
+            assert_eq!(s.windows[&wrong_peer].phase, Phase::Showing);
+            assert_eq!(s.windows[&wrong_pkg].phase, Phase::Showing);
+            assert_eq!(s.requests.get(&wrong_peer), Some(&0xCB01));
+            assert_eq!(s.requests.get(&wrong_pkg), Some(&0xCB02));
+            s.saved.recent = previous_recent;
+            for window in [target, wrong_peer, wrong_pkg] {
+                s.windows.remove(&window);
+                s.requests.remove(&window);
+            }
+        });
+        assert_eq!(
+            (
+                super::NEXT_SESSION.load(std::sync::atomic::Ordering::Relaxed),
+                super::NEXT_REQUEST.load(std::sync::atomic::Ordering::Relaxed),
+            ),
+            generations,
+            "the existing ended key is reused and the no-Node guard never allocates a request"
+        );
+    }
+
     /// The received-folder override is a once-per-process `OnceLock`, so its
     /// fresh 0700 run directory is held here for the whole process: it outlives
     /// every async `finish`, and no later test can see it removed.
@@ -4672,7 +4805,7 @@ mod mac_receive_fixture {
         // This fixture has no owner grant or control Node. The app request must
         // remain visible as a refused row, without a node-backed request or sink.
         let device = DeviceId([0x4D; 32]);
-        super::start_app(device, "com.example.app".into(), "App".into());
+        let _ = super::start_app(device, "com.example.app".into(), "App".into());
         let app_window = super::windows()
             .into_iter()
             .find_map(|(window, shown)| {

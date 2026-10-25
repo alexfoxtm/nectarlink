@@ -394,7 +394,7 @@ pub fn execute(id: &str) -> Option<PaletteUiAction> {
         && let Ok(dev) = dev_str.parse::<DeviceId>()
     {
         let (pkg, label) = payload.split_once('\t').unwrap_or((payload, payload));
-        crate::mirror::start_app(dev, pkg.to_owned(), label.to_owned());
+        let _ = crate::mirror::start_app(dev, pkg.to_owned(), label.to_owned());
         return None;
     }
 

@@ -517,7 +517,7 @@ pub fn on_toast(event: ToastEvent) {
                 });
                 if let Some((pkg, app_name)) = app_target {
                     let label = if app_name.is_empty() { pkg.clone() } else { app_name };
-                    crate::mirror::start_app(dev, pkg, label);
+                    let _ = crate::mirror::start_app(dev, pkg, label);
                     return;
                 }
             }

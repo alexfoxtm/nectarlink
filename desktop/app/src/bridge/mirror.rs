@@ -347,8 +347,11 @@ impl qobject::Mirror {
 
     pub fn start_app(&self, device: &QString, pkg: &QString, label: &QString) {
         let pkg = String::from(pkg);
-        if let (Some(device), true) = (super::parse_device(device), nectarlink_core::is_package_name(&pkg)) {
-            mirror::start_app(device, pkg, String::from(label));
+        if let (Some(device), true) = (super::parse_device(device), nectarlink_core::is_package_name(&pkg))
+            && let Some(window) = mirror::start_app(device, pkg, String::from(label))
+        {
+            let key = QString::from(&window.key());
+            let _ = self.qt_thread().queue(move |mut object| object.activate_window(key));
         }
     }
 
