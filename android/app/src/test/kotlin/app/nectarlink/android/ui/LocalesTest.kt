@@ -25,7 +25,7 @@ class LocalesTest {
         return (0 until nodes.length).map { (nodes.item(it) as Element).getAttribute("android:name") }
     }
 
-    /** A BCP 47 tag's resource folder: "zh-CN" is values-zh-rCN, "de" is values-de. */
+    /** A BCP 47 tag's resource folder: "pt-BR" is values-pt-rBR, "de" is values-de. */
     private fun valuesFolder(tag: String): String {
         val parts = tag.split('-')
         return if (parts.size == 1) "values-${parts[0]}" else "values-${parts[0]}-r${parts[1]}"
@@ -54,6 +54,20 @@ class LocalesTest {
     @Test
     fun `the app's language picker offers exactly the languages Android is told about`() {
         assertEquals(offered(), AppLanguage.languages.map { it.first })
+    }
+
+    @Test
+    fun `retained English normalizes case and regional aliases`() {
+        for (tag in listOf("en", "EN", "en-US", "en-GB")) {
+            assertEquals(tag, "en", AppLanguage.normalize(tag))
+        }
+    }
+
+    @Test
+    fun `unsupported legacy locales do not become a selected app language`() {
+        for (tag in listOf("zh", "zh-CN", "zh-Hans-CN", "zh-SG", "zh-TW", "zh-Hant", "xx-YY")) {
+            assertEquals(tag, "", AppLanguage.normalize(tag))
+        }
     }
 
     @Test

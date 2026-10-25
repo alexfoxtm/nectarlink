@@ -273,7 +273,11 @@ bool install_translator(rust::Str dir, rust::Str language)
         folder = QDir::cleanPath(folder + QStringLiteral("/../Resources"));
 #endif
     const QString chosen = QString::fromUtf8(language.data(), static_cast<qsizetype>(language.size()));
-    const QLocale locale = chosen.isEmpty() ? QLocale::system() : QLocale(chosen);
+    QLocale locale = chosen.isEmpty() ? QLocale::system() : QLocale(chosen);
+    // Chinese is no longer offered. Also block Qt's installed Chinese catalogs
+    // for a Chinese system locale or an old saved choice, without changing it.
+    if (locale.language() == QLocale::Chinese)
+        locale = QLocale(QLocale::English);
     QLocale::setDefault(locale);
     drop(qtTranslator());
     drop(appTranslator());

@@ -115,32 +115,39 @@ class ThemeAndLocalizationTest {
         placeholderRegex.findAll(text.replace("%%", "")).map { it.value }.toSet()
 
     @Test
-    fun `Simplified Chinese localization covers all translatable plurals with matching placeholders`() {
+    fun `offered translations cover all translatable plurals with matching placeholders`() {
         val resDir = resolveResDir()
         val enFile = File(resDir, "values/strings.xml")
-        val zhFile = File(resDir, "values-zh-rCN/strings.xml")
         assertTrue("values/strings.xml must exist", enFile.isFile)
-        assertTrue("values-zh-rCN/strings.xml must exist", zhFile.isFile)
-
         val enPlurals = parsePluralsXml(enFile)
-        val zhPlurals = parsePluralsXml(zhFile)
-
         assertTrue("Expected plurals in values/strings.xml", enPlurals.isNotEmpty())
 
-        val missingPlurals = enPlurals.keys - zhPlurals.keys
-        assertTrue("Missing zh-rCN plural translations: $missingPlurals", missingPlurals.isEmpty())
+        val config = DocumentBuilderFactory.newInstance().newDocumentBuilder()
+            .parse(File(resDir, "xml/locales_config.xml"))
+        val locales = config.getElementsByTagName("locale")
+        for (index in 0 until locales.length) {
+            val tag = (locales.item(index) as Element).getAttribute("android:name")
+            if (tag == "en") continue
+            val parts = tag.split('-')
+            val folder = if (parts.size == 1) "values-${parts[0]}" else "values-${parts[0]}-r${parts[1]}"
+            val translatedFile = File(resDir, "$folder/strings.xml")
+            assertTrue("$tag is offered but has no ${translatedFile.path}", translatedFile.isFile)
+            val translatedPlurals = parsePluralsXml(translatedFile)
+            val missingPlurals = enPlurals.keys - translatedPlurals.keys
+            assertTrue("Missing $tag plural translations: $missingPlurals", missingPlurals.isEmpty())
 
-        for ((key, enItems) in enPlurals) {
-            val zhItems = zhPlurals.getValue(key)
-            assertTrue("Empty zh-rCN plural items for '$key'", zhItems.isNotEmpty())
-            val expectedPlaceholders = enItems.values.flatMap { extractPlaceholders(it) }.toSet()
-            for ((qty, zhText) in zhItems) {
-                assertFalse("Blank zh-rCN plural '$key' quantity '$qty'", zhText.isBlank())
-                assertEquals(
-                    "Placeholder mismatch in plural '$key' quantity '$qty'",
-                    expectedPlaceholders,
-                    extractPlaceholders(zhText),
-                )
+            for ((key, enItems) in enPlurals) {
+                val translatedItems = translatedPlurals.getValue(key)
+                assertTrue("Empty $tag plural items for '$key'", translatedItems.isNotEmpty())
+                val expectedPlaceholders = enItems.values.flatMap { extractPlaceholders(it) }.toSet()
+                for ((quantity, text) in translatedItems) {
+                    assertFalse("Blank $tag plural '$key' quantity '$quantity'", text.isBlank())
+                    assertEquals(
+                        "Placeholder mismatch in $tag plural '$key' quantity '$quantity'",
+                        expectedPlaceholders,
+                        extractPlaceholders(text),
+                    )
+                }
             }
         }
     }

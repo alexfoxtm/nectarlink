@@ -411,8 +411,8 @@
     <string name="mic_request_card_text">It stays on until you or the PC stop it.</string>
     <string name="mic_pc_toggle">Use this phone as a microphone</string>
     <string name="mic_pc_toggle_hint">On by default. This PC can ask for the microphone. It only turns on when you tap Start.</string>
-    <string name="mirroring_pc_toggle">Screen sharing and typing</string>
-    <string name="mirroring_pc_toggle_hint">Allow this computer to view this phone’s full screen. Way Mode app windows and phone control are separate settings.</string>
+    <string name="mirroring_pc_toggle">Full screen sharing</string>
+    <string name="mirroring_pc_toggle_hint">Allow this computer to view this phone’s full screen. Apps windows and phone control are separate settings.</string>
     <string name="recorder_notification_recording">Recording for %1$s</string>
     <string name="recorder_notification_paused">Recording paused (%1$s)</string>
     <string name="recorder_permission_title">Allow microphone access</string>
@@ -695,7 +695,7 @@
     <string name="keyboard_recovery_required">Phone control is stopped for this computer.</string>
     <string name="phone_control_resume">Resume phone control</string>
     <string name="phone_control_resume_hint">Resume phone control for this computer. This doesn’t turn on full-screen sharing.</string>
-    <string name="phone_control_resume_unavailable">Resume needs this phone connected, phone control allowed, and Screen sharing and typing or Way Mode on.</string>
+    <string name="phone_control_resume_unavailable">Resume needs this phone connected, phone control allowed, and Full screen sharing or Apps on.</string>
 
     <!-- Home-screen PC widget -->
     <string name="widget_pc_title">PC quick actions</string>
@@ -1417,9 +1417,9 @@
     <string name="profile_work">Work</string>
     <string name="profile_other">Second profile</string>
     <string name="phone_control_pc_toggle">Allow phone control</string>
-    <string name="phone_control_pc_toggle_hint">Allow this trusted computer to tap, scroll and type only while this phone’s screen or one of its Way Mode app windows is shared. Off by default. This switch does not undo Stop.</string>
-    <string name="way_mode_toggle">Way Mode</string>
-    <string name="way_mode_toggle_hint">Save permission for this trusted PC to use its own independently controlled app windows, even when Screen sharing and typing is off. Way Mode never turns on full-screen sharing. Allow phone control and Stop still apply. Normal reconnect does not ask for the one-time Settings approval again.</string>
+    <string name="phone_control_pc_toggle_hint">Allow this trusted computer to tap, scroll and type only while this phone’s screen or one of its Apps windows is shared. Off by default. This switch does not undo Stop.</string>
+    <string name="way_mode_toggle">Apps</string>
+    <string name="way_mode_toggle_hint">Allow this computer to open apps in separate windows. Full screen sharing stays separate. Phone control and Stop still apply. This permission is saved for normal reconnects.</string>
     <string name="settings_window_access_title">Settings window</string>
     <string name="settings_window_access_hint">Allow this computer to open Android Settings once in its own window. Scrolling follows your existing phone-control settings.</string>
     <string name="settings_window_allow_once">Allow a Settings window once</string>
@@ -1441,6 +1441,27 @@
     <string name="local_hotspot_ios">On iPhone or iPad, open Settings &gt; Wi-Fi, select this phone’s network and enter its hotspot password. Device security and band compatibility vary.</string>
     <string name="local_hotspot_credentials">Phone wireless settings</string>
     <string name="local_hotspot_refresh">Check again</string>
+
+    <string name="settings_apps_screen">Apps &amp; screen</string>
+    <string name="settings_apps_screen_open">Apps, screen &amp; phone control</string>
+    <string name="settings_apps_screen_empty">Pair a computer to choose its Apps and screen permissions.</string>
+    <string name="settings_apps_saved_on">Apps permission is saved. Opening a window still depends on the phone service and the current connection.</string>
+    <string name="settings_apps_saved_off">Apps permission is off for this computer.</string>
+    <string name="settings_apps_service">Apps service &amp; phone control</string>
+    <string name="settings_apps_service_status">App windows service</string>
+    <string name="settings_apps_service_hint">Apps needs this phone service. Its status does not confirm permission for a computer or undo Stop. Full screen sharing stays separate. Accessibility below is an alternative for screen control, not Apps windows.</string>
+    <string name="settings_apps_service_not_set_up">Not set up</string>
+    <string name="settings_apps_service_waiting">Waiting for Wireless debugging</string>
+    <string name="settings_apps_service_starting">Starting…</string>
+    <string name="settings_apps_service_running">Running</string>
+    <string name="settings_apps_service_running_root">Running through root</string>
+    <string name="settings_apps_service_not_paired">Wireless debugging pairing is missing</string>
+    <string name="settings_apps_service_root_failed">Root access was not allowed</string>
+    <string name="settings_apps_service_failed">Could not start. Check Wireless debugging.</string>
+    <string name="settings_apps_service_clipboard_hint">Background clipboard uses the same phone service as Apps. Review its status and setup under Apps &amp; screen.</string>
+    <string name="settings_apps_service_open">App windows service &amp; setup</string>
+    <string name="settings_connection">Connection</string>
+    <string name="settings_data_about">Data &amp; about</string>
 </resources>
 
 

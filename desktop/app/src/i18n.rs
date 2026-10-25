@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 /// Languages the app speaks, as Settings offers them: a locale name ("" for
 /// the system's) and how the language calls itself.
-pub const LANGUAGES: &[(&str, &str)] = &[("", ""), ("en", "English"), ("zh_CN", "简体中文")];
+pub const LANGUAGES: &[(&str, &str)] = &[("", ""), ("en", "English")];
 
 /// [`LANGUAGES`] without the system's, as JSON for Settings: `[{ code, name }]`.
 pub fn languages_json() -> String {
@@ -26,6 +26,18 @@ pub fn is_known(language: &str) -> bool {
     LANGUAGES.iter().any(|(code, _)| *code == language)
 }
 
+// Normalize the language used for display without rewriting a saved preference.
+// Retired Chinese choices fall back to English even on a different system locale.
+fn display_language(language: &str) -> &str {
+    if language.split(['-', '_']).next().is_some_and(|code| code.eq_ignore_ascii_case("zh")) {
+        "en"
+    } else if is_known(language) {
+        language
+    } else {
+        ""
+    }
+}
+
 fn exe_dir() -> Option<PathBuf> {
     std::env::current_exe().ok().and_then(|exe| exe.parent().map(Path::to_path_buf))
 }
@@ -33,7 +45,7 @@ fn exe_dir() -> Option<PathBuf> {
 /// Uses `language` ("" for the system's) from now on, retranslating the
 /// open windows. Call on the Qt thread, after the `QGuiApplication` exists.
 pub fn install(language: &str) {
-    let language = if is_known(language) { language } else { "" };
+    let language = display_language(language);
     let Some(dir) = exe_dir() else { return };
     let installed = crate::bridge::native::ffi::install_translator(&dir.to_string_lossy(), language);
     tracing::debug!(language, installed, "translator");
@@ -133,21 +145,31 @@ mod tests {
         let resources = contents.join("Resources");
         std::fs::create_dir_all(&executable_dir).unwrap();
         std::fs::create_dir_all(&resources).unwrap();
-        std::fs::write(resources.join("nectarlink_zh_CN.qm"), include_bytes!("mac/testdata/i18n-fixture.qm"))
-            .unwrap();
+        std::fs::write(
+            resources.join("nectarlink_de_DE.qm"),
+            include_bytes!("mac/testdata/i18n-fixture-de.qm"),
+        )
+        .unwrap();
 
         let dir = executable_dir.to_string_lossy();
-        assert!(crate::bridge::native::ffi::install_translator(&dir, "zh_CN"));
-        assert_eq!(translate("WaypairI18nFixture", "Resource path"), "资源路径");
+        assert!(crate::bridge::native::ffi::install_translator(&dir, "de_DE"));
+        assert_eq!(translate("WaypairI18nFixture", "Resource path"), "Pfad");
         assert!(!crate::bridge::native::ffi::install_translator(&dir, "en"));
         assert_eq!(translate("WaypairI18nFixture", "Resource path"), "Resource path");
     }
 
     #[test]
     fn only_offered_languages_are_kept() {
-        assert!(is_known("") && is_known("zh_CN") && is_known("en"));
+        assert!(is_known("") && is_known("en"));
+        for removed in ["zh", "zh_CN", "zh-CN", "zh_HK", "zh-Hant", "ZH_cn"] {
+            assert!(!is_known(removed));
+            assert_eq!(display_language(removed), "en");
+        }
+        assert_eq!(display_language("en"), "en");
+        assert_eq!(display_language(""), "");
+        assert_eq!(display_language("xx"), "");
         let listed: Vec<serde_json::Value> = serde_json::from_str(&languages_json()).unwrap();
-        assert_eq!(listed[0], serde_json::json!({ "code": "en", "name": "English" }));
+        assert_eq!(listed, vec![serde_json::json!({ "code": "en", "name": "English" })]);
         assert!(listed.iter().all(|l| l["code"] != ""), "the system's isn't a choice in the list");
         assert!(!is_known("xx"));
     }

@@ -1,8 +1,9 @@
 # Translating NectarLink
 
 NectarLink's Android and Windows apps can be translated into any language.
-Simplified Chinese is complete today; German is under way
-([#15](https://github.com/thtbee/nectarlink/issues/15)).
+The current Waypair Link desktop offers English and System; Chinese catalogs
+and the Chinese option have been removed. The translation infrastructure remains
+available for other languages.
 
 ## How to help
 
@@ -24,7 +25,7 @@ tools or Git needed.
 
 A few things that keep translations consistent:
 
-- Name each language in its own language in pickers ("Deutsch", "简体中文").
+- Name each language in its own language in pickers ("Deutsch", "Español").
 - Keep the product name "NectarLink" as it is.
 - Short UI labels stay short; the English text is already written to fit.
 - If a string's meaning isn't clear from its context, ask in the pull request
@@ -68,8 +69,8 @@ lupdate desktop/app/qml desktop/app/i18n/rust_strings.h -ts desktop/app/i18n/nec
 ```
 
 New strings appear as unfinished in each catalogue, so translators see them.
-Simplified Chinese is offered, so its new strings must be translated in the
-same change; the test above fails otherwise.
+Any non-English language offered in Settings must have its new strings
+translated in the same change; the test above fails otherwise.
 
 ## Setting up Weblate (maintainers)
 
@@ -85,7 +86,7 @@ two components:
 | File mask | `android/app/src/main/res/values-*/strings.xml` | `desktop/app/i18n/nectarlink_*.ts` |
 | Monolingual base language file | `android/app/src/main/res/values/strings.xml` | (none: TS files are bilingual) |
 | Template for new translations | `android/app/src/main/res/values/strings.xml` | `desktop/app/i18n/template/nectarlink.ts` |
-| Language code style | Android style | POSIX style using underscore (`zh_CN`) |
+| Language code style | Android style | POSIX style using underscore (`pt_BR`) |
 | Edit base file | Off | Off |
 
 Turn on the placeholder checks (Weblate enables the Android and Qt format

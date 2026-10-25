@@ -15,7 +15,7 @@ class InputServerTest {
     fun theHelperGoesByTheAppLabel() {
         val res = listOf(File("src/main/res"), File("app/src/main/res"), File("android/app/src/main/res"))
             .first { it.isDirectory }
-        for (values in listOf("values", "values-zh-rCN")) {
+        for (values in listOf("values")) {
             val strings = DocumentBuilderFactory.newInstance().newDocumentBuilder()
                 .parse(File(res, "$values/strings.xml")).getElementsByTagName("string")
             val appName = (0 until strings.length).map { strings.item(it) as Element }

@@ -4,13 +4,12 @@ import QtQuick.Dialogs
 import QtQuick.Controls as Controls
 import app.nectarlink
 
-// Settings: two-pane categorized layout for appearance, general behavior,
-// paired devices & permissions, camera & audio, notifications, files & sync,
-// shortcuts & rules, storage & privacy, and connection & about.
+// Settings: phone setup first, followed by feature settings and this computer.
+// Existing section IDs remain stable for guide and highlight navigation.
 Item {
     id: page
     property bool active: false
-    property string currentSection: "appearance"
+    property string currentSection: "devices"
     property int selectedDeviceIndex: 0
     signal pairRequested
 
@@ -31,15 +30,16 @@ Item {
     }
 
     readonly property var categories: [
-        { id: "appearance", title: qsTr("Appearance"), icon: Icons.palette, subtitle: qsTr("Theme, mode & colors") },
-        { id: "general", title: qsTr("General"), icon: Icons.laptop, subtitle: qsTr("Startup, clipboard & desktop") },
-        { id: "devices", title: qsTr("Devices"), icon: Icons.phone, subtitle: qsTr("Paired phones & permissions") },
-        { id: "camera_audio", title: qsTr("Camera & Audio"), icon: Icons.video, subtitle: qsTr("Webcam, speaker & calls") },
-        { id: "notifications", title: qsTr("Notifications"), icon: Icons.bell, subtitle: qsTr("Do not disturb & app rules") },
-        { id: "files_sync", title: qsTr("Files & Sync"), icon: Icons.folder, subtitle: qsTr("Folder sync, storage & recordings") },
-        { id: "shortcuts", title: qsTr("Shortcuts & Rules"), icon: Icons.bolt, subtitle: Qt.platform.os === "osx" ? qsTr("Automations") : qsTr("Hotkeys & automations") },
-        { id: "storage", title: qsTr("Storage & Privacy"), icon: Icons.clipboardList, subtitle: qsTr("History, caches & retention") },
-        { id: "connection", title: qsTr("Connection & About"), icon: Icons.wifi, subtitle: Qt.platform.os === "osx" ? qsTr("Doctor, API & version") : qsTr("Doctor, Wake-on-LAN, API & version") }
+        { id: "devices", title: qsTr("Phones"), icon: Icons.phone, subtitle: qsTr("Pair phones, choose shared features and manage permissions"), groupTitle: qsTr("Phone setup") },
+        { id: "apps_screen", title: qsTr("Apps & screen"), icon: Icons.apps, subtitle: qsTr("Phone apps, screen mirroring and phone control") },
+        { id: "notifications", title: qsTr("Notifications"), icon: Icons.bell, subtitle: qsTr("Banners, Do not disturb, quiet hours and app rules"), groupTitle: qsTr("Features") },
+        { id: "files_sync", title: qsTr("Files & backup"), icon: Icons.folder, subtitle: qsTr("File sharing, photo backup, recordings and synced folders") },
+        { id: "camera_audio", title: qsTr("Camera & audio"), icon: Icons.video, subtitle: qsTr("Camera setup, microphone, speaker and call preferences") },
+        { id: "shortcuts", title: qsTr("Shortcuts & rules"), icon: Icons.bolt, subtitle: page.onMac ? qsTr("Shortcuts, automation rules and OBS Studio") : qsTr("Hotkeys, automation rules and OBS Studio") },
+        { id: "general", title: qsTr("Desktop & clipboard"), icon: Icons.laptop, subtitle: qsTr("Language, startup, desktop features and copied content"), groupTitle: qsTr("This computer") },
+        { id: "appearance", title: qsTr("Appearance"), icon: Icons.palette, subtitle: qsTr("Theme, mode, colors and visual effects") },
+        { id: "storage", title: qsTr("History & privacy"), icon: Icons.clipboardList, subtitle: qsTr("Local history, caches and retention") },
+        { id: "connection", title: qsTr("Connection & about"), icon: Icons.wifi, subtitle: page.onMac ? qsTr("Connection checks, API, updates and help") : qsTr("Connection checks, Wake-on-LAN, API, updates and help") }
     ]
 
     // The languages the app speaks besides the system's ({ code, name }).
@@ -293,92 +293,110 @@ Item {
 
             Repeater {
                 model: page.categories
-                delegate: Rectangle {
-                    id: navItem
+                delegate: Column {
+                    id: navGroup
                     required property var modelData
-                    readonly property bool selected: page.currentSection === modelData.id
-                    readonly property bool isHovered: railCol.hoveredCategoryId === modelData.id && navMouse.containsMouse
-                    readonly property color fg: selected
-                        ? (Theme.graphite ? Theme.surface : Theme.secondaryContainerContent)
-                        : Theme.surfaceContent
                     width: railCol.width
-                    height: 42
-                    radius: Theme.radiusMd
-                    activeFocusOnTab: true
-                    color: selected
-                        ? (Theme.graphite ? Theme.surfaceContent : Theme.secondaryContainer)
-                        : (isHovered ? Qt.rgba(Theme.surfaceContent.r, Theme.surfaceContent.g, Theme.surfaceContent.b, Theme.dark ? 0.06 : 0.04) : "transparent")
-                    border.width: Theme.focusVisible(navItem) ? 2 : (Theme.graphite && selected ? 1 : 0)
-                    border.color: Theme.focusVisible(navItem) ? Theme.primary : Theme.outlineVariant
+                    spacing: 4
 
-                    Accessible.role: Accessible.PageTab
-                    Accessible.name: modelData.title
-                    Accessible.selected: selected
-                    Accessible.onPressAction: page.currentSection = modelData.id
-                    Keys.onPressed: (event) => {
-                        if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
-                            page.currentSection = navItem.modelData.id
-                            event.accepted = true
-                        }
-                    }
-
-                    Row {
-                        anchors.left: parent.left
-                        anchors.leftMargin: 12
-                        anchors.right: navBadge.visible ? navBadge.left : parent.right
-                        anchors.rightMargin: 8
-                        anchors.verticalCenter: parent.verticalCenter
-                        spacing: 12
-                        Icon {
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: 18; height: 18
-                            path: navItem.modelData.icon
-                            color: navItem.fg
-                        }
-                        Txt {
-                            width: parent.width - 30
-                            anchors.verticalCenter: parent.verticalCenter
-                            role: "label"
-                            size: 13
-                            text: navItem.modelData.title
-                            color: navItem.fg
-                            elide: Text.ElideRight
-                        }
+                    Txt {
+                        width: parent.width
+                        visible: text.length > 0
+                        text: navGroup.modelData.groupTitle || ""
+                        role: "caption"
+                        muted: true
+                        topPadding: 12
+                        bottomPadding: 4
+                        leftPadding: 12
                     }
 
                     Rectangle {
-                        id: navBadge
-                        visible: navItem.modelData.id === "devices" && DeviceList.count > 0
-                        anchors.right: parent.right
-                        anchors.rightMargin: 10
-                        anchors.verticalCenter: parent.verticalCenter
-                        height: 20
-                        width: Math.max(20, navBadgeTxt.implicitWidth + 10)
-                        radius: 10
-                        color: navItem.selected
-                            ? Qt.rgba(navItem.fg.r, navItem.fg.g, navItem.fg.b, 0.16)
-                            : Theme.surfaceContainerHighest
-                        Txt {
-                            id: navBadgeTxt
-                            anchors.centerIn: parent
-                            role: "caption"
-                            text: String(DeviceList.count)
-                            color: navItem.selected ? navItem.fg : Theme.surfaceContentVariant
-                        }
-                    }
+                        id: navItem
+                        readonly property var modelData: navGroup.modelData
+                        readonly property bool selected: page.currentSection === modelData.id
+                        readonly property bool isHovered: railCol.hoveredCategoryId === modelData.id && navMouse.containsMouse
+                        readonly property color fg: selected
+                            ? (Theme.graphite ? Theme.surface : Theme.secondaryContainerContent)
+                            : Theme.surfaceContent
+                        width: railCol.width
+                        height: 42
+                        radius: Theme.radiusMd
+                        activeFocusOnTab: true
+                        color: selected
+                            ? (Theme.graphite ? Theme.surfaceContent : Theme.secondaryContainer)
+                            : (isHovered ? Qt.rgba(Theme.surfaceContent.r, Theme.surfaceContent.g, Theme.surfaceContent.b, Theme.dark ? 0.06 : 0.04) : "transparent")
+                        border.width: Theme.focusVisible(navItem) ? 2 : (Theme.graphite && selected ? 1 : 0)
+                        border.color: Theme.focusVisible(navItem) ? Theme.primary : Theme.outlineVariant
 
-                    MouseArea {
-                        id: navMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onContainsMouseChanged: {
-                            if (containsMouse)
-                                railCol.hoveredCategoryId = navItem.modelData.id
-                            else if (railCol.hoveredCategoryId === navItem.modelData.id)
-                                railCol.hoveredCategoryId = ""
+                        Accessible.role: Accessible.PageTab
+                        Accessible.name: modelData.title
+                        Accessible.selected: selected
+                        Accessible.onPressAction: page.currentSection = modelData.id
+                        Keys.onPressed: (event) => {
+                            if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+                                page.currentSection = navItem.modelData.id
+                                event.accepted = true
+                            }
                         }
-                        onClicked: page.currentSection = navItem.modelData.id
+
+                        Row {
+                            anchors.left: parent.left
+                            anchors.leftMargin: 12
+                            anchors.right: navBadge.visible ? navBadge.left : parent.right
+                            anchors.rightMargin: 8
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 12
+                            Icon {
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 18; height: 18
+                                path: navItem.modelData.icon
+                                color: navItem.fg
+                            }
+                            Txt {
+                                width: parent.width - 30
+                                anchors.verticalCenter: parent.verticalCenter
+                                role: "label"
+                                size: 13
+                                text: navItem.modelData.title
+                                color: navItem.fg
+                                elide: Text.ElideRight
+                            }
+                        }
+
+                        Rectangle {
+                            id: navBadge
+                            visible: navItem.modelData.id === "devices" && DeviceList.count > 0
+                            anchors.right: parent.right
+                            anchors.rightMargin: 10
+                            anchors.verticalCenter: parent.verticalCenter
+                            height: 20
+                            width: Math.max(20, navBadgeTxt.implicitWidth + 10)
+                            radius: 10
+                            color: navItem.selected
+                                ? Qt.rgba(navItem.fg.r, navItem.fg.g, navItem.fg.b, 0.16)
+                                : Theme.surfaceContainerHighest
+                            Txt {
+                                id: navBadgeTxt
+                                anchors.centerIn: parent
+                                role: "caption"
+                                text: String(DeviceList.count)
+                                color: navItem.selected ? navItem.fg : Theme.surfaceContentVariant
+                            }
+                        }
+
+                        MouseArea {
+                            id: navMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onContainsMouseChanged: {
+                                if (containsMouse)
+                                    railCol.hoveredCategoryId = navItem.modelData.id
+                                else if (railCol.hoveredCategoryId === navItem.modelData.id)
+                                    railCol.hoveredCategoryId = ""
+                            }
+                            onClicked: page.currentSection = navItem.modelData.id
+                        }
                     }
                 }
             }
@@ -517,6 +535,71 @@ Item {
                     iconPath: Icons.plus
                     text: qsTr("Pair a new device")
                     onClicked: page.pairRequested()
+                }
+            }
+
+            Txt {
+                width: parent.width
+                text: page.activeCategoryObj.subtitle
+                role: "bodySmall"
+                muted: true
+                wrapMode: Text.WordWrap
+                elide: Text.ElideNone
+            }
+
+            Column {
+                visible: page.currentSection === "apps_screen"
+                width: visible ? parent.width : 0
+                spacing: Theme.gutter
+
+                Card {
+                    width: parent.width
+                    Column {
+                        width: parent.width
+
+                        ListRow {
+                            width: parent.width
+                            iconPath: Icons.apps
+                            title: qsTr("Phone apps")
+                            description: qsTr("See which app windows are available for the current phone and connection, and any setup they need.")
+                            Button {
+                                variant: "tonal"
+                                size: "sm"
+                                text: qsTr("Open Apps")
+                                onClicked: AppController.currentPage = "apps"
+                            }
+                        }
+
+                        Divider { width: parent.width }
+
+                        ListRow {
+                            width: parent.width
+                            iconPath: Icons.mirror
+                            title: qsTr("Phone screen")
+                            description: qsTr("Open Home for screen-mirroring controls. Screen mirroring needs its own permission on your phone. App windows use the separate Apps permission and do not require full-screen mirroring.")
+                            Button {
+                                variant: "tonal"
+                                size: "sm"
+                                text: qsTr("Open Home")
+                                onClicked: AppController.currentPage = "home"
+                            }
+                        }
+
+                        Divider { width: parent.width }
+
+                        ListRow {
+                            width: parent.width
+                            iconPath: Icons.phone
+                            title: qsTr("Phone control & app access")
+                            description: qsTr("In Waypair Link on your phone, open Settings → Apps & screen and choose this computer to review app access and phone control. These permissions are separate. Review the features shared with this Mac in Phones.")
+                            Button {
+                                variant: "outline"
+                                size: "sm"
+                                text: qsTr("Phone permissions")
+                                onClicked: page.currentSection = "devices"
+                            }
+                        }
+                    }
                 }
             }
 

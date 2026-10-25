@@ -16,7 +16,6 @@ object AppLanguage {
     /** The languages the app speaks, as BCP 47 tags, each named in its own language. */
     val languages: List<Pair<String, String>> = listOf(
         "en" to "English",
-        "zh-CN" to "简体中文",
     )
 
     /** Whether the phone lets the app pick its own language. */
@@ -39,13 +38,12 @@ object AppLanguage {
 
     /**
      * One of [languages]' tags for [tag], or "" when the app doesn't speak it. Android may
-     * hand back a fuller tag ("zh-Hans-CN") than the one set.
+     * hand back a regional tag ("en-US") for an offered language.
      */
     internal fun normalize(tag: String): String {
         languages.firstOrNull { it.first.equals(tag, ignoreCase = true) }?.let { return it.first }
         val lower = tag.lowercase()
         return when {
-            lower.startsWith("zh") && ("hans" in lower || "-cn" in lower || "-sg" in lower) -> "zh-CN"
             lower == "en" || lower.startsWith("en-") -> "en"
             else -> ""
         }

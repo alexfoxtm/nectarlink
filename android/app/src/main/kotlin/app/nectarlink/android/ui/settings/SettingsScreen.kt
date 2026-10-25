@@ -10,6 +10,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -96,6 +98,7 @@ import app.nectarlink.android.ui.theme.glassModalContainerColor
 import app.nectarlink.android.ui.theme.liquidGlassCard
 import kotlinx.coroutines.delay
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(
     state: CoreState,
@@ -146,6 +149,7 @@ fun SettingsScreen(
     var pickLanguage by remember { mutableStateOf(false) }
     var showLicenses by remember { mutableStateOf(false) }
     var activeCategory by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("all") }
+    var focusedAppsPcId by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
     var pulsingSectionKey by remember { mutableStateOf<String?>(null) }
     val isGlass = LocalGlassTheme.current
     val anyDialogOpen = confirmUnpair != null || confirmClearEverything || showLicenses
@@ -153,17 +157,15 @@ fun SettingsScreen(
     val categories = remember {
         listOf(
             "all" to R.string.timeline_filter_all,
-            "appearance" to R.string.settings_appearance,
-            "devices" to R.string.settings_category_devices,
+            "devices" to R.string.settings_devices,
+            "apps_screen" to R.string.settings_apps_screen,
             "permissions" to R.string.walkthrough_permissions_title,
-            "features" to R.string.settings_category_features,
+            "connection" to R.string.settings_connection,
+            "appearance" to R.string.settings_appearance,
+            "features" to R.string.settings_data_about,
         )
     }
-
-    val showAppearance = activeCategory == "all" || activeCategory == "appearance"
-    val showDevices = activeCategory == "all" || activeCategory == "devices"
-    val showPermissions = activeCategory == "all" || activeCategory == "permissions"
-    val showFeatures = activeCategory == "all" || activeCategory == "features"
+    val appComputers = state.devices.filter { !it.isAndroid }
 
     // Keep a screen of cards composed on each side, so scrolling back does not rebuild them.
     @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
@@ -171,22 +173,30 @@ fun SettingsScreen(
         cacheWindow = androidx.compose.foundation.lazy.layout.LazyLayoutCacheWindow(aheadFraction = 1f, behindFraction = 1f),
     )
 
+    androidx.compose.runtime.LaunchedEffect(activeCategory, focusedAppsPcId) {
+        val computerIndex = if (activeCategory == "apps_screen") {
+            appComputers.indexOfFirst { it.id == focusedAppsPcId }
+        } else -1
+        listState.scrollToItem(if (computerIndex >= 0) computerIndex + 2 else 0)
+    }
+
     androidx.compose.runtime.LaunchedEffect(highlightTarget) {
         val target = highlightTarget ?: return@LaunchedEffect
         val mapping = when (target) {
             GuideHighlightTarget.SETTINGS_DEVICES -> Triple("devices", "devices", 1)
             GuideHighlightTarget.SETTINGS_NOTIFICATIONS -> Triple("permissions", "notifications", 1)
-            GuideHighlightTarget.SETTINGS_CONTROL -> Triple("permissions", "control", 2)
-            GuideHighlightTarget.SETTINGS_BACKGROUND -> Triple("permissions", "background", 3)
-            GuideHighlightTarget.SETTINGS_CALLS_CONTACTS -> Triple("permissions", "calls_contacts", 4)
-            GuideHighlightTarget.SETTINGS_PHOTOS_STORAGE -> Triple("permissions", "photos", 5)
+            GuideHighlightTarget.SETTINGS_CONTROL -> Triple("apps_screen", "control", 1)
+            GuideHighlightTarget.SETTINGS_BACKGROUND -> Triple("connection", "background", 2)
+            GuideHighlightTarget.SETTINGS_CALLS_CONTACTS -> Triple("permissions", "calls_contacts", 3)
+            GuideHighlightTarget.SETTINGS_PHOTOS_STORAGE -> Triple("permissions", "photos", 4)
             GuideHighlightTarget.SETTINGS_CLIPBOARD -> Triple("features", "clipboard", 1)
-            GuideHighlightTarget.SETTINGS_LOCALSEND -> Triple("features", "localsend", 3)
-            GuideHighlightTarget.SETTINGS_DATA_STORAGE -> Triple("features", "data_storage", 4)
+            GuideHighlightTarget.SETTINGS_LOCALSEND -> Triple("connection", "localsend", 3)
+            GuideHighlightTarget.SETTINGS_DATA_STORAGE -> Triple("features", "data_storage", 2)
             else -> null
         }
         if (mapping != null) {
             val (category, sectionKey, indexInCat) = mapping
+            focusedAppsPcId = null
             activeCategory = category
             pulsingSectionKey = sectionKey
             onHighlightConsumed()
@@ -226,17 +236,16 @@ fun SettingsScreen(
                         Text(stringResource(R.string.guide_title))
                     }
                 }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     categories.forEach { (id, label) ->
                         val selected = activeCategory == id
                         FilterChip(
                             selected = selected,
-                            onClick = { activeCategory = id },
+                            onClick = { focusedAppsPcId = null; activeCategory = id },
                             label = { Text(stringResource(label)) },
                             // Solid like the cards: the row sits right on the
                             // background (Hive's comb showed through).
@@ -251,7 +260,469 @@ fun SettingsScreen(
             }
         }
 
-        if (showAppearance) {
+        if (activeCategory == "all" || activeCategory == "devices") {
+            item(key = "devices", contentType = "section") {
+                Section(
+                    title = stringResource(R.string.settings_devices),
+                    highlighted = pulsingSectionKey == "devices",
+                ) {
+                    val context = LocalContext.current
+                    state.devices.forEachIndexed { index, device ->
+                        if (index > 0) {
+                            SettingRowDivider()
+                        }
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                                    Text(device.name, style = MaterialTheme.typography.titleSmall)
+                                    val dotColor = if (device.online) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    ) {
+                                        Spacer(
+                                            modifier = Modifier
+                                                .size(8.dp)
+                                                .drawBehind { drawCircle(dotColor) },
+                                        )
+                                        Text(
+                                            stringResource(if (device.online) R.string.connected else R.string.not_connected),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                                OutlinedButton(onClick = { confirmUnpair = device }) { Text(stringResource(R.string.action_unpair)) }
+                            }
+                            val storageToggleTitle = stringResource(R.string.storage_pc_toggle)
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                                    Text(storageToggleTitle, style = MaterialTheme.typography.bodyMedium)
+                                    Text(
+                                        stringResource(R.string.storage_pc_toggle_hint),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                Switch(
+                                    checked = device.storageEnabled,
+                                    onCheckedChange = { enabled ->
+                                        onSetStorageEnabled(device.id, enabled)
+                                        if (enabled && !state.storageAllFilesAccess && state.storageSafFolders.isEmpty()) {
+                                            runCatching { context.startActivity(PhoneStorage.allFilesAccessIntent(context)) }
+                                        }
+                                    },
+                                    colors = app.nectarlink.android.ui.theme.nectarSwitchColors(),
+                                    modifier = Modifier.semantics { contentDescription = storageToggleTitle },
+                                )
+                            }
+                            if (!device.isAndroid) {
+                                val micToggleTitle = stringResource(R.string.mic_pc_toggle)
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                    Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                                        Text(micToggleTitle, style = MaterialTheme.typography.bodyMedium)
+                                        Text(
+                                            stringResource(R.string.mic_pc_toggle_hint),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    Switch(
+                                        checked = device.micEnabled,
+                                        onCheckedChange = { enabled -> onSetMicEnabled(device.id, enabled) },
+                                        colors = app.nectarlink.android.ui.theme.nectarSwitchColors(),
+                                        modifier = Modifier.semantics { contentDescription = micToggleTitle },
+                                    )
+                                }
+                                TextButton(onClick = {
+                                    focusedAppsPcId = device.id
+                                    activeCategory = "apps_screen"
+                                }) {
+                                    Text(stringResource(R.string.settings_apps_screen_open))
+                                }
+                            }
+                        }
+                    }
+                    FilledTonalButton(onClick = onPairNew) { Text(stringResource(R.string.action_pair_new)) }
+                }
+            }
+        }
+
+        if (activeCategory == "all" || activeCategory == "apps_screen") {
+            item(key = "control", contentType = "section") {
+                Section(
+                    title = stringResource(R.string.settings_apps_service),
+                    highlighted = pulsingSectionKey == "control",
+                ) {
+                    Text(
+                        stringResource(R.string.settings_apps_service_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    ElevatedAccess()
+                    SettingRowDivider()
+                    ControlAccess(state.inputAccess)
+                }
+            }
+
+            appComputers.forEach { device ->
+                item(key = "apps_${device.id}", contentType = "section") {
+                    Section(device.name, highlighted = focusedAppsPcId == device.id) {
+                        Text(
+                            stringResource(if (device.online) R.string.connected else R.string.not_connected),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        if (device.kind == app.nectarlink.core.DeviceKind.DESKTOP || device.kind == app.nectarlink.core.DeviceKind.LAPTOP) {
+                            Text(
+                                stringResource(if (device.wayModeEnabled) R.string.settings_apps_saved_on else R.string.settings_apps_saved_off),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        val mirroringToggleTitle = stringResource(R.string.mirroring_pc_toggle)
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                            Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                                Text(mirroringToggleTitle, style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    stringResource(R.string.mirroring_pc_toggle_hint),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Switch(
+                                checked = device.mirroringEnabled,
+                                onCheckedChange = { enabled -> onSetMirroringEnabled(device.id, enabled) },
+                                colors = app.nectarlink.android.ui.theme.nectarSwitchColors(),
+                                modifier = Modifier.semantics { contentDescription = mirroringToggleTitle },
+                            )
+                        }
+                        if (device.kind == app.nectarlink.core.DeviceKind.DESKTOP || device.kind == app.nectarlink.core.DeviceKind.LAPTOP) {
+                            val controlToggleTitle = stringResource(R.string.phone_control_pc_toggle)
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                                    Text(controlToggleTitle, style = MaterialTheme.typography.bodyMedium)
+                                    Text(
+                                        stringResource(R.string.phone_control_pc_toggle_hint),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                Switch(
+                                    checked = device.phoneControlEnabled,
+                                    enabled = state.status is app.nectarlink.android.core.CoreStatus.Ready,
+                                    onCheckedChange = { enabled -> onSetPhoneControlEnabled(device.id, enabled) },
+                                    colors = app.nectarlink.android.ui.theme.nectarSwitchColors(),
+                                    modifier = Modifier.semantics { contentDescription = controlToggleTitle },
+                                )
+                            }
+                        }
+                        if (device.kind == app.nectarlink.core.DeviceKind.DESKTOP || device.kind == app.nectarlink.core.DeviceKind.LAPTOP) {
+                            val wayModeToggleTitle = stringResource(R.string.way_mode_toggle)
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                                    Text(wayModeToggleTitle, style = MaterialTheme.typography.bodyMedium)
+                                    Text(
+                                        stringResource(R.string.way_mode_toggle_hint),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                Switch(
+                                    checked = device.wayModeEnabled,
+                                    enabled = state.status is app.nectarlink.android.core.CoreStatus.Ready,
+                                    onCheckedChange = { enabled -> onSetWayModeEnabled(device.id, enabled) },
+                                    colors = app.nectarlink.android.ui.theme.nectarSwitchColors(),
+                                    modifier = Modifier.semantics { contentDescription = wayModeToggleTitle },
+                                )
+                            }
+                        }
+                        if (device.kind == app.nectarlink.core.DeviceKind.DESKTOP || device.kind == app.nectarlink.core.DeviceKind.LAPTOP) {
+                            val settingsWindowActive = device.id in settingsQualificationPcIds
+                            if (!device.wayModeEnabled || settingsWindowActive) {
+                                val canArmSettingsWindow = state.status is app.nectarlink.android.core.CoreStatus.Ready &&
+                                    device.online && device.mirroringEnabled && state.elevated &&
+                                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                    Text(stringResource(R.string.settings_window_access_title), style = MaterialTheme.typography.bodyMedium)
+                                    Text(
+                                        stringResource(R.string.settings_window_access_hint),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    if (settingsWindowActive) {
+                                        OutlinedButton(onClick = { onRevokeSettingsWindowAccess(device.id) }) {
+                                            Text(stringResource(R.string.settings_window_revoke))
+                                        }
+                                    } else {
+                                        FilledTonalButton(
+                                            enabled = canArmSettingsWindow,
+                                            onClick = { onAllowSettingsWindowOnce(device.id) },
+                                        ) {
+                                            Text(stringResource(R.string.settings_window_allow_once))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if (device.id in state.typingStoppedPcIds) {
+                            // Display gate only; the backend resume rechecks Node, epoch, Stop and scope.
+                            val canResumeControl = state.status is app.nectarlink.android.core.CoreStatus.Ready &&
+                                device.online && device.phoneControlEnabled &&
+                                (device.mirroringEnabled || device.wayModeEnabled)
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(
+                                    stringResource(R.string.keyboard_recovery_required),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                                if (canResumeControl) {
+                                    FilledTonalButton(
+                                        onClick = { onResumePhoneControl(device.id) },
+                                    ) {
+                                        Text(stringResource(R.string.phone_control_resume))
+                                    }
+                                    Text(
+                                        stringResource(R.string.phone_control_resume_hint),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                } else {
+                                    Text(
+                                        stringResource(R.string.phone_control_resume_unavailable),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if (appComputers.isEmpty()) {
+                item(key = "apps_empty", contentType = "section") {
+                    Section(stringResource(R.string.settings_apps_screen)) {
+                        Text(stringResource(R.string.settings_apps_screen_empty), style = MaterialTheme.typography.bodyMedium)
+                        TextButton(onClick = { activeCategory = "devices" }) {
+                            Text(stringResource(R.string.settings_devices))
+                        }
+                    }
+                }
+            }
+
+            item(key = "remote", contentType = "section") {
+                Section(stringResource(R.string.settings_remote)) {
+                    val sensitivityTitle = stringResource(R.string.settings_touchpad_sensitivity)
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            sensitivityTitle,
+                            style = MaterialTheme.typography.titleSmall,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            stringResource(R.string.settings_touchpad_sensitivity_value, touchpadSensitivity),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Slider(
+                        value = touchpadSensitivity,
+                        onValueChange = onTouchpadSensitivity,
+                        valueRange = 0.5f..2.5f,
+                        modifier = Modifier.semantics { contentDescription = sensitivityTitle },
+                    )
+                }
+            }
+        }
+
+        if (activeCategory == "all" || activeCategory == "permissions") {
+            item(key = "notifications", contentType = "section") {
+                Section(
+                    title = stringResource(R.string.settings_notifications),
+                    highlighted = pulsingSectionKey == "notifications",
+                ) {
+                    NotificationAccess(state.notificationAccess, onChooseFilter = {
+                        notificationFilterOpen = true
+                    })
+                }
+            }
+
+            item(key = "permissions_control", contentType = "section") {
+                Section(stringResource(R.string.settings_control)) {
+                    BankingPauseAccess()
+                    SettingRowDivider()
+                    DndAccess(state.dndAccess)
+                    SettingRowDivider()
+                    WriteSettingsAccess(state.writeSettingsAccess || state.elevated)
+                }
+            }
+
+            item(key = "calls_contacts", contentType = "section") {
+                Section(
+                    title = stringResource(R.string.settings_calls_and_contacts),
+                    highlighted = pulsingSectionKey == "calls_contacts",
+                ) {
+                    RuntimePermissionAccess(
+                        title = stringResource(R.string.calls_title),
+                        textOn = stringResource(R.string.calls_on),
+                        textOff = stringResource(R.string.calls_off),
+                        granted = state.callAccess,
+                        permissions = PhoneCalls.permissions,
+                        onAccessChanged = onAccessChanged,
+                    )
+                    SettingRowDivider()
+                    RuntimePermissionAccess(
+                        title = stringResource(R.string.contacts_title),
+                        textOn = stringResource(R.string.contacts_on),
+                        textOff = stringResource(R.string.contacts_off),
+                        granted = state.contactsAccess,
+                        permissions = PhoneContacts.permissions,
+                        onAccessChanged = onAccessChanged,
+                    )
+                    SettingRowDivider()
+                    RuntimePermissionAccess(
+                        title = stringResource(R.string.sms_title),
+                        textOn = stringResource(R.string.sms_on),
+                        textOff = stringResource(R.string.sms_off),
+                        granted = state.smsAccess,
+                        permissions = PhoneSms.permissions,
+                        onAccessChanged = onAccessChanged,
+                    )
+                }
+            }
+
+            item(key = "photos", contentType = "section") {
+                Section(
+                    title = stringResource(R.string.settings_photos),
+                    highlighted = pulsingSectionKey == "photos",
+                ) {
+                    PhotosAccess(
+                        granted = state.photoAccess,
+                        partial = state.photoPartialAccess,
+                        onAccessChanged = onAccessChanged,
+                    )
+                    SettingRowDivider()
+                    StorageAccess(
+                        allFiles = state.storageAllFilesAccess,
+                        safFolders = state.storageSafFolders,
+                        onAddSafFolder = onAddSafFolder,
+                        onRemoveSafFolder = onRemoveSafFolder,
+                    )
+                }
+            }
+        }
+
+        if (activeCategory == "all" || activeCategory == "connection") {
+            item(key = "connection", contentType = "section") {
+                Section(stringResource(R.string.settings_connection)) {
+                    val mobileDataTitle = stringResource(R.string.guide_away_title)
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                            Text(mobileDataTitle, style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                stringResource(R.string.settings_mobile_data_body),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(
+                            checked = state.awayMode,
+                            onCheckedChange = onToggleAwayMode,
+                            colors = app.nectarlink.android.ui.theme.nectarSwitchColors(),
+                            modifier = Modifier.semantics { contentDescription = mobileDataTitle },
+                        )
+                    }
+                }
+            }
+
+            item(key = "background", contentType = "section") {
+                Section(
+                    title = stringResource(R.string.settings_background_title),
+                    highlighted = pulsingSectionKey == "background",
+                ) {
+                    val runInBackgroundTitle = stringResource(R.string.settings_run_in_background)
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                            Text(runInBackgroundTitle, style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                stringResource(R.string.settings_run_in_background_hint),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(
+                            checked = backgroundServiceEnabled,
+                            onCheckedChange = onToggleBackgroundService,
+                            colors = app.nectarlink.android.ui.theme.nectarSwitchColors(),
+                            modifier = Modifier.semantics { contentDescription = runInBackgroundTitle },
+                        )
+                    }
+                    if (backgroundServiceEnabled && !state.backgroundUnrestricted) {
+                        val context = LocalContext.current
+                        val oemGuide = BackgroundAccess.oemGuideResId()?.let { stringResource(it) }
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(start = 16.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Text(
+                                stringResource(R.string.background_restriction_warning),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            if (oemGuide != null) {
+                                Text(
+                                    oemGuide,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            TextButton(onClick = {
+                                runCatching { context.startActivity(BackgroundAccess.oemSettingsIntent(context)) }
+                            }) {
+                                Text(stringResource(R.string.battery_open_oem_settings))
+                            }
+                        }
+                    }
+                    SettingRowDivider()
+                    CompanionWakeAccess(
+                        associated = state.companionAssociated,
+                        devices = state.devices,
+                        onAccessChanged = onAccessChanged,
+                    )
+                }
+            }
+
+            item(key = "localsend", contentType = "section") {
+                Section(
+                    title = stringResource(R.string.settings_localsend_title),
+                    highlighted = pulsingSectionKey == "localsend",
+                ) {
+                    val localsendTitle = stringResource(R.string.settings_localsend_title)
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                            Text(localsendTitle, style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                stringResource(R.string.settings_localsend_subtitle),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(
+                            checked = state.localsendEnabled,
+                            onCheckedChange = onToggleLocalSend,
+                            colors = app.nectarlink.android.ui.theme.nectarSwitchColors(),
+                            modifier = Modifier.semantics { contentDescription = localsendTitle },
+                        )
+                    }
+                }
+            }
+
+            item(key = "local_hotspot", contentType = "section") {
+                Section(stringResource(R.string.local_hotspot_title)) { LocalHotspotAccess() }
+            }
+        }
+
+        if (activeCategory == "all" || activeCategory == "appearance") {
             item(key = "appearance", contentType = "section") {
                 Section(stringResource(R.string.settings_appearance)) {
                     Label(stringResource(R.string.settings_theme))
@@ -484,395 +955,22 @@ fun SettingsScreen(
             }
         }
 
-        if (showDevices) {
-            item(key = "devices", contentType = "section") {
-                Section(
-                    title = stringResource(R.string.settings_devices),
-                    highlighted = pulsingSectionKey == "devices",
-                ) {
-                    val context = LocalContext.current
-                    state.devices.forEachIndexed { index, device ->
-                        if (index > 0) {
-                            SettingRowDivider()
-                        }
-                        Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                                Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                                    Text(device.name, style = MaterialTheme.typography.titleSmall)
-                                    val dotColor = if (device.online) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    ) {
-                                        Spacer(
-                                            modifier = Modifier
-                                                .size(8.dp)
-                                                .drawBehind { drawCircle(dotColor) },
-                                        )
-                                        Text(
-                                            stringResource(if (device.online) R.string.connected else R.string.not_connected),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                }
-                                OutlinedButton(onClick = { confirmUnpair = device }) { Text(stringResource(R.string.action_unpair)) }
-                            }
-                            val storageToggleTitle = stringResource(R.string.storage_pc_toggle)
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                                Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                                    Text(storageToggleTitle, style = MaterialTheme.typography.bodyMedium)
-                                    Text(
-                                        stringResource(R.string.storage_pc_toggle_hint),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                                Switch(
-                                    checked = device.storageEnabled,
-                                    onCheckedChange = { enabled ->
-                                        onSetStorageEnabled(device.id, enabled)
-                                        if (enabled && !state.storageAllFilesAccess && state.storageSafFolders.isEmpty()) {
-                                            runCatching { context.startActivity(PhoneStorage.allFilesAccessIntent(context)) }
-                                        }
-                                    },
-                                    colors = app.nectarlink.android.ui.theme.nectarSwitchColors(),
-                                    modifier = Modifier.semantics { contentDescription = storageToggleTitle },
-                                )
-                            }
-                            if (!device.isAndroid) {
-                                val micToggleTitle = stringResource(R.string.mic_pc_toggle)
-                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                                    Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                                        Text(micToggleTitle, style = MaterialTheme.typography.bodyMedium)
-                                        Text(
-                                            stringResource(R.string.mic_pc_toggle_hint),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                    Switch(
-                                        checked = device.micEnabled,
-                                        onCheckedChange = { enabled -> onSetMicEnabled(device.id, enabled) },
-                                        colors = app.nectarlink.android.ui.theme.nectarSwitchColors(),
-                                        modifier = Modifier.semantics { contentDescription = micToggleTitle },
-                                    )
-                                }
-                                val mirroringToggleTitle = stringResource(R.string.mirroring_pc_toggle)
-                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                                    Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                                        Text(mirroringToggleTitle, style = MaterialTheme.typography.bodyMedium)
-                                        Text(
-                                            stringResource(R.string.mirroring_pc_toggle_hint),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                    Switch(
-                                        checked = device.mirroringEnabled,
-                                        onCheckedChange = { enabled -> onSetMirroringEnabled(device.id, enabled) },
-                                        colors = app.nectarlink.android.ui.theme.nectarSwitchColors(),
-                                        modifier = Modifier.semantics { contentDescription = mirroringToggleTitle },
-                                    )
-                                }
-                                if (device.kind == app.nectarlink.core.DeviceKind.DESKTOP || device.kind == app.nectarlink.core.DeviceKind.LAPTOP) {
-                                    val controlToggleTitle = stringResource(R.string.phone_control_pc_toggle)
-                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                                        Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                                            Text(controlToggleTitle, style = MaterialTheme.typography.bodyMedium)
-                                            Text(
-                                                stringResource(R.string.phone_control_pc_toggle_hint),
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                        }
-                                        Switch(
-                                            checked = device.phoneControlEnabled,
-                                            enabled = state.status is app.nectarlink.android.core.CoreStatus.Ready,
-                                            onCheckedChange = { enabled -> onSetPhoneControlEnabled(device.id, enabled) },
-                                            colors = app.nectarlink.android.ui.theme.nectarSwitchColors(),
-                                            modifier = Modifier.semantics { contentDescription = controlToggleTitle },
-                                        )
-                                    }
-                                }
-                                if (device.kind == app.nectarlink.core.DeviceKind.DESKTOP || device.kind == app.nectarlink.core.DeviceKind.LAPTOP) {
-                                    val wayModeToggleTitle = stringResource(R.string.way_mode_toggle)
-                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                                        Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                                            Text(wayModeToggleTitle, style = MaterialTheme.typography.bodyMedium)
-                                            Text(
-                                                stringResource(R.string.way_mode_toggle_hint),
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                        }
-                                        Switch(
-                                            checked = device.wayModeEnabled,
-                                            enabled = state.status is app.nectarlink.android.core.CoreStatus.Ready,
-                                            onCheckedChange = { enabled -> onSetWayModeEnabled(device.id, enabled) },
-                                            colors = app.nectarlink.android.ui.theme.nectarSwitchColors(),
-                                            modifier = Modifier.semantics { contentDescription = wayModeToggleTitle },
-                                        )
-                                    }
-                                }
-                                if (device.kind == app.nectarlink.core.DeviceKind.DESKTOP || device.kind == app.nectarlink.core.DeviceKind.LAPTOP) {
-                                    val settingsWindowActive = device.id in settingsQualificationPcIds
-                                    if (!device.wayModeEnabled || settingsWindowActive) {
-                                        val canArmSettingsWindow = state.status is app.nectarlink.android.core.CoreStatus.Ready &&
-                                            device.online && device.mirroringEnabled && state.elevated &&
-                                            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
-                                        Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                                            Text(stringResource(R.string.settings_window_access_title), style = MaterialTheme.typography.bodyMedium)
-                                            Text(
-                                                stringResource(R.string.settings_window_access_hint),
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                            if (settingsWindowActive) {
-                                                OutlinedButton(onClick = { onRevokeSettingsWindowAccess(device.id) }) {
-                                                    Text(stringResource(R.string.settings_window_revoke))
-                                                }
-                                            } else {
-                                                FilledTonalButton(
-                                                    enabled = canArmSettingsWindow,
-                                                    onClick = { onAllowSettingsWindowOnce(device.id) },
-                                                ) {
-                                                    Text(stringResource(R.string.settings_window_allow_once))
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                if (device.id in state.typingStoppedPcIds) {
-                                    // Display gate only; the backend resume rechecks Node, epoch, Stop and scope.
-                                    val canResumeControl = state.status is app.nectarlink.android.core.CoreStatus.Ready &&
-                                        device.online && device.phoneControlEnabled &&
-                                        (device.mirroringEnabled || device.wayModeEnabled)
-                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        Text(
-                                            stringResource(R.string.keyboard_recovery_required),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.error,
-                                        )
-                                        if (canResumeControl) {
-                                            FilledTonalButton(
-                                                onClick = { onResumePhoneControl(device.id) },
-                                            ) {
-                                                Text(stringResource(R.string.phone_control_resume))
-                                            }
-                                            Text(
-                                                stringResource(R.string.phone_control_resume_hint),
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                        } else {
-                                            Text(
-                                                stringResource(R.string.phone_control_resume_unavailable),
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    FilledTonalButton(onClick = onPairNew) { Text(stringResource(R.string.action_pair_new)) }
-                    SettingRowDivider()
-                    val mobileDataTitle = stringResource(R.string.guide_away_title)
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                        Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                            Text(mobileDataTitle, style = MaterialTheme.typography.titleSmall)
-                            Text(
-                                stringResource(R.string.settings_mobile_data_body),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        Switch(
-                            checked = state.awayMode,
-                            onCheckedChange = onToggleAwayMode,
-                            colors = app.nectarlink.android.ui.theme.nectarSwitchColors(),
-                            modifier = Modifier.semantics { contentDescription = mobileDataTitle },
-                        )
-                    }
-                }
-            }
-        }
-
-        if (showPermissions) {
-            item(key = "notifications", contentType = "section") {
-                Section(
-                    title = stringResource(R.string.settings_notifications),
-                    highlighted = pulsingSectionKey == "notifications",
-                ) {
-                    NotificationAccess(state.notificationAccess, onChooseFilter = {
-                        notificationFilterOpen = true
-                    })
-                }
-            }
-
-            item(key = "control", contentType = "section") {
-                Section(
-                    title = stringResource(R.string.settings_control),
-                    highlighted = pulsingSectionKey == "control",
-                ) {
-                    ControlAccess(state.inputAccess)
-                    SettingRowDivider()
-                    ElevatedAccess()
-                    SettingRowDivider()
-                    BankingPauseAccess()
-                    SettingRowDivider()
-                    DndAccess(state.dndAccess)
-                    SettingRowDivider()
-                    WriteSettingsAccess(state.writeSettingsAccess || state.elevated)
-                }
-            }
-
-            item(key = "background", contentType = "section") {
-                Section(
-                    title = stringResource(R.string.settings_background_title),
-                    highlighted = pulsingSectionKey == "background",
-                ) {
-                    val runInBackgroundTitle = stringResource(R.string.settings_run_in_background)
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                        Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                            Text(runInBackgroundTitle, style = MaterialTheme.typography.titleSmall)
-                            Text(
-                                stringResource(R.string.settings_run_in_background_hint),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        Switch(
-                            checked = backgroundServiceEnabled,
-                            onCheckedChange = onToggleBackgroundService,
-                            colors = app.nectarlink.android.ui.theme.nectarSwitchColors(),
-                            modifier = Modifier.semantics { contentDescription = runInBackgroundTitle },
-                        )
-                    }
-                    if (backgroundServiceEnabled && !state.backgroundUnrestricted) {
-                        val context = LocalContext.current
-                        val oemGuide = BackgroundAccess.oemGuideResId()?.let { stringResource(it) }
-                        Column(
-                            modifier = Modifier.fillMaxWidth().padding(start = 16.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            Text(
-                                stringResource(R.string.background_restriction_warning),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            if (oemGuide != null) {
-                                Text(
-                                    oemGuide,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            TextButton(onClick = {
-                                runCatching { context.startActivity(BackgroundAccess.oemSettingsIntent(context)) }
-                            }) {
-                                Text(stringResource(R.string.battery_open_oem_settings))
-                            }
-                        }
-                    }
-                    SettingRowDivider()
-                    CompanionWakeAccess(
-                        associated = state.companionAssociated,
-                        devices = state.devices,
-                        onAccessChanged = onAccessChanged,
-                    )
-                }
-            }
-
-            item(key = "calls_contacts", contentType = "section") {
-                Section(
-                    title = stringResource(R.string.settings_calls_and_contacts),
-                    highlighted = pulsingSectionKey == "calls_contacts",
-                ) {
-                    RuntimePermissionAccess(
-                        title = stringResource(R.string.calls_title),
-                        textOn = stringResource(R.string.calls_on),
-                        textOff = stringResource(R.string.calls_off),
-                        granted = state.callAccess,
-                        permissions = PhoneCalls.permissions,
-                        onAccessChanged = onAccessChanged,
-                    )
-                    SettingRowDivider()
-                    RuntimePermissionAccess(
-                        title = stringResource(R.string.contacts_title),
-                        textOn = stringResource(R.string.contacts_on),
-                        textOff = stringResource(R.string.contacts_off),
-                        granted = state.contactsAccess,
-                        permissions = PhoneContacts.permissions,
-                        onAccessChanged = onAccessChanged,
-                    )
-                    SettingRowDivider()
-                    RuntimePermissionAccess(
-                        title = stringResource(R.string.sms_title),
-                        textOn = stringResource(R.string.sms_on),
-                        textOff = stringResource(R.string.sms_off),
-                        granted = state.smsAccess,
-                        permissions = PhoneSms.permissions,
-                        onAccessChanged = onAccessChanged,
-                    )
-                }
-            }
-
-            item(key = "photos", contentType = "section") {
-                Section(
-                    title = stringResource(R.string.settings_photos),
-                    highlighted = pulsingSectionKey == "photos",
-                ) {
-                    PhotosAccess(
-                        granted = state.photoAccess,
-                        partial = state.photoPartialAccess,
-                        onAccessChanged = onAccessChanged,
-                    )
-                    SettingRowDivider()
-                    StorageAccess(
-                        allFiles = state.storageAllFilesAccess,
-                        safFolders = state.storageSafFolders,
-                        onAddSafFolder = onAddSafFolder,
-                        onRemoveSafFolder = onRemoveSafFolder,
-                    )
-                }
-            }
-        }
-
-        if (showFeatures) {
+        if (activeCategory == "all" || activeCategory == "features") {
             item(key = "clipboard", contentType = "section") {
                 Section(
                     title = stringResource(R.string.settings_clipboard_title),
                     highlighted = pulsingSectionKey == "clipboard",
                 ) {
-                    val context = LocalContext.current
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                        Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                            Text(stringResource(R.string.settings_background_clipboard_title), style = MaterialTheme.typography.titleSmall)
-                            Text(
-                                if (state.elevated) {
-                                    stringResource(R.string.settings_wireless_debugging_active)
-                                } else {
-                                    stringResource(R.string.settings_wireless_debugging_hint)
-                                },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        if (state.elevated) {
-                            OutlinedButton(onClick = { openDeveloperOptionsSettings(context) }) {
-                                Text(stringResource(R.string.action_manage))
-                            }
-                        } else {
-                            Button(onClick = {
-                                PairingNotification.show(context)
-                                openDeveloperOptionsSettings(context)
-                            }) {
-                                Text(stringResource(R.string.action_allow))
-                            }
-                        }
+                    Text(
+                        stringResource(R.string.settings_apps_service_clipboard_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    TextButton(onClick = {
+                        focusedAppsPcId = null
+                        activeCategory = "apps_screen"
+                    }) {
+                        Text(stringResource(R.string.settings_apps_service_open))
                     }
                     SettingRowDivider()
                     val suggestionsTitle = stringResource(R.string.settings_clipboard_suggestions)
@@ -908,55 +1006,6 @@ fun SettingsScreen(
                             onCheckedChange = onSetCopiedLinkOffers,
                             colors = app.nectarlink.android.ui.theme.nectarSwitchColors(),
                             modifier = Modifier.semantics { contentDescription = copiedLinksTitle },
-                        )
-                    }
-                }
-            }
-
-            item(key = "remote", contentType = "section") {
-                Section(stringResource(R.string.settings_remote)) {
-                    val sensitivityTitle = stringResource(R.string.settings_touchpad_sensitivity)
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                        Text(
-                            sensitivityTitle,
-                            style = MaterialTheme.typography.titleSmall,
-                            modifier = Modifier.weight(1f),
-                        )
-                        Text(
-                            stringResource(R.string.settings_touchpad_sensitivity_value, touchpadSensitivity),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Slider(
-                        value = touchpadSensitivity,
-                        onValueChange = onTouchpadSensitivity,
-                        valueRange = 0.5f..2.5f,
-                        modifier = Modifier.semantics { contentDescription = sensitivityTitle },
-                    )
-                }
-            }
-
-            item(key = "localsend", contentType = "section") {
-                Section(
-                    title = stringResource(R.string.settings_localsend_title),
-                    highlighted = pulsingSectionKey == "localsend",
-                ) {
-                    val localsendTitle = stringResource(R.string.settings_localsend_title)
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                        Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                            Text(localsendTitle, style = MaterialTheme.typography.titleSmall)
-                            Text(
-                                stringResource(R.string.settings_localsend_subtitle),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        Switch(
-                            checked = state.localsendEnabled,
-                            onCheckedChange = onToggleLocalSend,
-                            colors = app.nectarlink.android.ui.theme.nectarSwitchColors(),
-                            modifier = Modifier.semantics { contentDescription = localsendTitle },
                         )
                     }
                 }
@@ -1103,15 +1152,7 @@ fun SettingsScreen(
                     }
                 }
             }
-        }
 
-        if (showFeatures) {
-            item(key = "local_hotspot", contentType = "section") {
-                Section(stringResource(R.string.local_hotspot_title)) { LocalHotspotAccess() }
-            }
-        }
-
-        if (showFeatures) {
             item(key = "waypair_extras", contentType = "section") {
                 Section(stringResource(R.string.waypair_extras_title)) {
                     Text(
@@ -1153,6 +1194,7 @@ fun SettingsScreen(
                     }
                 }
             }
+
             item(key = "about", contentType = "section") {
                 Section(stringResource(R.string.settings_about)) {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -1488,19 +1530,19 @@ private fun ElevatedAccess() {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                Text(stringResource(R.string.elevated_title), style = MaterialTheme.typography.titleSmall)
+                Text(stringResource(R.string.settings_apps_service_status), style = MaterialTheme.typography.titleSmall)
                 Text(
                     stringResource(
                         when (state) {
-                            Elevated.State.NotSetUp -> R.string.elevated_not_set_up
-                            Elevated.State.Waiting -> R.string.elevated_waiting
-                            Elevated.State.Starting -> R.string.elevated_starting
+                            Elevated.State.NotSetUp -> R.string.settings_apps_service_not_set_up
+                            Elevated.State.Waiting -> R.string.settings_apps_service_waiting
+                            Elevated.State.Starting -> R.string.settings_apps_service_starting
                             Elevated.State.Running ->
-                                if (Elevated.rootActive) R.string.elevated_running_root else R.string.elevated_running
+                                if (Elevated.rootActive) R.string.settings_apps_service_running_root else R.string.settings_apps_service_running
                             is Elevated.State.Failed -> when ((state as Elevated.State.Failed).reason) {
-                                Elevated.Reason.NotPaired -> R.string.elevated_not_paired
-                                Elevated.Reason.RootDenied -> R.string.elevated_root_failed
-                                else -> R.string.elevated_failed
+                                Elevated.Reason.NotPaired -> R.string.settings_apps_service_not_paired
+                                Elevated.Reason.RootDenied -> R.string.settings_apps_service_root_failed
+                                else -> R.string.settings_apps_service_failed
                             }
                         },
                     ),

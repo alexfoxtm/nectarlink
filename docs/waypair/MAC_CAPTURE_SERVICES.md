@@ -102,8 +102,7 @@ separate slices owned by other work and are not changed by this contract.
   host app's own shortcut wins. Users can assign one under System Settings
   > Keyboard > Keyboard Shortcuts > Services.
 - **No `/` in menu text**, because AppKit drops everything before a slash.
-- `ServicesMenu.strings` for `en` and `zh_CN`, matching the app's
-  translations.
+- English `ServicesMenu.strings`; Chinese Services localizations are not shipped.
 - **Validation:** `NSPortName` must equal `CFBundleName`, and the plist must
   pass `plutil -lint`. A qualification bundle id must also change the menu
   text (for example a `(Qualification)` suffix), so two installed builds

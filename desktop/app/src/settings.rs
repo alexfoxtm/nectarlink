@@ -769,7 +769,7 @@ mod tests {
             auto_copy_otp: true,
             pause_media_on_call: false,
             mute_while_watched: false,
-            language: "zh_CN".into(),
+            language: "en".into(),
             sync_dnd: true,
             send_to_menu: false,
             auto_update: false,

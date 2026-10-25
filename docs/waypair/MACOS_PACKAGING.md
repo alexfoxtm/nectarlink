@@ -89,7 +89,15 @@ The script itself never signs, installs,
 touches a keychain or credential, or uses the network. `--help` documents
 every option.
 
-Compile offered app catalogs before final signing and stage them at
+The desktop offers English and System only. Chinese saved preferences and a
+Chinese system locale display English without rewriting the saved preference.
+The packager writes English Services menu strings and removes Chinese app/Qt
+catalogs from the host Resources directory after deployment. Preserve third-party
+frameworks, licenses and notices. Do not copy a Chinese app or Qt catalog from an
+older candidate after packaging. Historical release scripts remain evidence, not
+current build recipes.
+
+For any offered non-English language, compile its catalog before final signing and stage it at
 `Contents/Resources/nectarlink_<locale>.qm`. Matching Qt catalogs go in
 `Contents/Resources/translations/`, with their copyright, license and source
 material included in the notices. The Mac loader resolves these paths from

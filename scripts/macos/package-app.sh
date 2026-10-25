@@ -435,27 +435,19 @@ strings_escape() {
     printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\n'
 }
 
-# ServicesMenu.strings for en and zh_CN, keyed by the (English) menu
-# item defaults, as AppKit looks them up. Values lead with the app name
-# in both languages for the same qualification-distinctness reason.
+# English ServicesMenu.strings, keyed by the menu item defaults AppKit uses.
+# Values lead with the app name to keep qualification bundles distinct.
 write_services_menu_strings() {
     local resources="$1"
     local app_name="$2"
-    local photo_en scan_en photo_zh scan_zh
+    local photo_en scan_en
     photo_en="$(strings_escape "$(service_photo_menu "$app_name")")"
     scan_en="$(strings_escape "$(service_scan_menu "$app_name")")"
-    photo_zh="$(strings_escape "${app_name}：用手机拍照")"
-    scan_zh="$(strings_escape "${app_name}：用手机扫描文档")"
-    mkdir -p "$resources/en.lproj" "$resources/zh_CN.lproj" || fail "failed to create Services localization directories"
+    mkdir -p "$resources/en.lproj" || fail "failed to create Services localization directory"
     cat > "$resources/en.lproj/ServicesMenu.strings" <<EOF
 /* Services menu items (NSServices NSMenuItem defaults). */
 "$photo_en" = "$photo_en";
 "$scan_en" = "$scan_en";
-EOF
-    cat > "$resources/zh_CN.lproj/ServicesMenu.strings" <<EOF
-/* Services menu items (NSServices NSMenuItem defaults). */
-"$photo_en" = "$photo_zh";
-"$scan_en" = "$scan_zh";
 EOF
 }
 
@@ -786,6 +778,13 @@ if grep -E -q '^ERROR:' "$deploy_log"; then
     fail "macdeployqt reported ERROR but exited 0. Refusing to claim the bundle is deployed. Left in place for inspection: $APP_PATH"
 fi
 rm -f "$deploy_log"
+
+# Keep Chinese app/Qt catalogs out of this new output bundle. Limit removal to
+# host Resources; third-party frameworks, licenses and notices stay untouched.
+resources="$APP_PATH/Contents/Resources"
+rm -f "$resources"/nectarlink_zh.qm "$resources"/nectarlink_zh_*.qm "$resources"/nectarlink_zh-*.qm \
+    "$resources"/translations/*_zh.qm "$resources"/translations/*_zh_*.qm "$resources"/translations/*_zh-*.qm
+rm -rf "$resources"/zh.lproj "$resources"/zh_*.lproj "$resources"/zh-*.lproj
 
 # Add the pre-signed helper after macdeployqt: deployment must never rewrite
 # its signed bytes. Root's inside-out signer verifies and preserves this file.

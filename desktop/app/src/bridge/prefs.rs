@@ -63,7 +63,7 @@ pub mod qobject {
         #[qproperty(bool, pause_media_on_call)]
         /// Mute this PC while a phone watches its playback (Play on phone).
         #[qproperty(bool, mute_while_watched, cxx_name = "muteWhileWatched")]
-        /// The app's language: "" for the system's, "en", "zh_CN".
+        /// The app's language: "" for the system's or "en" for English.
         #[qproperty(QString, language)]
         /// Quiet phone notification pop-ups on the PC while the phone is in Do Not Disturb.
         #[qproperty(bool, sync_dnd)]

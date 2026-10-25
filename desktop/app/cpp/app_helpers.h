@@ -40,7 +40,8 @@ void register_qml_app_engine(QQmlApplicationEngine &engine);
 bool start_external_drag(rust::Str file_path, rust::Str text_fallback);
 
 // Installs the NectarLink and Qt translations for `language` (a locale name
-// such as "zh_CN", or "" for the system's), replacing those installed before.
+// such as "de_DE", or "" for the system's), replacing those installed before.
+// A retired Chinese locale uses English without changing the saved preference.
 // `dir` is the executable folder. Windows and standalone builds load there;
 // a macOS bundle loads from Contents/Resources, outside its signed-code folder.
 // Call after the Qt application is

@@ -30,13 +30,16 @@ Original synthetic data, CC0-1.0, SHA-256: 10d5435dda2f47dfd5de159484ce34c1f464b
 
 ## Translation resource fixture
 
-`i18n-fixture.ts` contains one synthetic context, isolated from application text.
-`i18n-fixture.qm` is its Qt6.12.0 `lrelease` output:
+`i18n-fixture-de.ts` contains one synthetic German context, isolated from
+application text. `i18n-fixture-de.qm` is generated from that reviewed source
+with `lrelease`; it contains the `de_DE` translation `Pfad`.
+Regenerate it with:
 
 ```sh
-lrelease i18n-fixture.ts -qm i18n-fixture.qm
+lrelease i18n-fixture-de.ts -qm i18n-fixture-de.qm
 ```
 
 The production-loader test creates only temporary `Contents/MacOS` and
 `Contents/Resources` data directories. It uses Qt Core without a GUI, bundle
-identity, registration, or device, and checks both loading and locale fallback.
+identity, registration, or device, and checks both loading and English fallback. The fixture locale is not offered
+in Settings or shipped as an application catalog.
