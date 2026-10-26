@@ -157,6 +157,7 @@ fun LinkModalSheet(
     containerColor: Color = glassModalContainerColor(),
     scrimColor: Color = glassModalScrimColor(),
     onBackRequest: (() -> Unit)? = null,
+    floatingHeightFraction: Float = 1f,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val reduced = LocalReducedMotion.current
@@ -222,11 +223,13 @@ fun LinkModalSheet(
                 // depends on the animated card size/inset, so expanding cannot reclassify
                 // natural content and feed back into the next expansion decision.
                 val contentWidth = (maxWidth - 16.dp).coerceAtLeast(0.dp)
-                val naturalHeightLimit = (maxHeight - 8.dp).coerceAtLeast(0.dp)
+                val fullHeightLimit = (maxHeight - 8.dp).coerceAtLeast(0.dp)
+                val naturalHeightLimit = if (imeVisible || inputFocused) fullHeightLimit else
+                    (maxHeight * floatingHeightFraction.coerceIn(0.5f, 1f) - 8.dp).coerceAtLeast(0.dp)
                 val naturalHeight = with(density) { naturalContentHeight.toDp() }
                     .coerceAtMost(naturalHeightLimit)
                 val fullHeight = imeVisible || inputFocused ||
-                    (naturalContentHeight > 0 && naturalHeight >= naturalHeightLimit)
+                    (naturalContentHeight > 0 && naturalHeight >= fullHeightLimit)
                 val geometrySpec: androidx.compose.animation.core.AnimationSpec<androidx.compose.ui.unit.Dp> =
                     if (reduced) tween(0) else spring(stiffness = Spring.StiffnessMediumLow)
                 val inset by animateDpAsState(

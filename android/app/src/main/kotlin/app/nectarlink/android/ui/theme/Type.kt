@@ -53,7 +53,7 @@ internal fun typography(fonts: AppFonts, @Suppress("UNUSED_PARAMETER") graphite:
         displayLarge = display, displayMedium = display, displaySmall = page,
         headlineLarge = page, headlineMedium = page, headlineSmall = heading,
         titleLarge = heading, titleMedium = body, titleSmall = body,
-        bodyLarge = body, bodyMedium = supporting, bodySmall = caption,
+        bodyLarge = body, bodyMedium = supporting, bodySmall = supporting,
         labelLarge = body, labelMedium = supporting, labelSmall = caption,
     )
 }

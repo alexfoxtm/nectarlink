@@ -153,6 +153,8 @@ fun SettingsScreen(
     highlightTarget: GuideHighlightTarget? = null,
     onHighlightConsumed: () -> Unit = {},
     bottomContentPadding: Dp = 0.dp,
+    onDismissRequest: (() -> Unit)? = null,
+    snackbarHost: @Composable () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var notificationFilterOpen by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
@@ -231,6 +233,7 @@ fun SettingsScreen(
         }
     }
 
+    val settingsContent: @Composable () -> Unit = {
     if (notificationFilterOpen) {
         NotificationFilterPage(
             onBack = { notificationFilterOpen = false },
@@ -249,13 +252,19 @@ fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingMd),
     ) {
         item(key = "header", contentType = "header") {
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                val collapse = app.nectarlink.android.ui.theme.LocalLinkSheetDismiss.current
                 Row(
                     Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    WaypairBrand(Modifier.weight(1f))
+                    if (onDismissRequest == null) {
+                        WaypairBrand(Modifier.weight(1f))
+                    } else {
+                        Text(stringResource(R.string.settings_title),
+                            style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                    }
                     FilledTonalIconButton(
                         onClick = onPairNew,
                         shape = RoundedCornerShape(WaypairDesign.controlRadius),
@@ -263,12 +272,19 @@ fun SettingsScreen(
                     ) {
                         Icon(painterResource(R.drawable.wp_qr), contentDescription = stringResource(R.string.action_pair_new))
                     }
+                    if (onDismissRequest != null) {
+                        androidx.compose.material3.IconButton(onClick = collapse) {
+                            Icon(painterResource(R.drawable.wp_close), contentDescription = stringResource(R.string.watch_close), modifier = Modifier.size(24.dp))
+                        }
+                    }
                 }
-                Text(
-                    stringResource(R.string.settings_title),
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
+                if (onDismissRequest == null) {
+                    Text(
+                        stringResource(R.string.settings_title),
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).selectableGroup(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -792,7 +808,7 @@ fun SettingsScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
                         stringResource(R.string.settings_appearance),
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(start = 4.dp),
                     )
@@ -810,7 +826,7 @@ fun SettingsScreen(
                     ) {
                         Column(
                             modifier = Modifier.padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(24.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp),
                         ) {
                             AppearanceChoice(
                                 label = stringResource(R.string.settings_mode),
@@ -1180,7 +1196,7 @@ fun SettingsScreen(
                         ) {
                             RadioButton(selected = tag == language, onClick = null)
                             Spacer(Modifier.width(12.dp))
-                            Text(name, style = MaterialTheme.typography.bodyLarge)
+                            Text(name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                         }
                     }
                 }
@@ -1212,6 +1228,40 @@ fun SettingsScreen(
             },
         )
     }
+    }
+    }
+    if (onDismissRequest == null) settingsContent() else {
+        SettingsModalSheet(
+            onDismissRequest = onDismissRequest,
+            onBackRequest = if (notificationFilterOpen) ({ notificationFilterOpen = false }) else null,
+            snackbarHost = snackbarHost,
+        ) {
+            settingsContent()
+        }
+    }
+}
+
+
+/** The real Settings modal host keeps a finite scrolling viewport above the current page. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+internal fun SettingsModalSheet(
+    onDismissRequest: () -> Unit,
+    onBackRequest: (() -> Unit)? = null,
+    snackbarHost: @Composable () -> Unit = {},
+    content: @Composable () -> Unit,
+) {
+    app.nectarlink.android.ui.theme.LinkModalSheet(
+        onDismissRequest = onDismissRequest,
+        onBackRequest = onBackRequest,
+        floatingHeightFraction = 0.88f,
+    ) {
+        Box(Modifier.fillMaxWidth()) {
+            content()
+            Box(Modifier.align(Alignment.BottomCenter)) {
+                snackbarHost()
+            }
+        }
     }
 }
 
@@ -1647,7 +1697,7 @@ private fun Section(
     content: @Composable () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 12.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
         Text(
             title,
             style = MaterialTheme.typography.titleLarge,
@@ -1685,7 +1735,7 @@ internal fun AppearanceChoice(
     val scheme = MaterialTheme.colorScheme
     val density = LocalDensity.current
     val stacked = density.fontScale >= 1.5f
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (label.isNotEmpty()) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Icon(
@@ -1732,7 +1782,7 @@ internal fun AppearanceChoice(
                                 Icon(
                                     painterResource(when (value) { "light" -> R.drawable.wp_sun; "dark" -> R.drawable.wp_moon; else -> R.drawable.wp_monitor }),
                                     contentDescription = null,
-                                    modifier = Modifier.size(24.dp),
+                                    modifier = Modifier.size(20.dp),
                                 )
                             }
                         }
@@ -1754,9 +1804,9 @@ internal fun AppearanceChoice(
                         } else {
                             Box(Modifier.fillMaxWidth()) {
                                 Column(
-                                    Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 16.dp),
+                                    Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 12.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
                                 ) {
                                     choiceIcon()
                                     Text(text, style = MaterialTheme.typography.labelLarge, textAlign = androidx.compose.ui.text.style.TextAlign.Center)

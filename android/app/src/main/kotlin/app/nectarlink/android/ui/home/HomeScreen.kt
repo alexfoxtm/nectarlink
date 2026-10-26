@@ -318,7 +318,7 @@ fun HomeScreen(
     ) {
         item(key = "home_header", contentType = "header") {
             Column(
-                Modifier.fillMaxWidth().padding(bottom = WaypairDesign.spacingSm),
+                Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingSm),
             ) {
                 val headerActions: @Composable () -> Unit = {
@@ -362,7 +362,7 @@ fun HomeScreen(
                         headerActions()
                     }
                 }
-                Text(stringResource(R.string.home_title), style = MaterialTheme.typography.headlineLarge, modifier = Modifier.padding(top = 16.dp))
+                Text(stringResource(R.string.home_title), style = MaterialTheme.typography.headlineLarge, modifier = Modifier.padding(top = 4.dp))
             }
         }
         if (showWhatsNewGuideBanner) {
@@ -1368,7 +1368,7 @@ private fun SetupCard(
 @Composable
 private fun RingingBanner(from: String, onStop: () -> Unit) {
     Surface(shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.primary) {
-        Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(
                 if (from.isEmpty()) stringResource(R.string.ringing_title_unknown) else stringResource(R.string.ringing_title, from),
                 style = MaterialTheme.typography.titleMedium,
@@ -1383,14 +1383,13 @@ private fun RingingBanner(from: String, onStop: () -> Unit) {
 @Composable
 private fun KeyboardBanner(from: String, onStop: () -> Unit) {
     Surface(shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.secondaryContainer) {
-        Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(
                 stringResource(R.string.keyboard_from_pc_banner, from),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
                 modifier = Modifier.weight(1f),
             )
-            Spacer(Modifier.width(12.dp))
             Button(onClick = onStop) { Text(stringResource(R.string.keyboard_stop)) }
         }
     }
@@ -1630,7 +1629,7 @@ internal fun PcCard(
                         tintColor = MaterialTheme.colorScheme.primary,
                         outlineColor = WaypairDesign.panelBorder(),
                     )
-                    .padding(16.dp),
+                    .padding(12.dp),
             ) {
                 val workspaceWidthPx = constraints.maxWidth
                 val density = LocalDensity.current
@@ -1660,7 +1659,7 @@ internal fun PcCard(
                     },
                 )
                 // Each card grows with the actual localized label and Android text scale.
-                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
                         text = stringResource(R.string.home_workspace_title),
                         style = MaterialTheme.typography.titleSmall,
@@ -1803,7 +1802,7 @@ private fun HomeFeatureTile(
                 .capabilityReason(action.reason),
         ) {
             Row(
-                Modifier.fillMaxWidth().heightIn(min = 76.dp)
+                Modifier.fillMaxWidth().heightIn(min = 64.dp)
                     .clip(RoundedCornerShape(16.dp))
                     .background(if (action.enabled) scheme.surfaceContainerHigh else scheme.surfaceContainerHigh.copy(alpha = 0.45f))
                     .padding(horizontal = 12.dp, vertical = 12.dp),
@@ -1890,16 +1889,12 @@ private fun PcAudioCardSection(
                         text = mediaSummary.title,
                         style = MaterialTheme.typography.labelLarge,
                         color = ink,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                     )
                     if (mediaSummary.subtitle.isNotBlank()) {
                         Text(
                             text = mediaSummary.subtitle,
-                            style = MaterialTheme.typography.labelSmall,
+                            style = MaterialTheme.typography.bodyMedium,
                             color = ink.copy(alpha = 0.78f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
@@ -1959,8 +1954,6 @@ private fun PcAudioCardSection(
                     text = stringResource(R.string.pc_audio_use_phone_speaker),
                     style = MaterialTheme.typography.labelLarge,
                     color = ink,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
                 Text(
                     text = stringResource(
@@ -1970,10 +1963,8 @@ private fun PcAudioCardSection(
                             R.string.pc_audio_use_phone_speaker_sub
                         }
                     ),
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = ink.copy(alpha = 0.78f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
             }
             Switch(
@@ -2005,17 +1996,13 @@ private fun PcAudioCardSection(
                         text = stringResource(R.string.pc_audio_use_phone_mic),
                         style = MaterialTheme.typography.labelLarge,
                         color = ink,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                     )
                     Text(
                         text = stringResource(
                             if (micOn) R.string.pc_audio_use_phone_mic_on else R.string.pc_audio_use_phone_mic_sub,
                         ),
-                        style = MaterialTheme.typography.labelSmall,
+                        style = MaterialTheme.typography.bodyMedium,
                         color = ink.copy(alpha = 0.78f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                     )
                 }
                 Switch(

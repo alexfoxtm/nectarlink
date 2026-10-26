@@ -17,6 +17,8 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -64,7 +66,7 @@ import app.nectarlink.android.ui.theme.LocalReducedMotion
 import app.nectarlink.android.ui.theme.WaypairDesign
 
 /** Local discovery of existing actions; search and peer selection never invoke an action. */
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 internal fun HomeActionSheet(
     state: CoreState,
@@ -127,14 +129,15 @@ internal fun HomeActionSheet(
             OutlinedTextField(
                 value = query, onValueChange = { query = it },
                 modifier = Modifier.fillMaxWidth().onFocusChanged { reportInputFocus(it.isFocused) },
-                placeholder = { Text(stringResource(R.string.link_actions_search)) },
+                textStyle = MaterialTheme.typography.bodyLarge,
+                placeholder = { Text(stringResource(R.string.link_actions_search), style = MaterialTheme.typography.bodyLarge) },
                 leadingIcon = { Icon(painterResource(R.drawable.wp_link_search), null, Modifier.size(24.dp)) },
                 shape = RoundedCornerShape(28.dp), singleLine = true,
             )
             if (selectedDevice != null) {
                 LinkFilledTonalButton(onClick = { pickerOpen = true }) {
                     Icon(painterResource(R.drawable.wp_monitor), null, Modifier.size(24.dp))
-                    Text(stringResource(R.string.settings_devices), Modifier.padding(start = 8.dp))
+                    Text(stringResource(R.string.settings_devices), Modifier.padding(start = 8.dp).weight(1f, fill = false))
                 }
             }
             AnimatedContent(
@@ -160,7 +163,7 @@ internal fun HomeActionSheet(
                                 Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))
                                     .background(WaypairDesign.panelColor())
                                     .clickable(role = Role.Button) { selectedId = device.id }
-                                    .heightIn(min = 76.dp).padding(16.dp),
+                                    .heightIn(min = 64.dp).padding(16.dp),
                                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
@@ -201,7 +204,7 @@ internal fun HomeActionSheet(
                     }
                     LinkFilledTonalButton(onClick = { onDismiss(); onPairNew() }) {
                         Icon(painterResource(R.drawable.wp_qr), null, Modifier.size(24.dp))
-                        Text(stringResource(R.string.action_pair_new), Modifier.padding(start = 8.dp))
+                        Text(stringResource(R.string.action_pair_new), Modifier.padding(start = 8.dp).weight(1f, fill = false))
                     }
                 }
             }
@@ -229,14 +232,14 @@ internal fun HomeActionSheet(
                         Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
                             .background(WaypairDesign.panelColor())
                             .selectable(selected = pendingId == device.id, role = Role.RadioButton, onClick = { pendingId = device.id })
-                            .heightIn(min = 64.dp).padding(horizontal = 12.dp),
+                            .heightIn(min = 64.dp).padding(horizontal = 12.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         RadioButton(selected = pendingId == device.id, onClick = null)
-                        Text(device.name, modifier = Modifier.padding(start = 12.dp))
+                        Text(device.name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f).padding(start = 12.dp))
                     }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     LinkFilledTonalButton(onClick = collapse) { Text(stringResource(R.string.action_cancel)) }
                     LinkButton(
                         enabled = computers.any { it.id == pendingId },

@@ -782,7 +782,7 @@ private fun App(
                 val pairedCount = state.devices.size
                 Scaffold(
                     containerColor = androidx.compose.ui.graphics.Color.Transparent,
-                    snackbarHost = { SnackbarHost(snackbar) },
+                    snackbarHost = { if (tab != Tab.Settings) SnackbarHost(snackbar) },
                     bottomBar = {
                         FloatingBottomPillDock(
                             selectedTab = tab,
@@ -814,22 +814,14 @@ private fun App(
                     val copiedLinkOffers by preferences.copiedLinkOffers.collectAsStateWithLifecycle()
                     val saveableStateHolder = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
 
-                    // The source extends behind the dock; each list reserves its measured height in scroll content.
-                    // Root navigation responds immediately and respects the system motion preference.
-                    AnimatedContent(
-                        targetState = tab,
-                        transitionSpec = {
-                            if (reducedMotion) EnterTransition.None togetherWith ExitTransition.None
-                            else fadeIn(tween(120)) togetherWith fadeOut(tween(90))
-                        },
-                        modifier = Modifier
-                            .fillMaxSize()
+                    // Home stays composed behind Settings, preserving its live state and scroll.
+                    // Its list still reserves the dock's measured inset exactly once.
+                    Box(
+                        modifier = Modifier.fillMaxSize()
                             .padding(top = padding.calculateTopPadding())
                             .glassBackdropSource(glassBackdrop, enabled = isGlass),
-                        label = "main_tab",
-                    ) { shownTab ->
-                        when (shownTab) {
-                            Tab.Home -> saveableStateHolder.SaveableStateProvider("tab_home") {
+                    ) {
+                        saveableStateHolder.SaveableStateProvider("tab_home") {
                                 HomeScreen(
                                     state = state,
                                     bottomContentPadding = padding.calculateBottomPadding(),
@@ -941,15 +933,19 @@ private fun App(
                                         preferences.updateWalkthrough { it.goToStep(WalkthroughStep.Welcome) }
                                         manualWalkthroughOpen = true
                                     },
-                                    highlightTarget = pendingHighlightTarget,
+                                    highlightTarget = pendingHighlightTarget.takeIf { tab == Tab.Home },
                                     onHighlightConsumed = { pendingHighlightTarget = null },
                                     modifier = Modifier.fillMaxSize(),
                                 )
                             }
-                            Tab.Settings -> saveableStateHolder.SaveableStateProvider("tab_settings") {
+                    }
+                    if (tab == Tab.Settings) {
+                        saveableStateHolder.SaveableStateProvider("tab_settings") {
                                 SettingsScreen(
                                     state = state,
-                                    bottomContentPadding = padding.calculateBottomPadding(),
+                                    bottomContentPadding = 0.dp,
+                                    onDismissRequest = { tab = Tab.Home },
+                                    snackbarHost = { SnackbarHost(snackbar) },
                                     appearance = appearance,
                                     onAppearance = preferences::update,
                                     touchpadSensitivity = touchpadSensitivity,
@@ -1010,7 +1006,6 @@ private fun App(
                                     modifier = Modifier.fillMaxSize(),
                                 )
                             }
-                        }
                     }
                 }
             }
