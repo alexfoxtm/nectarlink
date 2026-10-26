@@ -11,7 +11,7 @@ Item {
     property real stroke: 1.8
     property url source: ""
     property bool selected: false
-    property bool semanticTint: true
+    property bool semanticTint: false
     readonly property bool hasSource: source.toString().length > 0
     readonly property bool sourcedPath: Icons.isSourced(path)
     readonly property var oneuiPath: Icons.oneuiBinding(path)

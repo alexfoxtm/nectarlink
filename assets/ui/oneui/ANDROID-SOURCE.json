@@ -590,6 +590,77 @@
         "ic_oui_wifi.xml": "5c795104f3c6ee99fc18ac419d6c53581b4ca51303f4567cee7b5f6afa48cb15"
       },
       "output_sha256": "fa28862b595721deeac2d530cb8af87a871b34a5e1554b57044597d85e3bb377"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_oneui_device_outline.xml",
+      "sources": [
+        "ic_oui_device_outline.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_device_outline.xml": "54da2956da9fc7c1d2974d5a2f0f64c75b020587f112d02a9bb847268ad67021"
+      },
+      "output_sha256": "87bddd67ac2b9390549d550603fcbe045ce8c724afff244f2808de7cde6de977"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_oneui_security_outline.xml",
+      "sources": [
+        "ic_oui_security_outline.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_security_outline.xml": "45869507525430a89f203111fa8c5ed019f506339f637cd0e0ef88e8c4248ddf"
+      },
+      "output_sha256": "3892422e27644cf4aa11842e2d4b3ca18ef1c5cc156022f79d3dcca8971d45b5"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_oneui_keyboard_btn_delete.xml",
+      "sources": [
+        "ic_oui_keyboard_btn_delete.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_keyboard_btn_delete.xml": "d4fc07238c2089c18e07a6adc8c9aff5fb6f7df5d058463e77d968a2e6b4d62f"
+      },
+      "output_sha256": "691b0032cc91e9de8472ff9ef8f8f5715689ea8b0e4dedeb128c07b86ebebbfa"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_oneui_arrow_left.xml",
+      "sources": [
+        "ic_oui_arrow_left.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_arrow_left.xml": "68ce62462b9423a3331300bb8e5a6c02f78bde13ca687f3b8639567bf75c5e71"
+      },
+      "output_sha256": "5f0d68548e81cea4ab185faa17a773640a3815f398c4b51dbb8db1301213725a"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_oneui_arrow_up.xml",
+      "sources": [
+        "ic_oui_arrow_up.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_arrow_up.xml": "117004aac018e2270599519a2f9ad22d915c82f812a4d9519167a27e5aa01332"
+      },
+      "output_sha256": "a819fbc2c316d18a163aadb631e947432cedce4ca1e4a42f419d537bb76a858b"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_oneui_arrow_down.xml",
+      "sources": [
+        "ic_oui_arrow_down.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_arrow_down.xml": "ebeca5d9f0ddb8be3542484e56cf772b2d6151446a0f0b49886e0bcfee8fcb60"
+      },
+      "output_sha256": "3f520b27c734768d7fe68faf2aa068a616e6856ed11a7c321ba95a946943b29d"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_oneui_arrow_right.xml",
+      "sources": [
+        "ic_oui_arrow_right.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_arrow_right.xml": "e01c9ed203396bd47df63b12935fa429fe2c32ad08fc36d19fb35d2291a0b877"
+      },
+      "output_sha256": "dcbf7c2a9b874c282d8bbf7ab460174abe8f1845b1b73eb92a95f34568b32590"
     }
-  ]
+  ],
+  "r68_coverage": "All Android Link Kotlin and XML app-owned glyph consumers audited; remaining Unicode utility glyphs and hand-drawn walkthrough symbols replaced with pinned pack painters. Camera/QR/pointer/waveform/decorative data geometry and external/brand/user imagery retained."
 }

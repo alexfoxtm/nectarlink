@@ -676,7 +676,7 @@ Item {
                             Accessible.role: Accessible.RadioButton
                             Accessible.name: modelData.label
                             Accessible.checked: selected
-                            Accessible.onPressAction: Preferences.colorMode = modelData.value
+                            Accessible.onPressAction: Preferences.colorMode = appearanceOption.modelData.value
                             Keys.onPressed: (event) => {
                                 if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
                                     Preferences.colorMode = appearanceOption.modelData.value
@@ -744,14 +744,49 @@ Item {
                             width: parent.width
                             title: qsTr("Font")
                             description: Preferences.fontFamily
-                            Button {
-                                variant: "outline"
-                                size: "sm"
-                                text: qsTr("Choose font…")
-                                onClicked: {
-                                    fontDialog.selectedFont = Qt.font({ family: Preferences.fontFamily, pixelSize: 14 })
-                                    fontDialog.open()
+                            BasicControls.ComboBox {
+                                id: fontFamilySelector
+                                readonly property var availableFamilies: {
+                                    const installed = Qt.fontFamilies()
+                                    const families = ["Inter"]
+                                    for (let i = 0; i < installed.length; ++i) {
+                                        if (families.indexOf(installed[i]) < 0)
+                                            families.push(installed[i])
+                                    }
+                                    if (Preferences.fontFamily && families.indexOf(Preferences.fontFamily) < 0)
+                                        families.push(Preferences.fontFamily)
+                                    return families
                                 }
+                                width: Math.min(280, page.width - page.pagePadding * 2 - 72)
+                                model: availableFamilies
+                                currentIndex: Math.max(0, availableFamilies.indexOf(Preferences.fontFamily || "Inter"))
+                                leftPadding: 16
+                                rightPadding: 36
+                                font.family: Theme.fontUi
+                                font.pixelSize: 16
+                                palette.base: Theme.panelColor
+                                palette.window: Theme.panelColor
+                                palette.button: Theme.insetColor
+                                palette.text: Theme.surfaceContent
+                                palette.windowText: Theme.surfaceContent
+                                palette.buttonText: Theme.surfaceContent
+                                palette.highlight: Theme.primaryContainer
+                                palette.highlightedText: Theme.primaryContainerContent
+                                Accessible.name: qsTr("Interface font")
+                                background: Rectangle {
+                                    implicitHeight: 48
+                                    radius: Theme.controlRadius
+                                    color: Theme.insetColor
+                                    border.width: fontFamilySelector.activeFocus ? 2 : 1
+                                    border.color: fontFamilySelector.activeFocus ? Theme.primary : Theme.outline
+                                }
+                                contentItem: Txt {
+                                    text: fontFamilySelector.displayText
+                                    role: "body"
+                                    verticalAlignment: Text.AlignVCenter
+                                    elide: Text.ElideRight
+                                }
+                                onActivated: (index) => Preferences.fontFamily = fontFamilySelector.availableFamilies[index]
                             }
                         }
                         Divider { width: parent.width }
@@ -782,8 +817,8 @@ Item {
                                 size: "sm"
                                 text: qsTr("Reset text settings")
                                 onClicked: {
-                                    Preferences.fontFamily = "Figtree"
-                                    Preferences.textScalePercent = page.onMac ? 115 : 100
+                                    Preferences.fontFamily = "Inter"
+                                    Preferences.textScalePercent = 100
                                 }
                             }
                         }
@@ -3648,14 +3683,6 @@ Item {
                 Button { variant: "text"; text: qsTr("Close"); onClicked: hotspotSheet.close() }
             }
         }
-    }
-
-    // The native picker lists the fonts available on this Mac. Only its family
-    // is applied; text size is controlled independently above.
-    FontDialog {
-        id: fontDialog
-        title: qsTr("Choose interface font")
-        onAccepted: Preferences.fontFamily = selectedFont.family
     }
 
     Sheet {

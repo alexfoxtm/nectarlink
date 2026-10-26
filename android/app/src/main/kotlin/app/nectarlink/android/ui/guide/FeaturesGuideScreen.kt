@@ -31,17 +31,17 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
+import app.nectarlink.android.ui.theme.LinkButton as Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
+import app.nectarlink.android.ui.theme.LinkFilledTonalButton as FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
+import app.nectarlink.android.ui.theme.LinkModalSheet as ModalBottomSheet
+import app.nectarlink.android.ui.theme.LinkOutlinedButton as OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import app.nectarlink.android.ui.theme.LinkTextButton as TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -436,7 +436,7 @@ fun FeaturesGuideScreen(
                     onShowMe(target)
                 },
                 onRunFix = runFixAction,
-                onClose = { activeLearnMoreId = null },
+                onClose = app.nectarlink.android.ui.theme.LocalLinkSheetDismiss.current,
             )
         }
     }

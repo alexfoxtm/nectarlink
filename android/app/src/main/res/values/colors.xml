@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 <resources>
-    <!-- Bloom honey (docs/design/tokens.json). -->
-    <color name="surface">#FFF8F3</color>
-    <color name="primary">#8A5100</color>
+    <!-- Neutral Link launch colors match the Compose and Mac surfaces. -->
+    <color name="surface">#F5F5F5</color>
+    <color name="primary">#171717</color>
 </resources>

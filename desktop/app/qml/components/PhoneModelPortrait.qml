@@ -96,7 +96,7 @@ Item {
                 anchors.fill: parent
                 preferredRendererType: Shape.CurveRenderer
                 ShapePath {
-                    strokeColor: Theme.dark ? "#8B96A3" : "#56616E"
+                    strokeColor: Theme.dark ? "#A0A0A0" : "#666666"
                     strokeWidth: 0.7
                     fillGradient: LinearGradient {
                         x1: 0; y1: 0
@@ -123,9 +123,9 @@ Item {
                     fillGradient: LinearGradient {
                         x1: 0; y1: 0
                         x2: genericDeviceDisplay.width; y2: genericDeviceDisplay.height
-                        GradientStop { position: 0; color: "#2D3B4C" }
-                        GradientStop { position: 0.32; color: "#1B2634" }
-                        GradientStop { position: 1; color: "#10151D" }
+                        GradientStop { position: 0; color: "#343434" }
+                        GradientStop { position: 0.32; color: "#202020" }
+                        GradientStop { position: 1; color: "#101010" }
                     }
                     PathSvg { path: portrait.handsetPath(genericDeviceDisplay.width, genericDeviceDisplay.height) }
                 }

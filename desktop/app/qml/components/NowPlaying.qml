@@ -31,8 +31,8 @@ Card {
 
     // Compact by default; user can expand/collapse at any time.
     property bool expanded: false
-    padding: expanded ? 14 : 12
-    radius: embeddedInHero ? Theme.controlRadius : Theme.cardRadius
+    padding: expanded ? 20 : 16
+    radius: Theme.cardRadius
 
     readonly property bool activelyRendered: card.visible
         && Qt.application.state === Qt.ApplicationActive

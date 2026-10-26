@@ -31,15 +31,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.Button
+import app.nectarlink.android.ui.theme.LinkButton as Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilledTonalButton
+import app.nectarlink.android.ui.theme.LinkFilledTonalButton as FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import app.nectarlink.android.ui.theme.LinkOutlinedButton as OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import app.nectarlink.android.ui.theme.LinkTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -122,7 +122,7 @@ fun PairingScreen(
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(WaypairDesign.heroRadius),
-                color = WaypairDesign.heroWash(),
+                color = androidx.compose.ui.graphics.Color.Transparent,
                 contentColor = MaterialTheme.colorScheme.onSurface,
             ) {
                 Text(
@@ -138,7 +138,7 @@ fun PairingScreen(
                     },
                     style = MaterialTheme.typography.headlineMedium,
                     textAlign = TextAlign.Start,
-                    modifier = Modifier.padding(WaypairDesign.spacingXl),
+                    modifier = Modifier.padding(vertical = WaypairDesign.spacingXl),
                 )
             }
             Spacer(Modifier.height(WaypairDesign.spacingLg))
@@ -317,7 +317,7 @@ private fun NearbyList(devices: List<DiscoveredDevice>, onPair: (String) -> Unit
                     Surface(
                         shape = RoundedCornerShape(WaypairDesign.cardRadius),
                         color = WaypairDesign.panelColor(),
-                        border = BorderStroke(1.dp, WaypairDesign.panelBorder()),
+                        border = null,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Row(
@@ -348,7 +348,7 @@ private fun NearbyList(devices: List<DiscoveredDevice>, onPair: (String) -> Unit
                 Surface(
                     shape = RoundedCornerShape(WaypairDesign.cardRadius),
                     color = WaypairDesign.panelColor(),
-                    border = BorderStroke(1.dp, WaypairDesign.panelBorder()),
+                    border = null,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Row(Modifier.heightIn(min = 64.dp).padding(WaypairDesign.spacingLg), verticalAlignment = Alignment.CenterVertically) {
@@ -380,11 +380,11 @@ private fun Compare(peerName: String?, code: String, onConfirm: (Boolean) -> Uni
         Spacer(Modifier.height(24.dp))
         CodeDigits(code)
         Spacer(Modifier.height(32.dp))
-        Button(onClick = { onConfirm(true) }, modifier = Modifier.fillMaxWidth().heightIn(min = WaypairDesign.touchTarget)) {
+        Button(onClick = { onConfirm(true) }, modifier = Modifier.heightIn(min = WaypairDesign.touchTarget)) {
             Text(stringResource(R.string.action_codes_match))
         }
         Spacer(Modifier.height(8.dp))
-        OutlinedButton(onClick = { onConfirm(false) }, modifier = Modifier.fillMaxWidth().heightIn(min = WaypairDesign.touchTarget)) {
+        OutlinedButton(onClick = { onConfirm(false) }, modifier = Modifier.heightIn(min = WaypairDesign.touchTarget)) {
             Text(stringResource(R.string.action_codes_differ))
         }
     }

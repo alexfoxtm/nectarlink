@@ -481,58 +481,58 @@ QtObject {
       },
       "typography": {
         "body": {
-          "lineHeight": 1.5,
-          "size": 14,
-          "tracking": 0,
-          "weight": 400
+          "lineHeight": 1.25,
+          "size": 16,
+          "tracking": 0.00125,
+          "weight": 500
         },
         "bodySmall": {
-          "lineHeight": 1.45,
-          "size": 12.5,
-          "tracking": 0,
-          "weight": 400
+          "lineHeight": 1.2857142857142858,
+          "size": 14,
+          "tracking": 0.005,
+          "weight": 500
         },
         "caption": {
-          "lineHeight": 1.3,
-          "size": 11,
-          "tracking": 0,
+          "lineHeight": 1.3333333333333333,
+          "size": 12,
+          "tracking": 0.015,
           "weight": 500
         },
         "code": {
           "font": "mono",
-          "lineHeight": 1.3,
+          "lineHeight": 1.3846153846153846,
           "size": 13,
-          "tracking": 0.14,
-          "weight": 700
+          "tracking": 0.0,
+          "weight": 500
         },
         "displayLarge": {
-          "lineHeight": 1.05,
+          "lineHeight": 1.1818181818181819,
           "size": 44,
-          "tracking": -0.025,
-          "weight": 650
-        },
-        "displaySmall": {
-          "lineHeight": 1.1,
-          "size": 30,
-          "tracking": -0.02,
-          "weight": 650
-        },
-        "headline": {
-          "lineHeight": 1.2,
-          "size": 22,
-          "tracking": -0.015,
-          "weight": 650
-        },
-        "label": {
-          "lineHeight": 1.3,
-          "size": 12.5,
-          "tracking": 0,
+          "tracking": -0.02090909090909091,
           "weight": 600
         },
-        "title": {
-          "lineHeight": 1.35,
+        "displaySmall": {
+          "lineHeight": 1.2142857142857142,
+          "size": 28,
+          "tracking": -0.013214285714285715,
+          "weight": 600
+        },
+        "headline": {
+          "lineHeight": 1.2142857142857142,
+          "size": 28,
+          "tracking": -0.013214285714285715,
+          "weight": 600
+        },
+        "label": {
+          "lineHeight": 1.25,
           "size": 16,
-          "tracking": 0,
+          "tracking": 0.00125,
+          "weight": 500
+        },
+        "title": {
+          "lineHeight": 1.2,
+          "size": 20,
+          "tracking": -0.006,
           "weight": 600
         }
       }

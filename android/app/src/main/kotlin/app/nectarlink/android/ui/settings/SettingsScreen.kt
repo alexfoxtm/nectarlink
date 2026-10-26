@@ -38,16 +38,16 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.FilledTonalButton
+import app.nectarlink.android.ui.theme.LinkButton as Button
+import app.nectarlink.android.ui.theme.LinkFilledTonalButton as FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import app.nectarlink.android.ui.theme.LinkOutlinedButton as OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import app.nectarlink.android.ui.theme.LinkTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.rememberCoroutineScope
@@ -71,6 +71,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
@@ -151,6 +152,7 @@ fun SettingsScreen(
     onOpenFeaturesGuide: () -> Unit = {},
     highlightTarget: GuideHighlightTarget? = null,
     onHighlightConsumed: () -> Unit = {},
+    bottomContentPadding: Dp = 0.dp,
     modifier: Modifier = Modifier,
 ) {
     var notificationFilterOpen by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
@@ -158,7 +160,7 @@ fun SettingsScreen(
     var confirmClearEverything by remember { mutableStateOf(false) }
     var pickLanguage by remember { mutableStateOf(false) }
     var showLicenses by remember { mutableStateOf(false) }
-    var activeCategory by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("appearance") }
+    var activeCategory by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("all") }
     var focusedAppsPcId by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
     var pulsingSectionKey by remember { mutableStateOf<String?>(null) }
     val isGlass = LocalGlassTheme.current
@@ -230,7 +232,10 @@ fun SettingsScreen(
     }
 
     if (notificationFilterOpen) {
-        NotificationFilterPage(onBack = { notificationFilterOpen = false }, modifier = modifier)
+        NotificationFilterPage(
+            onBack = { notificationFilterOpen = false },
+            modifier = modifier.padding(bottom = bottomContentPadding),
+        )
     }
     if (!notificationFilterOpen) {
     LazyColumn(
@@ -240,7 +245,7 @@ fun SettingsScreen(
             .wrapContentWidth(Alignment.CenterHorizontally)
             .widthIn(max = 600.dp)
             .glassModalBlur(isGlass && anyDialogOpen),
-        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 24.dp),
+        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = WaypairDesign.spacingXl + bottomContentPadding),
         verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingMd),
     ) {
         item(key = "header", contentType = "header") {
@@ -269,18 +274,12 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    categories.sortedBy { if (it.first == "appearance") 0 else 1 }.forEach { (id, label) ->
+                    categories.forEach { (id, label) ->
                         val selected = activeCategory == id
-                        val shape = RoundedCornerShape(16.dp)
+                        val shape = RoundedCornerShape(24.dp)
                         Surface(
                             modifier = Modifier
                                 .heightIn(min = 48.dp)
-                                .shadow(
-                                    elevation = if (selected) 1.dp else 4.dp,
-                                    shape = shape,
-                                    ambientColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
-                                    spotColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
-                                )
                                 .clip(shape)
                                 .selectable(
                                     selected = selected,
@@ -288,13 +287,13 @@ fun SettingsScreen(
                                     onClick = { focusedAppsPcId = null; activeCategory = id },
                                 ),
                             shape = shape,
-                            color = if (selected) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surface,
+                            color = if (selected) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainer,
                             contentColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         ) {
                             Text(
                                 stringResource(label),
                                 style = MaterialTheme.typography.labelLarge,
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
+                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
                             )
                         }
                     }
@@ -1648,22 +1647,16 @@ private fun Section(
     content: @Composable () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 12.dp)) {
         Text(
             title,
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleLarge,
             color = if (highlighted) scheme.primary else scheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 4.dp),
         )
         Surface(
             modifier = Modifier
-                .fillMaxWidth()
-                .shadow(
-                    elevation = 6.dp,
-                    shape = RoundedCornerShape(24.dp),
-                    ambientColor = scheme.primary.copy(alpha = 0.10f),
-                    spotColor = scheme.primary.copy(alpha = 0.16f),
-                ),
+                .fillMaxWidth(),
             shape = RoundedCornerShape(24.dp),
             color = if (highlighted) scheme.secondaryContainer else WaypairDesign.panelColor(),
             border = if (highlighted) BorderStroke(1.dp, scheme.primary.copy(alpha = 0.5f)) else null,

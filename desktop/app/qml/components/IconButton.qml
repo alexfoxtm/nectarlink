@@ -6,7 +6,7 @@ import app.nectarlink
 FocusScope {
     id: button
     property string iconPath
-    property int iconSize: hasText ? 16 : 18
+    property int iconSize: hasText ? 18 : 20
     property string text: ""
     property string label
     property bool tonal: false
@@ -16,8 +16,8 @@ FocusScope {
     readonly property bool hasText: text.length > 0
     readonly property string effectiveTip: label.length > 0 ? label : text
 
-    implicitWidth: hasText ? contentRow.implicitWidth + 24 : 36
-    implicitHeight: 36
+    implicitWidth: hasText ? contentRow.implicitWidth + 28 : 40
+    implicitHeight: 40
     activeFocusOnTab: true
     opacity: enabled ? 1 : 0.38
     Component.onDestruction: tooltipPill.shown = false
@@ -38,10 +38,11 @@ FocusScope {
     Rectangle {
         id: body
         anchors.fill: parent
-        radius: Theme.controlRadius
-        color: button.tonal ? Theme.secondaryContainer : "transparent"
+        radius: Theme.pill(height)
+        color: button.tonal ? Theme.secondaryContainer : Theme.insetColor
         Behavior on color { enabled: !Theme.reduceMotion; ColorAnimation { duration: Theme.fadeFast } }
-        border.width: 0
+        border.width: 1
+        border.color: Theme.panelBorder
         scale: mouse.pressed ? Theme.pressScale : 1
         Behavior on scale { enabled: !Theme.reduceMotion; NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
 
@@ -75,7 +76,7 @@ FocusScope {
                 anchors.verticalCenter: parent.verticalCenter
                 text: button.text
                 role: "label"
-                size: 13
+                size: 14
                 color: button.tonal ? Theme.secondaryContainerContent : Theme.surfaceContent
             }
         }

@@ -32,6 +32,7 @@ import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.heightIn
@@ -61,6 +62,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -94,6 +98,10 @@ import app.nectarlink.android.ui.theme.WaypairDesign
 import app.nectarlink.android.ui.theme.Appearance
 import app.nectarlink.android.ui.theme.LocalReducedMotion
 import app.nectarlink.android.ui.theme.NectarlinkTheme
+import app.nectarlink.android.ui.theme.liquidGlass
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import app.nectarlink.android.ui.theme.glassBackdropSource
 import app.nectarlink.android.ui.walkthrough.WalkthroughScreen
 import app.nectarlink.android.ui.walkthrough.WalkthroughStep
@@ -369,6 +377,7 @@ private fun App(
 ) {
     val settingsQualificationPcIds by core.settingsQualificationPcIds.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableStateOf(Tab.Home) }
+    var homeActionsOpen by remember { mutableStateOf(false) }
     var pairing by rememberSaveable { mutableStateOf(false) }
     var manualWalkthroughOpen by rememberSaveable { mutableStateOf(false) }
     var featuresGuideOpen by rememberSaveable { mutableStateOf(false) }
@@ -780,6 +789,8 @@ private fun App(
                             onSelectTab = { tab = it },
                             onlineCount = onlineCount,
                             pairedCount = pairedCount,
+                            backdrop = glassBackdrop,
+                            onOpenActions = { tab = Tab.Home; homeActionsOpen = true },
                         )
                     },
                 ) { padding ->
@@ -803,7 +814,7 @@ private fun App(
                     val copiedLinkOffers by preferences.copiedLinkOffers.collectAsStateWithLifecycle()
                     val saveableStateHolder = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
 
-                    // Respect the measured dock height so large text never covers the last action.
+                    // The source extends behind the dock; each list reserves its measured height in scroll content.
                     // Root navigation responds immediately and respects the system motion preference.
                     AnimatedContent(
                         targetState = tab,
@@ -813,7 +824,7 @@ private fun App(
                         },
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding())
+                            .padding(top = padding.calculateTopPadding())
                             .glassBackdropSource(glassBackdrop, enabled = isGlass),
                         label = "main_tab",
                     ) { shownTab ->
@@ -821,6 +832,9 @@ private fun App(
                             Tab.Home -> saveableStateHolder.SaveableStateProvider("tab_home") {
                                 HomeScreen(
                                     state = state,
+                                    bottomContentPadding = padding.calculateBottomPadding(),
+                                    actionDockOpen = homeActionsOpen,
+                                    onActionDockDismiss = { homeActionsOpen = false },
                                     onRing = core::ring,
                                     onStopRinging = core::stopRinging,
                                     onPairNew = { pairing = true },
@@ -935,6 +949,7 @@ private fun App(
                             Tab.Settings -> saveableStateHolder.SaveableStateProvider("tab_settings") {
                                 SettingsScreen(
                                     state = state,
+                                    bottomContentPadding = padding.calculateBottomPadding(),
                                     appearance = appearance,
                                     onAppearance = preferences::update,
                                     touchpadSensitivity = touchpadSensitivity,
@@ -1009,35 +1024,84 @@ private fun FloatingBottomPillDock(
     onSelectTab: (Tab) -> Unit,
     onlineCount: Int,
     pairedCount: Int,
+    backdrop: app.nectarlink.android.ui.theme.GlassBackdrop,
+    onOpenActions: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
+    val dark = scheme.surface.luminance() < 0.5f
     Column(
         modifier = Modifier.fillMaxWidth()
-            .background(WaypairDesign.panelColor())
-            .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.navigationBars),
+            .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.navigationBars)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        HorizontalDivider(color = WaypairDesign.panelBorder())
         androidx.compose.foundation.layout.Row(
-            modifier = Modifier.widthIn(max = 600.dp).fillMaxWidth().selectableGroup().padding(horizontal = 12.dp, vertical = 4.dp),
-            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
+            modifier = Modifier.widthIn(max = 600.dp).fillMaxWidth().heightIn(min = 56.dp)
+                .clip(RoundedCornerShape(28.dp))
+                .liquidGlass(
+                    backdrop = backdrop, enabled = true, cornerRadius = 28.dp,
+                    tint = scheme.surfaceContainerHigh.copy(alpha = 0.72f),
+                    fallbackColor = scheme.surfaceContainerHigh,
+                    rimColor = scheme.onSurface, dark = dark,
+                )
+                .pointerInput(onOpenActions) {
+                    var dragged = 0f
+                    detectVerticalDragGestures(
+                        onDragStart = { dragged = 0f },
+                        onDragEnd = { if (dragged < -24.dp.toPx()) onOpenActions() },
+                        onVerticalDrag = { change, amount -> change.consume(); dragged += amount },
+                    )
+                }
+                .selectableGroup().padding(horizontal = 4.dp, vertical = 4.dp),
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             FloatingDockTabPill(
-                modifier = Modifier.weight(1f),
-                selected = selectedTab == Tab.Home,
-                onClick = { onSelectTab(Tab.Home) },
+                selected = selectedTab == Tab.Home, onClick = { onSelectTab(Tab.Home) },
                 iconRes = if (selectedTab == Tab.Home) R.drawable.wp_home_filled else R.drawable.wp_home,
                 label = stringResource(R.string.home_title),
                 statusDotColor = when { onlineCount > 0 -> scheme.primary; pairedCount > 0 -> scheme.outline; else -> null },
             )
-            FloatingDockTabPill(
+            BoxWithConstraints(
                 modifier = Modifier.weight(1f),
-                selected = selectedTab == Tab.Settings,
-                onClick = { onSelectTab(Tab.Settings) },
+                contentAlignment = Alignment.Center,
+            ) {
+                val searchLabel = stringResource(R.string.link_actions_search)
+                val labelStyle = MaterialTheme.typography.labelLarge
+                val textMeasurer = rememberTextMeasurer()
+                val labelWidth = textMeasurer.measure(
+                    text = AnnotatedString(searchLabel), style = labelStyle,
+                    softWrap = false, maxLines = 1,
+                ).size.width
+                // Compare against this weighted slot after both navigation items have
+                // measured, using the same scaled type and exact button content padding.
+                val showLabel = with(LocalDensity.current) {
+                    labelWidth + 24.dp.roundToPx() + 8.dp.roundToPx() +
+                        12.dp.roundToPx() * 2 <= constraints.maxWidth
+                }
+                app.nectarlink.android.ui.theme.LinkTextButton(
+                    onClick = onOpenActions,
+                    modifier = Modifier.fillMaxWidth().widthIn(min = WaypairDesign.touchTarget)
+                        .heightIn(min = WaypairDesign.touchTarget),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                ) {
+                    Icon(
+                        painterResource(R.drawable.wp_link_search),
+                        contentDescription = if (showLabel) null else searchLabel,
+                        modifier = Modifier.size(24.dp),
+                    )
+                    if (showLabel) {
+                        Text(
+                            searchLabel, style = labelStyle, maxLines = 1, softWrap = false,
+                            modifier = Modifier.padding(start = 8.dp),
+                        )
+                    }
+                }
+            }
+            FloatingDockTabPill(
+                selected = selectedTab == Tab.Settings, onClick = { onSelectTab(Tab.Settings) },
                 iconRes = if (selectedTab == Tab.Settings) R.drawable.wp_settings_filled else R.drawable.wp_settings,
-                label = stringResource(R.string.settings_title),
-                statusDotColor = null,
+                label = stringResource(R.string.settings_title), statusDotColor = null,
             )
         }
     }
@@ -1055,7 +1119,7 @@ private fun FloatingDockTabPill(
     val scheme = MaterialTheme.colorScheme
     val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     val focused by interactionSource.collectIsFocusedAsState()
-    val shape = RoundedCornerShape(WaypairDesign.controlRadius)
+    val shape = RoundedCornerShape(24.dp)
     val contentColor = if (selected) scheme.primary else scheme.onSurfaceVariant
     Column(
         modifier = modifier

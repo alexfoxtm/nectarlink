@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import QtQuick
+import QtQuick.Effects
 import app.nectarlink
 
 // Fast, keyboard-first Command Palette modal overlay (PLAN.md §3.9 / §3.11 P1).
@@ -9,6 +10,10 @@ Item {
     id: palette
     anchors.fill: parent
     z: 150
+
+    property Item backdropSource: null
+    property bool backdropSamplingEnabled: false
+    signal dismissed
 
     property int selectedIndex: 0
     readonly property var items: {
@@ -28,7 +33,7 @@ Item {
     }
 
     function runSelected() {
-        if (items.length === 0)
+        if (!AppController.commandPaletteOpen || items.length === 0)
             return
         const idx = Math.max(0, Math.min(selectedIndex, items.length - 1))
         const item = items[idx]
@@ -36,37 +41,20 @@ Item {
             AppController.runCommandPalette(item.id)
     }
 
-    ParallelAnimation {
-        id: openAnim
-        NumberAnimation {
-            target: palette
-            property: "opacity"
-            from: 0.45
-            to: 1.0
-            duration: Theme.fadeFast
-            easing.type: Easing.OutCubic
-        }
-        NumberAnimation {
-            target: card
-            property: "scale"
-            from: 0.97
-            to: 1.0
-            duration: Theme.fadeFast
-            easing.type: Easing.OutCubic
-        }
-    }
+    property bool shown: false
+    opacity: shown && AppController.commandPaletteOpen ? 1 : 0
+    Behavior on opacity { NumberAnimation { duration: Theme.reduceMotion ? 120 : (AppController.commandPaletteOpen ? 260 : 220); easing.type: Easing.OutCubic } }
 
     Component.onCompleted: {
-        if (!Theme.reduceMotion)
-            openAnim.restart()
+        shown = true
         searchInput.forceActiveFocus()
         Qt.callLater(() => AppController.noteCommandPaletteShown())
     }
 
     Shortcut {
         sequence: "Esc"
-        enabled: palette.visible
-        onActivated: AppController.closeCommandPalette()
+        enabled: AppController.commandPaletteOpen
+        onActivated: { palette.dismissed(); AppController.closeCommandPalette() }
     }
 
     Rectangle {
@@ -77,8 +65,10 @@ Item {
             onTapped: (eventPoint) => {
                 const p = card.mapFromItem(scrim, eventPoint.position)
                 const inside = p.x >= 0 && p.y >= 0 && p.x <= card.width && p.y <= card.height
-                if (!inside)
+                if (!inside) {
+                    palette.dismissed()
                     AppController.closeCommandPalette()
+                }
             }
         }
     }
@@ -86,18 +76,66 @@ Item {
     Rectangle {
         id: card
         anchors.horizontalCenter: parent.horizontalCenter
-        y: Math.max(56, Math.round(parent.height * 0.12))
-        width: Math.min(640, parent.width - Theme.spacingXl * 2)
-        height: cardColumn.height
-        radius: Theme.heroRadius
-        color: Theme.panelColor
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: 8
+        width: Math.min(640, parent.width - 16)
+        height: Math.min(cardColumn.height, palette.height - 16)
+        topLeftRadius: 36
+        topRightRadius: 36
+        bottomLeftRadius: 32
+        bottomRightRadius: 32
+        color: "transparent"
+        layer.enabled: paletteMaterial.effectsSupported
+        layer.smooth: true
+        layer.effect: MultiEffect {
+            maskEnabled: true
+            maskSource: paletteMaterial.maskSource
+            maskThresholdMin: 0.5
+            maskSpreadAtMin: 1.0
+        }
         border.width: 1
         border.color: Theme.panelBorder
         clip: true
+        transform: Translate {
+            id: cardSlide
+            y: palette.shown && AppController.commandPaletteOpen || Theme.reduceMotion ? 0 : 24
+            Behavior on y {
+                enabled: !Theme.reduceMotion
+                NumberAnimation { duration: AppController.commandPaletteOpen ? 260 : 220; easing.type: Easing.OutCubic }
+            }
+        }
+
+        MaterialBackdrop {
+            id: paletteMaterial
+            anchors.fill: parent
+            sourceItem: palette.backdropSource
+            samplingEnabled: palette.backdropSamplingEnabled && AppController.commandPaletteOpen
+            topRadius: 36
+            bottomRadius: 32
+            sampleRect: {
+                if (!sourceItem)
+                    return Qt.rect(0, 0, width, height)
+                const p = sourceItem.mapFromItem(palette, card.x, card.y + cardSlide.y)
+                return Qt.rect(p.x, p.y, width, height)
+            }
+        }
 
         Column {
             id: cardColumn
             width: parent.width
+
+            Item {
+                width: parent.width
+                height: 16
+                Rectangle {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    y: 4
+                    width: 36; height: 4
+                    radius: 2
+                    color: Theme.surfaceContentVariant
+                    opacity: 0.35
+                }
+            }
 
             // ---- Search bar ----
             Item {
@@ -136,11 +174,12 @@ Item {
                         anchors.fill: parent
                         verticalAlignment: TextInput.AlignVCenter
                         font.family: Theme.fontUi
-                        font.pixelSize: 15
+                        font.pixelSize: Math.round(16 * Theme.textScale)
                         color: Theme.surfaceContent
                         selectionColor: Theme.primaryContainer
                         selectedTextColor: Theme.primaryContainerContent
-                        focus: true
+                        focus: AppController.commandPaletteOpen
+                        enabled: AppController.commandPaletteOpen
                         clip: true
                         Accessible.name: qsTr("Command palette search")
 
@@ -166,6 +205,7 @@ Item {
                                 palette.runSelected()
                                 event.accepted = true
                             } else if (event.key === Qt.Key_Escape) {
+                                palette.dismissed()
                                 AppController.closeCommandPalette()
                                 event.accepted = true
                             }
@@ -179,8 +219,8 @@ Item {
                     anchors.rightMargin: 16
                     anchors.verticalCenter: parent.verticalCenter
                     width: escLabel.implicitWidth + 12
-                    height: 22
-                    radius: Theme.radiusXs
+                    height: 40
+                    radius: 20
                     color: Theme.surfaceContainerHighest
                     border.width: 1
                     border.color: Theme.panelBorder
@@ -191,6 +231,7 @@ Item {
                             searchInput.text = ""
                             searchInput.forceActiveFocus()
                         } else {
+                            palette.dismissed()
                             AppController.closeCommandPalette()
                         }
                     }
@@ -236,7 +277,7 @@ Item {
             Item {
                 width: parent.width
                 height: palette.items.length > 0
-                    ? Math.min(resultsList.contentHeight + 16, Math.max(120, palette.height - card.y - 160), 384) : 88
+                    ? Math.min(resultsList.contentHeight + 16, Math.max(64, palette.height - 176), 384) : 88
 
                 ListView {
                     id: resultsList
@@ -258,10 +299,10 @@ Item {
                             ? qsTr("Not yet available on Mac") : (modelData.subtitle || "")
 
                         width: resultsList.width
-                        height: 60
-                        radius: Theme.controlRadius
+                        height: Math.max(76, Math.round(64 * Theme.textScale))
+                        radius: 16
                         color: selected
-                            ? Theme.heroWash
+                            ? Theme.insetColor
                             : rowHover.hovered
                               ? Theme.insetColor
                               : "transparent"
@@ -269,7 +310,7 @@ Item {
                         Accessible.role: Accessible.ListItem
                         Accessible.name: (modelData.title || "") + (row.explanation ? ", " + row.explanation : "")
                         Accessible.onPressAction: {
-                            if (row.isEnabled) {
+                            if (AppController.commandPaletteOpen && row.isEnabled) {
                                 palette.selectedIndex = row.index
                                 AppController.runCommandPalette(row.modelData.id)
                             }
@@ -285,7 +326,7 @@ Item {
                         }
 
                         TapHandler {
-                            enabled: row.isEnabled
+                            enabled: AppController.commandPaletteOpen && row.isEnabled
                             onTapped: {
                                 palette.selectedIndex = row.index
                                 AppController.runCommandPalette(row.modelData.id)
@@ -297,15 +338,15 @@ Item {
                             anchors.left: parent.left
                             anchors.leftMargin: 10
                             anchors.verticalCenter: parent.verticalCenter
-                            width: 32
-                            height: 32
+                            width: 40
+                            height: 40
                             radius: Theme.radiusSm
                             color: row.selected ? Theme.primaryContainer : Theme.surfaceContainerHighest
 
                             Icon {
                                 anchors.centerIn: parent
-                                width: 16
-                                height: 16
+                                width: 20
+                                height: 20
                                 path: (row.modelData.icon && Icons[row.modelData.icon])
                                     ? Icons[row.modelData.icon]
                                     : Icons.terminal
@@ -327,7 +368,7 @@ Item {
                                 text: row.modelData.title || ""
                                 role: "label"
                                 elide: Text.ElideRight
-                                size: 14
+                                size: 16
                                 color: row.selected ? Theme.secondaryContainerContent : Theme.surfaceContent
                             }
 

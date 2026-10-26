@@ -24,13 +24,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.FilledTonalButton
+import app.nectarlink.android.ui.theme.LinkFilledTonalButton as FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import app.nectarlink.android.ui.theme.LinkOutlinedButton as OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
@@ -49,7 +49,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -137,8 +136,8 @@ fun DeskScreen(
     val scope = rememberCoroutineScope()
 
     Surface(
-        color = Color.Black,
-        contentColor = Color(0xFFEAECEF),
+        color = MaterialTheme.colorScheme.surface,
+        contentColor = MaterialTheme.colorScheme.onSurface,
         modifier = modifier.fillMaxSize(),
     ) {
         Column(
@@ -157,10 +156,10 @@ fun DeskScreen(
                 Surface(
                     shape = RoundedCornerShape(WaypairDesign.controlRadius),
                     modifier = Modifier.weight(1f),
-                    color = if (device.online) Color(0xFF1A1A1D) else Color(0xFF16181E),
+                    color = if (device.online) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainerLow,
                     border = BorderStroke(
                         1.dp,
-                        if (device.online) Color(0xFF47484D) else Color(0xFF2B2F3A),
+                        if (device.online) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.outlineVariant,
                     ),
                 ) {
                     Row(
@@ -168,7 +167,7 @@ fun DeskScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        val dotColor = if (device.online) Color(0xFFE8EAED) else Color(0xFF9CA3AF)
+                        val dotColor = if (device.online) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
                         Spacer(
                             modifier = Modifier
                                 .size(8.dp)
@@ -181,7 +180,7 @@ fun DeskScreen(
                         Text(
                             text = linkDetail,
                             style = MaterialTheme.typography.labelLarge,
-                            color = if (device.online) Color(0xFFE8EAED) else Color(0xFFD1D5DB),
+                            color = if (device.online) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -192,9 +191,9 @@ fun DeskScreen(
                 OutlinedButton(
                     onClick = onBack,
                     modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
-                    border = BorderStroke(1.dp, Color(0xFF282C37)),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                 ) {
-                    Text(stringResource(R.string.desk_exit), color = Color(0xFFD1D5DB))
+                    Text(stringResource(R.string.desk_exit), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
 
@@ -235,8 +234,8 @@ fun DeskScreen(
 
                     Surface(
                         shape = RoundedCornerShape(WaypairDesign.cardRadius),
-                        color = Color(0xFF0E1015),
-                        border = BorderStroke(1.dp, Color(0xFF222631)),
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Column(
@@ -286,14 +285,14 @@ fun DeskScreen(
                                         Text(
                                             text = songTitle,
                                             style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                                            color = if (activeSummary != null) Color(0xFFF3F4F6) else MaterialTheme.colorScheme.primary,
+                                            color = if (activeSummary != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
                                         )
                                         Text(
                                             text = subtitleText,
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = Color(0xFF9CA3AF),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
                                         )
@@ -314,8 +313,8 @@ fun DeskScreen(
                                             }
                                         },
                                         colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                            containerColor = Color(0xFF1B1F2A),
-                                            contentColor = Color(0xFFE5E7EB),
+                                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                            contentColor = MaterialTheme.colorScheme.onSurface,
                                         ),
                                         modifier = Modifier.size(WaypairDesign.touchTarget),
                                     ) {
@@ -358,8 +357,8 @@ fun DeskScreen(
                                             }
                                         },
                                         colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                            containerColor = Color(0xFF1B1F2A),
-                                            contentColor = Color(0xFFE5E7EB),
+                                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                            contentColor = MaterialTheme.colorScheme.onSurface,
                                         ),
                                         modifier = Modifier.size(WaypairDesign.touchTarget),
                                     ) {
@@ -388,7 +387,7 @@ fun DeskScreen(
                                                 if (deckState.muted) R.drawable.ic_sound_off else R.drawable.ic_speaker,
                                             ),
                                             contentDescription = null,
-                                            tint = Color(0xFFD1D5DB),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                             modifier = Modifier.size(18.dp),
                                         )
                                     }
@@ -411,14 +410,14 @@ fun DeskScreen(
                                         colors = SliderDefaults.colors(
                                             thumbColor = MaterialTheme.colorScheme.primary,
                                             activeTrackColor = MaterialTheme.colorScheme.primary,
-                                            inactiveTrackColor = Color(0xFF252A36),
+                                            inactiveTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                                         ),
                                         modifier = Modifier.weight(1f),
                                     )
                                     Text(
                                         text = if (deckState.muted) "Muted" else "${shownVol.roundToInt()}%",
                                         style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
-                                        color = Color(0xFFD1D5DB),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.width(44.dp),
                                     )
                                 }
@@ -513,14 +512,14 @@ private fun DeskActionButton(
         enabled = enabled,
         shape = RoundedCornerShape(WaypairDesign.controlRadius),
         colors = ButtonDefaults.filledTonalButtonColors(
-            containerColor = if (isSecondary) Color(0xFF12141B) else Color(0xFF171B24),
-            contentColor = if (isSecondary) Color(0xFFD1D5DB) else Color(0xFFF3F4F6),
-            disabledContainerColor = Color(0xFF0C0E12),
-            disabledContentColor = Color(0xFF4B5563),
+            containerColor = if (isSecondary) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surfaceContainerHigh,
+            contentColor = if (isSecondary) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+            disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
         ),
         border = BorderStroke(
             1.dp,
-            if (isSecondary) Color(0xFF262A36) else Color(0xFF2B3140),
+            if (isSecondary) MaterialTheme.colorScheme.outlineVariant else MaterialTheme.colorScheme.outline,
         ),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 13.dp),
         modifier = modifier.heightIn(min = WaypairDesign.touchTarget),
@@ -563,14 +562,14 @@ private fun DeskClockDisplay() {
             lineHeight = 88.sp,
             fontWeight = FontWeight.Light,
             fontFamily = FontFamily.Monospace,
-            color = Color(0xFFF3F4F6),
+            color = MaterialTheme.colorScheme.onSurface,
         )
         Text(
             text = secText,
             fontSize = 28.sp,
             fontWeight = FontWeight.Normal,
             fontFamily = FontFamily.Monospace,
-            color = Color(0xFF9CA3AF),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(bottom = 12.dp, start = 4.dp),
         )
     }
@@ -578,7 +577,7 @@ private fun DeskClockDisplay() {
     Text(
         text = dateText,
         style = MaterialTheme.typography.titleMedium,
-        color = Color(0xFF9CA3AF),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 }
 

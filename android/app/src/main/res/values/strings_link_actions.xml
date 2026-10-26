@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="link_actions_search">Search actions</string>
+    <string name="link_actions_apply">Apply</string>
+    <string name="link_actions_empty">No matching actions</string>
+</resources>

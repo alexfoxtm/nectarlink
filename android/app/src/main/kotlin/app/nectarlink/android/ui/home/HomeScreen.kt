@@ -39,17 +39,17 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Button
+import app.nectarlink.android.ui.theme.LinkButton as Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
+import app.nectarlink.android.ui.theme.LinkFilledTonalButton as FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
+import app.nectarlink.android.ui.theme.LinkModalSheet as ModalBottomSheet
+import app.nectarlink.android.ui.theme.LinkOutlinedButton as OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -60,7 +60,7 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import app.nectarlink.android.ui.theme.LinkTextButton as TextButton
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.TooltipAnchorPosition
 import androidx.compose.material3.TooltipBox
@@ -251,8 +251,13 @@ fun HomeScreen(
     onOpenWalkthrough: () -> Unit = {},
     highlightTarget: GuideHighlightTarget? = null,
     onHighlightConsumed: () -> Unit = {},
+    actionDockOpen: Boolean = false,
+    onActionDockDismiss: () -> Unit = {},
+    bottomContentPadding: Dp = 0.dp,
     modifier: Modifier = Modifier,
 ) {
+    val ringingPcIds = remember { androidx.compose.runtime.mutableStateMapOf<String, Boolean>() }
+    val onPcRing: (String, Boolean) -> Unit = { id, on -> ringingPcIds[id] = on; onRing(id, on) }
     var showClipboardHistory by remember { mutableStateOf(false) }
     var showTimeline by remember { mutableStateOf(false) }
     var browseFilesPcId by remember { mutableStateOf<String?>(null) }
@@ -307,7 +312,7 @@ fun HomeScreen(
             start = WaypairDesign.spacingLg,
             top = WaypairDesign.spacingLg,
             end = WaypairDesign.spacingLg,
-            bottom = WaypairDesign.spacingXl,
+            bottom = WaypairDesign.spacingXl + bottomContentPadding,
         ),
         verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingMd),
     ) {
@@ -317,7 +322,7 @@ fun HomeScreen(
                 verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingSm),
             ) {
                 val headerActions: @Composable () -> Unit = {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(0.dp), modifier = Modifier.clip(RoundedCornerShape(28.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh)) {
                         val spin = remember { androidx.compose.animation.core.Animatable(0f) }
                         val scope = rememberCoroutineScope()
                         IconButton(modifier = Modifier.size(WaypairDesign.touchTarget), onClick = {
@@ -357,7 +362,7 @@ fun HomeScreen(
                         headerActions()
                     }
                 }
-
+                Text(stringResource(R.string.home_title), style = MaterialTheme.typography.headlineLarge, modifier = Modifier.padding(top = 16.dp))
             }
         }
         if (showWhatsNewGuideBanner) {
@@ -663,7 +668,8 @@ fun HomeScreen(
             ) {
                 PcCard(
                     device = device,
-                    onRing = onRing,
+                    onRing = onPcRing,
+                    ringing = ringingPcIds[device.id] == true,
                     onSendFiles = onSendFiles,
                     onSendFolder = onSendFolder,
                     onPower = onPower,
@@ -789,6 +795,19 @@ fun HomeScreen(
                 )
             }
         }
+    }
+
+    if (actionDockOpen) {
+        HomeActionSheet(
+            state = state, onDismiss = onActionDockDismiss, onPairNew = onPairNew,
+            onRing = onPcRing, ringingPcIds = ringingPcIds.filterValues { it }.keys.toSet(),
+            onSendFiles = onSendFiles, onSendFolder = onSendFolder,
+            onPower = onPower, onWake = onWake, onRemote = onRemote, onDeck = onDeck,
+            onDesk = onDesk, onRecord = onRecord, onWebcam = onWebcam,
+            onSetPcAudio = onSetPcAudio,
+            onBrowsePcFiles = { browseFilesPcId = it },
+            micStreamingTo = micStreamingTo, onStartMic = onStartMic, onStopMic = onStopMic,
+        )
     }
 
     val browseDevice = browseFilesPcId?.let { state.device(it) }
@@ -1493,6 +1512,8 @@ internal fun PcCard(
     /** Whether this phone's microphone streams to this PC now. */
     micOn: Boolean = false,
     onToggleMic: (Boolean) -> Unit = {},
+    actionQuery: String = "",
+    ringing: Boolean = false,
 ) {
     val pickFiles = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) onSendFiles(device.id, uris)
@@ -1500,7 +1521,7 @@ internal fun PcCard(
     val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { tree ->
         if (tree != null) onSendFolder(device.id, tree)
     }
-    var ringing by remember(device.id) { mutableStateOf(false) }
+
     val isGlass = LocalGlassTheme.current
     val reducedMotion = LocalReducedMotion.current
     androidx.compose.runtime.CompositionLocalProvider(
@@ -1545,18 +1566,18 @@ internal fun PcCard(
             }
             // Connection context stays outside the continuous action workspace.
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp),
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(WaypairDesign.panelColor()).padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Box(
-                    modifier = Modifier.size(44.dp).waypairRaisedWell(),
+                    modifier = Modifier.size(48.dp).waypairRaisedWell(),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(painterResource(R.drawable.wp_monitor), contentDescription = null, modifier = Modifier.size(26.dp), tint = MaterialTheme.colorScheme.primary)
+                    Icon(painterResource(R.drawable.wp_monitor), contentDescription = null, modifier = Modifier.size(24.dp), tint = MaterialTheme.colorScheme.onSurface)
                 }
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(device.name, style = MaterialTheme.typography.titleMedium)
+                    Text(device.name, style = MaterialTheme.typography.titleLarge)
                     device.model?.let {
                         Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -1609,16 +1630,16 @@ internal fun PcCard(
                         tintColor = MaterialTheme.colorScheme.primary,
                         outlineColor = WaypairDesign.panelBorder(),
                     )
-                    .padding(horizontal = 12.dp, vertical = 16.dp),
+                    .padding(16.dp),
             ) {
                 val workspaceWidthPx = constraints.maxWidth
                 val density = LocalDensity.current
                 val stacked = density.fontScale >= 1.5f
                 val columns = when {
                     stacked -> 1
-                    maxWidth >= 480.dp -> 4
-                    maxWidth >= 296.dp -> 3
-                    else -> 2
+                    maxWidth >= 560.dp -> 3
+                    maxWidth >= 300.dp -> 2
+                    else -> 1
                 }
                 val gapPx = with(density) { 12.dp.roundToPx() }
                 val actionWidthPx = (workspaceWidthPx - gapPx * (columns - 1)) / columns
@@ -1635,26 +1656,10 @@ internal fun PcCard(
                     HomeActionItem(stringResource(R.string.action_browse_pc_files), R.drawable.wp_browse_color, browsePcEnabled, browsePcReason) { onBrowsePcFiles(device.id) },
                     HomeActionItem(stringResource(R.string.action_record_pc), R.drawable.wp_mic_color, device.online) { onRecord(device.id) },
                     HomeActionItem(stringResource(if (ringing) R.string.action_stop_ringing else R.string.action_ring_pc), R.drawable.wp_bell_color, device.online) {
-                        ringing = !ringing
-                        onRing(device.id, ringing)
+                        onRing(device.id, !ringing)
                     },
                 )
-                val captionStyle = MaterialTheme.typography.labelLarge
-                val textMeasurer = rememberTextMeasurer()
-                // Measure ALL current, localized captions using the same width and style as Text.
-                // One slot height prevents a long label from moving the next row's icon wells.
-                val captionWidthPx = actionWidthPx - if (stacked) with(density) {
-                    4.dp.roundToPx() * 2 + 64.dp.roundToPx() + 16.dp.roundToPx()
-                } else 0
-                val captionHeight = with(density) {
-                    actions.maxOf { action ->
-                        textMeasurer.measure(
-                            text = AnnotatedString(action.label),
-                            style = captionStyle,
-                            constraints = Constraints(maxWidth = captionWidthPx.coerceAtLeast(1)),
-                        ).size.height
-                    }.toDp()
-                }
+                // Each card grows with the actual localized label and Android text scale.
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Text(
                         text = stringResource(R.string.home_workspace_title),
@@ -1665,19 +1670,21 @@ internal fun PcCard(
                     FlowRow(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        actions.forEach { action ->
+                        actions.filter { it.label.contains(actionQuery, ignoreCase = true) }.forEach { action ->
                             HomeFeatureTile(
                                 action = action,
-                                captionHeight = captionHeight,
-                                stacked = stacked,
                                 modifier = Modifier.width(actionWidth),
                             )
                         }
                     }
+                    if (actions.none { it.label.contains(actionQuery, ignoreCase = true) }) {
+                        Text(stringResource(R.string.link_actions_empty), style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                     val deckState = device.deckState
-                    if (device.online && deckState != null) {
+                    if (actionQuery.isBlank() && device.online && deckState != null) {
                         PcAudioCardSection(
                             pcId = device.id,
                             pcName = device.name,
@@ -1689,7 +1696,7 @@ internal fun PcCard(
                             onToggleMic = onToggleMic,
                         )
                     }
-                    if (device.has("device.pc_actions")) {
+                    if (actionQuery.isBlank() && device.has("device.pc_actions")) {
                         androidx.compose.material3.HorizontalDivider(color = WaypairDesign.panelBorder())
                         FlowRow(
                             modifier = Modifier.fillMaxWidth(),
@@ -1761,34 +1768,20 @@ private data class HomeActionItem(
     val onClick: () -> Unit,
 )
 
-/** A real action button with a fixed icon well and a shared, measured caption slot. */
+/** An original horizontal utility card that grows with its localized label. */
 @Composable
 private fun HomeFeatureTile(
     action: HomeActionItem,
-    captionHeight: Dp,
-    stacked: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
     val dark = scheme.surface.luminance() < 0.5f
-    val actionTint = when (action.iconRes) {
-        R.drawable.wp_control_color -> if (dark) Color(0xFF8DB6FF) else Color(0xFF215CC5)
-        R.drawable.wp_deck_color -> if (dark) Color(0xFFC5A0FF) else Color(0xFF7042BE)
-        R.drawable.wp_clock_color -> if (dark) Color(0xFFA9ABFF) else Color(0xFF4C51AC)
-        R.drawable.wp_camera_color -> if (dark) Color(0xFF73D4C8) else Color(0xFF06746C)
-        R.drawable.wp_send_color -> if (dark) Color(0xFF8DD5A0) else Color(0xFF2B7343)
-        R.drawable.wp_folder_color -> if (dark) Color(0xFFE5C15B) else Color(0xFF8A5D00)
-        R.drawable.wp_clipboard_color -> if (dark) Color(0xFF7ACDE9) else Color(0xFF096B8C)
-        R.drawable.wp_browse_color -> if (dark) Color(0xFFF1B471) else Color(0xFF9B4F0B)
-        R.drawable.wp_mic_color -> if (dark) Color(0xFFF0A0BC) else Color(0xFFA43D67)
-        R.drawable.wp_bell_color -> if (dark) Color(0xFFFFA69C) else Color(0xFFB13F35)
-        else -> scheme.primary
-    }
+    val actionTint = scheme.onSurface
     val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (pressed && action.enabled && !LocalReducedMotion.current) 0.96f else 1f,
-        animationSpec = tween(if (LocalReducedMotion.current) 0 else 150),
+        targetValue = if (pressed && action.enabled && !LocalReducedMotion.current) 0.98f else 1f,
+        animationSpec = tween(if (LocalReducedMotion.current) 0 else 120),
         label = "home_action_press",
     )
     CapabilityReasonTooltip(action.reason, modifier) {
@@ -1809,48 +1802,25 @@ private fun HomeFeatureTile(
                 .graphicsLayer { scaleX = scale; scaleY = scale }
                 .capabilityReason(action.reason),
         ) {
-            val well: @Composable () -> Unit = {
-                Box(
-                    Modifier.size(64.dp).waypairRaisedWell(enabled = action.enabled),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        painterResource(action.iconRes),
-                        contentDescription = null,
-                        modifier = Modifier.size(36.dp),
-                        tint = if (action.enabled) actionTint else scheme.onSurfaceVariant.copy(alpha = 0.42f),
-                    )
-                }
-            }
-            val caption: @Composable (Modifier) -> Unit = { captionModifier ->
-                Box(captionModifier.height(captionHeight), contentAlignment = if (stacked) Alignment.CenterStart else Alignment.TopCenter) {
-                    Text(
-                        action.label,
-                        modifier = Modifier.fillMaxWidth(),
-                        style = MaterialTheme.typography.labelLarge,
-                        textAlign = if (stacked) TextAlign.Start else TextAlign.Center,
-                        color = if (action.enabled) scheme.onSurface else scheme.onSurfaceVariant,
-                    )
-                }
-            }
-            if (stacked) {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    well()
-                    caption(Modifier.weight(1f))
-                }
-            } else {
-                Column(
-                    Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    well()
-                    caption(Modifier.fillMaxWidth())
-                }
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = 76.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(if (action.enabled) scheme.surfaceContainerHigh else scheme.surfaceContainerHigh.copy(alpha = 0.45f))
+                    .padding(horizontal = 12.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Icon(
+                    painterResource(action.iconRes), contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                    tint = if (action.enabled) actionTint else scheme.onSurfaceVariant.copy(alpha = 0.42f),
+                )
+                Text(
+                    action.label,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = if (action.enabled) scheme.onSurface else scheme.onSurfaceVariant,
+                )
             }
         }
     }
@@ -2937,7 +2907,7 @@ private fun TransferRow(
 }
 
 @Composable
-private fun linkText(
+internal fun linkText(
     link: Link,
     displayPath: String,
     usbMedium: String,
@@ -3540,6 +3510,7 @@ private fun PcFilesSheet(
         containerColor = glassModalContainerColor(),
         scrimColor = glassModalScrimColor(),
     ) {
+        val collapse = app.nectarlink.android.ui.theme.LocalLinkSheetDismiss.current
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -3652,10 +3623,11 @@ private fun PcFilesSheet(
                                         style = MaterialTheme.typography.titleSmall,
                                         modifier = Modifier.weight(1f),
                                     )
-                                    Text(
-                                        "›",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    Icon(
+                                        painterResource(R.drawable.wp_chevron),
+                                        contentDescription = null,
+                                        modifier = Modifier.size(20.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
                             }
@@ -3755,10 +3727,11 @@ private fun PcFilesSheet(
                                         }
                                     }
                                     if (isDir) {
-                                        Text(
-                                            "›",
-                                            style = MaterialTheme.typography.titleMedium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        Icon(
+                                            painterResource(R.drawable.wp_chevron),
+                                            contentDescription = null,
+                                            modifier = Modifier.size(20.dp),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
                                     }
                                 }

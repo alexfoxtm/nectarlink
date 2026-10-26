@@ -418,7 +418,7 @@ NativeWindow {
                 window.windowSurface.r,
                 window.windowSurface.g,
                 window.windowSurface.b,
-                Theme.glass ? (Theme.dark ? 0.38 : 0.46) : (Theme.dark ? 0.76 : 0.84)
+                Theme.onMac ? 1.0 : (Theme.glass ? (Theme.dark ? 0.38 : 0.46) : (Theme.dark ? 0.76 : 0.84))
             )
             : window.windowSurface
         Behavior on color { ColorAnimation { duration: Theme.fadeNormal } }
@@ -1010,9 +1010,10 @@ NativeWindow {
             id: pages
             anchors.top: topBar.bottom
             anchors.bottom: parent.bottom
+            anchors.bottomMargin: commandDock.visible ? 72 : 0
             width: parent.width
             clip: true
-            topLeftRadius: 12
+            topLeftRadius: 0
             color: Theme.canvasColor
             Behavior on color { ColorAnimation { duration: Theme.fadeNormal } }
             border.width: 0
@@ -1110,6 +1111,65 @@ NativeWindow {
                         Qt.callLater(() => pageEnterAnim.restart())
                     }
                 }
+            }
+        }
+    }
+
+    // Local command dock: only explicit activation opens the existing palette.
+    FocusScope {
+        id: commandDock
+        visible: !window.welcome && window.page === "home"
+        anchors.horizontalCenter: main.horizontalCenter
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: 8
+        width: Math.min(520, main.width - 48)
+        height: 56
+        activeFocusOnTab: visible
+        Accessible.role: Accessible.Button
+        Accessible.name: qsTr("Search commands, contacts and apps")
+        Accessible.onPressAction: AppController.openCommandPalette()
+        Keys.onPressed: (event) => {
+            if (!event.isAutoRepeat && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space)) {
+                AppController.openCommandPalette()
+                event.accepted = true
+            }
+        }
+        MaterialBackdrop {
+            id: dockMaterial
+            anchors.fill: parent
+            sourceItem: pageLoader
+            samplingEnabled: commandDock.visible && !AppController.commandPaletteOpen
+            fallbackColor: dockHover.hovered ? Theme.surfaceContainerHighest : Theme.insetColor
+            topRadius: 28
+            bottomRadius: 28
+            sampleRect: {
+                if (!sourceItem)
+                    return Qt.rect(0, 0, width, height)
+                const p = sourceItem.mapFromItem(commandDock.parent, commandDock.x, commandDock.y)
+                return Qt.rect(p.x, p.y, width, height)
+            }
+        }
+        Rectangle {
+            anchors.fill: parent
+            radius: 28
+            color: "transparent"
+            border.width: Theme.focusVisible(commandDock) ? 2 : 1
+            border.color: Theme.focusVisible(commandDock) ? Theme.primary : Theme.panelBorder
+        }
+        Row {
+            anchors.centerIn: parent
+            spacing: 12
+            Icon { width: 20; height: 20; path: Icons.search; color: Theme.surfaceContentVariant }
+            Txt { text: qsTr("Search Waypair"); role: "body" }
+        }
+        HoverHandler { id: dockHover; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: AppController.openCommandPalette() }
+        DragHandler {
+            target: null
+            xAxis.enabled: false
+            onActiveChanged: {
+                if (!active && translation.y < -24)
+                    AppController.openCommandPalette()
             }
         }
     }
@@ -1372,18 +1432,68 @@ NativeWindow {
             return seqs
         }
         onActivated: {
-            if (AppController.commandPaletteOpen)
+            if (AppController.commandPaletteOpen) {
+                commandPaletteLoader.restoreFocusOnClose = true
                 AppController.closeCommandPalette()
-            else
+            } else {
                 AppController.openCommandPalette()
+            }
         }
     }
 
     Loader {
         id: commandPaletteLoader
+        property Item returnFocusItem: null
+        property bool restoreFocusOnClose: false
         anchors.fill: parent
-        active: AppController.commandPaletteOpen
+        active: false
         source: active ? "qrc:/qt/qml/app/nectarlink/qml/components/CommandPalette.qml" : ""
+        Component.onCompleted: active = AppController.commandPaletteOpen
+        onLoaded: {
+            item.backdropSource = pageLoader
+            item.backdropSamplingEnabled = Qt.binding(() => window.active && window.visible
+                && pageLoader.status === Loader.Ready && window.visibility !== Window.Minimized)
+            item.dismissed.connect(() => { commandPaletteLoader.restoreFocusOnClose = true })
+        }
+        Connections {
+            target: AppController
+            function onCommandPaletteOpenChanged() {
+                if (AppController.commandPaletteOpen) {
+                    const reversingClose = paletteCloseTimer.running
+                    if (!reversingClose)
+                        commandPaletteLoader.returnFocusItem = window.activeFocusItem
+                    commandPaletteLoader.restoreFocusOnClose = false
+                    paletteCloseTimer.stop()
+                    commandPaletteLoader.active = true
+                } else {
+                    paletteCloseTimer.restart()
+                }
+            }
+        }
+        Timer {
+            id: paletteCloseTimer
+            interval: Theme.reduceMotion ? 120 : 220
+            onTriggered: {
+                if (!AppController.commandPaletteOpen) {
+                    commandPaletteLoader.active = false
+                    // Command execution may open another native window. Only an
+                    // explicit dismissal may restore focus, and only while this
+                    // main window still owns application focus.
+                    if (commandPaletteLoader.restoreFocusOnClose && window.active && window.visible
+                            && window.visibility !== Window.Minimized && window.visibility !== Window.Hidden) {
+                        const origin = commandPaletteLoader.returnFocusItem
+                        if (origin && origin.visible && origin.enabled)
+                            origin.forceActiveFocus(Qt.OtherFocusReason)
+                        else if (commandDock.visible)
+                            commandDock.forceActiveFocus(Qt.OtherFocusReason)
+                        else
+                            paletteTopBtn.forceActiveFocus(Qt.OtherFocusReason)
+                    }
+                    commandPaletteLoader.restoreFocusOnClose = false
+                    commandPaletteLoader.returnFocusItem = null
+                }
+            }
+        }
     }
 
     Toast {

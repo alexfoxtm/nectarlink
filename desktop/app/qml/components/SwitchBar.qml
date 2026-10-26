@@ -21,7 +21,10 @@ Rectangle {
         ? 12 + 17 + 10 + Math.max(titleLabel.implicitWidth, caption.length > 0 ? captionLabel.implicitWidth : 0)
           + 8 + barSwitch.implicitWidth + 10
         : 0
-    height: compact ? 40 : 44
+    implicitHeight: Math.max(compact ? 40 : 44,
+                             labelColumn.implicitHeight + 16,
+                             barSwitch.implicitHeight + 16)
+    height: implicitHeight
     radius: Theme.controlRadius
     color: checked ? Theme.secondaryContainer : Theme.insetColor
     border.width: 0
@@ -41,6 +44,7 @@ Rectangle {
             color: bar.ink
         }
         Column {
+            id: labelColumn
             width: parent.width - 27
             anchors.verticalCenter: parent.verticalCenter
             spacing: 1

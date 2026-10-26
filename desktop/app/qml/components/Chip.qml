@@ -11,12 +11,13 @@ Rectangle {
     property bool interactive: false
     signal clicked()
 
-    implicitHeight: 30
+    implicitHeight: interactive ? 40 : 28
     implicitWidth: row.implicitWidth + 24
-    radius: Theme.controlRadius
+    radius: Theme.pill(height)
     color: selected ? Theme.primaryContainer : Theme.insetColor
     Behavior on color { enabled: !Theme.reduceMotion; ColorAnimation { duration: Theme.fadeFast } }
-    border.width: 0
+    border.width: 1
+    border.color: Theme.panelBorder
     scale: chip.interactive && mouse.pressed && !Theme.reduceMotion ? Theme.pressScale : 1.0
     Behavior on scale { enabled: !Theme.reduceMotion; NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
 

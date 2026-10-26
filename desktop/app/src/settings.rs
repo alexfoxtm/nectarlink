@@ -93,7 +93,7 @@ impl RecordingFormat {
     }
 }
 
-pub const DEFAULT_FONT_FAMILY: &str = "Figtree";
+pub const DEFAULT_FONT_FAMILY: &str = "Inter";
 pub const MIN_TEXT_SCALE_PERCENT: i32 = 100;
 pub const MAX_TEXT_SCALE_PERCENT: i32 = 150;
 // Increase the Mac's compact type by default; preserve other platforms' density.

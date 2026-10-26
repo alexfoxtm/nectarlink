@@ -8,7 +8,7 @@ import app.nectarlink
 ShaderEffect {
     id: rim
     property real radius: Theme.radiusLg
-    property real strength: 1.0
+    property real strength: 0.18
     readonly property size itemSize: Qt.size(width, height)
     readonly property color rimColor: Theme.dark ? Qt.rgba(1, 1, 1, 0.50) : Qt.rgba(1, 1, 1, 0.95)
 

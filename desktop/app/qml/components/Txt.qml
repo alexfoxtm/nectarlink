@@ -18,7 +18,7 @@ Text {
     // Pixel size; set this (not font.pixelSize) to resize, so the role's
     // tracking scales with it.
     property real size: Math.round(graphiteLabel ? Theme.labelStyle.size : spec.size)
-    // Set this (not font.weight) to change the weight: Figtree is a variable
+    // Set this (not font.weight) to change the weight: Inter is a variable
     // font, and its weight axis is set to match, so in-between weights such
     // as 650 render exactly instead of snapping to a named style.
     property int weight: graphiteLabel ? Theme.labelStyle.weight : (isDisplay && Theme.graphite ? 400 : spec.weight)
@@ -31,7 +31,7 @@ Text {
     font.family: family
     font.pixelSize: scaledSize
     font.weight: weight
-    font.variableAxes: family === "Figtree" ? { "wght": weight } : {}
+    font.variableAxes: (family === "Figtree" || family === "Inter") ? { "wght": weight } : {}
     font.letterSpacing: (graphiteLabel ? 0 : spec.tracking) * scaledSize
     font.capitalization: Font.MixedCase
     // Token line heights are CSS-style (a multiple of the font size), not

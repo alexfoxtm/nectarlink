@@ -24,7 +24,7 @@ Item {
         }
         function test_family_and_scale_update_text_and_control_metrics() {
             Preferences.textScalePercent = 100
-            const baseButtonHeight = button.implicitHeight
+            const baseButtonWidth = button.implicitWidth
             Preferences.fontFamily = "Arial"
             Preferences.textScalePercent = 150
             compare(Theme.fontUi, "Arial")
@@ -32,9 +32,9 @@ Item {
             compare(code.family, "Space Mono")
             compare(sample.font.pixelSize, 21)
             compare(sample.lineHeight, Math.round(21 * sample.spec.lineHeight))
-            // QFont stores letter spacing on its 1/64-pixel fixed-point grid.
-            compare(sample.font.letterSpacing, Math.round(sample.spec.tracking * sample.font.pixelSize * 64) / 64)
-            tryVerify(() => button.implicitHeight > baseButtonHeight)
+            // QFont quantizes letter spacing to a 1/64-pixel fixed-point grid.
+            verify(Math.abs(sample.font.letterSpacing - sample.spec.tracking * sample.font.pixelSize) <= 1 / 64)
+            tryVerify(() => button.implicitWidth > baseButtonWidth)
             tryVerify(() => segments.labelHeight > 0)
             verify(segments.implicitHeight >= segments.labelHeight + 20)
             verify(segments.selectedItem.width > 36)

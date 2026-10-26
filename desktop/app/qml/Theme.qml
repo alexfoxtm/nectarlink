@@ -69,7 +69,7 @@ QtObject {
     readonly property string artworkUrl: MediaList.activeArt
     readonly property bool isArtworkSeed: Preferences.seed === "artwork"
     readonly property bool artworkAmbientActive: false
-    readonly property bool ambientBlurActive: glass
+    readonly property bool ambientBlurActive: false
     // Material You color schemes from paired phones (`[{ id, key, name, label, hasAccent, scheme }]`).
     readonly property var phoneSeeds: AppController.phoneColors !== ""
         ? JSON.parse(AppController.phoneColors) : []
@@ -114,21 +114,21 @@ QtObject {
     // Semantic colors are deliberately independent from retired style presets,
     // so existing saved Glass/Graphite preferences also receive this redesign.
     readonly property var palette: onMac ? ({
-        primary: dark ? "#FFFFFF" : "#171717",
-        onPrimary: dark ? "#171717" : "#FFFFFF",
-        primaryContainer: dark ? "#353535" : "#EAEAEA",
-        onPrimaryContainer: dark ? "#FFFFFF" : "#171717",
-        secondaryContainer: dark ? "#2B2C2E" : "#EAEAEA",
-        onSecondaryContainer: dark ? "#FFFFFF" : "#171717",
-        surface: dark ? "#19191A" : "#F5F5F5",
+        primary: dark ? "#FFFFFF" : "#1E1E1E",
+        onPrimary: dark ? "#1E1E1E" : "#FFFFFF",
+        primaryContainer: dark ? "#3B3B3B" : "#EBEBEB",
+        onPrimaryContainer: dark ? "#FFFFFF" : "#1E1E1E",
+        secondaryContainer: dark ? "#303030" : "#EBEBEB",
+        onSecondaryContainer: dark ? "#FFFFFF" : "#1E1E1E",
+        surface: dark ? "#0F0F0F" : "#F4F4F4",
         surfaceContainerLow: dark ? "#1E1E1E" : "#FFFFFF",
         surfaceContainer: dark ? "#1E1E1E" : "#FFFFFF",
-        surfaceContainerHigh: dark ? "#2B2C2E" : "#F5F5F5",
-        surfaceContainerHighest: dark ? "#353535" : "#EAEAEA",
-        onSurface: dark ? "#FFFFFF" : "#171717",
-        onSurfaceVariant: dark ? "#C2C2C2" : "#555555",
-        outline: dark ? "#454545" : "#DADADA",
-        outlineVariant: dark ? "#353535" : "#DADADA"
+        surfaceContainerHigh: dark ? "#303030" : "#F4F4F4",
+        surfaceContainerHighest: dark ? "#3B3B3B" : "#EBEBEB",
+        onSurface: dark ? "#FFFFFF" : "#1E1E1E",
+        onSurfaceVariant: dark ? "#B0B0B0" : "#656565",
+        outline: dark ? "#454545" : "#D3D3D3",
+        outlineVariant: dark ? "#3B3B3B" : "#D3D3D3"
     }) : ({
         primary: dark ? "#C28AF0" : "#772AB7",
         onPrimary: dark ? "#261734" : "#FFFFFF",
@@ -153,22 +153,22 @@ QtObject {
     })
 
     // ---- Color roles ----
-    readonly property color primary: onMac ? (dark ? "#FFFFFF" : "#171717") : (dark ? "#C28AF0" : "#772AB7")
-    readonly property color primaryContent: onMac ? (dark ? "#171717" : "#FFFFFF") : (dark ? "#261734" : "#FFFFFF")
-    readonly property color primaryContainer: onMac ? (dark ? "#353535" : "#EAEAEA") : (dark ? "#3B2D49" : "#F1E9F8")
-    readonly property color primaryContainerContent: onMac ? (dark ? "#FFFFFF" : "#171717") : (dark ? "#D8ABF5" : "#772AB7")
-    readonly property color secondaryContainer: onMac ? (dark ? "#2B2C2E" : "#EAEAEA") : (dark ? "#403246" : "#EEE6F8")
-    readonly property color secondaryContainerContent: onMac ? (dark ? "#FFFFFF" : "#171717") : (dark ? "#DECAE9" : "#6A4380")
-    readonly property color surface: onMac ? (dark ? "#19191A" : "#F5F5F5") : (dark ? "#24212A" : "#F7F7FA")
+    readonly property color primary: onMac ? (dark ? "#FFFFFF" : "#1E1E1E") : (dark ? "#C28AF0" : "#772AB7")
+    readonly property color primaryContent: onMac ? (dark ? "#1E1E1E" : "#FFFFFF") : (dark ? "#261734" : "#FFFFFF")
+    readonly property color primaryContainer: onMac ? (dark ? "#3B3B3B" : "#EBEBEB") : (dark ? "#3B2D49" : "#F1E9F8")
+    readonly property color primaryContainerContent: onMac ? (dark ? "#FFFFFF" : "#1E1E1E") : (dark ? "#D8ABF5" : "#772AB7")
+    readonly property color secondaryContainer: onMac ? (dark ? "#303030" : "#EBEBEB") : (dark ? "#403246" : "#EEE6F8")
+    readonly property color secondaryContainerContent: onMac ? (dark ? "#FFFFFF" : "#1E1E1E") : (dark ? "#DECAE9" : "#6A4380")
+    readonly property color surface: onMac ? (dark ? "#0F0F0F" : "#F4F4F4") : (dark ? "#24212A" : "#F7F7FA")
     readonly property color surfaceLow: onMac ? (dark ? "#1E1E1E" : "#FFFFFF") : (dark ? "#28242F" : "#FAF9FC")
     readonly property color surfaceContainerLow: onMac ? (dark ? "#1E1E1E" : "#FFFFFF") : (dark ? "#28242F" : "#FAF9FC")
     readonly property color surfaceContainer: onMac ? (dark ? "#1E1E1E" : "#FFFFFF") : (dark ? "#2E2A35" : "#FFFFFF")
-    readonly property color surfaceContainerHigh: onMac ? (dark ? "#2B2C2E" : "#F5F5F5") : (dark ? "#37313F" : "#F1EDF5")
-    readonly property color surfaceContainerHighest: onMac ? (dark ? "#353535" : "#EAEAEA") : (dark ? "#443B4E" : "#E8E2EE")
-    readonly property color surfaceContent: onMac ? (dark ? "#FFFFFF" : "#171717") : (dark ? "#F5F1F8" : "#25222C")
-    readonly property color surfaceContentVariant: onMac ? (dark ? "#C2C2C2" : "#555555") : (dark ? "#B6AEBF" : "#6A6573")
-    readonly property color outline: onMac ? (dark ? "#454545" : "#DADADA") : (dark ? "#8C8199" : "#99929F")
-    readonly property color outlineVariant: onMac ? (dark ? "#353535" : "#DADADA") : (dark ? "#40394A" : "#E7E4EC")
+    readonly property color surfaceContainerHigh: onMac ? (dark ? "#303030" : "#F4F4F4") : (dark ? "#37313F" : "#F1EDF5")
+    readonly property color surfaceContainerHighest: onMac ? (dark ? "#3B3B3B" : "#EBEBEB") : (dark ? "#443B4E" : "#E8E2EE")
+    readonly property color surfaceContent: onMac ? (dark ? "#FFFFFF" : "#1E1E1E") : (dark ? "#F5F1F8" : "#25222C")
+    readonly property color surfaceContentVariant: onMac ? (dark ? "#B0B0B0" : "#656565") : (dark ? "#B6AEBF" : "#6A6573")
+    readonly property color outline: onMac ? (dark ? "#454545" : "#D3D3D3") : (dark ? "#8C8199" : "#99929F")
+    readonly property color outlineVariant: onMac ? (dark ? "#3B3B3B" : "#D3D3D3") : (dark ? "#40394A" : "#E7E4EC")
     readonly property color success: dark ? "#9BD5B4" : "#2E704D"
     readonly property color warning: dark ? "#F2C477" : "#8D5A0E"
     readonly property color error: dark ? "#FFA6AE" : "#C23D50"
@@ -176,17 +176,13 @@ QtObject {
     readonly property color errorContainer: dark ? "#422732" : "#FCEBF0"
     readonly property color errorContainerContent: dark ? "#FFD8DE" : "#A22B40"
 
-    // Neutral translucent panels reveal the existing QML ambient layer on Mac.
+    // Original neutral surface implementation from the R69 numeric contract.
+    // Keep semantic roles typed: qmlcachegen must not infer colors from a var palette.
     readonly property color canvasColor: surface
-    readonly property color panelColor: glass
-        ? Qt.rgba(surfaceContainer.r, surfaceContainer.g, surfaceContainer.b, dark ? 0.84 : 0.88)
-        : surfaceContainer
-    readonly property color panelBorder: glass
-        ? (dark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.09))
-        : outlineVariant
-    readonly property color insetColor: glass
-        ? (dark ? Qt.rgba(43 / 255, 44 / 255, 46 / 255, 0.84) : Qt.rgba(234 / 255, 234 / 255, 234 / 255, 0.88))
-        : (onMac ? (dark ? "#2B2C2E" : "#EAEAEA") : (dark ? "#28232F" : "#F8F5FB"))
+    readonly property color panelColor: surfaceContainer
+    readonly property color panelBorder: dark ? Qt.rgba(1, 1, 1, 26 / 255) : Qt.rgba(30 / 255, 30 / 255, 30 / 255, 26 / 255)
+    readonly property color insetColor: surfaceContainerHigh
+    readonly property color sheetColor: dark ? "#171717" : "#FFFFFF"
     readonly property color cardColor: panelColor
     readonly property color cardBorder: panelBorder
     readonly property color tileColor: panelColor
@@ -194,10 +190,10 @@ QtObject {
     readonly property color heroWashEnd: onMac ? panelColor : (dark ? "#342A40" : "#F7F0FC")
     readonly property color heroColor: heroWash
     readonly property color heroContent: surfaceContent
-    readonly property color railColor: onMac ? (dark ? "#161616" : "#F1F1F1") : (dark ? "#35104F" : "#4D137C")
+    readonly property color railColor: onMac ? (dark ? "#0F0F0F" : "#F1F1F1") : (dark ? "#35104F" : "#4D137C")
     readonly property color railContent: onMac ? surfaceContent : "#FFFFFF"
     readonly property color railMuted: onMac ? surfaceContentVariant : (dark ? "#D8C7E5" : "#DDCCEC")
-    readonly property color railSelected: onMac ? (dark ? "#353535" : "#DADADA") : Qt.rgba(1, 1, 1, 0.16)
+    readonly property color railSelected: onMac ? (dark ? "#3B3B3B" : "#D3D3D3") : Qt.rgba(1, 1, 1, 0.16)
     readonly property color indicator: primaryContainer
     readonly property color indicatorContent: primaryContainerContent
     readonly property color actionColor: primary
@@ -205,10 +201,10 @@ QtObject {
     readonly property color focusColor: primary
     readonly property color glow: "transparent"
     readonly property color buttonShadow: "transparent"
-    readonly property color scrim: onMac ? Qt.rgba(0, 0, 0, dark ? 0.64 : 0.30) : Qt.rgba(0.04, 0.08, 0.15, dark ? 0.64 : 0.30)
-    readonly property int controlRadius: 6
-    readonly property int cardRadius: 10
-    readonly property int heroRadius: 14
+    readonly property color scrim: onMac ? Qt.rgba(0, 0, 0, 102 / 255) : Qt.rgba(0.04, 0.08, 0.15, dark ? 0.64 : 0.30)
+    readonly property int controlRadius: 28
+    readonly property int cardRadius: 16
+    readonly property int heroRadius: 20
     readonly property int spacingXs: 4
     readonly property int spacingSm: 8
     readonly property int spacingMd: 12
@@ -219,20 +215,20 @@ QtObject {
     readonly property int compactRailWidth: 72
 
     // ---- Shape ----
-    readonly property var shape: ({ xs: 4, sm: 6, md: 8, lg: 10, xl: 14, full: 6 })
+    readonly property var shape: ({ xs: 8, sm: 12, md: 16, lg: 24, xl: 32, full: 999 })
     readonly property int radiusXs: shape.xs
     readonly property int radiusSm: shape.sm
     readonly property int radiusMd: shape.md
     readonly property int radiusLg: shape.lg
     readonly property int radiusXl: shape.xl
-    function pill(height) { return Math.min(controlRadius, height / 2) }
+    function pill(height) { return height / 2 }
 
     // ---- Type ----
     // Bundled with the app (assets/fonts).
-    readonly property string fontUi: Preferences.fontFamily || "Figtree"
+    readonly property string fontUi: Preferences.fontFamily || "Inter"
     readonly property string fontDisplay: fontUi
     readonly property real textScale: Math.max(100, Math.min(150,
-        Preferences.textScalePercent || (onMac ? 115 : 100))) / 100
+        Preferences.textScalePercent || 100)) / 100
     readonly property string fontMono: "Space Mono"
     readonly property var typography: Tokens.data.typography
     readonly property var labelStyle: graphite ? Tokens.data.themes.graphite.label
@@ -266,6 +262,6 @@ QtObject {
     readonly property real dampingSnappy: 0.34
     readonly property int fadeFast: Tokens.data.motion.fade.fast
     readonly property int fadeNormal: Tokens.data.motion.fade.normal
-    readonly property real hoverLift: reduceMotion ? 0 : Tokens.data.motion.hoverLift
+    readonly property real hoverLift: 0
     readonly property real pressScale: reduceMotion ? 1 : 0.96
 }

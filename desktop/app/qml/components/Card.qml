@@ -11,15 +11,11 @@ Rectangle {
 
     radius: Theme.cardRadius
     color: Theme.panelColor
-    border.width: 1
+    border.width: 0
     border.color: Theme.panelBorder
     implicitHeight: inner.childrenRect.height + padding * 2
     Behavior on color { enabled: !Theme.reduceMotion; ColorAnimation { duration: Theme.fadeNormal } }
 
-    GlassRim {
-        radius: cardRoot.radius
-        strength: 0.3
-    }
 
     Item {
         id: inner

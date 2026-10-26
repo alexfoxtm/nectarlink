@@ -48,16 +48,16 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilledTonalButton
+import app.nectarlink.android.ui.theme.LinkFilledTonalButton as FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import app.nectarlink.android.ui.theme.LinkOutlinedButton as OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import app.nectarlink.android.ui.theme.LinkTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -1011,7 +1011,7 @@ fun PcMirrorView(
                 ) {
                     Surface(
                         shape = RoundedCornerShape(24.dp),
-                        color = Color(0xCC14161B),
+                        color = Color(0xCC191919),
                         contentColor = Color.White,
                         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f)),
                     ) {
@@ -1127,7 +1127,7 @@ fun PcMirrorView(
                     .then(
                         if (isFullScreen) {
                             Modifier
-                                .background(Color(0xFF101216))
+                                .background(MaterialTheme.colorScheme.surface)
                                 .padding(horizontal = 12.dp, vertical = 6.dp)
                         } else {
                             Modifier
@@ -1178,7 +1178,7 @@ fun PcMirrorView(
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
                     modifier = Modifier.semantics { contentDescription = backspaceLabel },
                 ) {
-                    Text("⌫")
+                    Icon(painterResource(R.drawable.wp_oneui_keyboard_btn_delete), contentDescription = null, modifier = Modifier.size(20.dp))
                 }
             }
         }

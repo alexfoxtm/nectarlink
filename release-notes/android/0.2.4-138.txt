@@ -1,0 +1,7 @@
+Waypair Link for Android 0.2.4 (138)
+
+- Introduced a Tangem-reference interface with Inter typography, neutral light and dark surfaces, rounded cards and compact pill controls throughout Link.
+- Added a floating Home, search and Settings dock with background glass sampling and a solid fallback.
+- Added a searchable action sheet with local computer selection, nested selection confirmation and revised transitions.
+- Fixed large-text dock labels, bottom content spacing, sheet keyboard resizing and right-to-left navigation.
+- Kept pairing, permissions, connection gates and existing phone and computer actions unchanged.

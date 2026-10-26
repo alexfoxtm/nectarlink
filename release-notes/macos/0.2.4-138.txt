@@ -1,0 +1,7 @@
+Waypair Link for macOS 0.2.4 (138)
+
+- Introduced a Tangem-reference interface with neutral layered surfaces, compact pill controls and Inter typography.
+- Added a floating command dock and background glass sampling with a solid fallback; command search and dismissal keep keyboard focus correctly.
+- Improved font selection with an in-app family list and preserved the 100% to 150% text-size setting.
+- Fixed large-text slider labels, unavailable audio rows and the Home scroll area around the command dock.
+- Retained phone controls at the top, media playback, notifications, live phone status and the generic handset render.

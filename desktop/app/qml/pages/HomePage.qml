@@ -12,6 +12,8 @@ import app.nectarlink
 Item {
     id: page
     property bool active: true
+    // Only the content viewport is eligible for the sibling command dock material.
+    readonly property Item commandBackdropSource: homeScroll
     property int current: AppController.currentDevice
     Connections {
         target: AppController
@@ -504,10 +506,10 @@ Item {
 
         readonly property bool provenCable: home.displayPath === "usb" && home.usbMedium === "physical"
 
-        readonly property int columns: width >= 1040 ? 2 : 1
+        readonly property int columns: width >= (home.onMac ? 760 : 1040) ? 2 : 1
         spacing: 16
         readonly property real sideWidth: columns === 2
-            ? Math.round(Math.min(480, Math.max(320, home.width * 0.34))) : home.width
+            ? Math.round(Math.min(400, Math.max(360, home.width * 0.36))) : home.width
 
         Binding { target: PhoneCall; property: "device"; value: home.deviceId; when: home.visible; restoreMode: Binding.RestoreNone }
 
@@ -576,7 +578,7 @@ Item {
                 border.width: 0
                 Behavior on color { ColorAnimation { duration: Theme.fadeNormal } }
 
-                GlassRim { radius: heroCard.radius }
+                // Opaque hero surface: no ambient mesh or decorative material rim.
 
                 Item {
                     id: topHeroRow
@@ -590,7 +592,7 @@ Item {
                     PhoneModelPortrait {
                         id: phoneArt
                         largeStatus: home.onMac
-                        height: largeStatus ? 252 : implicitHeight
+                        height: largeStatus ? (heroCard.wide ? 252 : 208) : implicitHeight
                         width: largeStatus ? Math.min(180, Math.max(64, Math.round(height * handsetAspect))) : implicitWidth
                         connectionText: home.connectionText
                         onConnectionHelpRequested: AppController.runDoctor()
@@ -617,9 +619,9 @@ Item {
                             width: parent.width
                             text: home.name
                             role: "displaySmall"
-                            size: home.name.length > 28 ? 17 : 19
+                            size: home.name.length > 28 ? 20 : 28
                             fontSizeMode: Text.HorizontalFit
-                            minimumPixelSize: 16
+                            minimumPixelSize: 18
                             color: Theme.heroContent
                             elide: Text.ElideRight
                         }
@@ -771,7 +773,7 @@ Item {
                 id: phoneControls
 
                 objectName: "home-phone-controls"
-                padding: 14
+                padding: 20
                 color: Theme.panelColor
                 border.width: 0
                 visible: home.online && state !== null
@@ -820,7 +822,7 @@ Item {
                     Item {
                         width: parent.width
                         height: 24
-                        visible: !home.onMac
+                        visible: true
                         Txt {
                             anchors.left: parent.left
                             anchors.verticalCenter: parent.verticalCenter
@@ -833,6 +835,7 @@ Item {
                             anchors.verticalCenter: parent.verticalCenter
                             variant: "text"
                             size: "sm"
+                            visible: !home.onMac
                             text: phoneControls.expanded ? qsTr("Less") : qsTr("Sound & display")
                             onClicked: phoneControls.expanded = !phoneControls.expanded
                         }
@@ -884,7 +887,7 @@ Item {
                         }
                         QuickToggleButton {
                             compact: home.onMac
-                            largePill: home.onMac
+                            largePill: home.onMac && Theme.textScale <= 1.25
                             Layout.row: 0
                             Layout.column: home.onMac ? 0 : (phoneControls.hasFlashlight ? 2 : 1)
                             Layout.columnSpan: home.onMac ? 3 : 1
@@ -906,7 +909,7 @@ Item {
                         }
                         QuickToggleButton {
                             compact: home.onMac
-                            largePill: home.onMac
+                            largePill: home.onMac && Theme.textScale <= 1.25
                             Layout.row: 0
                             Layout.column: home.onMac ? 3 : (phoneControls.hasFlashlight ? 3 : 2)
                             Layout.columnSpan: home.onMac ? 3 : 1
@@ -1050,7 +1053,7 @@ Item {
                         Grid {
                             id: soundDisplaySliders
                             width: parent.width
-                            columns: home.onMac && width >= 360 ? 2 : 1
+                            columns: home.onMac && width >= 360 * Theme.textScale ? 2 : 1
                             spacing: 12
                             readonly property real sliderWidth: (width - spacing * (columns - 1)) / columns
 
@@ -3027,7 +3030,7 @@ Item {
         scale: tap.pressed && available ? Theme.pressScale : 1
         Behavior on color { enabled: !Theme.reduceMotion; ColorAnimation { duration: Theme.fadeFast } }
         Behavior on scale { enabled: !Theme.reduceMotion; NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
-        GlassRim { radius: tile.radius; visible: Theme.glass && !tile.active && !Theme.focusVisible(tile) }
+        // Action tiles use opaque charcoal surfaces.
 
         Accessible.role: Accessible.Button
         Accessible.name: title
@@ -3056,7 +3059,7 @@ Item {
             spacing: 8
             Rectangle {
                 width: 32; height: 32
-                radius: 8
+                radius: 20
                 color: tile.primaryAction
                     ? Qt.rgba(tile.ink.r, tile.ink.g, tile.ink.b, 0.16)
                     : Theme.secondaryContainer
@@ -3140,10 +3143,8 @@ Item {
 
         readonly property real controlScale: compact ? Theme.textScale : 1
         readonly property real circleSize: Math.max(44, Math.round(38 * controlScale))
-        readonly property color discColor: active && available ? "#f3f3f4"
-            : (Theme.dark ? "#51545e" : "#d5d7dc")
-        readonly property color discInk: active && available ? "#252730"
-            : (Theme.dark ? "#c7c9d0" : "#5b5e68")
+        readonly property color discColor: active && available ? Theme.actionColor : Theme.insetColor
+        readonly property color discInk: active && available ? Theme.actionContent : Theme.surfaceContentVariant
         implicitWidth: compact ? (largePill ? oneUiLabel.implicitWidth + circleSize + 28
             : Math.max(circleSize, oneUiLabel.implicitWidth)) : 64
         implicitHeight: compact ? (largePill
@@ -3187,7 +3188,7 @@ Item {
             x: qbtn.compact && !qbtn.largePill ? (qbtn.width - width) / 2 : 0
             width: qbtn.compact && !qbtn.largePill ? qbtn.circleSize : qbtn.width
             height: qbtn.compact && !qbtn.largePill ? qbtn.circleSize : qbtn.height
-            radius: qbtn.compact ? height / 2 : Theme.radiusMd
+            radius: qbtn.compact ? height / 2 : Theme.radiusLg
             color: qbtn.fillColor
             border.width: Theme.focusVisible(qbtn) ? 2 : (Theme.graphite || Theme.glass || (qbtn.active && !qbtn.available) ? 1 : 0)
             border.color: Theme.focusVisible(qbtn) ? Theme.primary : (Theme.glass ? Theme.cardBorder : Theme.outlineVariant)
@@ -3318,8 +3319,12 @@ Item {
 
         Item {
             width: parent.width
-            height: 20
+            height: Math.max(20, sliderTitleRow.implicitHeight, sliderValueLabel.implicitHeight)
             Row {
+                id: sliderTitleRow
+                anchors.left: parent.left
+                anchors.right: sliderValueLabel.left
+                anchors.rightMargin: 12
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 6
                 Icon {
@@ -3329,13 +3334,17 @@ Item {
                     color: slider.available ? Theme.surfaceContent : Theme.surfaceContentVariant
                 }
                 Txt {
+                    width: Math.max(0, parent.width - 26)
                     anchors.verticalCenter: parent.verticalCenter
                     role: "bodySmall"
                     muted: !slider.available
                     text: slider.title
+                    wrapMode: Text.WordWrap
+                    elide: Text.ElideNone
                 }
             }
             Txt {
+                id: sliderValueLabel
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 role: "caption"

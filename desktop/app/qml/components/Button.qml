@@ -22,8 +22,8 @@ FocusScope {
         : variant === "tonal" ? Theme.secondaryContainerContent
         : variant === "text" ? Theme.actionColor : Theme.surfaceContent
 
-    implicitHeight: Math.max(small ? 36 : 40, row.implicitHeight + (small ? 12 : 16))
-    implicitWidth: Math.max(36, row.implicitWidth + (variant === "text" ? 20 : (small ? 26 : 36)))
+    implicitHeight: Math.max(small ? 40 : 48, row.implicitHeight + (small ? 12 : 16))
+    implicitWidth: Math.max(36, row.implicitWidth + (variant === "text" ? 24 : (small ? 32 : 40)))
     activeFocusOnTab: true
     opacity: enabled ? 1 : 0.38
 
@@ -41,7 +41,7 @@ FocusScope {
         id: body
         width: parent.width
         height: parent.height
-        radius: Theme.controlRadius
+        radius: Theme.pill(height)
         color: button.background
         Behavior on color { enabled: !Theme.reduceMotion; ColorAnimation { duration: Theme.fadeFast } }
         border.width: button.variant === "outline" ? 1 : 0
@@ -80,7 +80,7 @@ FocusScope {
                 text: button.text
                 role: "label"
                 color: button.foreground
-                size: button.small ? 13 : 14
+                size: button.small ? 14 : 16
                 font.underline: false
                 maximumLineCount: 1
                 elide: Text.ElideRight

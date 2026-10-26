@@ -30,7 +30,7 @@ Rectangle {
     }
     implicitHeight: Math.max(42, labelHeight + 20)
     implicitWidth: row.implicitWidth + 6
-    radius: Theme.controlRadius
+    radius: Theme.pill(height)
     color: Theme.insetColor
     border.width: 1
     border.color: Theme.panelBorder
@@ -45,7 +45,7 @@ Rectangle {
         y: 3
         width: segmented.selectedItem ? segmented.selectedItem.width : 0
         height: segmented.height - 6
-        radius: Math.max(2, Theme.controlRadius - 3)
+        radius: height / 2
         color: Theme.panelColor
         border.width: 1
         border.color: Theme.panelBorder
@@ -93,7 +93,7 @@ Rectangle {
                 }
                 Rectangle {
                     anchors.fill: parent
-                    radius: Math.max(2, Theme.controlRadius - 3)
+                    radius: height / 2
                     color: "transparent"
                     Rectangle {
                         anchors.fill: parent

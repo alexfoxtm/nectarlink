@@ -57,14 +57,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
+import app.nectarlink.android.ui.theme.LinkButton as Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.FilledTonalButton
+import app.nectarlink.android.ui.theme.LinkFilledTonalButton as FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import app.nectarlink.android.ui.theme.LinkOutlinedButton as OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -1408,10 +1408,10 @@ private fun SpecialKeysBar(
         val keys = listOf(
             Triple("escape", stringResource(R.string.remote_key_esc), stringResource(R.string.remote_key_esc_desc)),
             Triple("tab", stringResource(R.string.remote_key_tab), stringResource(R.string.remote_key_tab)),
-            Triple("left", "←", stringResource(R.string.remote_key_left_desc)),
-            Triple("up", "↑", stringResource(R.string.remote_key_up_desc)),
-            Triple("down", "↓", stringResource(R.string.remote_key_down_desc)),
-            Triple("right", "→", stringResource(R.string.remote_key_right_desc)),
+            Triple("left", stringResource(R.string.remote_key_left_desc), stringResource(R.string.remote_key_left_desc)),
+            Triple("up", stringResource(R.string.remote_key_up_desc), stringResource(R.string.remote_key_up_desc)),
+            Triple("down", stringResource(R.string.remote_key_down_desc), stringResource(R.string.remote_key_down_desc)),
+            Triple("right", stringResource(R.string.remote_key_right_desc), stringResource(R.string.remote_key_right_desc)),
         )
         FlowRow(
             modifier = Modifier.fillMaxWidth(),
@@ -1434,10 +1434,21 @@ private fun SpecialKeysBar(
                         .clickable(role = Role.Button) { onKey(key, null) },
                 ) {
                     Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                        Text(
-                            text = label,
-                            style = MaterialTheme.typography.labelMedium,
-                        )
+                        val arrowRes = when (key) {
+                            "left" -> R.drawable.wp_oneui_arrow_left
+                            "up" -> R.drawable.wp_oneui_arrow_up
+                            "down" -> R.drawable.wp_oneui_arrow_down
+                            "right" -> R.drawable.wp_oneui_arrow_right
+                            else -> null
+                        }
+                        if (arrowRes != null) {
+                            Icon(painterResource(arrowRes), contentDescription = null, modifier = Modifier.size(20.dp))
+                        } else {
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                        }
                     }
                 }
             }

@@ -16,20 +16,27 @@ Item {
 
     implicitHeight: stackTrailing
         ? texts.implicitHeight + trailingSlot.childrenRect.height + 34
-        : Math.max(56, texts.implicitHeight + 20, trailingSlot.childrenRect.height + 16)
+        : Math.max(row.description.length > 0 ? 76 : 64, texts.implicitHeight + 24, trailingSlot.childrenRect.height + 24)
 
-    Icon {
-        id: icon
+    Rectangle {
+        id: iconWell
         visible: row.iconPath.length > 0
+        width: 40; height: 40
+        radius: 20
         anchors.left: parent.left
         anchors.verticalCenter: row.stackTrailing ? texts.verticalCenter : parent.verticalCenter
-        path: row.iconPath
-        color: Theme.surfaceContentVariant
+        color: Theme.insetColor
+        Icon {
+            anchors.centerIn: parent
+            width: 20; height: 20
+            path: row.iconPath
+            color: Theme.surfaceContentVariant
+        }
     }
     Column {
         id: texts
-        anchors.left: icon.visible ? icon.right : parent.left
-        anchors.leftMargin: icon.visible ? 14 : 0
+        anchors.left: iconWell.visible ? iconWell.right : parent.left
+        anchors.leftMargin: iconWell.visible ? 12 : 0
         anchors.right: row.stackTrailing ? parent.right : trailingSlot.left
         anchors.rightMargin: row.stackTrailing ? 0 : 16
         y: row.stackTrailing ? 12 : Math.round((row.height - height) / 2)
@@ -37,8 +44,8 @@ Item {
         Txt {
             width: parent.width
             text: row.title
-            role: "title"
-            size: 14
+            role: "body"
+            size: 16
             wrapMode: Text.WordWrap
             elide: Text.ElideNone
         }

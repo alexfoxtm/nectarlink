@@ -63,9 +63,9 @@ object WaypairDesign {
     val spacingLg = 16.dp
     val spacingXl = 24.dp
     val spacingXxl = 32.dp
-    val controlRadius = 12.dp
-    val cardRadius = 16.dp
-    val heroRadius = 24.dp
+    val controlRadius = 24.dp
+    val cardRadius = 24.dp
+    val heroRadius = 32.dp
     val touchTarget = 48.dp
 
     @Composable
@@ -84,7 +84,7 @@ object WaypairDesign {
     @Composable
     fun panelBorder(): Color {
         val scheme = MaterialTheme.colorScheme
-        return scheme.outlineVariant.copy(alpha = if (darkSurface(scheme.surface)) 0.65f else 0.50f)
+        return Color.Transparent
     }
 
     @Composable
@@ -94,11 +94,7 @@ object WaypairDesign {
     fun heroWash(): Color {
         val scheme = MaterialTheme.colorScheme
         val dark = darkSurface(scheme.surface)
-        // A cool wash gives the reference's header a visible edge in both modes,
-        // including neutral Graphite and the black Glass swatch.
-        val referenceTint = if (dark) Color(0xFFA9AEFF) else Color(0xFF767EE3)
-        val accent = lerp(referenceTint, scheme.primary, 0.25f)
-        return lerp(panelColor(), accent, if (dark) 0.18f else 0.14f)
+        return panelColor()
     }
 
     @Composable
@@ -124,24 +120,10 @@ fun WaypairBrand(modifier: Modifier = Modifier) {
 fun Modifier.waypairRaisedWell(enabled: Boolean = true): Modifier {
     val scheme = MaterialTheme.colorScheme
     val dark = scheme.surface.red * 0.299f + scheme.surface.green * 0.587f + scheme.surface.blue * 0.114f < 0.5f
-    val shape = RoundedCornerShape(20.dp)
+    val shape = RoundedCornerShape(16.dp)
     val fill = if (enabled) scheme.surfaceContainerHighest else scheme.surfaceContainer
-    return this.shadow(
-        elevation = if (enabled) 7.dp else 0.dp,
-        shape = shape,
-        clip = false,
-        ambientColor = Color.Black.copy(alpha = if (dark) 0.28f else 0.10f),
-        spotColor = scheme.primary.copy(alpha = if (dark) 0.16f else 0.12f),
-    ).drawWithCache {
-        val radius = 20.dp.toPx()
-        val rim = 1.dp.toPx()
-        val brush = Brush.linearGradient(listOf(lerp(fill, Color.White, if (dark) 0.055f else 0.15f), fill))
-        val edge = if (dark) Color.White.copy(alpha = 0.12f) else Color.White.copy(alpha = 0.72f)
-        onDrawBehind {
-            drawRoundRect(brush, cornerRadius = CornerRadius(radius))
-            drawRoundRect(edge, topLeft = Offset(rim / 2, rim / 2), size = Size((size.width - rim).coerceAtLeast(0f), (size.height - rim).coerceAtLeast(0f)), cornerRadius = CornerRadius(radius), style = Stroke(rim))
-        }
-    }
+    return this.background(fill, shape)
+
 }
 
 val LocalReducedMotion = compositionLocalOf { false }
@@ -292,6 +274,10 @@ private fun Palette.toScheme(dark: Boolean, error: Color): ColorScheme {
         onBackground = onSurface,
         surface = surface,
         onSurface = onSurface,
+        surfaceTint = primary,
+        inverseSurface = onSurface,
+        inverseOnSurface = surface,
+        inversePrimary = onPrimary,
         surfaceVariant = surfaceContainerHigh,
         onSurfaceVariant = onSurfaceVariant,
         surfaceContainerLowest = surface,
@@ -473,26 +459,26 @@ fun NectarlinkTheme(
         "dark" -> true
         else -> isSystemInDarkTheme()
     }
-    // One reference-led visual system; stored legacy skin preferences remain readable.
+    // Neutral Link surfaces match Mac; stored skin, wallpaper and media seeds do not override them.
     val targetScheme = remember(dark) {
         val palette = if (dark) Palette(
-            primary = Color(0xFFB4A8FF), onPrimary = Color(0xFF201D42),
-            primaryContainer = Color(0xFF39375E), onPrimaryContainer = Color(0xFFEEE9FF),
-            secondaryContainer = Color(0xFF242A42), onSecondaryContainer = Color(0xFFE9E9F7),
-            surface = Color(0xFF14172A), surfaceContainerLow = Color(0xFF1D2339),
-            surfaceContainer = Color(0xFF272D47), surfaceContainerHigh = Color(0xFF242A42),
-            surfaceContainerHighest = Color(0xFF1D2339), onSurface = Color(0xFFF1F2FA),
-            onSurfaceVariant = Color(0xFFBBC2DC), outline = Color(0xFF959AB4),
-            outlineVariant = Color(0xFF474D6A),
+            primary = Color.White, onPrimary = Color(0xFF171717),
+            primaryContainer = Color(0xFF303030), onPrimaryContainer = Color.White,
+            secondaryContainer = Color(0xFF303030), onSecondaryContainer = Color.White,
+            surface = Color(0xFF0F0F0F), surfaceContainerLow = Color(0xFF171717),
+            surfaceContainer = Color(0xFF1E1E1E), surfaceContainerHigh = Color(0xFF303030),
+            surfaceContainerHighest = Color(0xFF303030), onSurface = Color.White,
+            onSurfaceVariant = Color(0xFFB0B0B0), outline = Color(0xFF656565),
+            outlineVariant = Color.White.copy(alpha = 26f / 255f),
         ) else Palette(
-            primary = Color(0xFF5B4AC7), onPrimary = Color.White,
-            primaryContainer = Color(0xFFE1DCF6), onPrimaryContainer = Color(0xFF493CA5),
-            secondaryContainer = Color(0xFFE4E4F3), onSecondaryContainer = Color(0xFF35364E),
-            surface = Color(0xFFE9ECF8), surfaceContainerLow = Color(0xFFE7E9F6),
-            surfaceContainer = Color(0xFFF5F6FD), surfaceContainerHigh = Color(0xFFF5F6FD),
-            surfaceContainerHighest = Color(0xFFE8ECF8), onSurface = Color(0xFF24243B),
-            onSurfaceVariant = Color(0xFF59617B), outline = Color(0xFF777E9B),
-            outlineVariant = Color(0xFFD4D8EB),
+            primary = Color(0xFF171717), onPrimary = Color.White,
+            primaryContainer = Color(0xFFEBEBEB), onPrimaryContainer = Color(0xFF171717),
+            secondaryContainer = Color(0xFFEBEBEB), onSecondaryContainer = Color(0xFF171717),
+            surface = Color(0xFFF4F4F4), surfaceContainerLow = Color.White,
+            surfaceContainer = Color.White, surfaceContainerHigh = Color(0xFFF5F5F5),
+            surfaceContainerHighest = Color(0xFFEBEBEB), onSurface = Color(0xFF171717),
+            onSurfaceVariant = Color(0xFF656565), outline = Color(0xFFDADADA),
+            outlineVariant = Color(0xFFDADADA),
         )
         palette.toScheme(dark, if (dark) Tokens.errorDark else Tokens.errorLight)
     }
@@ -517,7 +503,7 @@ fun NectarlinkTheme(
     CompositionLocalProvider(
         LocalAppFonts provides fonts,
         LocalReducedMotion provides reducedMotion,
-        LocalGlassTheme provides false,
+        LocalGlassTheme provides true,
         LocalAmoledTheme provides false,
         LocalHiveTheme provides false,
     ) {
@@ -526,7 +512,7 @@ fun NectarlinkTheme(
             shapes = currentShapes,
             typography = currentTypography,
         ) {
-            androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize()) {
+            androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize().background(targetScheme.surface)) {
                 content()
             }
         }
@@ -542,46 +528,7 @@ fun Modifier.liquidGlassCard(
     baseColor: Color,
     @Suppress("UNUSED_PARAMETER") tintColor: Color = Color.Transparent,
     outlineColor: Color = Color.Transparent,
-): Modifier = this.shadow(
-    elevation = 6.dp,
-    shape = RoundedCornerShape(cornerRadius),
-    clip = false,
-    ambientColor = Color(0xFF111335).copy(alpha = 0.16f),
-    spotColor = Color(0xFF111335).copy(alpha = 0.22f),
-).drawWithCache {
-    val radiusPx = cornerRadius.toPx()
-    val cr = CornerRadius(radiusPx, radiusPx)
-    val strokePx = 1.dp.toPx()
-    val halfStroke = strokePx * 0.5f
-    val topLeftOffset = Offset(halfStroke, halfStroke)
-    val insetSize = Size(
-        (size.width - strokePx).coerceAtLeast(0f),
-        (size.height - strokePx).coerceAtLeast(0f),
-    )
-    val isDarkSurface = (baseColor.red * 0.299f + baseColor.green * 0.587f + baseColor.blue * 0.114f) < 0.5f
-    val uniformRimColor = if (isGlass) {
-        if (outlineColor.alpha > 0f) {
-            outlineColor.copy(alpha = outlineColor.alpha.coerceAtMost(if (isDarkSurface) 0.14f else 0.22f))
-        } else {
-            Color.White.copy(alpha = if (isDarkSurface) 0.10f else 0.22f)
-        }
-    } else {
-        outlineColor
-    }
-    val strokeStyle = Stroke(width = strokePx)
-    onDrawBehind {
-        drawRoundRect(color = baseColor, cornerRadius = cr)
-        if (uniformRimColor.alpha > 0f) {
-            drawRoundRect(
-                color = uniformRimColor,
-                topLeft = topLeftOffset,
-                size = insetSize,
-                cornerRadius = cr,
-                style = strokeStyle,
-            )
-        }
-    }
-}
+): Modifier = this.background(baseColor, RoundedCornerShape(cornerRadius))
 
 /**
  * No-op modifier kept for source compatibility; modal sheets use [glassModalScrimColor]
@@ -591,26 +538,12 @@ fun Modifier.glassModalBlur(@Suppress("UNUSED_PARAMETER") modalOpen: Boolean): M
 
 /** High-legibility adaptive frosted container color for modal sheets and dialogs in Glass mode. */
 @Composable
-fun glassModalContainerColor(): Color {
-    val isGlass = LocalGlassTheme.current
-    val scheme = MaterialTheme.colorScheme
-    if (!isGlass) return scheme.surfaceContainerHigh
-    val luma = scheme.surface.red * 0.299f + scheme.surface.green * 0.587f + scheme.surface.blue * 0.114f
-    val base = if (luma < 0.5f) Color(0xFF141720) else Color(0xFFF7F8FC)
-    val tinted = Color(
-        ColorUtils.blendARGB(
-            android.graphics.Color.argb(255, (base.red * 255).toInt(), (base.green * 255).toInt(), (base.blue * 255).toInt()),
-            android.graphics.Color.argb(255, (scheme.primary.red * 255).toInt(), (scheme.primary.green * 255).toInt(), (scheme.primary.blue * 255).toInt()),
-            if (luma < 0.5f) 0.12f else 0.06f,
-        ),
-    )
-    return tinted.copy(alpha = if (luma < 0.5f) 0.95f else 0.97f)
-}
+fun glassModalContainerColor(): Color = MaterialTheme.colorScheme.surfaceContainerLow
 
 /** Deepened backdrop scrim color when sheets or dialogs open in Glass mode so background text never bleeds through. */
 @Composable
 fun glassModalScrimColor(): Color =
-    if (LocalGlassTheme.current) Color.Black.copy(alpha = 0.62f) else Color.Black.copy(alpha = 0.38f)
+    Color.Black.copy(alpha = 102f / 255f)
 
 /**
  * Lightweight zero-RenderNode interior well for bento strips and inner rows.

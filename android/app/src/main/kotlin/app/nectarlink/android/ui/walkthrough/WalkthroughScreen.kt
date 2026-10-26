@@ -52,15 +52,16 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
+import app.nectarlink.android.ui.theme.LinkButton as Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilledTonalButton
+import app.nectarlink.android.ui.theme.LinkFilledTonalButton as FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Icon
+import app.nectarlink.android.ui.theme.LinkOutlinedButton as OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import app.nectarlink.android.ui.theme.LinkTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -74,12 +75,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -87,9 +89,11 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -464,6 +468,10 @@ private fun HoneycombCellStage(
     )
 
     val hexPath = remember { Path() }
+    val checkPainter = painterResource(R.drawable.wp_check)
+    val phonePainter = painterResource(R.drawable.wp_oneui_device_outline)
+    val monitorPainter = painterResource(R.drawable.wp_monitor)
+    val shieldPainter = painterResource(R.drawable.wp_oneui_security_outline)
 
     Box(
         modifier = modifier
@@ -529,13 +537,7 @@ private fun HoneycombCellStage(
                         center = Offset(cx, cy),
                     )
                 } else if (completed) {
-                    drawCheckGlyph(
-                        path = hexPath,
-                        center = Offset(cx, cy),
-                        size = cellR * 0.45f,
-                        color = primary,
-                        strokeWidth = strokePx,
-                    )
+                    drawOneUiGlyph(checkPainter, Offset(cx, cy), cellR * 0.45f, primary)
                 }
             }
 
@@ -577,14 +579,14 @@ private fun HoneycombCellStage(
                     )
 
                     drawHexCell(hexPath, leftCenter, sideR, primaryContainer, primary, strokePx)
-                    drawPhoneGlyph(leftCenter, sideR * 0.48f, onPrimaryContainer, strokePx)
+                    drawOneUiGlyph(phonePainter, leftCenter, sideR * 0.48f, onPrimaryContainer)
 
                     drawHexCell(hexPath, midCenter, linkR, primaryContainer, primary, strokePx)
                     drawHexRing(hexPath, midCenter, linkR + 3.dp.toPx(), primary.copy(alpha = 0.5f), accentStrokePx)
                     drawCircle(color = primary, radius = 3.dp.toPx(), center = midCenter)
 
                     drawHexCell(hexPath, rightCenter, sideR, primaryContainer, primary, strokePx)
-                    drawMonitorGlyph(rightCenter, sideR * 0.52f, onPrimaryContainer, strokePx)
+                    drawOneUiGlyph(monitorPainter, rightCenter, sideR * 0.52f, onPrimaryContainer)
                 }
 
                 WalkthroughStep.Permissions -> {
@@ -629,13 +631,7 @@ private fun HoneycombCellStage(
                         strokeColor = primary,
                         strokeWidth = strokePx,
                     )
-                    drawShieldGlyph(
-                        path = hexPath,
-                        center = Offset(motifCx, motifCy),
-                        size = centerR * 0.52f,
-                        color = primary,
-                        strokeWidth = strokePx,
-                    )
+                    drawOneUiGlyph(shieldPainter, Offset(motifCx, motifCy), centerR * 0.52f, primary)
                 }
 
                 WalkthroughStep.Pair -> {
@@ -660,7 +656,7 @@ private fun HoneycombCellStage(
                         strokeColor = primary,
                         strokeWidth = strokePx,
                     )
-                    drawPhoneGlyph(leftCenter, hexR * 0.45f, onPrimaryContainer, strokePx)
+                    drawOneUiGlyph(phonePainter, leftCenter, hexR * 0.45f, onPrimaryContainer)
 
                     drawHexCell(
                         path = hexPath,
@@ -670,7 +666,7 @@ private fun HoneycombCellStage(
                         strokeColor = if (hasPairedPc) primary else outlineVariant,
                         strokeWidth = strokePx,
                     )
-                    drawMonitorGlyph(rightCenter, hexR * 0.48f, onPrimaryContainer, strokePx)
+                    drawOneUiGlyph(monitorPainter, rightCenter, hexR * 0.48f, onPrimaryContainer)
 
                     if (hasPairedPc) {
                         val bondR = 11.dp.toPx()
@@ -682,13 +678,7 @@ private fun HoneycombCellStage(
                             strokeColor = primary,
                             strokeWidth = strokePx,
                         )
-                        drawCheckGlyph(
-                            path = hexPath,
-                            center = Offset(motifCx, motifCy),
-                            size = bondR * 0.45f,
-                            color = primary,
-                            strokeWidth = strokePx,
-                        )
+                        drawOneUiGlyph(checkPainter, Offset(motifCx, motifCy), bondR * 0.45f, primary)
                     }
                 }
 
@@ -768,13 +758,7 @@ private fun HoneycombCellStage(
                         strokeColor = primary.copy(alpha = 0.6f),
                         strokeWidth = accentStrokePx,
                     )
-                    drawCheckGlyph(
-                        path = hexPath,
-                        center = Offset(motifCx, motifCy),
-                        size = centerR * 0.48f,
-                        color = primary,
-                        strokeWidth = strokePx * 1.2f,
-                    )
+                    drawOneUiGlyph(checkPainter, Offset(motifCx, motifCy), centerR * 0.48f, primary)
                 }
             }
         }
@@ -828,93 +812,17 @@ private fun DrawScope.drawHexRing(
     )
 }
 
-private fun DrawScope.drawCheckGlyph(
-    path: Path,
+private fun DrawScope.drawOneUiGlyph(
+    painter: Painter,
     center: Offset,
-    size: Float,
+    halfSize: Float,
     color: Color,
-    strokeWidth: Float,
 ) {
-    path.reset()
-    path.moveTo(center.x - size * 0.75f, center.y + size * 0.05f)
-    path.lineTo(center.x - size * 0.15f, center.y + size * 0.65f)
-    path.lineTo(center.x + size * 0.85f, center.y - size * 0.55f)
-    drawPath(
-        path = path,
-        color = color,
-        style = Stroke(width = strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round),
-    )
-}
-
-private fun DrawScope.drawPhoneGlyph(
-    center: Offset,
-    halfH: Float,
-    color: Color,
-    strokeWidth: Float,
-) {
-    val halfW = halfH * 0.62f
-    drawRoundRect(
-        color = color,
-        topLeft = Offset(center.x - halfW, center.y - halfH),
-        size = Size(halfW * 2f, halfH * 2f),
-        cornerRadius = CornerRadius(strokeWidth * 1.5f, strokeWidth * 1.5f),
-        style = Stroke(width = strokeWidth),
-    )
-}
-
-private fun DrawScope.drawMonitorGlyph(
-    center: Offset,
-    halfW: Float,
-    color: Color,
-    strokeWidth: Float,
-) {
-    val halfH = halfW * 0.68f
-    val top = center.y - halfH
-    val bottom = center.y + halfH * 0.65f
-    drawRoundRect(
-        color = color,
-        topLeft = Offset(center.x - halfW, top),
-        size = Size(halfW * 2f, bottom - top),
-        cornerRadius = CornerRadius(strokeWidth * 1.2f, strokeWidth * 1.2f),
-        style = Stroke(width = strokeWidth),
-    )
-    val baseY = center.y + halfH
-    drawLine(
-        color = color,
-        start = Offset(center.x, bottom),
-        end = Offset(center.x, baseY),
-        strokeWidth = strokeWidth,
-        cap = StrokeCap.Round,
-    )
-    drawLine(
-        color = color,
-        start = Offset(center.x - halfW * 0.45f, baseY),
-        end = Offset(center.x + halfW * 0.45f, baseY),
-        strokeWidth = strokeWidth,
-        cap = StrokeCap.Round,
-    )
-}
-
-private fun DrawScope.drawShieldGlyph(
-    path: Path,
-    center: Offset,
-    size: Float,
-    color: Color,
-    strokeWidth: Float,
-) {
-    path.reset()
-    path.moveTo(center.x, center.y - size)
-    path.lineTo(center.x + size * 0.78f, center.y - size * 0.55f)
-    path.lineTo(center.x + size * 0.65f, center.y + size * 0.25f)
-    path.lineTo(center.x, center.y + size)
-    path.lineTo(center.x - size * 0.65f, center.y + size * 0.25f)
-    path.lineTo(center.x - size * 0.78f, center.y - size * 0.55f)
-    path.close()
-    drawPath(
-        path = path,
-        color = color,
-        style = Stroke(width = strokeWidth, join = StrokeJoin.Round),
-    )
+    translate(center.x - halfSize, center.y - halfSize) {
+        with(painter) {
+            draw(size = Size(halfSize * 2f, halfSize * 2f), colorFilter = ColorFilter.tint(color))
+        }
+    }
 }
 
 @Composable
@@ -1228,16 +1136,12 @@ private fun PermissionsStepContent(
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             if (spec.granted) {
-                                val checkPath = remember { Path() }
-                                Canvas(modifier = Modifier.size(14.dp)) {
-                                    drawCheckGlyph(
-                                        path = checkPath,
-                                        center = Offset(size.width * 0.5f, size.height * 0.5f),
-                                        size = size.minDimension * 0.42f,
-                                        color = contentColor,
-                                        strokeWidth = 2.dp.toPx(),
-                                    )
-                                }
+                                Icon(
+                                    painterResource(R.drawable.wp_check),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp),
+                                    tint = contentColor,
+                                )
                             } else {
                                 Text(
                                     text = stringResource(R.string.walkthrough_perm_pill_number, idx + 1),

@@ -40,7 +40,7 @@ FocusScope {
         y: item.compactMac ? 0 : 2
         width: item.expanded ? item.width : (item.compactMac ? 54 : 52)
         height: item.expanded ? 36 : (item.compactMac ? 52 : 30)
-        radius: Theme.controlRadius
+        radius: item.expanded ? Theme.controlRadius : 26
         color: "transparent"
         scale: mouse.pressed ? Theme.pressScale : 1.0
         Behavior on scale { enabled: !Theme.reduceMotion; NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
@@ -89,7 +89,7 @@ FocusScope {
         }
     }
     Rectangle {
-        visible: item.compactMac && item.selected
+        visible: false // The selected circular surface already identifies the current page.
         x: 0
         y: 17
         width: 3; height: 20
