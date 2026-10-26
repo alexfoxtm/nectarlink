@@ -1,0 +1,6 @@
+Waypair Link for Android — 0.2.4 (140)
+
+- Separated semibold Settings titles from lighter full-width descriptions.
+- Made category chips, action buttons and switch drawings more compact while keeping comfortable touch targets.
+- Gave app-service status a distinct badge and shortened dense explanations without changing approval, Stop or file/microphone access rules.
+- Retained colorful icons, neutral surfaces and the floating Settings sheet.

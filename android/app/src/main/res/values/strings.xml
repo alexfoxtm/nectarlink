@@ -85,8 +85,8 @@
     <string name="input_service_label">Waypair Link: control from your PC</string>
     <string name="input_service_description">Lets your PC\'s mouse and keyboard tap, swipe and type on this phone while you share its screen with a paired PC. It reads nothing else.</string>
     <string name="settings_control">Control from your PC</string>
-    <string name="control_title">Use your PC\'s mouse and keyboard</string>
-    <string name="control_on">On: while your screen is shown on your PC, you can tap, swipe and type from there.</string>
+    <string name="control_title">Mouse and keyboard</string>
+    <string name="control_on">On. Use your computer’s mouse and keyboard while sharing the screen.</string>
     <string name="control_off">Tap, swipe and type from your PC while it shows this screen. Turn on Waypair Link in Accessibility.</string>
     <string name="dnd_access_title">Do Not Disturb and silent mode</string>
     <string name="dnd_access_on">On: your PC can turn Do Not Disturb on or off and set the ringer to silent.</string>
@@ -409,8 +409,8 @@
     <string name="mic_request_text">Tap to start. It stays on until you or the PC stop it.</string>
     <string name="mic_request_start">Start</string>
     <string name="mic_request_card_text">It stays on until you or the PC stop it.</string>
-    <string name="mic_pc_toggle">Use this phone as a microphone</string>
-    <string name="mic_pc_toggle_hint">On by default. This PC can ask for the microphone. It only turns on when you tap Start.</string>
+    <string name="mic_pc_toggle">Phone microphone</string>
+    <string name="mic_pc_toggle_hint">Requests are allowed by default. Audio starts only when you tap Start.</string>
     <string name="mirroring_pc_toggle">Full screen sharing</string>
     <string name="mirroring_pc_toggle_hint">Allow this computer to view this phone’s full screen. Apps windows and phone control are separate settings.</string>
     <string name="recorder_notification_recording">Recording for %1$s</string>
@@ -479,7 +479,7 @@
     <string name="storage_saf_hint">Share only the folders you pick.</string>
     <string name="storage_add_folder">Add folder</string>
     <string name="storage_remove_folder">Remove</string>
-    <string name="storage_pc_toggle">Browse this phone’s storage in File Explorer</string>
+    <string name="storage_pc_toggle">Browse phone files</string>
     <string name="storage_pc_toggle_hint">Off by default. Lets this PC list, open, upload, rename and delete your shared files.</string>
     <string name="storage_request_title">%1$s wants to browse this phone’s storage</string>
     <string name="storage_request_text">Allow %1$s to browse your shared storage (or selected folders) in File Explorer?</string>
@@ -1096,12 +1096,12 @@
     <!-- 10. Storage in File Explorer -->
     <string name="guide_storage_title">Storage in File Explorer</string>
     <string name="guide_storage_summary">Browse this phone\'s shared storage or selected folders in Windows File Explorer.</string>
-    <string name="guide_storage_where">Settings › Permissions › Photos and videos (and Settings › Devices)</string>
+    <string name="guide_storage_where">Settings › Permissions › Photos and videos (and Settings › Computers)</string>
     <string name="guide_storage_needs">All files access (or selected folders) and per-PC storage toggle</string>
     <string name="guide_storage_need_1">All files access or selected folders in Settings › Permissions › Photos and videos.</string>
-    <string name="guide_storage_need_2">Browse this phone\'s storage in File Explorer enabled for the PC in Settings › Devices.</string>
+    <string name="guide_storage_need_2">Browse phone files enabled for the computer in Settings › Computers.</string>
     <string name="guide_storage_phone_1">Grant All files access or pick folders in Settings › Permissions › Photos and videos.</string>
-    <string name="guide_storage_phone_2">Turn on the storage switch for your PC in Settings › Devices.</string>
+    <string name="guide_storage_phone_2">Turn on Browse phone files for your computer in Settings › Computers.</string>
     <string name="guide_storage_pc_1">Open your phone storage from Waypair Link or Windows File Explorer on your PC.</string>
     <string name="guide_storage_opt_1">All files access / Selected folders only: Share full storage or only picked SAF folders.</string>
     <string name="guide_storage_privacy">Storage browsing is off by default for every PC until you turn it on.</string>
@@ -1235,10 +1235,10 @@
     <!-- 21. Assist -->
     <string name="guide_assist_title">Assist</string>
     <string name="guide_assist_summary">Let your PC mouse and keyboard tap, swipe, and type on this phone using the Accessibility service.</string>
-    <string name="guide_assist_where">Settings › Permissions › Control from your PC › Use your PC\'s mouse and keyboard</string>
+    <string name="guide_assist_where">Settings › Apps &amp; screen › Mouse and keyboard</string>
     <string name="guide_assist_needs">Accessibility service enabled</string>
     <string name="guide_assist_need_1">Waypair Link Accessibility service enabled in Android Settings.</string>
-    <string name="guide_assist_phone_1">Open Settings › Permissions › Control from your PC and tap Allow under Use your PC\'s mouse and keyboard.</string>
+    <string name="guide_assist_phone_1">Open Settings › Apps &amp; screen and tap Allow under Mouse and keyboard.</string>
     <string name="guide_assist_pc_1">Click, drag, scroll, and type inside the phone mirror window on your PC.</string>
     <string name="guide_assist_opt_1">Stop typing: Ends remote PC keyboard typing from the Home banner.</string>
     <string name="guide_assist_privacy">Injects gestures and text from your paired PC; reads no screen content or passwords.</string>
@@ -1452,7 +1452,7 @@
     <string name="settings_apps_saved_off">Apps permission is off for this computer.</string>
     <string name="settings_apps_service">Apps service &amp; phone control</string>
     <string name="settings_apps_service_status">App windows service</string>
-    <string name="settings_apps_service_hint">Apps needs this phone service. Its status does not confirm permission for a computer or undo Stop. Full screen sharing stays separate. Accessibility below is an alternative for screen control, not Apps windows.</string>
+    <string name="settings_apps_service_hint">App windows need this service and approval for each computer. Stop stays in effect. Accessibility controls the screen, not app windows.</string>
     <string name="settings_apps_service_not_set_up">Not set up</string>
     <string name="settings_apps_service_waiting">Waiting for Wireless debugging</string>
     <string name="settings_apps_service_starting">Starting…</string>

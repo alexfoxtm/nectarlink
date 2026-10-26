@@ -38,16 +38,16 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.material3.AlertDialog
-import app.nectarlink.android.ui.theme.LinkButton as Button
-import app.nectarlink.android.ui.theme.LinkFilledTonalButton as FilledTonalButton
+import app.nectarlink.android.ui.settings.SettingsButton as Button
+import app.nectarlink.android.ui.settings.SettingsFilledTonalButton as FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import app.nectarlink.android.ui.theme.LinkOutlinedButton as OutlinedButton
+import app.nectarlink.android.ui.settings.SettingsOutlinedButton as OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
+import app.nectarlink.android.ui.settings.SettingsSwitch as Switch
 import androidx.compose.material3.Text
-import app.nectarlink.android.ui.theme.LinkTextButton as TextButton
+import app.nectarlink.android.ui.settings.SettingsTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.rememberCoroutineScope
@@ -293,7 +293,7 @@ fun SettingsScreen(
                     categories.forEach { (id, label) ->
                         val selected = activeCategory == id
                         val shape = RoundedCornerShape(24.dp)
-                        Surface(
+                        Box(
                             modifier = Modifier
                                 .heightIn(min = 48.dp)
                                 .clip(shape)
@@ -302,15 +302,19 @@ fun SettingsScreen(
                                     role = Role.Tab,
                                     onClick = { focusedAppsPcId = null; activeCategory = id },
                                 ),
-                            shape = shape,
-                            color = if (selected) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainer,
-                            contentColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            contentAlignment = Alignment.Center,
                         ) {
-                            Text(
-                                stringResource(label),
-                                style = MaterialTheme.typography.labelLarge,
-                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
-                            )
+                            Surface(
+                                shape = shape,
+                                color = if (selected) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainer,
+                                contentColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            ) {
+                                Text(
+                                    stringResource(label),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                )
+                            }
                         }
                     }
                 }
@@ -336,9 +340,9 @@ fun SettingsScreen(
                         if (index > 0) {
                             SettingRowDivider()
                         }
-                        Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
-                                Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                                Column(Modifier.weight(1f).padding(end = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                     Text(device.name, style = MaterialTheme.typography.titleSmall)
                                     val dotColor = if (device.online) linkSuccessColor(MaterialTheme.colorScheme.onSurface) else MaterialTheme.colorScheme.outline
                                     Row(
@@ -359,16 +363,12 @@ fun SettingsScreen(
                                 }
                                 OutlinedButton(onClick = { confirmUnpair = device }) { Text(stringResource(R.string.action_unpair)) }
                             }
+                            SettingRowDivider()
                             val storageToggleTitle = stringResource(R.string.storage_pc_toggle)
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
-                                Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                                    Text(storageToggleTitle, style = MaterialTheme.typography.bodyLarge)
-                                    Text(
-                                        stringResource(R.string.storage_pc_toggle_hint),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
+                            SettingsControlRow(
+                                title = storageToggleTitle,
+                                supportingText = stringResource(R.string.storage_pc_toggle_hint),
+                            ) {
                                 Switch(
                                     checked = device.storageEnabled,
                                     onCheckedChange = { enabled ->
@@ -382,16 +382,12 @@ fun SettingsScreen(
                                 )
                             }
                             if (!device.isAndroid) {
+                                SettingRowDivider()
                                 val micToggleTitle = stringResource(R.string.mic_pc_toggle)
-                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
-                                    Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                                        Text(micToggleTitle, style = MaterialTheme.typography.bodyLarge)
-                                        Text(
-                                            stringResource(R.string.mic_pc_toggle_hint),
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
+                                SettingsControlRow(
+                                    title = micToggleTitle,
+                                    supportingText = stringResource(R.string.mic_pc_toggle_hint),
+                                ) {
                                     Switch(
                                         checked = device.micEnabled,
                                         onCheckedChange = { enabled -> onSetMicEnabled(device.id, enabled) },
@@ -463,16 +459,12 @@ fun SettingsScreen(
                                 }
                             }
                         }
+                        SettingRowDivider()
                         val mirroringToggleTitle = stringResource(R.string.mirroring_pc_toggle)
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
-                            Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                                Text(mirroringToggleTitle, style = MaterialTheme.typography.bodyLarge)
-                                Text(
-                                    stringResource(R.string.mirroring_pc_toggle_hint),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
+                        SettingsControlRow(
+                            title = mirroringToggleTitle,
+                            supportingText = stringResource(R.string.mirroring_pc_toggle_hint),
+                        ) {
                             Switch(
                                 checked = device.mirroringEnabled,
                                 onCheckedChange = { enabled -> onSetMirroringEnabled(device.id, enabled) },
@@ -481,16 +473,12 @@ fun SettingsScreen(
                             )
                         }
                         if (device.kind == app.nectarlink.core.DeviceKind.DESKTOP || device.kind == app.nectarlink.core.DeviceKind.LAPTOP) {
+                            SettingRowDivider()
                             val controlToggleTitle = stringResource(R.string.phone_control_pc_toggle)
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
-                                Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                                    Text(controlToggleTitle, style = MaterialTheme.typography.bodyLarge)
-                                    Text(
-                                        stringResource(R.string.phone_control_pc_toggle_hint),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
+                            SettingsControlRow(
+                                title = controlToggleTitle,
+                                supportingText = stringResource(R.string.phone_control_pc_toggle_hint),
+                            ) {
                                 Switch(
                                     checked = device.phoneControlEnabled,
                                     enabled = state.status is app.nectarlink.android.core.CoreStatus.Ready,
@@ -501,16 +489,12 @@ fun SettingsScreen(
                             }
                         }
                         if (device.kind == app.nectarlink.core.DeviceKind.DESKTOP || device.kind == app.nectarlink.core.DeviceKind.LAPTOP) {
+                            SettingRowDivider()
                             val wayModeToggleTitle = stringResource(R.string.way_mode_toggle)
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
-                                Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                                    Text(wayModeToggleTitle, style = MaterialTheme.typography.bodyLarge)
-                                    Text(
-                                        stringResource(R.string.way_mode_toggle_hint),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
+                            SettingsControlRow(
+                                title = wayModeToggleTitle,
+                                supportingText = stringResource(R.string.way_mode_toggle_hint),
+                            ) {
                                 Switch(
                                     checked = device.wayModeEnabled,
                                     enabled = state.status is app.nectarlink.android.core.CoreStatus.Ready,
@@ -527,7 +511,7 @@ fun SettingsScreen(
                                     device.online && device.mirroringEnabled && state.elevated &&
                                     Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                                    Text(stringResource(R.string.settings_window_access_title), style = MaterialTheme.typography.bodyLarge)
+                                    Text(stringResource(R.string.settings_window_access_title), style = MaterialTheme.typography.titleSmall)
                                     Text(
                                         stringResource(R.string.settings_window_access_hint),
                                         style = MaterialTheme.typography.bodyMedium,
@@ -596,7 +580,7 @@ fun SettingsScreen(
             item(key = "remote", contentType = "section") {
                 Section(stringResource(R.string.settings_remote), iconRes = R.drawable.wp_control_color) {
                     val sensitivityTitle = stringResource(R.string.settings_touchpad_sensitivity)
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                         Text(
                             sensitivityTitle,
                             style = MaterialTheme.typography.titleSmall,
@@ -702,15 +686,10 @@ fun SettingsScreen(
             item(key = "connection", contentType = "section") {
                 Section(stringResource(R.string.settings_connection), iconRes = R.drawable.wp_wifi) {
                     val mobileDataTitle = stringResource(R.string.guide_away_title)
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
-                        Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                            Text(mobileDataTitle, style = MaterialTheme.typography.titleSmall)
-                            Text(
-                                stringResource(R.string.settings_mobile_data_body),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                    SettingsControlRow(
+                        title = mobileDataTitle,
+                        supportingText = stringResource(R.string.settings_mobile_data_body),
+                    ) {
                         Switch(
                             checked = state.awayMode,
                             onCheckedChange = onToggleAwayMode,
@@ -728,15 +707,10 @@ fun SettingsScreen(
                     highlighted = pulsingSectionKey == "background",
                 ) {
                     val runInBackgroundTitle = stringResource(R.string.settings_run_in_background)
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
-                        Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                            Text(runInBackgroundTitle, style = MaterialTheme.typography.titleSmall)
-                            Text(
-                                stringResource(R.string.settings_run_in_background_hint),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                    SettingsControlRow(
+                        title = runInBackgroundTitle,
+                        supportingText = stringResource(R.string.settings_run_in_background_hint),
+                    ) {
                         Switch(
                             checked = backgroundServiceEnabled,
                             onCheckedChange = onToggleBackgroundService,
@@ -786,15 +760,10 @@ fun SettingsScreen(
                     highlighted = pulsingSectionKey == "localsend",
                 ) {
                     val localsendTitle = stringResource(R.string.settings_localsend_title)
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
-                        Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                            Text(localsendTitle, style = MaterialTheme.typography.titleSmall)
-                            Text(
-                                stringResource(R.string.settings_localsend_subtitle),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                    SettingsControlRow(
+                        title = localsendTitle,
+                        supportingText = stringResource(R.string.settings_localsend_subtitle),
+                    ) {
                         Switch(
                             checked = state.localsendEnabled,
                             onCheckedChange = onToggleLocalSend,
@@ -889,15 +858,10 @@ fun SettingsScreen(
                     }
                     SettingRowDivider()
                     val suggestionsTitle = stringResource(R.string.settings_clipboard_suggestions)
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
-                        Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                            Text(suggestionsTitle, style = MaterialTheme.typography.titleSmall)
-                            Text(
-                                stringResource(R.string.settings_clipboard_suggestions_hint),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                    SettingsControlRow(
+                        title = suggestionsTitle,
+                        supportingText = stringResource(R.string.settings_clipboard_suggestions_hint),
+                    ) {
                         Switch(
                             checked = suggestClipboardActions,
                             onCheckedChange = onSetSuggestClipboardActions,
@@ -907,15 +871,10 @@ fun SettingsScreen(
                     }
                     SettingRowDivider()
                     val copiedLinksTitle = stringResource(R.string.settings_copied_link_offers)
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
-                        Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                            Text(copiedLinksTitle, style = MaterialTheme.typography.titleSmall)
-                            Text(
-                                stringResource(R.string.settings_copied_link_offers_hint),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                    SettingsControlRow(
+                        title = copiedLinksTitle,
+                        supportingText = stringResource(R.string.settings_copied_link_offers_hint),
+                    ) {
                         Switch(
                             checked = copiedLinkOffers,
                             onCheckedChange = onSetCopiedLinkOffers,
@@ -945,8 +904,8 @@ fun SettingsScreen(
 
                     // 2. Clipboard history
                     val clipboardHistoryTitle = stringResource(R.string.data_clipboard_title)
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
-                        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                        Column(Modifier.weight(1f).padding(end = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(clipboardHistoryTitle, style = MaterialTheme.typography.titleSmall)
                             Text(
                                 stringResource(R.string.data_clipboard_subtitle),
@@ -1004,8 +963,8 @@ fun SettingsScreen(
                     SettingRowDivider()
 
                     // 4. Message cache
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
-                        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                        Column(Modifier.weight(1f).padding(end = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(stringResource(R.string.data_messages_title), style = MaterialTheme.typography.titleSmall)
                             Text(
                                 stringResource(R.string.data_messages_subtitle),
@@ -1022,15 +981,10 @@ fun SettingsScreen(
                     SettingRowDivider()
 
                     // 5. Photo thumbnails & camera cache
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
-                        Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                            Text(stringResource(R.string.data_photos_title), style = MaterialTheme.typography.titleSmall)
-                            Text(
-                                stringResource(R.string.data_photos_subtitle),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                    SettingsControlRow(
+                        title = stringResource(R.string.data_photos_title),
+                        supportingText = stringResource(R.string.data_photos_subtitle),
+                    ) {
                         if (state.cachedPhotoFiles > 0) {
                             OutlinedButton(onClick = onClearPhotoCache) {
                                 Text(stringResource(R.string.data_action_clear))
@@ -1040,15 +994,10 @@ fun SettingsScreen(
                     SettingRowDivider()
 
                     // 6. Received-file history
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
-                        Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                            Text(stringResource(R.string.data_received_files_title), style = MaterialTheme.typography.titleSmall)
-                            Text(
-                                stringResource(R.string.data_received_files_subtitle),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                    SettingsControlRow(
+                        title = stringResource(R.string.data_received_files_title),
+                        supportingText = stringResource(R.string.data_received_files_subtitle),
+                    ) {
                         if (state.receivedFileRecords > 0 || state.transfers.isNotEmpty()) {
                             OutlinedButton(onClick = onClearReceivedFileHistory) {
                                 Text(stringResource(R.string.data_action_clear))
@@ -1077,15 +1026,10 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     SettingRowDivider()
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
-                        Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                            Text(stringResource(R.string.waypair_extras_filters_title), style = MaterialTheme.typography.titleSmall)
-                            Text(
-                                stringResource(R.string.waypair_extras_filters_body),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                    SettingsControlRow(
+                        title = stringResource(R.string.waypair_extras_filters_title),
+                        supportingText = stringResource(R.string.waypair_extras_filters_body),
+                    ) {
                         OutlinedButton(onClick = { notificationFilterOpen = true }) {
                             Text(stringResource(R.string.clip_action_open))
                         }
@@ -1113,43 +1057,28 @@ fun SettingsScreen(
 
             item(key = "about", contentType = "section") {
                 Section(stringResource(R.string.settings_about), iconRes = R.drawable.wp_settings) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
-                        Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                            Text(stringResource(R.string.guide_title), style = MaterialTheme.typography.titleSmall)
-                            Text(
-                                stringResource(R.string.settings_guide_card_body),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                    SettingsControlRow(
+                        title = stringResource(R.string.guide_title),
+                        supportingText = stringResource(R.string.settings_guide_card_body),
+                    ) {
                         FilledTonalButton(onClick = onOpenFeaturesGuide) {
                             Text(stringResource(R.string.clip_action_open))
                         }
                     }
                     SettingRowDivider()
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
-                        Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                            Text(stringResource(R.string.guide_open_walkthrough), style = MaterialTheme.typography.titleSmall)
-                            Text(
-                                stringResource(R.string.settings_walkthrough_body),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                    SettingsControlRow(
+                        title = stringResource(R.string.guide_open_walkthrough),
+                        supportingText = stringResource(R.string.settings_walkthrough_body),
+                    ) {
                         OutlinedButton(onClick = onOpenWalkthrough) {
                             Text(stringResource(R.string.clip_action_open))
                         }
                     }
                     SettingRowDivider()
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
-                        Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                            Text(stringResource(R.string.about_licenses_title), style = MaterialTheme.typography.titleSmall)
-                            Text(
-                                stringResource(R.string.about_licenses_body),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                    SettingsControlRow(
+                        title = stringResource(R.string.about_licenses_title),
+                        supportingText = stringResource(R.string.about_licenses_body),
+                    ) {
                         OutlinedButton(onClick = { showLicenses = true }) {
                             Text(stringResource(R.string.clip_action_open))
                         }
@@ -1239,13 +1168,15 @@ fun SettingsScreen(
     }
     }
     }
-    if (onDismissRequest == null) settingsContent() else {
-        SettingsModalSheet(
-            onDismissRequest = onDismissRequest,
-            onBackRequest = if (notificationFilterOpen) ({ notificationFilterOpen = false }) else null,
-            snackbarHost = snackbarHost,
-        ) {
-            settingsContent()
+    SettingsPresentation {
+        if (onDismissRequest == null) settingsContent() else {
+            SettingsModalSheet(
+                onDismissRequest = onDismissRequest,
+                onBackRequest = if (notificationFilterOpen) ({ notificationFilterOpen = false }) else null,
+                snackbarHost = snackbarHost,
+            ) {
+                settingsContent()
+            }
         }
     }
 }
@@ -1307,15 +1238,10 @@ private fun openDeveloperOptionsSettings(context: Context) {
 @Composable
 private fun NotificationAccess(granted: Boolean, onChooseFilter: () -> Unit) {
     val context = LocalContext.current
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
-        Column(Modifier.weight(1f).padding(end = 12.dp)) {
-            Text(stringResource(R.string.notifications_title), style = MaterialTheme.typography.titleSmall)
-            Text(
-                stringResource(if (granted) R.string.notifications_on else R.string.notifications_off),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+    SettingsControlRow(
+        title = stringResource(R.string.notifications_title),
+        supportingText = stringResource(if (granted) R.string.notifications_on else R.string.notifications_off),
+    ) {
         val open = { runCatching { context.startActivity(NotificationListener.settingsIntent(context)) }.let {} }
         if (granted) {
             OutlinedButton(onClick = open) { Text(stringResource(R.string.action_manage)) }
@@ -1327,7 +1253,7 @@ private fun NotificationAccess(granted: Boolean, onChooseFilter: () -> Unit) {
         Text(stringResource(R.string.waypair_extras_filters_action))
     }
     if (!granted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
             Text(
                 stringResource(R.string.notifications_restricted),
                 style = MaterialTheme.typography.bodyMedium,
@@ -1355,15 +1281,10 @@ private fun CompanionWakeAccess(
         }
         onAccessChanged()
     }
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
-        Column(Modifier.weight(1f).padding(end = 12.dp)) {
-            Text(stringResource(R.string.companion_wake_title), style = MaterialTheme.typography.titleSmall)
-            Text(
-                stringResource(if (associated) R.string.companion_wake_on else R.string.companion_wake_off),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+    SettingsControlRow(
+        title = stringResource(R.string.companion_wake_title),
+        supportingText = stringResource(if (associated) R.string.companion_wake_on else R.string.companion_wake_off),
+    ) {
         val primaryPc = devices.firstOrNull { it.online } ?: devices.firstOrNull()
         val triggerAssociate = {
             val activity = context.findActivity()
@@ -1397,15 +1318,10 @@ private fun CompanionWakeAccess(
 @Composable
 private fun DndAccess(granted: Boolean) {
     val context = LocalContext.current
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
-        Column(Modifier.weight(1f).padding(end = 12.dp)) {
-            Text(stringResource(R.string.dnd_access_title), style = MaterialTheme.typography.titleSmall)
-            Text(
-                stringResource(if (granted) R.string.dnd_access_on else R.string.dnd_access_off),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+    SettingsControlRow(
+        title = stringResource(R.string.dnd_access_title),
+        supportingText = stringResource(if (granted) R.string.dnd_access_on else R.string.dnd_access_off),
+    ) {
         val open = { runCatching { context.startActivity(PhoneToggles.dndSettingsIntent()) }.let {} }
         if (granted) {
             OutlinedButton(onClick = open) { Text(stringResource(R.string.action_manage)) }
@@ -1419,15 +1335,10 @@ private fun DndAccess(granted: Boolean) {
 @Composable
 private fun WriteSettingsAccess(granted: Boolean) {
     val context = LocalContext.current
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
-        Column(Modifier.weight(1f).padding(end = 12.dp)) {
-            Text(stringResource(R.string.write_settings_title), style = MaterialTheme.typography.titleSmall)
-            Text(
-                stringResource(if (granted) R.string.write_settings_on else R.string.write_settings_off),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+    SettingsControlRow(
+        title = stringResource(R.string.write_settings_title),
+        supportingText = stringResource(if (granted) R.string.write_settings_on else R.string.write_settings_off),
+    ) {
         val open = { runCatching { context.startActivity(PhoneToggles.writeSettingsIntent(context)) }.let {} }
         if (granted) {
             OutlinedButton(onClick = open) { Text(stringResource(R.string.action_manage)) }
@@ -1441,33 +1352,13 @@ private fun WriteSettingsAccess(granted: Boolean) {
 @Composable
 private fun ControlAccess(on: Boolean) {
     val context = LocalContext.current
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
-        Column(Modifier.weight(1f).padding(end = 12.dp)) {
-            Text(stringResource(R.string.control_title), style = MaterialTheme.typography.titleSmall)
-            Text(
-                stringResource(if (on) R.string.control_on else R.string.control_off),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        val open = { runCatching { context.startActivity(InputService.settingsIntent()) }.let {} }
-        if (on) {
-            OutlinedButton(onClick = open) { Text(stringResource(R.string.action_manage)) }
-        } else {
-            Button(onClick = open) { Text(stringResource(R.string.action_allow)) }
-        }
-    }
-    if (!on && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
-            Text(
-                stringResource(R.string.notifications_restricted),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f).padding(end = 12.dp),
-            )
-            OutlinedButton(onClick = { openAppInfoSettings(context) }) { Text(stringResource(R.string.action_app_info)) }
-        }
-    }
+    val open = { runCatching { context.startActivity(InputService.settingsIntent()) }.let {} }
+    SettingsControlAccessContent(
+        on = on,
+        showRestricted = !on && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU,
+        onOpenSettings = open,
+        onOpenAppInfo = { openAppInfoSettings(context) },
+    )
 }
 
 /** Elevated through the phone's own wireless debugging: real touch and keys. */
@@ -1477,73 +1368,50 @@ private fun ElevatedAccess() {
     val scope = rememberCoroutineScope()
     val state by Elevated.state.collectAsStateWithLifecycle()
     var steps by remember { mutableStateOf(false) }
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
-            Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                Text(stringResource(R.string.settings_apps_service_status), style = MaterialTheme.typography.titleSmall)
-                Text(
-                    stringResource(
-                        when (state) {
-                            Elevated.State.NotSetUp -> R.string.settings_apps_service_not_set_up
-                            Elevated.State.Waiting -> R.string.settings_apps_service_waiting
-                            Elevated.State.Starting -> R.string.settings_apps_service_starting
-                            Elevated.State.Running ->
-                                if (Elevated.rootActive) R.string.settings_apps_service_running_root else R.string.settings_apps_service_running
-                            is Elevated.State.Failed -> when ((state as Elevated.State.Failed).reason) {
-                                Elevated.Reason.NotPaired -> R.string.settings_apps_service_not_paired
-                                Elevated.Reason.RootDenied -> R.string.settings_apps_service_root_failed
-                                else -> R.string.settings_apps_service_failed
-                            }
-                        },
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+    val statusText = stringResource(
+        when (state) {
+            Elevated.State.NotSetUp -> R.string.settings_apps_service_not_set_up
+            Elevated.State.Waiting -> R.string.settings_apps_service_waiting
+            Elevated.State.Starting -> R.string.settings_apps_service_starting
+            Elevated.State.Running ->
+                if (Elevated.rootActive) R.string.settings_apps_service_running_root else R.string.settings_apps_service_running
+            is Elevated.State.Failed -> when ((state as Elevated.State.Failed).reason) {
+                Elevated.Reason.NotPaired -> R.string.settings_apps_service_not_paired
+                Elevated.Reason.RootDenied -> R.string.settings_apps_service_root_failed
+                else -> R.string.settings_apps_service_failed
             }
-            when (state) {
-                Elevated.State.NotSetUp, is Elevated.State.Failed -> Button(onClick = { steps = true }) {
-                    Text(stringResource(R.string.elevated_set_up))
-                }
-                Elevated.State.Waiting -> Button(onClick = {
-                    scope.launch {
-                        PairingNotification.show(context)
-                        if (!Elevated.start()) {
-                            openDeveloperOptionsSettings(context)
-                        }
-                    }
-                }) {
-                    Text(stringResource(R.string.elevated_try_again))
-                }
-                Elevated.State.Running -> OutlinedButton(onClick = { scope.launch { Elevated.forget() } }) {
-                    Text(stringResource(R.string.elevated_turn_off))
-                }
-                Elevated.State.Starting -> {}
-            }
-        }
-        if (state == Elevated.State.Waiting || state is Elevated.State.Failed) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = {
-                    PairingNotification.show(context)
-                    openDeveloperOptionsSettings(context)
-                }) {
-                    Text(stringResource(R.string.elevated_open_developer))
-                }
-            }
-        }
-        // Root only when the user picks it, and only on a rooted phone.
-        val rootOffered = Elevated.isRootAvailable() &&
-            (state == Elevated.State.NotSetUp || state is Elevated.State.Failed)
-        if (rootOffered) {
-            Text(
-                stringResource(R.string.elevated_root_hint),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            OutlinedButton(onClick = { scope.launch { Elevated.setUpWithRoot() } }) {
-                Text(stringResource(R.string.elevated_use_root))
-            }
-        }
+        },
+    )
+    val action = when (state) {
+        Elevated.State.NotSetUp, is Elevated.State.Failed -> SettingsServiceAction.SET_UP
+        Elevated.State.Waiting -> SettingsServiceAction.TRY_AGAIN
+        Elevated.State.Running -> SettingsServiceAction.TURN_OFF
+        Elevated.State.Starting -> SettingsServiceAction.NONE
     }
+    // Root only when the user picks it, and only on a rooted phone.
+    val rootOffered = Elevated.isRootAvailable() &&
+        (state == Elevated.State.NotSetUp || state is Elevated.State.Failed)
+    SettingsAppsServiceContent(
+        statusText = statusText,
+        action = action,
+        showDeveloper = state == Elevated.State.Waiting || state is Elevated.State.Failed,
+        rootOffered = rootOffered,
+        onSetUp = { steps = true },
+        onTryAgain = {
+            scope.launch {
+                PairingNotification.show(context)
+                if (!Elevated.start()) {
+                    openDeveloperOptionsSettings(context)
+                }
+            }
+        },
+        onTurnOff = { scope.launch { Elevated.forget() } },
+        onOpenDeveloper = {
+            PairingNotification.show(context)
+            openDeveloperOptionsSettings(context)
+        },
+        onUseRoot = { scope.launch { Elevated.setUpWithRoot() } },
+    )
     if (steps) {
         AlertDialog(
             onDismissRequest = { steps = false },
@@ -1579,15 +1447,10 @@ private fun RuntimePermissionAccess(
             openAppInfoSettings(context)
         }
     }
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
-        Column(Modifier.weight(1f).padding(end = 12.dp)) {
-            Text(title, style = MaterialTheme.typography.titleSmall)
-            Text(
-                if (granted) textOn else textOff,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+    SettingsControlRow(
+        title = title,
+        supportingText = if (granted) textOn else textOff,
+    ) {
         if (granted) {
             OutlinedButton(onClick = { openAppInfoSettings(context) }) {
                 Text(stringResource(R.string.action_manage))
@@ -1611,21 +1474,16 @@ private fun PhotosAccess(
             openAppInfoSettings(context)
         }
     }
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
-        Column(Modifier.weight(1f).padding(end = 12.dp)) {
-            Text(stringResource(R.string.photos_title), style = MaterialTheme.typography.titleSmall)
-            Text(
-                stringResource(
-                    when {
-                        partial -> R.string.photos_partial
-                        granted -> R.string.photos_on
-                        else -> R.string.photos_off
-                    },
-                ),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+    SettingsControlRow(
+        title = stringResource(R.string.photos_title),
+        supportingText = stringResource(
+            when {
+                partial -> R.string.photos_partial
+                granted -> R.string.photos_on
+                else -> R.string.photos_off
+            },
+        ),
+    ) {
         when {
             partial -> OutlinedButton(onClick = { ask.launch(RecentPhotos.permissions) }) {
                 Text(stringResource(R.string.action_select_photos))
@@ -1651,15 +1509,10 @@ private fun StorageAccess(
     val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) onAddSafFolder(uri)
     }
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
-        Column(Modifier.weight(1f).padding(end = 12.dp)) {
-            Text(stringResource(R.string.storage_all_files_title), style = MaterialTheme.typography.titleSmall)
-            Text(
-                stringResource(if (allFiles) R.string.storage_all_files_on else R.string.storage_all_files_off),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+    SettingsControlRow(
+        title = stringResource(R.string.storage_all_files_title),
+        supportingText = stringResource(if (allFiles) R.string.storage_all_files_on else R.string.storage_all_files_off),
+    ) {
         val open = { runCatching { context.startActivity(PhoneStorage.allFilesAccessIntent(context)) }.let {} }
         if (allFiles) {
             OutlinedButton(onClick = open) { Text(stringResource(R.string.action_manage)) }
@@ -1668,21 +1521,16 @@ private fun StorageAccess(
         }
     }
     if (!allFiles) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
-            Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                Text(stringResource(R.string.storage_saf_title), style = MaterialTheme.typography.titleSmall)
-                Text(
-                    stringResource(R.string.storage_saf_hint),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+        SettingsControlRow(
+            title = stringResource(R.string.storage_saf_title),
+            supportingText = stringResource(R.string.storage_saf_hint),
+        ) {
             OutlinedButton(onClick = { pickFolder.launch(null) }) {
                 Text(stringResource(R.string.storage_add_folder))
             }
         }
         safFolders.forEach { name ->
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                 Text(name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                 TextButton(onClick = { onRemoveSafFolder(name) }) {
                     Text(stringResource(R.string.storage_remove_folder))
@@ -1724,12 +1572,12 @@ private fun Section(
         Surface(
             modifier = Modifier
                 .fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
+            shape = RoundedCornerShape(20.dp),
             color = if (highlighted) scheme.secondaryContainer else WaypairDesign.panelColor(),
             border = if (highlighted) BorderStroke(1.dp, scheme.primary.copy(alpha = 0.5f)) else null,
         ) {
             Column(
-                modifier = Modifier.padding(16.dp),
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 content()
