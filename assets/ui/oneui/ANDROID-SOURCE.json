@@ -1,0 +1,595 @@
+{
+  "repository": "https://github.com/OneUIProject/oneui-icons",
+  "commit": "3808bd6965251e7616b1a0a286c75f5d533715e7",
+  "license": "MIT",
+  "copyright": "Copyright (c) 2022 Yanndroid & BlackMesa123",
+  "source_revision": "bbb119d226ef45317f962eca6f49bb4c27f5b99a",
+  "palette_normalization": "Only palette @color references become #FF000000; authored transparent fills/strokes remain transparent. All geometry/groups/viewports preserved. Compose caller tint owns theme/status.",
+  "selected_state_correction": "wp_home_filled and wp_settings_filled use selected_asset from inventory, preserving filled state.",
+  "derived_muted_mic": "Unmodified ic_oui_voice.xml paths scaled 1/3 from viewport 72 into viewport 24; exact last top-level slash path from ic_oui_audio_system_mute.xml appended.",
+  "seek_10": "ic_oui_undo/ic_oui_redo paths unchanged; Watch SkipButton overlays visible 10 and clears only overlay semantics; existing parent labels preserved.",
+  "files": [
+    {
+      "output": "android/app/src/main/res/drawable/ic_back.xml",
+      "sources": [
+        "ic_oui_back.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_back.xml": "e11d31dde2c2347b7992c00d222e97a0b2a959ebd7e59faa9323b5074b1e5410"
+      },
+      "output_sha256": "2692c0e0f616f5f7bd610e48168cc2eb78d36976ebabd0e99f4d7f20aa5b95b6"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/ic_clipboard.xml",
+      "sources": [
+        "ic_oui_clipboard.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_clipboard.xml": "489e4270dffaef4fca0d24b07188731827d698119204c79bf3d43d79b84c62f5"
+      },
+      "output_sha256": "efe7f62e1e2f4a1fbd06977ca5cfec3009b52ed02b645c950284a6ae6787eeb7"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/ic_fast_forward.xml",
+      "sources": [
+        "ic_oui_redo.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_redo.xml": "578b785c16c40565cba8530a3e5e90ae2651540c0ccfca15cce232e39bf3144b"
+      },
+      "output_sha256": "e3c4d17b6b3541950204a428232133990ce41d8e714cce9f57972e48277d5e61"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/ic_fast_rewind.xml",
+      "sources": [
+        "ic_oui_undo.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_undo.xml": "c9c9fd805a944522bcc91d2718bf7324c4172a1dab5e635adff8edaaef3c5f07"
+      },
+      "output_sha256": "f2d481b984d7d6ef2dc9285af3096e2b729f512b695e71f47bb59fea455e9e40"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/ic_home.xml",
+      "sources": [
+        "ic_oui_home_outline.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_home_outline.xml": "73f9ee734fa5060c8a10db92701e584031e931ad206f9034ba23b40fd0888294"
+      },
+      "output_sha256": "d7f5340b2fa3d2faea7b227ab9752ace7519d5d39b83d954624379599f16064c"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/ic_music.xml",
+      "sources": [
+        "ic_oui_audio_outline.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_audio_outline.xml": "38c6122f2edaca52c88d75f76ed4b12635c739b57efb0e70d3a4807dbf0830fc"
+      },
+      "output_sha256": "1ea4d5be27c196c047beaccf697c77ab7c24e7b8228d318c55803829c701e290"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/ic_pause.xml",
+      "sources": [
+        "ic_oui_control_pause.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_control_pause.xml": "84f6594105c522fab63215815f7b3c6c4b120c7318818a1d0a31250d32f5584a"
+      },
+      "output_sha256": "5553362c8fa9025be0091d2595bea8fbc6c19db4504289ba9854a41a9326b0b4"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/ic_play.xml",
+      "sources": [
+        "ic_oui_control_play.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_control_play.xml": "8c50eb31b060f83fc74f477927cd6ca2df4d4c5706d78336b7e731cf2b405234"
+      },
+      "output_sha256": "b0f8f2597f3c9eb48bb6f8c0d765b101b1c4e7d00b488c7ffe0e1abb4e636ae0"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/ic_qr.xml",
+      "sources": [
+        "ic_oui_qr_code.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_qr_code.xml": "e6acf3197a09d4a10b745c48e72aa0e6794046cfff5a89c74eb81ce69f8667d4"
+      },
+      "output_sha256": "37f2dd471d4577e44ced489a0062318279ce1f97830cba48925cbcbd50dbf0af"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/ic_refresh.xml",
+      "sources": [
+        "ic_oui_refresh.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_refresh.xml": "3649d4f2cc7ef5a2736c398a65c0b61e46599f19e564f8431f63eba119c37c41"
+      },
+      "output_sha256": "a473250852779a66c3e6ad40b69eb75017a3065a447de28061004b23a9c9298d"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/ic_settings.xml",
+      "sources": [
+        "ic_oui_settings_outline.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_settings_outline.xml": "a51041a20704cd79c9b4ed49460e17c342c8d97381ad4dc9b4427078e5e7c78b"
+      },
+      "output_sha256": "6b498bd1942f7b35fbc0ee07c4b68e1fac60ef77bd298b8b83cab96dee43b843"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/ic_skip_next.xml",
+      "sources": [
+        "ic_oui_arrow_to_right.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_arrow_to_right.xml": "35a16d7c43b6c1a4d33bb239ad1ac1cbf40bcb8ded0973dbea4e669c29db2bce"
+      },
+      "output_sha256": "af42b87532e60d0dcd86fb80d0016bd608faa548724dbe887d93bbf338b3f2e4"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/ic_skip_previous.xml",
+      "sources": [
+        "ic_oui_arrow_to_left.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_arrow_to_left.xml": "baf4f9f506f53eaa28533bd0a6390f0a0b9b9011175846174c04c99144f75271"
+      },
+      "output_sha256": "94060fc407c4006513e94ef3cc60cdcea1753eeead33e586029f637a689d76e0"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/ic_sound_off.xml",
+      "sources": [
+        "ic_oui_sound_mute.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_sound_mute.xml": "dce6a2f4768047de24b7243dff3e1d4b31c0a0172ddd1a83b2a217efc6a38167"
+      },
+      "output_sha256": "dffcc29972a3a763c6fc5d7a6106ef6babb2d3dabd7a9d9951014e0d04093886"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/ic_speaker.xml",
+      "sources": [
+        "ic_oui_sound.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_sound.xml": "3d55927e904ace4f3eecb9c8044b200fc4ddbb245cf791af1bcaab506b82b860"
+      },
+      "output_sha256": "7d0b93360aa7eb6249e7e8e898fc873e17e5db06db4a2238da95e0d0fdfa7a28"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_battery.xml",
+      "sources": [
+        "ic_oui_battery.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_battery.xml": "8772b357c32a091f1733b05d454b84a9867c4c9dbcba9dae505e416ca111e985"
+      },
+      "output_sha256": "2abc8f5cb9ef13f0f88b4d988bea60ddcf5a3a81867cfdf3dff1a2b7413978bf"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_bell_color.xml",
+      "sources": [
+        "ic_oui_reminder_outline.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_reminder_outline.xml": "22bb0c3c8a1f4b50e4ccc2d4176dc43c6ee0b5dcbe167e1c5d929ca18fef4440"
+      },
+      "output_sha256": "7dddb043ba5ccaf4c4370acf8435eb7366eb93658bdfc51e7b79e18f4b652dc4"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_browse_color.xml",
+      "sources": [
+        "ic_oui_folder_open.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_folder_open.xml": "0dd5edda1e536d04fbc7dd9881190e8e401fba9a30c1bd21f58e4125578e96aa"
+      },
+      "output_sha256": "a86d2bd66b27c3853d6926496f971aeec3b64bca5609d3c4cb0aa6a17dd1b46c"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_camera_color.xml",
+      "sources": [
+        "ic_oui_camera_outline.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_camera_outline.xml": "638a98c42cd7c0a65cea8781766233d19b2f840fd9f6905a06d801e90cdad01f"
+      },
+      "output_sha256": "1c9c377128bf5cd11e8a3bd60e5926adc94ae4474af32a74f2c63829966c5bfd"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_check.xml",
+      "sources": [
+        "ic_oui_selected.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_selected.xml": "200c77200e13bbb3f7e5d3e0b703b41b1c31e13c5054669e8a9b5f81b93fac87"
+      },
+      "output_sha256": "2ad200a2850086a093a6e6ce7f691fa0e11b503894058e0351daf249ae8fc7d1"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_chevron.xml",
+      "sources": [
+        "ic_oui_keyboard_arrow_right.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_keyboard_arrow_right.xml": "cdf83cd2d8fefb0713740c30e4cc491a4b8d02b35b3515931116f265599101e0"
+      },
+      "output_sha256": "d5db80a1a4f04d7c479b8f01e56b56b279d952ccc4f2e42f64ada1e3763604f0"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_clipboard_color.xml",
+      "sources": [
+        "ic_oui_clipboard.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_clipboard.xml": "489e4270dffaef4fca0d24b07188731827d698119204c79bf3d43d79b84c62f5"
+      },
+      "output_sha256": "efe7f62e1e2f4a1fbd06977ca5cfec3009b52ed02b645c950284a6ae6787eeb7"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_clock_color.xml",
+      "sources": [
+        "ic_oui_time_outline.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_time_outline.xml": "3800770fa01dce6b3bae4bb27c49f3a6e7f51abbda62d54089fcb616cacabce3"
+      },
+      "output_sha256": "1732df38b23c6b58fa5c2e72e4a5d4ce42a993f6e5b7faa3ced45423ba4b0181"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_close.xml",
+      "sources": [
+        "ic_oui_close.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_close.xml": "4096ed79b7d27ecaa98543d34db6e495b929e3b4e368066b683284ec92c75532"
+      },
+      "output_sha256": "0e771d60e3cdd330104878b4c1d8ed700ebf42a6f8bd2d6dbedf69b5855c7934"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_control_color.xml",
+      "sources": [
+        "ic_oui_link_to_windows.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_link_to_windows.xml": "1c5c29833d5e4fbd0d66ce4a5edf2c827d8ecfd40f3f54c8f9905b97910ee629"
+      },
+      "output_sha256": "bab644c3093bc15b0829070134567ddb32a221af34002e4848cd112da4b8d9f8"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_deck_color.xml",
+      "sources": [
+        "ic_oui_widget_outline.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_widget_outline.xml": "05e9573ec7288c6de54cd864b22602f1c8e9325023fb68b2348e1c892fbb0f85"
+      },
+      "output_sha256": "ee05132a824e598679718e80b35d936ac17fb81934da0010819fca8f98d04a31"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_folder_color.xml",
+      "sources": [
+        "ic_oui_folder_outline.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_folder_outline.xml": "60abd41ac1ed9c5f074e65790b3bc1b06ee7291409385e885aabae3b5eee6875"
+      },
+      "output_sha256": "176caa320d172ef579b4813a30021913aceaca2269c73b85eab87e68df10b657"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_globe.xml",
+      "sources": [
+        "ic_oui_internet_website.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_internet_website.xml": "582ca186c2fc53837e5f7dfc7eee8b8b9d565c43da35050cc66f29d278fa01ee"
+      },
+      "output_sha256": "df67d0b4f6ddd86c46ea7dd1d9553a3d3798d2968908c6a49ff66997ec6a815a"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_home.xml",
+      "sources": [
+        "ic_oui_home_outline.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_home_outline.xml": "73f9ee734fa5060c8a10db92701e584031e931ad206f9034ba23b40fd0888294"
+      },
+      "output_sha256": "d7f5340b2fa3d2faea7b227ab9752ace7519d5d39b83d954624379599f16064c"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_home_filled.xml",
+      "sources": [
+        "ic_oui_home.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_home.xml": "6b3c284d9e6192d62243aa355f8e9187a165531e8974a8f93cb2716b49fce54f"
+      },
+      "output_sha256": "296dc75fdfbf155b854a95d252ec4a4fc935d49849d3d5a88bcec62e0e56f2e0"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_mic_color.xml",
+      "sources": [
+        "ic_oui_voice.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_voice.xml": "6652b2f1832f61831be96a56938e70aa3664afede0fc62e8e5923211c6784a12"
+      },
+      "output_sha256": "ac85339ce1c527d7c1a336376906ec8638f17a37b0193a1ecff42debccb91643"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_monitor.xml",
+      "sources": [
+        "ic_oui_link_to_windows.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_link_to_windows.xml": "1c5c29833d5e4fbd0d66ce4a5edf2c827d8ecfd40f3f54c8f9905b97910ee629"
+      },
+      "output_sha256": "bab644c3093bc15b0829070134567ddb32a221af34002e4848cd112da4b8d9f8"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_moon.xml",
+      "sources": [
+        "ic_oui_dark_outline.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_dark_outline.xml": "537e23acdb9dd0bdf1596e6872438ac7f0951812be5b3f80a96aaf3953097988"
+      },
+      "output_sha256": "9b90a740b62ef85ab7cf5a7b0a5a5251bd03fa52b06438e634ed7c7795d97dc3"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_motion.xml",
+      "sources": [
+        "ic_oui_accessibility.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_accessibility.xml": "f73273a16959ada84d7fb0135a25fc7fc4abbf6d4aab3660e7559f63182bdaac"
+      },
+      "output_sha256": "2ec187a95b2c75f3efa93128ec8ed4413906cb4915de79a0260d8ef2a4bb991b"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_offline.xml",
+      "sources": [
+        "ic_oui_wifi_no_connection.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_wifi_no_connection.xml": "ca6a8c55931f737e9285bd90d2c7b6e142389d3c89afe2e45fd8b5745ad6cefd"
+      },
+      "output_sha256": "0499fccf1eb409403855a83602d283063dde3b99454a45cd10610488f6887a80"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_oneui_apps_outline.xml",
+      "sources": [
+        "ic_oui_apps_outline.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_apps_outline.xml": "7071d27149e6d16a19be81f44f48a37a40589d47cb2c34cafc67e7ecdac53e97"
+      },
+      "output_sha256": "8d908ea77c041e16b8b55c4d522d720eb794a53430a9a05b9460d3606af400ea"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_oneui_bracket.xml",
+      "sources": [
+        "ic_oui_bracket.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_bracket.xml": "6310868fce87a75e4ca298ed54bcb6a853acee9fd650638bd346f6adeb7d2200"
+      },
+      "output_sha256": "7685d24fbabbeac4b67e2d92481e208a6835814c7a9664caba86f7511229b744"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_oneui_error_2.xml",
+      "sources": [
+        "ic_oui_error_2.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_error_2.xml": "95edd0e4edf17d4d538a474a6f1123efef55bdfdc6eb63cd5334fd8b6222820c"
+      },
+      "output_sha256": "a9124e699c31b028505a35dc75ab9c2ef9578e32dee832dfd9ed4bb2752ed443"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_oneui_expand.xml",
+      "sources": [
+        "ic_oui_expand.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_expand.xml": "6a1ed2bc5f12ff034791874625b75ceaf91dfa30c05ab2b78cd7e4c1d61cda53"
+      },
+      "output_sha256": "aca6a6a561d6aa8a9b602f5c78d97547e7b6e133ed3f77b341252e14f5a145cc"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_oneui_font_size.xml",
+      "sources": [
+        "ic_oui_font_size.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_font_size.xml": "16c96e73282edb9c01a759a9002f31a3aa0f9e93e2f7a9e830cfaa33a2c39750"
+      },
+      "output_sha256": "bdffce7cf1b2ec345ca9b30694b0a202be5626371b2f0fe152ec3041bc4ae3d0"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_oneui_keyboard.xml",
+      "sources": [
+        "ic_oui_keyboard.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_keyboard.xml": "828b0448a03990da71daa9193b59c8a4fe725f89db9b7bb20a564a280e7936d1"
+      },
+      "output_sha256": "682be9eb2926cc59e0af3aecb05e1dd123e5a5ea6545c870229aac2b43b6a5b7"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_oneui_keyboard_arrow_down.xml",
+      "sources": [
+        "ic_oui_keyboard_arrow_down.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_keyboard_arrow_down.xml": "c289beedd0304692d3d124c3e8aad435b7ab92b89b973edd9224831f4710db27"
+      },
+      "output_sha256": "dd03ad426b74cc140a5a29da761622409d4afaa3d8dbbf338e75956ebe17ee26"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_oneui_lightning_outline.xml",
+      "sources": [
+        "ic_oui_lightning_outline.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_lightning_outline.xml": "34a49fb6e849581924daf115b73e506902f5d40441c5c8147f86689af4f03fc1"
+      },
+      "output_sha256": "bb0f1e7c7dde8fe110d144bf158d2e8e42e22797e688bea8db68dd010da3e2b5"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_oneui_lock_outline.xml",
+      "sources": [
+        "ic_oui_lock_outline.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_lock_outline.xml": "34bbc46b516de294084e5406bd2a1be2323bbab4c13b27f8a41a109ef61b4ad1"
+      },
+      "output_sha256": "0da8c14a8d4ef19a0a9414c128b230b301c1e8521295a3c7f76ba3e0e6ee48a7"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_oneui_mic_off.xml",
+      "sources": [
+        "ic_oui_voice.xml",
+        "ic_oui_audio_system_mute.xml#last-top-level-path"
+      ],
+      "upstream_sha256": {
+        "ic_oui_voice.xml": "6652b2f1832f61831be96a56938e70aa3664afede0fc62e8e5923211c6784a12",
+        "ic_oui_audio_system_mute.xml": "f1bd697ff1575cf01570c1b2735d8349687d6eaa7558c963d39dd1b34422955f"
+      },
+      "output_sha256": "58265c88fcd6ca50dddf04882ac65908f08f638c8617a1f65f3fb86f73904779"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_oneui_minimize.xml",
+      "sources": [
+        "ic_oui_minimize.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_minimize.xml": "3f222d3739a14be539862569b1947ed7f2d92381aae0beac8cd9490faee8df91"
+      },
+      "output_sha256": "b43b85ccc2975b7f03e29280b41e02d53fd9272c5c924d3455656348d5b1d78b"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_oneui_power.xml",
+      "sources": [
+        "ic_oui_power.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_power.xml": "d275249e4e78360de0b4bee66ca85a1acdc50e59f98de7d36c9aa686a514eb3f"
+      },
+      "output_sha256": "2e30fefc91b950cecad48be6713fc8e9c787194c00e9acdb1293e84ccea8a163"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_oneui_star_outline.xml",
+      "sources": [
+        "ic_oui_star_outline.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_star_outline.xml": "cc7c904e15fcdfac6a0b87f3b1734fa230703e3a044575715a519c9b1b12dc02"
+      },
+      "output_sha256": "bda0faf9753c7e8e611b3684e240a039cf329f52abd1c9ab99cf6bb8c3f167a2"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_oneui_system_alert_window.xml",
+      "sources": [
+        "ic_oui_system_alert_window.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_system_alert_window.xml": "39b8aeb901468c9ca5208279e53c3a91772a66104e8a0c53371d3e49b428b817"
+      },
+      "output_sha256": "fb92b6fd03e62cec17d80e40c3fd6cf8f6e3bc32fd8d420e9233840cb0adbce0"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_oneui_video_call_outline.xml",
+      "sources": [
+        "ic_oui_video_call_outline.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_video_call_outline.xml": "e5f4ecdaa9f193a0fbefc5f74ef095e8f17ab55360ce548d2aa6cedc28d6b965"
+      },
+      "output_sha256": "9d0b2bad1cee9fcae50b7c63744f1fb1885f83218b847bba3b20b9da48508c72"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_oneui_volume_down.xml",
+      "sources": [
+        "ic_oui_volume_down.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_volume_down.xml": "767c9fc709653cd8cbf082f9390ad9c7cd271765b9519fba7a1b035389da3d43"
+      },
+      "output_sha256": "98673c844d875eb670658cb739292c92d67a771909ba57c2fe23321240d5d95e"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_oneui_volume_up.xml",
+      "sources": [
+        "ic_oui_volume_up.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_volume_up.xml": "76182a18ba38c49f8d2c8832718496b6afb3cf37efd3c6d05938046a3a87f429"
+      },
+      "output_sha256": "41f2e298635bda1bc1fa00e02cb274066110089be63aa7b61b7afe45255098d3"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_qr.xml",
+      "sources": [
+        "ic_oui_qr_code.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_qr_code.xml": "e6acf3197a09d4a10b745c48e72aa0e6794046cfff5a89c74eb81ce69f8667d4"
+      },
+      "output_sha256": "37f2dd471d4577e44ced489a0062318279ce1f97830cba48925cbcbd50dbf0af"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_send_color.xml",
+      "sources": [
+        "ic_oui_send.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_send.xml": "caead9c0aed6997cab8ee76ae4e657ab3241f2a2189d00b3be2098b51f450761"
+      },
+      "output_sha256": "4d6849b3d7a19908e1fb2736e11eef172eafa6adb6ae40af7736af817ecb2311"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_settings.xml",
+      "sources": [
+        "ic_oui_settings_outline.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_settings_outline.xml": "a51041a20704cd79c9b4ed49460e17c342c8d97381ad4dc9b4427078e5e7c78b"
+      },
+      "output_sha256": "6b498bd1942f7b35fbc0ee07c4b68e1fac60ef77bd298b8b83cab96dee43b843"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_settings_filled.xml",
+      "sources": [
+        "ic_oui_settings.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_settings.xml": "cf7e1c90b20fffbd849c92b6a3da42ef98f7d2bec669c4fd5950159ec430b460"
+      },
+      "output_sha256": "a8bc450a92dfd0decef4775164caf0ca6264314214e939a7de9a36c4447be8c6"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_sun.xml",
+      "sources": [
+        "ic_oui_brightness_outline.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_brightness_outline.xml": "ad1db883dc55f5956f9e356335958fbb746a0d1b22491c52105844dbda23f30f"
+      },
+      "output_sha256": "269fcbd5486150ed56acb05d88f4f72e4c9dd86569f96c1961607ddc40337361"
+    },
+    {
+      "output": "android/app/src/main/res/drawable/wp_wifi.xml",
+      "sources": [
+        "ic_oui_wifi.xml"
+      ],
+      "upstream_sha256": {
+        "ic_oui_wifi.xml": "5c795104f3c6ee99fc18ac419d6c53581b4ca51303f4567cee7b5f6afa48cb15"
+      },
+      "output_sha256": "fa28862b595721deeac2d530cb8af87a871b34a5e1554b57044597d85e3bb377"
+    }
+  ]
+}

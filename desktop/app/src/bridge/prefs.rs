@@ -42,6 +42,10 @@ pub mod qobject {
         #[qproperty(QString, seed)]
         /// "system", "light" or "dark".
         #[qproperty(QString, color_mode)]
+        /// UI font family selected in Appearance.
+        #[qproperty(QString, font_family)]
+        /// UI text size, 100 through 150 percent.
+        #[qproperty(i32, text_scale_percent)]
         /// Pure #000000 OLED black surfaces in dark mode.
         #[qproperty(bool, amoled)]
         /// Mica behind the window.
@@ -287,6 +291,8 @@ pub struct PreferencesRust {
     theme: QString,
     seed: QString,
     color_mode: QString,
+    font_family: QString,
+    text_scale_percent: i32,
     amoled: bool,
     backdrop: bool,
     comb_motion: bool,
@@ -368,6 +374,8 @@ impl cxx_qt::Initialize for qobject::Preferences {
             ColorMode::Light => "light",
             ColorMode::Dark => "dark",
         }));
+        self.as_mut().set_font_family(QString::from(&settings.font_family));
+        self.as_mut().set_text_scale_percent(settings.text_scale_percent);
         self.as_mut().set_amoled(settings.amoled);
         self.as_mut().set_backdrop(settings.backdrop);
         self.as_mut().set_comb_motion(settings.comb_motion);
@@ -456,6 +464,23 @@ impl cxx_qt::Initialize for qobject::Preferences {
         self.as_mut().on_theme_changed(|p| p.save()).release();
         self.as_mut().on_seed_changed(|p| p.save()).release();
         self.as_mut().on_color_mode_changed(|p| p.save()).release();
+        self.as_mut().on_font_family_changed(|mut p| {
+            let normalized = QString::from(&crate::settings::normalized_font_family(&String::from(p.font_family())));
+            if *p.font_family() != normalized {
+                p.as_mut().set_font_family(normalized);
+                return;
+            }
+            p.save();
+        }).release();
+        self.as_mut().on_text_scale_percent_changed(|mut p| {
+            let normalized = (*p.text_scale_percent()).clamp(
+                crate::settings::MIN_TEXT_SCALE_PERCENT, crate::settings::MAX_TEXT_SCALE_PERCENT);
+            if *p.text_scale_percent() != normalized {
+                p.as_mut().set_text_scale_percent(normalized);
+                return;
+            }
+            p.save();
+        }).release();
         self.as_mut().on_amoled_changed(|p| p.save()).release();
         self.as_mut().on_backdrop_changed(|p| p.save()).release();
         self.as_mut().on_comb_motion_changed(|p| p.save()).release();
@@ -1000,6 +1025,9 @@ impl qobject::Preferences {
                 "dark" => ColorMode::Dark,
                 _ => ColorMode::System,
             },
+            font_family: crate::settings::normalized_font_family(&String::from(&p.font_family)),
+            text_scale_percent: p.text_scale_percent.clamp(
+                crate::settings::MIN_TEXT_SCALE_PERCENT, crate::settings::MAX_TEXT_SCALE_PERCENT),
             amoled: p.amoled,
             backdrop: p.backdrop,
             comb_motion: p.comb_motion,

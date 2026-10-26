@@ -3,8 +3,8 @@ import QtQuick
 import QtQuick.Shapes
 import app.nectarlink
 
-// A stock portrait is selected only by an explicitly catalogued hardware model.
-// This is a product illustration with a separate live-status overlay, not mirroring.
+// A neutral handset follows reported screen geometry and carries live status.
+// This is a status illustration, not mirroring.
 Item {
     id: portrait
     property string model: ""
@@ -24,14 +24,12 @@ Item {
                                statusPanel.visible ? statusPanel.y + statusPanel.height : 0) * screen.detailScale + 8
            <= connectionButton.y
 
-    readonly property bool hasStockImage: model.trim().toUpperCase() === "SM-F956B"
     readonly property bool hasBattery: online && battery >= 0 && battery <= 100
     readonly property real handsetAspect: {
-        if (hasStockImage) return 343 / 791
         const aspect = screenData ? Number(screenData.aspect) : NaN
         return isFinite(aspect) && aspect >= 0.25 && aspect <= 2.5 ? aspect : 0.47
     }
-    readonly property color screenInk: hasStockImage ? "#FFFFFF" : Theme.surfaceContent
+    readonly property color screenInk: "#F5F7FA"
     readonly property color ringColor: battery <= 20 && !charging ? Theme.error
         : (charging ? "#4ADE80" : screenInk)
     readonly property string statusText: {
@@ -56,11 +54,12 @@ Item {
         return isFinite(value) ? Math.max(0, Math.min(width * 0.48, value * width)) : width * 0.14
     }
 
-    function handsetPath(w, h) {
-        const tl = Math.min(corner("tl", w), h * 0.48)
-        const tr = Math.min(corner("tr", w), h * 0.48)
-        const br = Math.min(corner("br", w), h * 0.48)
-        const bl = Math.min(corner("bl", w), h * 0.48)
+    function handsetPath(w, h, minimumCorner) {
+        const floor = Math.min(w * 0.48, h * 0.48, Math.max(0, Number(minimumCorner) || 0))
+        const tl = Math.max(floor, Math.min(corner("tl", w), h * 0.48))
+        const tr = Math.max(floor, Math.min(corner("tr", w), h * 0.48))
+        const br = Math.max(floor, Math.min(corner("br", w), h * 0.48))
+        const bl = Math.max(floor, Math.min(corner("bl", w), h * 0.48))
         return "M " + tl + " 0 H " + (w-tr) + " Q " + w + " 0 " + w + " " + tr
             + " V " + (h-br) + " Q " + w + " " + h + " " + (w-br) + " " + h
             + " H " + bl + " Q 0 " + h + " 0 " + (h-bl)
@@ -74,29 +73,93 @@ Item {
         height: width / portrait.handsetAspect
         opacity: portrait.online ? 1 : 0.65
 
-        // Keep the original 689×791 PNG intact; crop only the front at display time.
         Item {
+            id: genericDeviceFrame
+            objectName: "genericDeviceFrame"
             anchors.fill: parent
-            visible: portrait.hasStockImage
-            clip: true
-            Image {
-                x: -346 * handset.height / 791
-                width: 689 * handset.height / 791
-                height: handset.height
-                source: portrait.hasStockImage ? "qrc:/waypair/phones/galaxy-z-fold6.png" : ""
-                smooth: true
-                mipmap: true
+            // The illustrative body stays softly rounded even when capture metadata
+            // reports a square screen; the inset display keeps reported corners.
+            readonly property real minimumCornerRadius: width * 0.06
+
+            Shape {
+                x: 0.8; y: 1.5
+                width: parent.width; height: parent.height
+                preferredRendererType: Shape.CurveRenderer
+                ShapePath {
+                    strokeColor: "transparent"
+                    fillColor: "#35000000"
+                    PathSvg { path: portrait.handsetPath(genericDeviceFrame.width, genericDeviceFrame.height, genericDeviceFrame.minimumCornerRadius) }
+                }
             }
-        }
-        Shape {
-            anchors.fill: parent
-            visible: !portrait.hasStockImage
-            preferredRendererType: Shape.CurveRenderer
-            ShapePath {
-                strokeColor: Theme.outline
-                strokeWidth: 1.5
-                fillColor: Theme.panelColor
-                PathSvg { path: portrait.handsetPath(handset.width, handset.height) }
+            Shape {
+                objectName: "genericDeviceRim"
+                anchors.fill: parent
+                preferredRendererType: Shape.CurveRenderer
+                ShapePath {
+                    strokeColor: Theme.dark ? "#8B96A3" : "#56616E"
+                    strokeWidth: 0.7
+                    fillGradient: LinearGradient {
+                        x1: 0; y1: 0
+                        x2: genericDeviceFrame.width; y2: genericDeviceFrame.height
+                        GradientStop { position: 0; color: "#C6CDD4" }
+                        GradientStop { position: 0.18; color: "#63707D" }
+                        GradientStop { position: 0.48; color: "#A4AFBA" }
+                        GradientStop { position: 0.72; color: "#3C4653" }
+                        GradientStop { position: 1; color: "#8995A1" }
+                    }
+                    PathSvg { path: portrait.handsetPath(genericDeviceFrame.width, genericDeviceFrame.height, genericDeviceFrame.minimumCornerRadius) }
+                }
+            }
+            Shape {
+                id: genericDeviceDisplay
+                objectName: "genericDeviceDisplay"
+                x: Math.max(2.2, parent.width * 0.02); y: x
+                width: Math.max(0, parent.width - x * 2)
+                height: Math.max(0, parent.height - y * 2)
+                preferredRendererType: Shape.CurveRenderer
+                ShapePath {
+                    strokeColor: "#D010151D"
+                    strokeWidth: 1.1
+                    fillGradient: LinearGradient {
+                        x1: 0; y1: 0
+                        x2: genericDeviceDisplay.width; y2: genericDeviceDisplay.height
+                        GradientStop { position: 0; color: "#2D3B4C" }
+                        GradientStop { position: 0.32; color: "#1B2634" }
+                        GradientStop { position: 1; color: "#10151D" }
+                    }
+                    PathSvg { path: portrait.handsetPath(genericDeviceDisplay.width, genericDeviceDisplay.height) }
+                }
+            }
+            Shape {
+                id: glassHighlight
+                x: genericDeviceDisplay.x + 0.9; y: x
+                width: Math.max(0, parent.width - x * 2)
+                height: Math.max(0, parent.height - y * 2)
+                preferredRendererType: Shape.CurveRenderer
+                ShapePath {
+                    strokeColor: "#527D91A7"
+                    strokeWidth: 0.6
+                    fillColor: "transparent"
+                    PathSvg { path: portrait.handsetPath(glassHighlight.width, glassHighlight.height) }
+                }
+            }
+            Rectangle {
+                objectName: "genericDeviceCamera"
+                anchors.horizontalCenter: parent.horizontalCenter
+                y: Math.max(5, Math.min(8, parent.height * 0.025))
+                width: Math.max(2, Math.min(4, parent.width * 0.035))
+                height: width
+                radius: width / 2
+                visible: parent.width >= 32 && parent.height >= 80
+                color: "#090D13"
+                border.width: 0.5
+                border.color: "#4F6073"
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: parent.width * 0.35; height: width
+                    radius: width / 2
+                    color: "#31475E"
+                }
             }
         }
 
@@ -105,7 +168,7 @@ Item {
             readonly property real detailScale: portrait.largeStatus
                 ? Math.max(1, Math.min(handset.height < 220 ? 1.2 : 1.65,
                                       handset.width / 64, handset.height / 136)) : 1
-            x: portrait.hasStockImage ? 4 : 5
+            x: 5
             y: x
             width: (parent.width - x * 2) / detailScale
             height: (parent.height - y * 2) / detailScale
@@ -168,7 +231,7 @@ Item {
                     anchors.fill: parent
                     radius: width / 2
                     visible: screen.roomForDetails && !portrait.largeStatus
-                    color: portrait.hasStockImage ? "#DD20252E" : Theme.panelColor
+                    color: "#DD20252E"
                 }
                 Shape {
                     anchors.fill: parent
@@ -245,7 +308,7 @@ Item {
                 height: statusLabel.implicitHeight + 5
                 radius: 5
                 visible: portrait.statusText.length > 0 && (!portrait.online || screen.roomForDetails)
-                color: portrait.largeStatus ? "transparent" : (portrait.hasStockImage ? "#DD20252E" : Theme.panelColor)
+                color: portrait.largeStatus ? "transparent" : "#DD20252E"
                 Text {
                     id: statusLabel
                     objectName: "phoneStatusLabel"

@@ -13,7 +13,6 @@ import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -41,16 +40,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.nectarlink.android.NectarlinkApplication
 import app.nectarlink.android.R
@@ -310,7 +309,16 @@ private fun SkipButton(icon: Int, label: String, onClick: () -> Unit) {
         ),
         modifier = Modifier.size(48.dp).semantics { contentDescription = label },
     ) {
-        Icon(painter = painterResource(icon), contentDescription = null, modifier = Modifier.size(24.dp))
+        Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+            Icon(painter = painterResource(icon), contentDescription = null, modifier = Modifier.size(24.dp))
+            Text(
+                "10",
+                fontSize = 8.sp,
+                lineHeight = 8.sp,
+                color = Color.White,
+                modifier = Modifier.padding(top = 8.dp).clearAndSetSemantics { },
+            )
+        }
     }
 }
 
@@ -365,14 +373,9 @@ internal fun clock(ms: Long): String {
     }
 }
 
-/** An X, in the stroke style of the app's other drawn icons. */
 @Composable
 private fun CloseIcon() {
-    Canvas(Modifier.size(16.dp)) {
-        val width = 2.dp.toPx()
-        drawLine(Color.White, Offset(0f, 0f), Offset(size.width, size.height), width, StrokeCap.Round)
-        drawLine(Color.White, Offset(size.width, 0f), Offset(0f, size.height), width, StrokeCap.Round)
-    }
+    Icon(painterResource(R.drawable.wp_close), contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.White)
 }
 
 /** How long the controls stay after they show or are used. */

@@ -5,6 +5,8 @@ import QtQuick
 // Stands in for the Rust Preferences in QML tests: Bloom, light.
 QtObject {
     property string theme: "bloom"
+    property string fontFamily: "Figtree"
+    property int textScalePercent: 100
     property string colorMode: "light"
     property bool amoled: false
     property bool combMotion: false

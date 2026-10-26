@@ -93,6 +93,31 @@ impl RecordingFormat {
     }
 }
 
+pub const DEFAULT_FONT_FAMILY: &str = "Figtree";
+pub const MIN_TEXT_SCALE_PERCENT: i32 = 100;
+pub const MAX_TEXT_SCALE_PERCENT: i32 = 150;
+// Increase the Mac's compact type by default; preserve other platforms' density.
+pub const DEFAULT_TEXT_SCALE_PERCENT: i32 = if cfg!(target_os = "macos") { 115 } else { 100 };
+
+pub fn normalized_font_family(family: &str) -> String {
+    let family = family.trim();
+    if family.is_empty() || family.chars().count() > 128 || family.chars().any(char::is_control) {
+        DEFAULT_FONT_FAMILY.into()
+    } else {
+        family.into()
+    }
+}
+
+fn deserialize_font_family<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
+    Ok(normalized_font_family(&String::deserialize(deserializer).unwrap_or_default()))
+}
+
+fn deserialize_text_scale_percent<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<i32, D::Error> {
+    Ok(i32::deserialize(deserializer)
+        .unwrap_or(DEFAULT_TEXT_SCALE_PERCENT)
+        .clamp(MIN_TEXT_SCALE_PERCENT, MAX_TEXT_SCALE_PERCENT))
+}
+
 pub const DEFAULT_LOCAL_API_PORT: u16 = 53320;
 pub const DEFAULT_WINDOW_WIDTH: u32 = 1120;
 pub const DEFAULT_WINDOW_HEIGHT: u32 = 740;
@@ -328,6 +353,12 @@ pub struct Settings {
     pub seed: String,
     #[serde(alias = "color_mode")]
     pub color_mode: ColorMode,
+    /// UI family chosen in Appearance. Code retains the bundled monospace family.
+    #[serde(deserialize_with = "deserialize_font_family", alias = "font_family")]
+    pub font_family: String,
+    /// Text scale in percent, independent of window size and screen DPI.
+    #[serde(deserialize_with = "deserialize_text_scale_percent", alias = "text_scale_percent")]
+    pub text_scale_percent: i32,
     /// Pure #000000 OLED black surfaces when in dark mode.
     #[serde(default)]
     pub amoled: bool,
@@ -536,6 +567,8 @@ impl Default for Settings {
             theme: Theme::default(),
             seed: "wallpaper".into(),
             color_mode: ColorMode::default(),
+            font_family: DEFAULT_FONT_FAMILY.into(),
+            text_scale_percent: DEFAULT_TEXT_SCALE_PERCENT,
             amoled: false,
             backdrop: true,
             comb_motion: true,
@@ -610,6 +643,8 @@ impl Settings {
     }
 
     pub fn sanitized(mut self) -> Self {
+        self.font_family = normalized_font_family(&self.font_family);
+        self.text_scale_percent = self.text_scale_percent.clamp(MIN_TEXT_SCALE_PERCENT, MAX_TEXT_SCALE_PERCENT);
         self.webcam_camera = normalize_webcam_camera(&self.webcam_camera);
         self.walkthrough_step = self.walkthrough_step.min(6);
         self.window_screen = self.window_screen.map(|s| s.trim().to_owned()).filter(|s| !s.is_empty());
@@ -743,6 +778,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let def = Settings::load(dir.path());
         assert_eq!(def, Settings::default());
+        assert_eq!(def.font_family, DEFAULT_FONT_FAMILY);
+        assert_eq!(def.text_scale_percent, DEFAULT_TEXT_SCALE_PERCENT);
         assert_eq!(def.close_to_tray, cfg!(not(target_os = "macos")));
         assert_eq!(def.command_palette_hotkey, "Ctrl+Alt+Space");
         assert_eq!(def.shelf_hotkey, "Ctrl+Alt+S");
@@ -758,6 +795,8 @@ mod tests {
             theme: Theme::Graphite,
             seed: "ocean".into(),
             color_mode: ColorMode::Dark,
+            font_family: "Helvetica Neue".into(),
+            text_scale_percent: 150,
             amoled: false,
             backdrop: false,
             comb_motion: false,
@@ -841,10 +880,36 @@ mod tests {
         let loaded = Settings::load(dir.path());
         assert_eq!(loaded.theme, Theme::Graphite);
         assert_eq!(loaded.seed, "wallpaper");
+        assert_eq!(loaded.font_family, DEFAULT_FONT_FAMILY);
+        assert_eq!(loaded.text_scale_percent, DEFAULT_TEXT_SCALE_PERCENT);
 
         fs::write(dir.path().join(FILE_NAME), "{ not json").unwrap();
         assert_eq!(Settings::load(dir.path()), Settings::default());
         assert!(dir.path().join("desktop-settings.json.corrupt").exists());
+    }
+
+    #[test]
+    fn invalid_typography_is_bounded_without_losing_other_settings() {
+        for (value, expected) in [
+            (serde_json::json!(-10), 100),
+            (serde_json::json!(900), 150),
+            (serde_json::json!("large"), DEFAULT_TEXT_SCALE_PERCENT),
+            (serde_json::json!(null), DEFAULT_TEXT_SCALE_PERCENT),
+        ] {
+            let settings: Settings = serde_json::from_value(serde_json::json!({
+                "fontFamily": "\n", "textScalePercent": value,
+                "colorMode": "dark", "autoClipboard": false
+            })).unwrap();
+            assert_eq!(settings.font_family, DEFAULT_FONT_FAMILY);
+            assert_eq!(settings.text_scale_percent, expected);
+            assert_eq!(settings.color_mode, ColorMode::Dark);
+            assert!(!settings.auto_clipboard);
+        }
+        let settings: Settings = serde_json::from_value(serde_json::json!({
+            "fontFamily": 42, "textScalePercent": 100
+        })).unwrap();
+        assert_eq!(settings.font_family, DEFAULT_FONT_FAMILY);
+        assert_eq!(settings.text_scale_percent, 100);
     }
 
     #[test]

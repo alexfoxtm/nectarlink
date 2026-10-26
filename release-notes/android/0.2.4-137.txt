@@ -1,0 +1,4 @@
+Waypair Link for Android — 0.2.4 (137)
+
+- Navigation and action controls now use One UI vector icons.
+- Icon colors now follow their meaning, making actions and status easier to distinguish.

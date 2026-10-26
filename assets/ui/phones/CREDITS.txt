@@ -1,3 +1,7 @@
+Current application: one native generic handset illustration, no bundled phone photos, model-image catalogue or runtime image downloads. The illustration adapts to reported screen geometry and displays separate live status.
+
+Historical image-research attribution retained below; these raster images are no longer application assets:
+
 Samsung Galaxy Z Fold6 (Navy)
 Author: Mandy Harper
 Source: https://commons.wikimedia.org/wiki/File:Samsung_Galaxy_Z_Fold6.png

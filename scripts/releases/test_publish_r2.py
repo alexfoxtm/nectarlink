@@ -19,7 +19,7 @@ class PersonalBuildVersionTest(unittest.TestCase):
 
 
 class ReleaseNotesTest(unittest.TestCase):
-    def test_android_notes_upload_and_legacy_default(self):
+    def test_android_notes_upload_and_missing_notes_refused(self):
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
             apk_path = base / "Waypair-Link-0.47.0-android.apk"
@@ -50,12 +50,9 @@ class ReleaseNotesTest(unittest.TestCase):
             self.assertEqual(feed["html_url"], publisher["public_url"](a_prefix + "CHANGELOG.txt"))
             self.assertEqual(manifests[0].key, publisher["ANDROID_MANIFEST_KEY"])
 
-            legacy, legacy_manifests = publisher["plan_android"](
-                {"version": version, "apk": entry(apk_path), "source": entry(src_path)}, base)
-            self.assertEqual(len(legacy), 3)
-            legacy_feed = json.loads(legacy_manifests[0].data.decode("utf-8"))
-            self.assertEqual(legacy_feed["html_url"], publisher["public_url"](a_prefix + "SHA256SUMS.txt"))
-            self.assertNotIn("CHANGELOG", legacy[2].data.decode("utf-8"))
+            with self.assertRaises(publisher["Failure"]):
+                publisher["plan_android"](
+                    {"version": version, "apk": entry(apk_path), "source": entry(src_path)}, base)
 
             dmg_path = base / "Waypair-Link-0.47.0.dmg"
             dmg_path.write_bytes(b"fake-dmg-bytes")
@@ -77,6 +74,10 @@ class ReleaseNotesTest(unittest.TestCase):
             self.assertIn("CHANGELOG.txt", m_immutable[3].data.decode("utf-8"))
             self.assertEqual(m_manifests[0].key, publisher["MACOS_APPCAST_KEY"])
             self.assertEqual(m_manifests[0].body(), appcast_path.read_bytes())
+            with self.assertRaises(publisher["Failure"]):
+                publisher["plan_macos"](
+                    {"version": version, "dmg": entry(dmg_path), "source": entry(msrc_path),
+                     "appcast": entry(appcast_path)}, base)
 
     def test_release_notes_malformed_and_oversize_refused(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -116,6 +117,11 @@ class ReleaseNotesTest(unittest.TestCase):
                 publisher["plan_android"](section_for(entry(big)), base)
             notes_path = base / "CHANGELOG.txt"
             notes_path.write_text("ok\n", encoding="utf-8")
+            for heading in ("Waypair Link 0.46.0", "Waypair Link 0.47.0-local.1", "Waypair Link 0.47.01", "\nWaypair Link 0.47.0"):
+                notes_path.write_text(heading + "\n\n- A change\n", encoding="utf-8")
+                with self.subTest(heading=heading), self.assertRaises(publisher["Failure"]):
+                    publisher["plan_android"](section_for(entry(notes_path)), base)
+            notes_path.write_text("Waypair Link 0.47.0\n\n- A change\n", encoding="utf-8")
             bad_hash = entry(notes_path)
             bad_hash["sha256"] = "0" * 64
             with self.assertRaises(publisher["Failure"]):

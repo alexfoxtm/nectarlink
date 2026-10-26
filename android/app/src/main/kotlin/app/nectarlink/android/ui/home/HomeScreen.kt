@@ -80,13 +80,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -1012,7 +1007,7 @@ private fun NoPairedPcCard(
                 ),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(RemotePcIcon, contentDescription = null, modifier = Modifier.size(36.dp), tint = MaterialTheme.colorScheme.primary)
+            Icon(painterResource(R.drawable.wp_monitor), contentDescription = null, modifier = Modifier.size(36.dp), tint = MaterialTheme.colorScheme.primary)
         }
         Spacer(Modifier.height(8.dp))
         Text(
@@ -1201,7 +1196,7 @@ private fun PermissionsSetupCard(
                 )
             }
             Icon(
-                imageVector = ChevronDownIcon,
+                painter = painterResource(R.drawable.wp_oneui_keyboard_arrow_down),
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
@@ -1451,7 +1446,7 @@ private fun PeerCard(
                 },
                 modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
             ) {
-                Icon(imageVector = BellIcon, contentDescription = null, modifier = Modifier.size(15.dp))
+                Icon(painter = painterResource(R.drawable.wp_bell_color), contentDescription = null, modifier = Modifier.size(15.dp))
                 Spacer(Modifier.width(6.dp))
                 ButtonLabel(stringResource(if (ringing) R.string.action_stop_ringing else R.string.action_ring_device))
             }
@@ -1461,7 +1456,7 @@ private fun PeerCard(
                 onClick = { pickFiles.launch(arrayOf("*/*")) },
                 modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
             ) {
-                Icon(imageVector = SendArrowIcon, contentDescription = null, modifier = Modifier.size(15.dp))
+                Icon(painter = painterResource(R.drawable.wp_send_color), contentDescription = null, modifier = Modifier.size(15.dp))
                 Spacer(Modifier.width(6.dp))
                 ButtonLabel(stringResource(R.string.action_send_files))
             }
@@ -1472,7 +1467,7 @@ private fun PeerCard(
             onClick = { context.startActivity(SendActivity.sendClipboardIntent(context, device.id)) },
             modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
         ) {
-            Icon(imageVector = ClipboardIcon, contentDescription = null, modifier = Modifier.size(15.dp))
+            Icon(painter = painterResource(R.drawable.ic_clipboard), contentDescription = null, modifier = Modifier.size(15.dp))
             Spacer(Modifier.width(6.dp))
             ButtonLabel(stringResource(R.string.action_send_clipboard))
         }
@@ -1775,6 +1770,20 @@ private fun HomeFeatureTile(
     modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
+    val dark = scheme.surface.luminance() < 0.5f
+    val actionTint = when (action.iconRes) {
+        R.drawable.wp_control_color -> if (dark) Color(0xFF8DB6FF) else Color(0xFF215CC5)
+        R.drawable.wp_deck_color -> if (dark) Color(0xFFC5A0FF) else Color(0xFF7042BE)
+        R.drawable.wp_clock_color -> if (dark) Color(0xFFA9ABFF) else Color(0xFF4C51AC)
+        R.drawable.wp_camera_color -> if (dark) Color(0xFF73D4C8) else Color(0xFF06746C)
+        R.drawable.wp_send_color -> if (dark) Color(0xFF8DD5A0) else Color(0xFF2B7343)
+        R.drawable.wp_folder_color -> if (dark) Color(0xFFE5C15B) else Color(0xFF8A5D00)
+        R.drawable.wp_clipboard_color -> if (dark) Color(0xFF7ACDE9) else Color(0xFF096B8C)
+        R.drawable.wp_browse_color -> if (dark) Color(0xFFF1B471) else Color(0xFF9B4F0B)
+        R.drawable.wp_mic_color -> if (dark) Color(0xFFF0A0BC) else Color(0xFFA43D67)
+        R.drawable.wp_bell_color -> if (dark) Color(0xFFFFA69C) else Color(0xFFB13F35)
+        else -> scheme.primary
+    }
     val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
@@ -1805,12 +1814,11 @@ private fun HomeFeatureTile(
                     Modifier.size(64.dp).waypairRaisedWell(enabled = action.enabled),
                     contentAlignment = Alignment.Center,
                 ) {
-                    // Full-color authored artwork must not inherit Material's icon tint.
-                    Image(
+                    Icon(
                         painterResource(action.iconRes),
                         contentDescription = null,
                         modifier = Modifier.size(36.dp),
-                        alpha = if (action.enabled) 1f else 0.42f,
+                        tint = if (action.enabled) actionTint else scheme.onSurfaceVariant.copy(alpha = 0.42f),
                     )
                 }
             }
@@ -2017,7 +2025,7 @@ private fun PcAudioCardSection(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Icon(
-                    imageVector = MicIcon,
+                    painter = painterResource(R.drawable.wp_mic_color),
                     contentDescription = null,
                     tint = ink.copy(alpha = 0.9f),
                     modifier = Modifier.size(20.dp),
@@ -2650,14 +2658,14 @@ private fun SendQueueRow(
         item.kind == FfiQueueKind.HANDOFF_DOCUMENT ||
         item.kind == FfiQueueKind.RECORDING
     val kindIcon = when (item.kind) {
-        FfiQueueKind.CLIPBOARD, FfiQueueKind.CLIPBOARD_IMAGE -> ClipboardIcon
-        FfiQueueKind.LINK -> LinkChainIcon
+        FfiQueueKind.CLIPBOARD, FfiQueueKind.CLIPBOARD_IMAGE -> R.drawable.ic_clipboard
+        FfiQueueKind.LINK -> R.drawable.wp_globe
         FfiQueueKind.FILES,
         FfiQueueKind.FOLDER,
         FfiQueueKind.HANDOFF_DOCUMENT,
         FfiQueueKind.RECORDING,
         FfiQueueKind.TASK_NOTIFY,
-        FfiQueueKind.CAMERA_REQUEST -> SendArrowIcon
+        FfiQueueKind.CAMERA_REQUEST -> R.drawable.wp_send_color
     }
     val status = item.status
     val targetId = item.activeTransferId ?: item.id
@@ -2710,7 +2718,7 @@ private fun SendQueueRow(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Icon(
-                imageVector = kindIcon,
+                painter = painterResource(kindIcon),
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(18.dp),
@@ -2759,7 +2767,7 @@ private fun SendQueueRow(
                         modifier = Modifier.size(WaypairDesign.touchTarget),
                     ) {
                         Icon(
-                            imageVector = CloseQueueIcon,
+                            painter = painterResource(R.drawable.wp_close),
                             contentDescription = stringResource(R.string.action_cancel),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(18.dp),
@@ -3769,81 +3777,6 @@ private fun openSavedPcFile(context: android.content.Context, uri: Uri, fileName
     runCatching {
         context.startActivity(ReceivedFiles.openIntent(context, uri, fileName))
     }
-}
-
-private fun softContinuousVector(name: String, svgPath: String, strokeWidth: Float = 1.9f): ImageVector {
-    val nodes = androidx.compose.ui.graphics.vector.PathParser().parsePathString(svgPath).toNodes()
-    return ImageVector.Builder(
-        name = name,
-        defaultWidth = 24.dp,
-        defaultHeight = 24.dp,
-        viewportWidth = 24f,
-        viewportHeight = 24f,
-    ).addPath(
-        pathData = nodes,
-        fill = null,
-        stroke = SolidColor(Color.White),
-        strokeLineWidth = strokeWidth,
-        strokeLineCap = StrokeCap.Round,
-        strokeLineJoin = StrokeJoin.Round,
-    ).build()
-}
-
-private val RemotePcIcon: ImageVector by lazy {
-    softContinuousVector(
-        name = "RemotePc",
-        svgPath = "M2,6A2.5,2.5 0 0,1 4.5,3.5H19.5A2.5,2.5 0 0,1 22,6V15A2.5,2.5 0 0,1 19.5,17.5H4.5A2.5,2.5 0 0,1 2,15Z M8,21H16 M12,17.5V21",
-    )
-}
-
-private val SendArrowIcon: ImageVector by lazy {
-    softContinuousVector(
-        name = "SendArrow",
-        svgPath = "M12,16V4 M7,9L12,4L17,9 M4,20H20",
-    )
-}
-
-private val ChevronDownIcon: ImageVector by lazy {
-    softContinuousVector(
-        name = "ChevronDown",
-        svgPath = "M6,9L12,15L18,9",
-        strokeWidth = 2.2f,
-    )
-}
-
-private val ClipboardIcon: ImageVector by lazy {
-    softContinuousVector(
-        name = "Clipboard",
-        svgPath = "M9,3.5H15A1.5,1.5 0 0,1 16.5,5V5.5A1.5,1.5 0 0,1 15,7H9A1.5,1.5 0 0,1 7.5,5.5V5A1.5,1.5 0 0,1 9,3.5Z M16.5,5H18A2.5,2.5 0 0,1 20.5,7.5V19A2.5,2.5 0 0,1 18,21.5H6A2.5,2.5 0 0,1 3.5,19V7.5A2.5,2.5 0 0,1 6,5H7.5",
-    )
-}
-
-private val MicIcon: ImageVector by lazy {
-    softContinuousVector(
-        name = "Mic",
-        svgPath = "M12,2.5A3.2,3.2 0 0,1 15.2,5.7V11.3A3.2,3.2 0 0,1 8.8,11.3V5.7A3.2,3.2 0 0,1 12,2.5Z M18.5,10.5V11.3A6.5,6.5 0 0,1 5.5,11.3V10.5 M12,17.8V21.5 M8.5,21.5H15.5",
-    )
-}
-
-private val BellIcon: ImageVector by lazy {
-    softContinuousVector(
-        name = "Bell",
-        svgPath = "M6,8.5A6,6 0 0,1 18,8.5C18,14.5 20.2,16.5 20.2,16.5H3.8C3.8,16.5 6,14.5 6,8.5 M10.2,20A2.1,2.1 0 0,0 13.8,20",
-    )
-}
-
-private val LinkChainIcon: ImageVector by lazy {
-    softContinuousVector(
-        name = "LinkChain",
-        svgPath = "M10,14A4.5,4.5 0 0,0 16.4,14L19.2,11.2A4.5,4.5 0 0,0 12.8,4.8L11.2,6.4 M14,10A4.5,4.5 0 0,0 7.6,10L4.8,12.8A4.5,4.5 0 0,0 11.2,19.2L12.8,17.6",
-    )
-}
-
-private val CloseQueueIcon: ImageVector by lazy {
-    softContinuousVector(
-        name = "CloseQueue",
-        svgPath = "M6,6L18,18 M18,6L6,18",
-    )
 }
 
 // Compact padding leaves room for labels as the PC action grid adapts to pane width.

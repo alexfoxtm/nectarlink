@@ -838,17 +838,26 @@ Item {
                         }
                     }
 
-                    Flow {
+                    GridLayout {
                         id: toggleRow
                         width: parent.width
-                        spacing: 6
+                        height: implicitHeight
+                        columns: home.onMac ? 6 : buttonCount
+                        columnSpacing: home.onMac ? 10 : 6
+                        rowSpacing: home.onMac ? 10 : 6
+                        uniformCellWidths: true
                         readonly property int buttonCount: phoneControls.hasFlashlight ? 5 : 4
-                        readonly property real buttonWidth: (width - spacing * (buttonCount - 1)) / buttonCount
+                        readonly property int secondarySpan: phoneControls.hasFlashlight ? 2 : 3
 
                         QuickToggleButton {
                             compact: home.onMac
-                            width: home.onMac ? implicitWidth : toggleRow.buttonWidth
-                            iconPath: Icons.moon
+                            Layout.row: home.onMac ? 1 : 0
+                            Layout.column: 0
+                            Layout.columnSpan: home.onMac ? toggleRow.secondarySpan : 1
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            Layout.preferredWidth: 1
+                            iconPath: Icons.dnd
                             shortTitle: qsTr("DND")
                             label: qsTr("Do Not Disturb")
                             active: phoneControls.state ? Boolean(phoneControls.state.dnd) : false
@@ -859,7 +868,12 @@ Item {
                         QuickToggleButton {
                             compact: home.onMac
                             visible: phoneControls.hasFlashlight
-                            width: home.onMac ? implicitWidth : toggleRow.buttonWidth
+                            Layout.row: home.onMac ? 1 : 0
+                            Layout.column: home.onMac ? 2 : 1
+                            Layout.columnSpan: home.onMac ? 2 : 1
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            Layout.preferredWidth: 1
                             iconPath: Icons.flashlight
                             shortTitle: qsTr("Torch")
                             label: qsTr("Flashlight")
@@ -870,7 +884,13 @@ Item {
                         }
                         QuickToggleButton {
                             compact: home.onMac
-                            width: home.onMac ? implicitWidth : toggleRow.buttonWidth
+                            largePill: home.onMac
+                            Layout.row: 0
+                            Layout.column: home.onMac ? 0 : (phoneControls.hasFlashlight ? 2 : 1)
+                            Layout.columnSpan: home.onMac ? 3 : 1
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            Layout.preferredWidth: 1
                             iconPath: Icons.wifi
                             shortTitle: qsTr("Wi‑Fi")
                             label: qsTr("Wi‑Fi")
@@ -886,9 +906,15 @@ Item {
                         }
                         QuickToggleButton {
                             compact: home.onMac
-                            width: home.onMac ? implicitWidth : toggleRow.buttonWidth
+                            largePill: home.onMac
+                            Layout.row: 0
+                            Layout.column: home.onMac ? 3 : (phoneControls.hasFlashlight ? 3 : 2)
+                            Layout.columnSpan: home.onMac ? 3 : 1
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            Layout.preferredWidth: 1
                             iconPath: Icons.bluetooth
-                            shortTitle: qsTr("BT")
+                            shortTitle: home.onMac ? qsTr("Bluetooth") : qsTr("BT")
                             label: qsTr("Bluetooth")
                             active: phoneControls.state ? Boolean(phoneControls.state.bluetooth) : false
                             feature: phoneControls.bluetoothFeature
@@ -897,7 +923,12 @@ Item {
                         }
                         QuickToggleButton {
                             compact: home.onMac
-                            width: home.onMac ? implicitWidth : toggleRow.buttonWidth
+                            Layout.row: home.onMac ? 1 : 0
+                            Layout.column: phoneControls.hasFlashlight ? 4 : 3
+                            Layout.columnSpan: home.onMac ? toggleRow.secondarySpan : 1
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            Layout.preferredWidth: 1
                             iconPath: home.onMac ? Icons.hotspot : Icons.wifi
                             shortTitle: qsTr("Hotspot")
                             label: qsTr("Join phone hotspot")
@@ -1409,39 +1440,52 @@ Item {
                     width: parent.width
                     spacing: 8
                     Item {
+                        id: feedHeader
                         width: parent.width
-                        height: header.height + clearAll.height + 6
+                        readonly property real actionsWidth: (historyAction.visible ? historyAction.implicitWidth : 0)
+                            + (clearAll.visible ? clearAll.implicitWidth : 0)
+                            + (historyAction.visible && clearAll.visible ? 8 : 0)
+                        readonly property bool inlineActions: header.implicitWidth
+                            + (actionsWidth > 0 ? actionsWidth + 12 : 0) <= width
+                        height: inlineActions ? Math.max(header.implicitHeight, headerActions.implicitHeight)
+                            : header.implicitHeight + (headerActions.implicitHeight > 0 ? headerActions.implicitHeight + 6 : 0)
                         Txt {
                             id: header
-                            width: parent.width
+                            width: feedHeader.inlineActions
+                                ? Math.max(0, parent.width - (feedHeader.actionsWidth > 0 ? feedHeader.actionsWidth + 12 : 0))
+                                : parent.width
+                            y: feedHeader.inlineActions ? (parent.height - height) / 2 : 0
                             elide: Text.ElideRight
                             role: "title"
                             size: 14
                             text: feed.count > 0 ? qsTr("Notifications · %1").arg(feed.count) : qsTr("Notifications")
                         }
-                        IconButton {
-                            anchors.right: clearAll.visible ? clearAll.left : parent.right
-                            anchors.rightMargin: clearAll.visible ? 8 : 0
-                            anchors.bottom: parent.bottom
-                            visible: NotificationList.historyEnabled && page.currentDeviceId.length > 0
-                            iconPath: Icons.history
-                            text: qsTr("History")
-                            label: qsTr("Notification history (last 24 hours)")
-                            onClicked: {
-                                historySearch.text = ""
-                                historySheet.open()
-                            }
-                        }
-                        Button {
-                            id: clearAll
+                        Flow {
+                            id: headerActions
+                            width: Math.min(parent.width, feedHeader.actionsWidth)
                             anchors.right: parent.right
-                            anchors.bottom: parent.bottom
-                            visible: feed.count > 0
-                            variant: "tonal"
-                            size: "sm"
-                            iconPath: Icons.close
-                            text: qsTr("Clear all")
-                            onClicked: NotificationList.dismissAll(home.deviceId)
+                            y: feedHeader.inlineActions ? (parent.height - height) / 2 : header.height + 6
+                            spacing: 8
+                            IconButton {
+                                id: historyAction
+                                visible: NotificationList.historyEnabled && page.currentDeviceId.length > 0
+                                iconPath: Icons.history
+                                text: qsTr("History")
+                                label: qsTr("Notification history (last 24 hours)")
+                                onClicked: {
+                                    historySearch.text = ""
+                                    historySheet.open()
+                                }
+                            }
+                            Button {
+                                id: clearAll
+                                visible: feed.count > 0
+                                variant: "tonal"
+                                size: "sm"
+                                iconPath: Icons.close
+                                text: qsTr("Clear all")
+                                onClicked: NotificationList.dismissAll(home.deviceId)
+                            }
                         }
                     }
                     // Calm inline Undo bar after dismissing a notification or app group.
@@ -1507,15 +1551,28 @@ Item {
                         running: feed.count > 0
                         onTriggered: minutes++
                     }
-                    // The page scrolls; this Column lays out every notification cleanly so
-                    // images, replies, and group expansions always size the Card accurately.
-                    Column {
+                    // Keep each delegate alive while the feed changes columns. Expanded
+                    // groups retain their vertical thread; other cards scan left to right.
+                    Grid {
                         id: list
                         width: parent.width
-                        spacing: 4
+                        readonly property real minimumCardWidth: 360 * Theme.textScale
+                        readonly property bool hasExpandedGroup: {
+                            for (let i = 0; i < children.length; ++i) {
+                                const child = children[i]
+                                if (child instanceof NotificationItem && child.visible && child.groupExpanded)
+                                    return true
+                            }
+                            return false
+                        }
+                        columns: !hasExpandedGroup && width >= minimumCardWidth * 2 + columnSpacing ? 2 : 1
+                        flow: Grid.LeftToRight
+                        layoutDirection: Qt.LeftToRight
+                        columnSpacing: 12
+                        rowSpacing: 4
                         move: Transition {
                             enabled: !Theme.reduceMotion && !page.resizing
-                            NumberAnimation { properties: "y"; duration: 220; easing.type: Easing.OutCubic }
+                            NumberAnimation { properties: "x,y"; duration: 220; easing.type: Easing.OutCubic }
                         }
                         add: Transition {
                             enabled: !Theme.reduceMotion && !page.resizing
@@ -1524,7 +1581,7 @@ Item {
                         Repeater {
                             model: NotificationList
                             delegate: NotificationItem {
-                                width: list.width
+                                width: (list.width - list.columnSpacing * (list.columns - 1)) / list.columns
                                 clock: feedClock.minutes
                                 visible: deviceId === home.deviceId
                                 height: visible ? implicitHeight : 0
@@ -2994,7 +3051,7 @@ Item {
         Column {
             id: actionTileContent
             x: 16
-            y: Math.round((tile.height - height) / 2)
+            y: 14
             width: parent.width - 32
             spacing: 8
             Rectangle {
@@ -3073,6 +3130,7 @@ Item {
         property string shortTitle
         property string label
         property bool compact: false
+        property bool largePill: false
         property bool active: false
         property var feature: ({})
         readonly property bool available: feature.state === "available"
@@ -3080,8 +3138,18 @@ Item {
         signal clicked
         signal lockedClicked
 
-        implicitWidth: compact ? quickToggleContent.implicitWidth + 24 : 64
-        height: compact ? 40 : 52
+        readonly property real controlScale: compact ? Theme.textScale : 1
+        readonly property real circleSize: Math.max(44, Math.round(38 * controlScale))
+        readonly property color discColor: active && available ? "#f3f3f4"
+            : (Theme.dark ? "#51545e" : "#d5d7dc")
+        readonly property color discInk: active && available ? "#252730"
+            : (Theme.dark ? "#c7c9d0" : "#5b5e68")
+        implicitWidth: compact ? (largePill ? oneUiLabel.implicitWidth + circleSize + 28
+            : Math.max(circleSize, oneUiLabel.implicitWidth)) : 64
+        implicitHeight: compact ? (largePill
+            ? Math.max(58, Math.round(52 * controlScale), circleSize + 16, oneUiLabel.implicitHeight + 20)
+            : circleSize + 6 + oneUiLabel.implicitHeight) : 52
+        height: implicitHeight
         activeFocusOnTab: available
 
         Accessible.role: Accessible.CheckBox
@@ -3099,6 +3167,8 @@ Item {
         }
 
         readonly property color fillColor: {
+            if (compact)
+                return largePill ? (Theme.dark ? Qt.rgba(1, 1, 1, 0.07) : Qt.rgba(0, 0, 0, 0.045)) : discColor
             if (active && available)
                 return Theme.actionColor
             if (active && !available)
@@ -3114,8 +3184,10 @@ Item {
         }
 
         Rectangle {
-            anchors.fill: parent
-            radius: Theme.radiusMd
+            x: qbtn.compact && !qbtn.largePill ? (qbtn.width - width) / 2 : 0
+            width: qbtn.compact && !qbtn.largePill ? qbtn.circleSize : qbtn.width
+            height: qbtn.compact && !qbtn.largePill ? qbtn.circleSize : qbtn.height
+            radius: qbtn.compact ? height / 2 : Theme.radiusMd
             color: qbtn.fillColor
             border.width: Theme.focusVisible(qbtn) ? 2 : (Theme.graphite || Theme.glass || (qbtn.active && !qbtn.available) ? 1 : 0)
             border.color: Theme.focusVisible(qbtn) ? Theme.primary : (Theme.glass ? Theme.cardBorder : Theme.outlineVariant)
@@ -3132,6 +3204,7 @@ Item {
 
             Grid {
                 id: quickToggleContent
+                visible: !qbtn.compact
                 anchors.centerIn: parent
                 columns: qbtn.compact ? 2 : 1
                 spacing: qbtn.compact ? 5 : 3
@@ -3166,6 +3239,48 @@ Item {
                 path: Icons.lock
                 color: qbtn.contentColor
                 opacity: 0.7
+            }
+        }
+
+        Item {
+            anchors.fill: parent
+            visible: qbtn.compact
+            opacity: qbtn.available || qbtn.active ? 1 : 0.55
+            scale: qtap.pressed && qbtn.available ? Theme.pressScale : 1
+            Behavior on scale { enabled: !Theme.reduceMotion; NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+
+            Rectangle {
+                id: oneUiDisc
+                visible: qbtn.largePill
+                x: 10
+                y: (parent.height - height) / 2
+                width: qbtn.circleSize
+                height: width
+                radius: width / 2
+                color: qbtn.discColor
+            }
+            Icon {
+                x: qbtn.largePill ? oneUiDisc.x + (oneUiDisc.width - width) / 2 : (parent.width - width) / 2
+                y: qbtn.largePill ? (parent.height - height) / 2 : (qbtn.circleSize - height) / 2
+                width: Math.round(23 * qbtn.controlScale)
+                height: width
+                path: qbtn.iconPath
+                color: qbtn.discInk
+                semanticTint: false
+            }
+            Txt {
+                id: oneUiLabel
+                x: qbtn.largePill ? oneUiDisc.x + oneUiDisc.width + 8 : 0
+                y: qbtn.largePill ? (parent.height - height) / 2 : qbtn.circleSize + 6
+                width: qbtn.largePill ? Math.max(1, parent.width - x - 10) : parent.width
+                horizontalAlignment: qbtn.largePill ? Text.AlignLeft : Text.AlignHCenter
+                role: "caption"
+                size: 12
+                weight: qbtn.largePill ? 600 : 500
+                color: qbtn.available ? Theme.surfaceContent : Theme.surfaceContentVariant
+                text: qbtn.shortTitle
+                wrapMode: Text.Wrap
+                elide: Text.ElideNone
             }
         }
 

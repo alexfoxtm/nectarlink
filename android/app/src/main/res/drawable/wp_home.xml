@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Fluent UI System Icons 1.1.344, MIT; see assets/ui/fluent/SOURCE-MANIFEST.json. -->
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
-    <path android:fillColor="#FF000000" android:fillType="nonZero" android:pathData="M10.55 2.53c.84-.7 2.06-.7 2.9 0l6.75 5.7c.5.42.8 1.05.8 1.71v9.31c0 .97-.78 1.75-1.75 1.75h-3.5c-.97 0-1.75-.78-1.75-1.75v-5a.25.25 0 0 0-.25-.25h-3.5a.25.25 0 0 0-.25.25v5c0 .97-.78 1.75-1.75 1.75h-3.5C3.78 21 3 20.22 3 19.25v-9.3c0-.67.3-1.3.8-1.73zm1.93 1.15a.75.75 0 0 0-.96 0l-6.75 5.7a.8.8 0 0 0-.27.56v9.31c0 .14.11.25.25.25h3.5q.23-.01.25-.25v-5c0-.97.78-1.75 1.75-1.75h3.5c.97 0 1.75.78 1.75 1.75v5q.02.23.25.25h3.5q.23-.01.25-.25v-9.3q0-.36-.27-.58z" />
+<!-- OneUIProject oneui-icons 3808bd6965251e7616b1a0a286c75f5d533715e7, MIT; see assets/ui/oneui/ANDROID-SOURCE.json and LICENSE. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#00000000" android:fillType="evenOdd" android:pathData="M13.2673,4.6561L18.8743,9.3321C19.6143,9.9491 20.0423,10.8641 20.0423,11.8271L20.0423,17.4711C20.0423,18.8521 18.9233,19.9711 17.5423,19.9711L15.0183,19.9704L15.0188,13.8904C15.0188,13.1111 14.4235,12.47 13.6632,12.3973L13.5188,12.3904L10.7728,12.3904C9.9448,12.3904 9.2728,13.0624 9.2728,13.8904L9.2728,13.8904L9.2728,19.7704L14.9893,19.9704L6.7503,19.9711C5.3693,19.9711 4.2503,18.8521 4.2503,17.4711L4.2503,11.8271C4.2503,10.8641 4.6783,9.9491 5.4183,9.3321L11.0253,4.6561C11.6743,4.1151 12.6173,4.1151 13.2673,4.6561Z" android:strokeWidth="1.5" android:strokeColor="#FF000000" android:strokeLineCap="round" android:strokeLineJoin="round" />
 </vector>

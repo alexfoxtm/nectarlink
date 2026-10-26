@@ -22,7 +22,7 @@ FocusScope {
         : variant === "tonal" ? Theme.secondaryContainerContent
         : variant === "text" ? Theme.actionColor : Theme.surfaceContent
 
-    implicitHeight: small ? 36 : 40
+    implicitHeight: Math.max(small ? 36 : 40, row.implicitHeight + (small ? 12 : 16))
     implicitWidth: Math.max(36, row.implicitWidth + (variant === "text" ? 20 : (small ? 26 : 36)))
     activeFocusOnTab: true
     opacity: enabled ? 1 : 0.38

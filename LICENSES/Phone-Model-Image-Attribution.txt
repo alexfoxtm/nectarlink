@@ -1,3 +1,7 @@
+Current application: one native generic handset illustration, no bundled phone photos, model-image catalogue or runtime image downloads. The illustration adapts to reported screen geometry and displays separate live status.
+
+Historical image-research attribution retained below; these raster images are no longer application assets:
+
 Samsung Galaxy Z Fold6 (Navy)
 Author: Mandy Harper
 Source: https://commons.wikimedia.org/wiki/File:Samsung_Galaxy_Z_Fold6.png
@@ -13,5 +17,29 @@ interface does not depict a live screen capture. No endorsement is implied.
 The image is licensed separately from the GPL-3.0-or-later component source.
 The display crop and overlay are identified modifications to the presentation;
 the source image and its CC BY-SA attribution and license remain available here.
-The reviewed stock-model catalogue contains SM-F956B only. Other model IDs use
-a neutral handset; no device has been queried to select or validate this image.
+The reviewed stock-model catalogue maps exact hardware model SM-F956B to this
+Fold6 image and exact hardware model SM-F976U to the Fold8 Ultra image below.
+Matching normalizes whitespace and case and accepts an optional Samsung
+manufacturer prefix. Other model IDs use a neutral handset based on measured
+screen geometry when available. Friendly display names do not select an image.
+
+Samsung Galaxy Z Fold8 Ultra (front)
+Author: Kyu3a
+Source: https://commons.wikimedia.org/wiki/File:Galaxy_Z_Fold8_Ultra_-_1.jpg
+Original JPEG: https://upload.wikimedia.org/wikipedia/commons/0/03/Galaxy_Z_Fold8_Ultra_-_1.jpg
+Bundled 960-pixel JPEG: https://thumb.wikimedia.org/wikipedia/commons/thumb/0/03/Galaxy_Z_Fold8_Ultra_-_1.jpg/960px-Galaxy_Z_Fold8_Ultra_-_1.jpg
+License: Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)
+License: https://creativecommons.org/licenses/by-sa/4.0/
+Legal code: https://creativecommons.org/licenses/by-sa/4.0/legalcode.en
+Original raster SHA-256: b620fc3eaadc7408bb173521f80708a7dba676a6f9a7ad1841146d2d26d5d412
+Bundled raster SHA-256: ad8fb1e6977de857a023011afec2a94de86062488e5c03e81241bccad5f2793f
+Bundled raster size: 230805 bytes; 960 x 1280 pixels
+Hardware-model evidence: https://www.samsung.com/us/accessibility/mobile/
+
+The bundled JPEG is byte-for-byte unchanged from the linked 960-pixel rendition.
+PhoneModelPortrait.qml masks the hand and background at display time and covers
+the retail demo screen with a neutral panel, preserving the real frame and front
+camera. A separate live-status overlay is not a live screen capture. These are
+identified presentation modifications; the source photograph is not edited or
+AI-generated. No endorsement is implied. The image is licensed separately from
+the GPL-3.0-or-later component source, under CC BY-SA 4.0 as linked above.

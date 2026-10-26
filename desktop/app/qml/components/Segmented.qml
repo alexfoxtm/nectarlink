@@ -20,7 +20,15 @@ Rectangle {
     readonly property Item selectedItem: (selectedIndex >= 0 && selectedIndex < segRepeater.count)
         ? segRepeater.itemAt(selectedIndex) : null
 
-    implicitHeight: 42
+    readonly property real labelHeight: {
+        let tallest = 0
+        for (let i = 0; i < segRepeater.count; ++i) {
+            const item = segRepeater.itemAt(i)
+            if (item) tallest = Math.max(tallest, item.labelHeight)
+        }
+        return tallest
+    }
+    implicitHeight: Math.max(42, labelHeight + 20)
     implicitWidth: row.implicitWidth + 6
     radius: Theme.controlRadius
     color: Theme.insetColor
@@ -62,6 +70,7 @@ Rectangle {
                 id: option
                 required property var modelData
                 required property int index
+                readonly property real labelHeight: label.implicitHeight
                 readonly property bool selected: modelData.value === segmented.value
                 width: Math.max(36, label.implicitWidth + 26)
                 height: segmented.height - 6

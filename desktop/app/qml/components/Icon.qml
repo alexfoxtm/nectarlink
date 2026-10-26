@@ -3,7 +3,7 @@ import QtQuick
 import QtQuick.Shapes
 import app.nectarlink
 
-// Mac uses authored Phosphor duotone/fill; other paths keep the existing API.
+// App-owned semantic icons use complete OneUI SVGs; source remains an untinted image API.
 Item {
     id: icon
     property string path
@@ -11,10 +11,11 @@ Item {
     property real stroke: 1.8
     property url source: ""
     property bool selected: false
+    property bool semanticTint: true
     readonly property bool hasSource: source.toString().length > 0
     readonly property bool sourcedPath: Icons.isSourced(path)
-    readonly property var phosphorPath: Theme.onMac ? Icons.phosphor(path) : null
-    readonly property color paintColor: Icons.utilityColor(path, color)
+    readonly property var oneuiPath: Icons.oneuiBinding(path)
+    readonly property color paintColor: semanticTint ? Icons.utilityColor(path, color) : color
 
     implicitWidth: 20
     implicitHeight: 20
@@ -29,44 +30,35 @@ Item {
         smooth: true
     }
 
-    Shape {
-        visible: !icon.hasSource && icon.phosphorPath !== null
-        anchors.centerIn: parent
-        width: 256
-        height: 256
-        scale: Math.min(icon.width, icon.height) / 256
-        preferredRendererType: Shape.CurveRenderer
-        ShapePath {
-            strokeColor: "transparent"
-            strokeWidth: 0
-            fillColor: Qt.rgba(icon.paintColor.r, icon.paintColor.g, icon.paintColor.b, icon.paintColor.a * 0.2)
-            fillRule: ShapePath.WindingFill
-            PathSvg { path: icon.phosphorPath && !icon.selected ? icon.phosphorPath.background : "" }
-        }
-        ShapePath {
-            strokeColor: "transparent"
-            strokeWidth: 0
-            fillColor: icon.paintColor
-            fillRule: ShapePath.WindingFill
-            PathSvg { path: icon.phosphorPath ? (icon.selected ? icon.phosphorPath.filled : icon.phosphorPath.foreground) : "" }
-        }
+    Image {
+        anchors.fill: parent
+        visible: !icon.hasSource && icon.sourcedPath
+        source: visible ? Icons.svgSource(icon.path, icon.paintColor, icon.selected) : ""
+        sourceSize.width: Math.max(1, Math.ceil(width * Screen.devicePixelRatio))
+        sourceSize.height: Math.max(1, Math.ceil(height * Screen.devicePixelRatio))
+        fillMode: Image.PreserveAspectFit
+        mirror: icon.oneuiPath !== null && LayoutMirroring.enabled
+                && ((icon.selected || icon.path.endsWith(":selected"))
+                    ? icon.oneuiPath.selectedAutoMirrored : icon.oneuiPath.autoMirrored)
+        smooth: true
     }
 
+    // Keep arbitrary caller-authored stroked paths (including the Waypair mark) compatible.
     Shape {
-        visible: !icon.hasSource && icon.phosphorPath === null
+        visible: !icon.hasSource && !icon.sourcedPath
         anchors.centerIn: parent
         width: 24
         height: 24
         scale: Math.min(icon.width, icon.height) / 24
         preferredRendererType: Shape.CurveRenderer
         ShapePath {
-            strokeColor: icon.sourcedPath ? "transparent" : icon.paintColor
-            strokeWidth: icon.sourcedPath ? 0 : icon.stroke
-            fillColor: icon.sourcedPath ? icon.paintColor : "transparent"
+            strokeColor: icon.paintColor
+            strokeWidth: icon.stroke
+            fillColor: "transparent"
             fillRule: ShapePath.WindingFill
             capStyle: ShapePath.RoundCap
             joinStyle: ShapePath.RoundJoin
-            PathSvg { path: icon.selected ? Icons.selectedPath(icon.path) : icon.path }
+            PathSvg { path: icon.path }
         }
     }
 }

@@ -23,19 +23,20 @@ Text {
     // as 650 render exactly instead of snapping to a named style.
     property int weight: graphiteLabel ? Theme.labelStyle.weight : (isDisplay && Theme.graphite ? 400 : spec.weight)
 
+    readonly property real scaledSize: Math.max(1, Math.round(size * Theme.textScale))
     readonly property string family: role === "code" || graphiteLabel
         ? Theme.fontMono : (isDisplay ? Theme.fontDisplay : Theme.fontUi)
 
     color: muted ? Theme.surfaceContentVariant : Theme.surfaceContent
     font.family: family
-    font.pixelSize: Math.max(1, Math.round(size))
+    font.pixelSize: scaledSize
     font.weight: weight
-    font.variableAxes: family === Theme.fontUi ? { "wght": weight } : {}
-    font.letterSpacing: (graphiteLabel ? 0 : spec.tracking) * size
+    font.variableAxes: family === "Figtree" ? { "wght": weight } : {}
+    font.letterSpacing: (graphiteLabel ? 0 : spec.tracking) * scaledSize
     font.capitalization: Font.MixedCase
     // Token line heights are CSS-style (a multiple of the font size), not
     // a multiple of the font's own line spacing.
-    lineHeight: Math.round(Math.max(1, Math.round(size)) * spec.lineHeight)
+    lineHeight: Math.round(scaledSize * spec.lineHeight)
     lineHeightMode: Text.FixedHeight
     verticalAlignment: Text.AlignVCenter
     textFormat: Text.PlainText

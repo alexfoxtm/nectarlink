@@ -11,7 +11,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -58,15 +57,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
@@ -694,326 +685,40 @@ private fun DeckIcon(
     tint: Color,
     modifier: Modifier = Modifier,
 ) {
-    val scratchPath = remember { Path() }
-    Canvas(modifier = modifier) {
-        drawDeckIcon(name, tint, scratchPath)
+    val iconRes = when (name) {
+        "play" -> R.drawable.ic_play
+        "play_pause" -> R.drawable.ic_play
+        "pause" -> R.drawable.ic_pause
+        "skip_next" -> R.drawable.ic_skip_next
+        "skip_previous" -> R.drawable.ic_skip_previous
+        "volume_up" -> R.drawable.wp_oneui_volume_up
+        "volume_down" -> R.drawable.wp_oneui_volume_down
+        "volume_off" -> R.drawable.ic_sound_off
+        "mic" -> R.drawable.wp_mic_color
+        "mic_off" -> R.drawable.wp_oneui_mic_off
+        "lock" -> R.drawable.wp_oneui_lock_outline
+        "desktop" -> R.drawable.wp_monitor
+        "switch_window" -> R.drawable.wp_oneui_system_alert_window
+        "windows" -> R.drawable.wp_oneui_system_alert_window
+        "screenshot" -> R.drawable.wp_camera_color
+        "camera" -> R.drawable.wp_camera_color
+        "keyboard" -> R.drawable.wp_oneui_keyboard
+        "globe" -> R.drawable.wp_globe
+        "text" -> R.drawable.wp_oneui_font_size
+        "app" -> R.drawable.wp_oneui_apps_outline
+        "rocket" -> R.drawable.wp_oneui_apps_outline
+        "terminal" -> R.drawable.wp_oneui_bracket
+        "spark" -> R.drawable.wp_oneui_lightning_outline
+        "bolt" -> R.drawable.wp_oneui_lightning_outline
+        "music" -> R.drawable.ic_music
+        "video" -> R.drawable.wp_oneui_video_call_outline
+        "folder" -> R.drawable.wp_folder_color
+        "star" -> R.drawable.wp_oneui_star_outline
+        "bell" -> R.drawable.wp_bell_color
+        "power" -> R.drawable.wp_oneui_power
+        else -> R.drawable.wp_oneui_power
     }
-}
-
-private fun DrawScope.drawDeckIcon(name: String, color: Color, scratchPath: Path) {
-    val w = size.width
-    val h = size.height
-    val stroke = Stroke(
-        width = w * 0.095f,
-        cap = StrokeCap.Round,
-        join = StrokeJoin.Round,
-    )
-    fun sx(x: Float) = x / 24f * w
-    fun sy(y: Float) = y / 24f * h
-    fun pt(x: Float, y: Float) = Offset(sx(x), sy(y))
-
-    when (name) {
-        "play", "play_pause" -> {
-            scratchPath.rewind()
-            scratchPath.moveTo(sx(6f), sy(4.5f))
-            scratchPath.lineTo(sx(19f), sy(12f))
-            scratchPath.lineTo(sx(6f), sy(19.5f))
-            scratchPath.close()
-            drawPath(scratchPath, color = color, style = stroke)
-        }
-        "pause" -> {
-            drawLine(color, pt(8f, 5f), pt(8f, 19f), strokeWidth = stroke.width * 1.15f, cap = StrokeCap.Round)
-            drawLine(color, pt(16f, 5f), pt(16f, 19f), strokeWidth = stroke.width * 1.15f, cap = StrokeCap.Round)
-        }
-        "skip_next" -> {
-            scratchPath.rewind()
-            scratchPath.moveTo(sx(5f), sy(5f))
-            scratchPath.lineTo(sx(15f), sy(12f))
-            scratchPath.lineTo(sx(5f), sy(19f))
-            scratchPath.close()
-            drawPath(scratchPath, color = color, style = stroke)
-            drawLine(color, pt(19f, 5f), pt(19f, 19f), strokeWidth = stroke.width, cap = StrokeCap.Round)
-        }
-        "skip_previous" -> {
-            scratchPath.rewind()
-            scratchPath.moveTo(sx(19f), sy(5f))
-            scratchPath.lineTo(sx(9f), sy(12f))
-            scratchPath.lineTo(sx(19f), sy(19f))
-            scratchPath.close()
-            drawPath(scratchPath, color = color, style = stroke)
-            drawLine(color, pt(5f, 5f), pt(5f, 19f), strokeWidth = stroke.width, cap = StrokeCap.Round)
-        }
-        "volume_up" -> {
-            drawSpeakerCone(color, stroke, scratchPath, ::sx, ::sy)
-            drawArc(
-                color = color,
-                startAngle = -45f,
-                sweepAngle = 90f,
-                useCenter = false,
-                topLeft = pt(12f, 8f),
-                size = Size(sx(5f), sy(8f)),
-                style = stroke,
-            )
-            drawArc(
-                color = color,
-                startAngle = -45f,
-                sweepAngle = 90f,
-                useCenter = false,
-                topLeft = pt(14f, 5f),
-                size = Size(sx(7f), sy(14f)),
-                style = stroke,
-            )
-        }
-        "volume_down" -> {
-            drawSpeakerCone(color, stroke, scratchPath, ::sx, ::sy)
-            drawArc(
-                color = color,
-                startAngle = -45f,
-                sweepAngle = 90f,
-                useCenter = false,
-                topLeft = pt(12.5f, 8f),
-                size = Size(sx(5f), sy(8f)),
-                style = stroke,
-            )
-        }
-        "volume_off" -> {
-            drawSpeakerCone(color, stroke, scratchPath, ::sx, ::sy)
-            drawLine(color, pt(16f, 9f), pt(21f, 15f), strokeWidth = stroke.width, cap = StrokeCap.Round)
-            drawLine(color, pt(21f, 9f), pt(16f, 15f), strokeWidth = stroke.width, cap = StrokeCap.Round)
-        }
-        "mic", "mic_off" -> {
-            drawRoundRect(
-                color = color,
-                topLeft = pt(9f, 3f),
-                size = Size(sx(6f), sy(10f)),
-                cornerRadius = CornerRadius(sx(3f), sy(3f)),
-                style = stroke,
-            )
-            drawArc(
-                color = color,
-                startAngle = 0f,
-                sweepAngle = 180f,
-                useCenter = false,
-                topLeft = pt(5f, 6f),
-                size = Size(sx(14f), sy(11f)),
-                style = stroke,
-            )
-            drawLine(color, pt(12f, 17f), pt(12f, 21f), strokeWidth = stroke.width, cap = StrokeCap.Round)
-            drawLine(color, pt(8f, 21f), pt(16f, 21f), strokeWidth = stroke.width, cap = StrokeCap.Round)
-            if (name == "mic_off") {
-                drawLine(color, pt(4f, 4f), pt(20f, 20f), strokeWidth = stroke.width, cap = StrokeCap.Round)
-            }
-        }
-        "lock" -> {
-            drawRoundRect(
-                color = color,
-                topLeft = pt(5f, 11f),
-                size = Size(sx(14f), sy(10f)),
-                cornerRadius = CornerRadius(sx(2f), sy(2f)),
-                style = stroke,
-            )
-            drawArc(
-                color = color,
-                startAngle = 180f,
-                sweepAngle = 180f,
-                useCenter = false,
-                topLeft = pt(8f, 4f),
-                size = Size(sx(8f), sy(8f)),
-                style = stroke,
-            )
-            drawLine(color, pt(8f, 8f), pt(8f, 11f), strokeWidth = stroke.width, cap = StrokeCap.Round)
-            drawLine(color, pt(16f, 8f), pt(16f, 11f), strokeWidth = stroke.width, cap = StrokeCap.Round)
-        }
-        "desktop" -> {
-            drawRoundRect(
-                color = color,
-                topLeft = pt(3f, 4f),
-                size = Size(sx(18f), sy(12f)),
-                cornerRadius = CornerRadius(sx(2f), sy(2f)),
-                style = stroke,
-            )
-            drawLine(color, pt(8f, 20f), pt(16f, 20f), strokeWidth = stroke.width, cap = StrokeCap.Round)
-            drawLine(color, pt(12f, 16f), pt(12f, 20f), strokeWidth = stroke.width, cap = StrokeCap.Round)
-        }
-        "switch_window", "windows" -> {
-            drawRoundRect(
-                color = color,
-                topLeft = pt(3f, 7f),
-                size = Size(sx(13f), sy(12f)),
-                cornerRadius = CornerRadius(sx(2f), sy(2f)),
-                style = stroke,
-            )
-            scratchPath.rewind()
-            scratchPath.moveTo(sx(8f), sy(7f))
-            scratchPath.lineTo(sx(8f), sy(5f))
-            scratchPath.lineTo(sx(21f), sy(5f))
-            scratchPath.lineTo(sx(21f), sy(15f))
-            scratchPath.lineTo(sx(16f), sy(15f))
-            drawPath(scratchPath, color = color, style = stroke)
-        }
-        "screenshot", "camera" -> {
-            drawRoundRect(
-                color = color,
-                topLeft = pt(3f, 7f),
-                size = Size(sx(18f), sy(12f)),
-                cornerRadius = CornerRadius(sx(2f), sy(2f)),
-                style = stroke,
-            )
-            drawCircle(color = color, radius = sx(3.2f), center = pt(12f, 13f), style = stroke)
-            drawLine(color, pt(9f, 4.5f), pt(15f, 4.5f), strokeWidth = stroke.width, cap = StrokeCap.Round)
-        }
-        "keyboard" -> {
-            drawRoundRect(
-                color = color,
-                topLeft = pt(2f, 5f),
-                size = Size(sx(20f), sy(14f)),
-                cornerRadius = CornerRadius(sx(2f), sy(2f)),
-                style = stroke,
-            )
-            drawLine(color, pt(8f, 15f), pt(16f, 15f), strokeWidth = stroke.width, cap = StrokeCap.Round)
-            val r = sx(1f)
-            drawCircle(color = color, radius = r, center = pt(6f, 10f))
-            drawCircle(color = color, radius = r, center = pt(10f, 10f))
-            drawCircle(color = color, radius = r, center = pt(14f, 10f))
-            drawCircle(color = color, radius = r, center = pt(18f, 10f))
-        }
-        "globe" -> {
-            drawCircle(color = color, radius = sx(9f), center = pt(12f, 12f), style = stroke)
-            drawLine(color, pt(3f, 12f), pt(21f, 12f), strokeWidth = stroke.width, cap = StrokeCap.Round)
-            drawOval(
-                color = color,
-                topLeft = pt(8f, 3f),
-                size = Size(sx(8f), sy(18f)),
-                style = stroke,
-            )
-        }
-        "text" -> {
-            drawLine(color, pt(4f, 6f), pt(20f, 6f), strokeWidth = stroke.width, cap = StrokeCap.Round)
-            drawLine(color, pt(12f, 6f), pt(12f, 19f), strokeWidth = stroke.width, cap = StrokeCap.Round)
-            drawLine(color, pt(9f, 19f), pt(15f, 19f), strokeWidth = stroke.width, cap = StrokeCap.Round)
-        }
-        "app", "rocket" -> {
-            val cellSize = Size(sx(7f), sy(7f))
-            val cr = CornerRadius(sx(1.5f), sy(1.5f))
-            drawRoundRect(color = color, topLeft = pt(4f, 4f), size = cellSize, cornerRadius = cr, style = stroke)
-            drawRoundRect(color = color, topLeft = pt(13f, 4f), size = cellSize, cornerRadius = cr, style = stroke)
-            drawRoundRect(color = color, topLeft = pt(4f, 13f), size = cellSize, cornerRadius = cr, style = stroke)
-            drawRoundRect(color = color, topLeft = pt(13f, 13f), size = cellSize, cornerRadius = cr, style = stroke)
-        }
-        "terminal" -> {
-            scratchPath.rewind()
-            scratchPath.moveTo(sx(4f), sy(7f))
-            scratchPath.lineTo(sx(10f), sy(12f))
-            scratchPath.lineTo(sx(4f), sy(17f))
-            drawPath(scratchPath, color = color, style = stroke)
-            drawLine(color, pt(12f, 17f), pt(20f, 17f), strokeWidth = stroke.width, cap = StrokeCap.Round)
-        }
-        "spark", "bolt" -> {
-            scratchPath.rewind()
-            scratchPath.moveTo(sx(13f), sy(2f))
-            scratchPath.lineTo(sx(4f), sy(14f))
-            scratchPath.lineTo(sx(11f), sy(14f))
-            scratchPath.lineTo(sx(10f), sy(22f))
-            scratchPath.lineTo(sx(20f), sy(10f))
-            scratchPath.lineTo(sx(13f), sy(10f))
-            scratchPath.close()
-            drawPath(scratchPath, color = color, style = stroke)
-        }
-        "music" -> {
-            scratchPath.rewind()
-            scratchPath.moveTo(sx(9f), sy(18f))
-            scratchPath.lineTo(sx(9f), sy(6f))
-            scratchPath.lineTo(sx(19f), sy(4f))
-            scratchPath.lineTo(sx(19f), sy(16f))
-            drawPath(scratchPath, color = color, style = stroke)
-            drawCircle(color = color, radius = sx(2.5f), center = pt(6.5f, 18f), style = stroke)
-            drawCircle(color = color, radius = sx(2.5f), center = pt(16.5f, 16f), style = stroke)
-        }
-        "video" -> {
-            drawRoundRect(
-                color = color,
-                topLeft = pt(3f, 6f),
-                size = Size(sx(12f), sy(12f)),
-                cornerRadius = CornerRadius(sx(2f), sy(2f)),
-                style = stroke,
-            )
-            scratchPath.rewind()
-            scratchPath.moveTo(sx(15f), sy(10f))
-            scratchPath.lineTo(sx(21f), sy(7f))
-            scratchPath.lineTo(sx(21f), sy(17f))
-            scratchPath.lineTo(sx(15f), sy(14f))
-            scratchPath.close()
-            drawPath(scratchPath, color = color, style = stroke)
-        }
-        "folder" -> {
-            scratchPath.rewind()
-            scratchPath.moveTo(sx(3f), sy(6f))
-            scratchPath.lineTo(sx(9f), sy(6f))
-            scratchPath.lineTo(sx(11f), sy(8f))
-            scratchPath.lineTo(sx(21f), sy(8f))
-            scratchPath.lineTo(sx(21f), sy(19f))
-            scratchPath.lineTo(sx(3f), sy(19f))
-            scratchPath.close()
-            drawPath(scratchPath, color = color, style = stroke)
-        }
-        "star" -> {
-            scratchPath.rewind()
-            scratchPath.moveTo(sx(12f), sy(3f))
-            scratchPath.lineTo(sx(14.8f), sy(8.8f))
-            scratchPath.lineTo(sx(21f), sy(9.7f))
-            scratchPath.lineTo(sx(16.5f), sy(14.1f))
-            scratchPath.lineTo(sx(17.6f), sy(20.3f))
-            scratchPath.lineTo(sx(12f), sy(17.4f))
-            scratchPath.lineTo(sx(6.4f), sy(20.3f))
-            scratchPath.lineTo(sx(7.5f), sy(14.1f))
-            scratchPath.lineTo(sx(3f), sy(9.7f))
-            scratchPath.lineTo(sx(9.2f), sy(8.8f))
-            scratchPath.close()
-            drawPath(scratchPath, color = color, style = stroke)
-        }
-        "bell" -> {
-            scratchPath.rewind()
-            scratchPath.moveTo(sx(6f), sy(16f))
-            scratchPath.lineTo(sx(6f), sy(10f))
-            scratchPath.cubicTo(sx(6f), sy(6.5f), sx(18f), sy(6.5f), sx(18f), sy(10f))
-            scratchPath.lineTo(sx(18f), sy(16f))
-            scratchPath.lineTo(sx(4f), sy(16f))
-            scratchPath.lineTo(sx(20f), sy(16f))
-            drawPath(scratchPath, color = color, style = stroke)
-            drawLine(color, pt(10f, 19.5f), pt(14f, 19.5f), strokeWidth = stroke.width, cap = StrokeCap.Round)
-        }
-        else -> {
-            // "power" or fallback
-            drawLine(color, pt(12f, 3f), pt(12f, 11f), strokeWidth = stroke.width, cap = StrokeCap.Round)
-            drawArc(
-                color = color,
-                startAngle = -55f,
-                sweepAngle = 290f,
-                useCenter = false,
-                topLeft = pt(5f, 5f),
-                size = Size(sx(14f), sy(14f)),
-                style = stroke,
-            )
-        }
-    }
-}
-
-private fun DrawScope.drawSpeakerCone(
-    color: Color,
-    stroke: Stroke,
-    scratchPath: Path,
-    sx: (Float) -> Float,
-    sy: (Float) -> Float,
-) {
-    scratchPath.rewind()
-    scratchPath.moveTo(sx(11f), sy(5f))
-    scratchPath.lineTo(sx(6f), sy(9f))
-    scratchPath.lineTo(sx(3f), sy(9f))
-    scratchPath.lineTo(sx(3f), sy(15f))
-    scratchPath.lineTo(sx(6f), sy(15f))
-    scratchPath.lineTo(sx(11f), sy(19f))
-    scratchPath.close()
-    drawPath(scratchPath, color = color, style = stroke)
+    Icon(painterResource(iconRes), contentDescription = null, modifier = modifier, tint = tint)
 }
 
 private fun fallbackDefaultLayout(context: Context): DeckLayout = DeckLayout(

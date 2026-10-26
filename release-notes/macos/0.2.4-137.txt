@@ -1,0 +1,7 @@
+Waypair Link for macOS — 0.2.4 (137)
+
+- Corrected the compiled interface palette so the intended colors are used by the app.
+- Added a font-family picker and increased the default interface font scale to 115%; the font-size picker covers 100% to 150%.
+- Made the One UI quick panel more compact and tightened notification spacing.
+- Refined transfer progress to show logical percent and estimated time remaining.
+- Replaced the handset illustration with a neutral metal-and-glass design. It uses no model-image catalogue or runtime image downloads.

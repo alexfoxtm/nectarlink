@@ -34,6 +34,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -49,6 +50,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -435,11 +437,11 @@ private fun Outcome(success: Boolean, text: String) {
             modifier = Modifier.size(64.dp),
         ) {
             Box(contentAlignment = Alignment.Center) {
-                Text(
-                    if (success) "✓" else "!",
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (success) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                Icon(
+                    painterResource(if (success) R.drawable.wp_check else R.drawable.wp_oneui_error_2),
+                    contentDescription = null,
+                    modifier = Modifier.size(28.dp),
+                    tint = if (success) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
                 )
             }
         }

@@ -135,13 +135,13 @@ def sums_upload(prefix, files):
 
 
 def release_notes_of(section, label, base):
-    """Optional per-platform CHANGELOG.txt, or None when absent.
+    """Required per-platform CHANGELOG.txt, checked before any remote write.
 
     Verified with the same path/size/SHA-256 guards as every other file,
     plus: exact name CHANGELOG.txt, UTF-8 non-empty text, at most 8 KiB.
     """
     if "release_notes" not in section:
-        return None
+        raise Failure(f"{label} release notes: release_notes is required")
     notes = verified_file(section.get("release_notes"), f"{label} release notes", base)
     if notes[0].name != NOTES_NAME:
         raise Failure(f"{label} release notes: file name must be exactly {NOTES_NAME}")
@@ -153,6 +153,10 @@ def release_notes_of(section, label, base):
         raise Failure(f"{label} release notes: must be UTF-8 text: {e}")
     if not text or not text.strip():
         raise Failure(f"{label} release notes: must be non-empty text")
+    heading = text.splitlines()[0].strip()
+    version = version_of(section, label)
+    if not re.search(rf"(?<![A-Za-z0-9.-])v?{re.escape(version)}(?![A-Za-z0-9.-])", heading):
+        raise Failure(f"{label} release notes: first line must name current version {version}")
     return notes
 
 

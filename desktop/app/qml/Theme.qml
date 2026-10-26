@@ -153,26 +153,26 @@ QtObject {
     })
 
     // ---- Color roles ----
-    readonly property color primary: palette.primary
-    readonly property color primaryContent: palette.onPrimary
-    readonly property color primaryContainer: palette.primaryContainer
-    readonly property color primaryContainerContent: palette.onPrimaryContainer
-    readonly property color secondaryContainer: palette.secondaryContainer
-    readonly property color secondaryContainerContent: palette.onSecondaryContainer
-    readonly property color surface: palette.surface
-    readonly property color surfaceLow: palette.surfaceContainerLow
-    readonly property color surfaceContainerLow: palette.surfaceContainerLow
-    readonly property color surfaceContainer: palette.surfaceContainer
-    readonly property color surfaceContainerHigh: palette.surfaceContainerHigh
-    readonly property color surfaceContainerHighest: palette.surfaceContainerHighest
-    readonly property color surfaceContent: palette.onSurface
-    readonly property color surfaceContentVariant: palette.onSurfaceVariant
-    readonly property color outline: palette.outline
-    readonly property color outlineVariant: palette.outlineVariant
+    readonly property color primary: onMac ? (dark ? "#FFFFFF" : "#171717") : (dark ? "#C28AF0" : "#772AB7")
+    readonly property color primaryContent: onMac ? (dark ? "#171717" : "#FFFFFF") : (dark ? "#261734" : "#FFFFFF")
+    readonly property color primaryContainer: onMac ? (dark ? "#353535" : "#EAEAEA") : (dark ? "#3B2D49" : "#F1E9F8")
+    readonly property color primaryContainerContent: onMac ? (dark ? "#FFFFFF" : "#171717") : (dark ? "#D8ABF5" : "#772AB7")
+    readonly property color secondaryContainer: onMac ? (dark ? "#2B2C2E" : "#EAEAEA") : (dark ? "#403246" : "#EEE6F8")
+    readonly property color secondaryContainerContent: onMac ? (dark ? "#FFFFFF" : "#171717") : (dark ? "#DECAE9" : "#6A4380")
+    readonly property color surface: onMac ? (dark ? "#19191A" : "#F5F5F5") : (dark ? "#24212A" : "#F7F7FA")
+    readonly property color surfaceLow: onMac ? (dark ? "#1E1E1E" : "#FFFFFF") : (dark ? "#28242F" : "#FAF9FC")
+    readonly property color surfaceContainerLow: onMac ? (dark ? "#1E1E1E" : "#FFFFFF") : (dark ? "#28242F" : "#FAF9FC")
+    readonly property color surfaceContainer: onMac ? (dark ? "#1E1E1E" : "#FFFFFF") : (dark ? "#2E2A35" : "#FFFFFF")
+    readonly property color surfaceContainerHigh: onMac ? (dark ? "#2B2C2E" : "#F5F5F5") : (dark ? "#37313F" : "#F1EDF5")
+    readonly property color surfaceContainerHighest: onMac ? (dark ? "#353535" : "#EAEAEA") : (dark ? "#443B4E" : "#E8E2EE")
+    readonly property color surfaceContent: onMac ? (dark ? "#FFFFFF" : "#171717") : (dark ? "#F5F1F8" : "#25222C")
+    readonly property color surfaceContentVariant: onMac ? (dark ? "#C2C2C2" : "#555555") : (dark ? "#B6AEBF" : "#6A6573")
+    readonly property color outline: onMac ? (dark ? "#454545" : "#DADADA") : (dark ? "#8C8199" : "#99929F")
+    readonly property color outlineVariant: onMac ? (dark ? "#353535" : "#DADADA") : (dark ? "#40394A" : "#E7E4EC")
     readonly property color success: dark ? "#9BD5B4" : "#2E704D"
-    readonly property color warning: status.warning
-    readonly property color error: status.error
-    readonly property color errorContent: status.onError
+    readonly property color warning: dark ? "#F2C477" : "#8D5A0E"
+    readonly property color error: dark ? "#FFA6AE" : "#C23D50"
+    readonly property color errorContent: dark ? "#4C1621" : "#FFFFFF"
     readonly property color errorContainer: dark ? "#422732" : "#FCEBF0"
     readonly property color errorContainerContent: dark ? "#FFD8DE" : "#A22B40"
 
@@ -229,8 +229,10 @@ QtObject {
 
     // ---- Type ----
     // Bundled with the app (assets/fonts).
-    readonly property string fontUi: "Figtree"
-    readonly property string fontDisplay: "Figtree"
+    readonly property string fontUi: Preferences.fontFamily || "Figtree"
+    readonly property string fontDisplay: fontUi
+    readonly property real textScale: Math.max(100, Math.min(150,
+        Preferences.textScalePercent || (onMac ? 115 : 100))) / 100
     readonly property string fontMono: "Space Mono"
     readonly property var typography: Tokens.data.typography
     readonly property var labelStyle: graphite ? Tokens.data.themes.graphite.label

@@ -25,7 +25,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -50,6 +49,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
@@ -75,10 +75,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.layout
@@ -86,6 +82,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -1239,56 +1236,12 @@ private fun ExpandCollapseIcon(
     isFullScreen: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val path = remember { Path() }
-    Canvas(modifier = modifier.size(18.dp)) {
-        val w = size.width
-        val h = size.height
-        val stroke = Stroke(
-            width = 1.9.dp.toPx(),
-            cap = StrokeCap.Round,
-            join = StrokeJoin.Round,
-        )
-        fun sx(v: Float) = (v / 24f) * w
-        fun sy(v: Float) = (v / 24f) * h
-
-        path.rewind()
-        if (!isFullScreen) {
-            // Four outward corner brackets (expand to full screen)
-            path.moveTo(sx(4f), sy(9f))
-            path.lineTo(sx(4f), sy(4f))
-            path.lineTo(sx(9f), sy(4f))
-
-            path.moveTo(sx(15f), sy(4f))
-            path.lineTo(sx(20f), sy(4f))
-            path.lineTo(sx(20f), sy(9f))
-
-            path.moveTo(sx(20f), sy(15f))
-            path.lineTo(sx(20f), sy(20f))
-            path.lineTo(sx(15f), sy(20f))
-
-            path.moveTo(sx(9f), sy(20f))
-            path.lineTo(sx(4f), sy(20f))
-            path.lineTo(sx(4f), sy(15f))
-        } else {
-            // Four inward corner brackets (collapse full screen)
-            path.moveTo(sx(4f), sy(9f))
-            path.lineTo(sx(9f), sy(9f))
-            path.lineTo(sx(9f), sy(4f))
-
-            path.moveTo(sx(15f), sy(4f))
-            path.lineTo(sx(15f), sy(9f))
-            path.lineTo(sx(20f), sy(9f))
-
-            path.moveTo(sx(20f), sy(15f))
-            path.lineTo(sx(15f), sy(15f))
-            path.lineTo(sx(15f), sy(20f))
-
-            path.moveTo(sx(9f), sy(20f))
-            path.lineTo(sx(9f), sy(15f))
-            path.lineTo(sx(4f), sy(15f))
-        }
-        drawPath(path = path, color = Color.White, style = stroke)
-    }
+    Icon(
+        painter = painterResource(if (isFullScreen) R.drawable.wp_oneui_minimize else R.drawable.wp_oneui_expand),
+        contentDescription = null,
+        modifier = modifier.size(18.dp),
+        tint = Color.White,
+    )
 }
 
 private fun createVideoDecoder(mime: String, preferSoftware: Boolean): MediaCodec {

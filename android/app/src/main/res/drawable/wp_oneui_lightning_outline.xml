@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- OneUIProject oneui-icons 3808bd6965251e7616b1a0a286c75f5d533715e7, MIT; see assets/ui/oneui/ANDROID-SOURCE.json and LICENSE. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#00000000" android:fillType="evenOdd" android:pathData="M17,10.1956L6.441,21.5L10.4126,12.5113L6,12.5114L8.8367,3.5L15.0281,3.5L11.598,10.195L17,10.1956Z" android:strokeWidth="1.2" android:strokeColor="#FF000000" android:strokeLineJoin="round" />
+</vector>

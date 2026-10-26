@@ -15,7 +15,7 @@ Item {
 
     readonly property bool wideLayout: page.width >= 680
     readonly property int pagePadding: page.width < 680 ? 16 : 24
-    readonly property int sectionTop: 84
+    readonly property int sectionTop: Math.max(84, settingsHeader.y + settingsHeader.height + 12)
 
     // Rows whose backend this Mac build lacks stay listed, greyed, with this reason.
     readonly property bool onMac: Qt.platform.os === "osx" || Qt.platform.os === "macos"
@@ -275,6 +275,7 @@ Item {
     }
 
     Column {
+        id: settingsHeader
         x: page.pagePadding
         y: page.pagePadding
         width: parent.width - page.pagePadding * 2
@@ -666,7 +667,7 @@ Item {
                             required property int index
                             readonly property bool selected: Preferences.colorMode === modelData.value
                             width: Math.max(0, (appearanceChoices.width - appearanceChoices.spacing * 2) / 3)
-                            height: 52
+                            height: Math.max(52, Math.ceil(36 * Theme.textScale))
                             radius: Theme.controlRadius
                             color: selected ? Theme.primaryContainer : (appearanceMouse.containsMouse ? Theme.surfaceContainerHigh : Theme.insetColor)
                             border.width: selected || Theme.focusVisible(appearanceOption) ? 2 : 1
@@ -732,6 +733,61 @@ Item {
                     role: "bodySmall"
                     muted: true
                     wrapMode: Text.WordWrap
+                }
+
+                Txt { width: parent.width; text: qsTr("Text"); role: "label"; size: 12 }
+                Card {
+                    width: parent.width
+                    Column {
+                        width: parent.width
+                        ListRow {
+                            width: parent.width
+                            title: qsTr("Font")
+                            description: Preferences.fontFamily
+                            Button {
+                                variant: "outline"
+                                size: "sm"
+                                text: qsTr("Choose font…")
+                                onClicked: {
+                                    fontDialog.selectedFont = Qt.font({ family: Preferences.fontFamily, pixelSize: 14 })
+                                    fontDialog.open()
+                                }
+                            }
+                        }
+                        Divider { width: parent.width }
+                        ListRow {
+                            width: parent.width
+                            title: qsTr("Text size")
+                            description: qsTr("%1% · Changes appear immediately.").arg(Preferences.textScalePercent)
+                            stackBelow: true
+                            ValueSlider {
+                                width: Math.min(320, page.width - page.pagePadding * 2 - 72)
+                                from: 100
+                                to: 150
+                                step: 5
+                                value: Preferences.textScalePercent
+                                label: qsTr("Text size")
+                                valueText: qsTr("%1 percent").arg(value)
+                                onMoved: (value) => Preferences.textScalePercent = value
+                            }
+                        }
+                        Divider { width: parent.width }
+                        ListRow {
+                            width: parent.width
+                            title: qsTr("Preview")
+                            description: qsTr("Messages, notifications and settings use your chosen text style.")
+                            stackBelow: true
+                            Button {
+                                variant: "text"
+                                size: "sm"
+                                text: qsTr("Reset text settings")
+                                onClicked: {
+                                    Preferences.fontFamily = "Figtree"
+                                    Preferences.textScalePercent = page.onMac ? 115 : 100
+                                }
+                            }
+                        }
+                    }
                 }
 
                 Txt { width: parent.width; text: qsTr("On this Mac"); role: "label"; size: 12 }
@@ -3592,6 +3648,14 @@ Item {
                 Button { variant: "text"; text: qsTr("Close"); onClicked: hotspotSheet.close() }
             }
         }
+    }
+
+    // The native picker lists the fonts available on this Mac. Only its family
+    // is applied; text size is controlled independently above.
+    FontDialog {
+        id: fontDialog
+        title: qsTr("Choose interface font")
+        onAccepted: Preferences.fontFamily = selectedFont.family
     }
 
     Sheet {

@@ -2,7 +2,7 @@
 import QtQuick
 import app.nectarlink
 
-// One file transfer: direction, name, progress and speed, and what can be
+// One transfer: direction, name, progress, speed and time left, and what can be
 // done with it (cancel while it runs; open or show what arrived).
 Item {
     id: item
@@ -20,6 +20,9 @@ Item {
     required property string savedPath
 
     readonly property bool active: status === "requested" || status === "waiting" || status === "running" || status === "paused"
+    readonly property bool showPercent: (status === "waiting" || status === "running" || status === "paused")
+        && Number.isFinite(total) && total > 0 && Number.isFinite(done)
+    readonly property int percent: showPercent ? Math.round(Math.max(0, Math.min(1, done / total)) * 100) : 0
 
     implicitHeight: column.height + 20
 
@@ -32,6 +35,19 @@ Item {
         return units[unit].arg(value < 10 ? value.toFixed(1) : Math.round(value))
     }
 
+    function timeLeft() {
+        if (status !== "running" || !Number.isFinite(total) || total <= 0
+                || !Number.isFinite(done) || done < 0 || done >= total
+                || !Number.isFinite(rate) || rate <= 0)
+            return ""
+        const seconds = (total - done) / rate
+        if (!Number.isFinite(seconds) || seconds <= 0) return ""
+        if (seconds < 10) return qsTr("A few seconds left")
+        if (seconds < 60) return qsTr("%1 s left").arg(Math.ceil(seconds / 5) * 5)
+        if (seconds < 3600) return qsTr("%1 min left").arg(Math.ceil(seconds / 60))
+        return qsTr("%1 h %2 min left").arg(Math.floor(seconds / 3600)).arg(Math.floor((seconds % 3600) / 60))
+    }
+
     function detail() {
         switch (status) {
         case "requested":
@@ -41,10 +57,13 @@ Item {
         case "waiting":
             return item.incoming ? qsTr("Paused; continues when %1 is back").arg(item.deviceName)
                                  : qsTr("Waiting for %1").arg(item.deviceName)
-        case "running":
-            return rate > 0
+        case "running": {
+            const sizes = rate > 0
                 ? qsTr("%1 of %2 · %3/s").arg(size(done)).arg(size(total)).arg(size(rate))
                 : qsTr("%1 of %2").arg(size(done)).arg(size(total))
+            const left = timeLeft()
+            return left.length > 0 ? sizes + " · " + left : sizes
+        }
         case "paused":
             return qsTr("Paused · %1 of %2").arg(size(done)).arg(size(total))
         case "done":
@@ -87,7 +106,25 @@ Item {
             id: column
             width: row.width - 32 - actions.width - row.spacing * 2
             spacing: 6
-            Txt { width: parent.width; role: "title"; size: 14; text: item.title }
+            Item {
+                width: parent.width
+                height: titleText.implicitHeight
+                Txt {
+                    id: titleText
+                    width: Math.max(0, parent.width - (percentText.visible ? percentText.implicitWidth + 8 : 0))
+                    role: "title"
+                    size: 14
+                    text: item.title
+                }
+                Txt {
+                    id: percentText
+                    anchors.right: parent.right
+                    anchors.verticalCenter: titleText.verticalCenter
+                    visible: item.showPercent
+                    role: "bodySmall"
+                    text: qsTr("%1%").arg(item.percent)
+                }
+            }
             // Progress, while there's progress to show.
             Rectangle {
                 width: parent.width
