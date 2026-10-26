@@ -836,6 +836,7 @@ fun SettingsScreen(
                                         (other ?: (MORE_LANGUAGES to stringResource(R.string.settings_language_more))),
                                     ),
                                     selected = language,
+                                    maxItemsInEachRow = 1,
                                 ) { value ->
                                     if (value == "" || value == "en") AppLanguage.set(context, value) else pickLanguage = true
                                 }

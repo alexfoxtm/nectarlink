@@ -851,8 +851,7 @@ NativeWindow {
                 anchors.left: backToHome.visible ? backToHome.right : parent.left
                 anchors.leftMargin: backToHome.visible ? 6 : Theme.contentPadding
                 anchors.verticalCenter: parent.verticalCenter
-                text: window.macNavOverflow ? qsTr("Waypair Link")
-                    : window.page === "home" ? qsTr("Home")
+                text: window.page === "home" ? qsTr("Home")
                     : window.page === "timeline" ? qsTr("Timeline")
                     : window.page === "messages" ? qsTr("Messages")
                     : window.page === "calls" ? qsTr("Calls")

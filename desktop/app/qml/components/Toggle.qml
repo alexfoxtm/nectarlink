@@ -41,12 +41,12 @@ FocusScope {
         Rectangle {
             id: thumb
             property real size: 20
-            width: mouse.pressed ? 22 : size
+            width: mouse.pressed && toggle.enabled ? 22 : size
             height: size
             radius: height / 2
             anchors.verticalCenter: parent.verticalCenter
             x: toggle.checked ? parent.width - width - 4 : 4
-            color: toggle.checked ? Theme.actionContent : (Theme.dark ? "#CFC2E4" : "#FFFFFF")
+            color: toggle.checked ? Theme.actionContent : (Theme.onMac ? (Theme.dark ? "#B8B8B8" : "#FFFFFF") : (Theme.dark ? "#CFC2E4" : "#FFFFFF"))
             border.width: 0
             // Quick and settled, never springy: a switch must feel immediate.
             Behavior on x { enabled: !Theme.reduceMotion; NumberAnimation { duration: Theme.reduceMotion ? 0 : 140; easing.type: Easing.OutCubic } }

@@ -3,6 +3,7 @@ import QtQuick
 import QtQuick.Controls as Controls
 import QtQuick.Window
 import QtQuick.Dialogs
+import QtQuick.Layouts
 import app.nectarlink
 
 // Home: the paired phone at a glance (status, battery, power level) and
@@ -148,7 +149,7 @@ Item {
 
         Column {
             id: column
-            readonly property real maxContentWidth: 1120
+            readonly property real maxContentWidth: parent.width - Theme.contentPadding * 2
             width: Math.min(parent.width - Theme.contentPadding * 2, maxContentWidth)
             x: Math.round((parent.width - width) / 2)
             y: Theme.contentPadding
@@ -475,18 +476,61 @@ Item {
         // peers with an unknown SDK route) shows Connected without claiming a transport,
         // never a signal-bars guess, a forced Wi-Fi claim, or a stale
         // update-phone-app prompt.
+        readonly property string connectionIcon: !home.online ? Icons.unlink
+                                          : home.provenCable ? Icons.usb
+                                          : home.displayPath === "relay" ? Icons.globe
+                                          : (home.linkTransport === "wifi" ? Icons.wifi
+                                             : (home.linkTransport === "cellular" ? Icons.signal
+                                                : (home.linkTransport === "ethernet" ? Icons.wifi
+                                                   : (home.linkTransport === "usb" ? Icons.usb
+                                                      : Icons.info))))
+        readonly property string connectionText: home.online
+                                      ? (home.displayPath === "relay"
+                                         ? (home.rttMs >= 1 ? qsTr("Away · %1 ms").arg(home.rttMs) : qsTr("Away"))
+                                         : (home.provenCable
+                                            ? (home.rttMs >= 1 ? qsTr("USB · %1 ms").arg(home.rttMs) : qsTr("USB"))
+                                            : (home.linkTransport === "wifi"
+                                               ? (home.rttMs >= 1 ? qsTr("Wi‑Fi · %1 ms").arg(home.rttMs) : qsTr("Wi‑Fi"))
+                                               : (home.linkTransport === "cellular"
+                                                  ? ((home.cellType.length > 0 ? home.cellType : qsTr("Cellular"))
+                                                     + (home.rttMs >= 1 ? qsTr(" · %1 ms").arg(home.rttMs) : ""))
+                                                  : (home.linkTransport === "ethernet"
+                                                     ? (home.rttMs >= 1 ? qsTr("Ethernet · %1 ms").arg(home.rttMs) : qsTr("Ethernet"))
+                                                     : (home.linkTransport === "usb"
+                                                        ? (home.rttMs >= 1 ? qsTr("USB · %1 ms").arg(home.rttMs) : qsTr("USB"))
+                                                        : (home.rttMs >= 1 ? qsTr("Connected · %1 ms").arg(home.rttMs) : qsTr("Connected"))))))))
+                                      : (home.lastSeen > 0 ? qsTr("Offline · %1").arg(page.relativeTime(home.lastSeen))
+                                                           : qsTr("Offline"))
+
         readonly property bool provenCable: home.displayPath === "usb" && home.usbMedium === "physical"
 
-        readonly property int columns: width >= 760 ? 2 : 1
+        readonly property int columns: width >= 1040 ? 2 : 1
         spacing: 16
         readonly property real sideWidth: columns === 2
-            ? Math.round(Math.min(300, Math.max(272, home.width * 0.34))) : home.width
+            ? Math.round(Math.min(480, Math.max(320, home.width * 0.34))) : home.width
 
-            // ---- Hero ----
+        Binding { target: PhoneCall; property: "device"; value: home.deviceId; when: home.visible; restoreMode: Binding.RestoreNone }
+
+        GridLayout {
+            id: dashboard
+            width: home.width
+            columns: home.columns
+            columnSpacing: home.spacing
+            rowSpacing: home.spacing
+            readonly property int activeRowCount: activeSessions.visible ? 1 : 0
+
             Rectangle {
+                Layout.row: 0
+                Layout.column: 0
+                Layout.fillWidth: true
+                Layout.minimumWidth: 0
+                Layout.fillHeight: true
+                Layout.preferredWidth: (home.columns === 2 ? home.width - home.sideWidth - home.spacing : home.width)
+
                 id: heroCard
-                width: parent.width
-                readonly property bool wide: width >= 640
+
+                objectName: "home-hero"
+                readonly property bool wide: width >= 560
                 readonly property int phoneMediaRow: MediaList.revision >= 0 ? MediaList.firstFor(home.deviceId) : -1
                 readonly property int localMediaRow: MediaList.revision >= 0 ? MediaList.firstFor("local") : -1
                 readonly property bool hasBothMedia: phoneMediaRow >= 0 && localMediaRow >= 0
@@ -521,9 +565,10 @@ Item {
                     return localMediaRow
                 }
                 readonly property bool hasGlanceSummary: activeMediaRow >= 0
-                height: Math.max(136, topHeroRow.height + 24)
+                implicitHeight: wide ? Math.max(276, topHeroRow.height + 24, mediaPanel.height + 24)
+                    : topHeroRow.height + mediaPanel.height + 36
                 Behavior on height {
-                    enabled: home.canAnimateHero
+                    enabled: home.canAnimateHero && home.columns === 1
                     NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
                 }
                 radius: Theme.heroRadius
@@ -536,14 +581,20 @@ Item {
                 Item {
                     id: topHeroRow
                     x: 20
-                    y: Math.round((heroCard.height - height) / 2)
-                    width: heroCard.width - 40
-                    height: Math.max(phoneArt.height, identityCol.height)
+                    y: heroCard.wide ? Math.round((heroCard.height - height) / 2) : 12
+                    width: heroCard.wide ? heroCard.width - mediaPanel.width - 56 : heroCard.width - 40
+                    readonly property real identityHeight: Math.max(phoneArt.height, identityCol.height)
+                    height: identityHeight
 
                     // Exact reported-model artwork, with a measured neutral fallback and live status.
                     PhoneModelPortrait {
                         id: phoneArt
-                        anchors.verticalCenter: parent.verticalCenter
+                        largeStatus: home.onMac
+                        height: largeStatus ? 252 : implicitHeight
+                        width: largeStatus ? Math.min(180, Math.max(64, Math.round(height * handsetAspect))) : implicitWidth
+                        connectionText: home.connectionText
+                        onConnectionHelpRequested: AppController.runDoctor()
+                        y: Math.round((topHeroRow.height - height) / 2)
                         model: home.model
                         battery: home.battery
                         charging: home.charging
@@ -560,7 +611,7 @@ Item {
                         anchors.left: phoneArt.right
                         anchors.leftMargin: 14
                         anchors.right: parent.right
-                        anchors.verticalCenter: parent.verticalCenter
+                        y: Math.round((topHeroRow.height - height) / 2)
                         spacing: 6
                         Txt {
                             width: parent.width
@@ -585,34 +636,12 @@ Item {
                         Flow {
                             width: parent.width
                             spacing: 6
+                            visible: !phoneArt.largeStatus
                             Chip {
                                 interactive: true
                                 onClicked: AppController.runDoctor()
-                                iconPath: !home.online ? Icons.unlink
-                                          : home.provenCable ? Icons.usb
-                                          : home.displayPath === "relay" ? Icons.globe
-                                          : (home.linkTransport === "wifi" ? Icons.wifi
-                                             : (home.linkTransport === "cellular" ? Icons.signal
-                                                : (home.linkTransport === "ethernet" ? Icons.wifi
-                                                   : (home.linkTransport === "usb" ? Icons.usb
-                                                      : Icons.info))))
-                                text: home.online
-                                      ? (home.displayPath === "relay"
-                                         ? (home.rttMs >= 1 ? qsTr("Away · %1 ms").arg(home.rttMs) : qsTr("Away"))
-                                         : (home.provenCable
-                                            ? (home.rttMs >= 1 ? qsTr("USB · %1 ms").arg(home.rttMs) : qsTr("USB"))
-                                            : (home.linkTransport === "wifi"
-                                               ? (home.rttMs >= 1 ? qsTr("Wi‑Fi · %1 ms").arg(home.rttMs) : qsTr("Wi‑Fi"))
-                                               : (home.linkTransport === "cellular"
-                                                  ? ((home.cellType.length > 0 ? home.cellType : qsTr("Cellular"))
-                                                     + (home.rttMs >= 1 ? qsTr(" · %1 ms").arg(home.rttMs) : ""))
-                                                  : (home.linkTransport === "ethernet"
-                                                     ? (home.rttMs >= 1 ? qsTr("Ethernet · %1 ms").arg(home.rttMs) : qsTr("Ethernet"))
-                                                     : (home.linkTransport === "usb"
-                                                        ? (home.rttMs >= 1 ? qsTr("USB · %1 ms").arg(home.rttMs) : qsTr("USB"))
-                                                        : (home.rttMs >= 1 ? qsTr("Connected · %1 ms").arg(home.rttMs) : qsTr("Connected"))))))))
-                                      : (home.lastSeen > 0 ? qsTr("Offline · %1").arg(page.relativeTime(home.lastSeen))
-                                                           : qsTr("Offline"))
+                                iconPath: home.connectionIcon
+                                text: home.connectionText
                             }
                             Chip {
                                 visible: home.online
@@ -630,6 +659,12 @@ Item {
                                 }
                             }
                         }
+                        IconButton {
+                            visible: phoneArt.largeStatus && !phoneArt.connectionInPortrait
+                            iconPath: home.connectionIcon
+                            label: qsTr("Connection diagnostics: %1").arg(home.connectionText)
+                            onClicked: AppController.runDoctor()
+                        }
                         Button {
                             visible: !home.online
                             variant: "tonal"
@@ -640,579 +675,107 @@ Item {
                     }
                 }
 
-            }
 
-            // ---- Quick actions ----
-            // Primary phone actions keep their order and capability explanations.
-            // Two columns retain readable labels beside the details column.
-            // The call in progress on the phone.
-            Binding { target: PhoneCall; property: "device"; value: home.deviceId; when: home.visible; restoreMode: Binding.RestoreNone }
-            CallCard {
-                width: parent.width
-                visible: PhoneCall.active && PhoneCall.device === home.deviceId
-            }
-            Card {
-                id: webcamHomeCard
-                width: parent.width
-                readonly property var webcamFeature: home.feature("camera.webcam")
-                readonly property bool isThisPhone: (Webcam.phase === "streaming" || Webcam.phase === "asking")
-                                                    && Webcam.activeDevice === home.deviceId
-                visible: isThisPhone
-                onIsThisPhoneChanged: {
-                    if (isThisPhone)
-                        Webcam.setPreviewActive(true)
-                }
-                Component.onCompleted: {
-                    if (isThisPhone)
-                        Webcam.setPreviewActive(true)
-                }
-                Column {
-                    width: parent.width
-                    spacing: 10
-                    Item {
+                Card {
+                    id: mediaPanel
+                    width: heroCard.wide ? Math.min(640, Math.round((heroCard.width - 56) * 0.48)) : heroCard.width - 40
+                    x: heroCard.wide ? heroCard.width - width - 20 : 20
+                    y: heroCard.wide ? Math.round((heroCard.height - height) / 2) : topHeroRow.y + topHeroRow.height + 12
+                    padding: 0
+                    color: "transparent"
+                    border.width: 0
+                    Column {
+                        id: summaryPanel
+                        visible: true
                         width: parent.width
-                        height: Math.max(webcamHeaderLeft.height, webcamStopBtn.height)
-                        Row {
-                            id: webcamHeaderLeft
-                            anchors.left: parent.left
-                            anchors.right: webcamStopBtn.left
-                            anchors.rightMargin: 12
-                            anchors.verticalCenter: parent.verticalCenter
-                            spacing: 8
-                            Icon {
-                                anchors.verticalCenter: parent.verticalCenter
-                                path: Icons.video
-                                color: Theme.primary
+                        spacing: 8
+
+                        Repeater {
+                            model: MediaList
+                            delegate: NowPlaying {
+                                required property int index
+                                visible: MediaList.revision >= 0 && index === heroCard.activeMediaRow
+                                width: visible ? summaryPanel.width : 0
+                                embeddedInHero: true
+                                hasMultipleSources: heroCard.hasBothMedia
+                                phoneVolume: phoneControls.state ? phoneControls.state.volume : 65
+                                onSourceSelected: (src) => heroCard.preferredMediaSource = src
                             }
+                        }
+
+                        // Calm glass standby media card when neither Phone nor PC has an active media session
+                        Rectangle {
+                            width: parent.width
+                            height: idleMediaCol.implicitHeight + 24
+                            visible: heroCard.activeMediaRow < 0
+                            radius: Theme.radiusLg
+                            color: Qt.rgba(Theme.panelColor.r, Theme.panelColor.g, Theme.panelColor.b, Theme.dark ? 0.58 : 0.80)
+                            border.width: 0
+
                             Column {
+                                id: idleMediaCol
+                                x: 14
+                                y: 12
                                 width: parent.width - 28
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: 1
-                                Txt {
+                                spacing: 8
+
+                                Row {
                                     width: parent.width
-                                    text: qsTr("Webcam")
-                                    role: "label"
-                                    elide: Text.ElideRight
-                                }
-                                Txt {
-                                    width: parent.width
-                                    role: "caption"
-                                    muted: true
-                                    elide: Text.ElideRight
-                                    text: Webcam.statusText.length > 0
-                                          ? Webcam.statusText
-                                          : qsTr("Streaming from %1").arg(home.name)
+                                    spacing: 10
+                                    Rectangle {
+                                        width: 40; height: 40
+                                        radius: Theme.radiusMd
+                                        color: Theme.secondaryContainer
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        Icon {
+                                            anchors.centerIn: parent
+                                            width: 18; height: 18
+                                            path: Icons.music
+                                            color: Theme.secondaryContainerContent
+                                        }
+                                    }
+                                    Column {
+                                        width: parent.width - 50
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        spacing: 1
+                                        Txt {
+                                            width: parent.width
+                                            role: "title"
+                                            size: 13
+                                            text: qsTr("Media player")
+                                            elide: Text.ElideRight
+                                        }
+                                        Txt {
+                                            width: parent.width
+                                            role: "caption"
+                                            muted: true
+                                            text: qsTr("Nothing playing")
+                                            elide: Text.ElideRight
+                                        }
+                                    }
                                 }
                             }
                         }
-                        Button {
-                            id: webcamStopBtn
-                            anchors.right: parent.right
-                            anchors.verticalCenter: parent.verticalCenter
-                            variant: "tonal"
-                            size: "sm"
-                            iconPath: Icons.close
-                            text: qsTr("Stop")
-                            onClicked: Webcam.stop()
-                        }
-                    }
-                    Rectangle {
-                        width: parent.width
-                        height: Math.round(width * 9 / 16)
-                        radius: Theme.radiusMd
-                        color: "#121318"
-                        border.width: 1
-                        border.color: Theme.outlineVariant
-                        clip: true
-                        VideoView {
-                            anchors.fill: parent
-                            stream: "webcam"
-                        }
-                    }
-                    Flow {
-                        width: parent.width
-                        spacing: 6
-                        Segmented {
-                            options: [
-                                { value: "back", label: qsTr("Back") },
-                                { value: "front", label: qsTr("Front") }
-                            ]
-                            value: Webcam.camera
-                            onPicked: (v) => Webcam.setCamera(v)
-                        }
-                        Segmented {
-                            // 4K only when the phone's camera in use can stream it.
-                            options: [
-                                { value: "720", label: "720p" },
-                                { value: "1080", label: "1080p" }
-                            ].concat(Webcam.uhd ? [{ value: "2160", label: "4K" }] : [])
-                            value: String(Webcam.height)
-                            onPicked: (v) => Webcam.setResolution(Number(v))
-                        }
-                        Button {
-                            variant: Webcam.mirror ? "tonal" : "outline"
-                            size: "sm"
-                            iconPath: Icons.mirror
-                            text: qsTr("Mirror")
-                            onClicked: Webcam.setMirrorImage(!Webcam.mirror)
-                        }
                     }
                 }
             }
 
-            Column {
-                width: parent.width
-                spacing: 4
-                Txt { text: qsTr("Home"); role: "headline"; size: 26; weight: 650 }
-                Txt {
-                    width: parent.width
-                    text: qsTr("Continue with %1").arg(home.name)
-                    role: "bodySmall"
-                    muted: true
-                    elide: Text.ElideRight
-                }
-            }
-
-            Grid {
-                id: actions
-                width: parent.width
-                columns: 2
-                spacing: 12
-                readonly property real tileWidth: (width - spacing) / 2
-                ActionTile {
-                    width: actions.tileWidth
-                    deviceOnline: home.online
-                    title: qsTr("Mirror phone")
-                    accented: true
-                    subtitle: qsTr("View your phone screen")
-                    iconPath: Icons.mirror
-                    iconSource: Icons.colorSource("mirror")
-                    // The Mac receives the phone's screen; it does not inject input.
-                    feature: home.feature("mirroring.view")
-                    // The phone's screen is showing (its session is 0).
-                    active: {
-                        try {
-                            return JSON.parse(Mirror.windows).some(w => w.device === home.deviceId && w.session === 0
-                                                                       && w.phase !== "ended")
-                        } catch (e) {
-                            return false
-                        }
-                    }
-                    onClicked: Mirror.start(home.deviceId)
-                    sideIcon: Mirror.appWindowsSupported && home.feature("mirroring.app_windows").state === "available" ? Icons.apps : ""
-                    sideLabel: qsTr("Open an app")
-                    onSideClicked: appsSheet.openFor(home.deviceId, home.name)
-                }
-                ActionTile {
-                    width: actions.tileWidth
-                    deviceOnline: home.online
-                    queueableWhenOffline: true
-                    title: qsTr("Files & folders")
-                    subtitle: qsTr("Send files to your phone")
-                    iconPath: Icons.send
-                    iconSource: Icons.colorSource("send")
-                    feature: home.feature("files.send")
-                    onClicked: filePicker.open()
-                    sideIcon: Icons.folder
-                    sideLabel: qsTr("Send a folder")
-                    onSideClicked: folderPicker.open()
-                }
-            }
-
-            Grid {
-                width: parent.width
-                columns: 3
-                spacing: 12
-                readonly property real tileWidth: (width - spacing * 2) / 3
-                HomeDestination {
-                    width: parent.tileWidth
-                    title: qsTr("Messages")
-                    description: qsTr("Conversations from your phone")
-                    iconPath: Icons.messages
-                    iconSource: Icons.colorSource("message")
-                    onClicked: AppController.currentPage = "messages"
-                }
-                HomeDestination {
-                    width: parent.tileWidth
-                    title: qsTr("Photos")
-                    description: qsTr("Recent photos and screenshots")
-                    iconPath: Icons.photo
-                    iconSource: Icons.colorSource("photos")
-                    onClicked: AppController.currentPage = "photos"
-                }
-                HomeDestination {
-                    width: parent.tileWidth
-                    title: qsTr("Apps")
-                    description: qsTr("Phone apps in one place")
-                    iconPath: Icons.apps
-                    iconSource: Icons.colorSource("apps")
-                    onClicked: AppController.currentPage = "apps"
-                }
-            }
-
-            FileDialog {
-                id: filePicker
-                title: qsTr("Send to %1").arg(home.name)
-                fileMode: FileDialog.OpenFiles
-                onAccepted: TransferList.send(home.deviceId, selectedFiles.map(url => url.toString()))
-            }
-            FileDialog {
-                id: handoffFilePicker
-                title: qsTr("Hand off & open on %1").arg(home.name)
-                fileMode: FileDialog.OpenFile
-                onAccepted: TransferList.sendHandoff(home.deviceId, [selectedFile.toString()])
-            }
-            Connections {
-                target: AppController
-                enabled: home.visible
-                function onFilePickerRequested() {
-                    filePicker.open()
-                }
-                function onHandoffFilePickerRequested() {
-                    handoffFilePicker.open()
-                }
-            }
-            FolderDialog {
-                id: folderPicker
-                title: qsTr("Send a folder to %1").arg(home.name)
-                onAccepted: TransferList.send(home.deviceId, [selectedFolder.toString()])
-            }
-
-        Grid {
-            width: home.width
-            columns: home.columns
-            spacing: home.spacing
-
-        Column {
-            width: home.columns === 2 ? home.width - home.sideWidth - home.spacing : home.width
-            spacing: 14
-            Column {
-                width: parent.width
-                spacing: 10
-                Txt { text: qsTr("More from your phone"); role: "label"; weight: 600 }
-                Grid {
-                    id: toolsGrid
-                    width: parent.width
-                    columns: 2
-                    spacing: 10
-                    readonly property real tileWidth: (width - spacing) / 2
-                    ActionTile {
-                        width: toolsGrid.tileWidth
-                        deviceOnline: home.online
-                        queueableWhenOffline: true
-                        title: qsTr("Clipboard")
-                        subtitle: qsTr("Send copied text")
-                        iconPath: Icons.clipboard
-                        iconSource: Icons.colorSource("clipboard")
-                        feature: home.feature("clipboard.pc_to_phone")
-                        onClicked: AppController.sendClipboard(home.deviceId)
-                        sideIcon: Preferences.clipboardHistory ? Icons.clipboardList : ""
-                        sideLabel: qsTr("Clipboard history")
-                        sideAlwaysAvailable: true
-                        onSideClicked: {
-                            clipboardSearch.text = ""
-                            clipboardSheet.open()
-                        }
-                    }
-                    ActionTile {
-                        width: toolsGrid.tileWidth
-                        deviceOnline: home.online
-                        title: home.ringing ? qsTr("Stop ringing") : qsTr("Find phone")
-                        subtitle: qsTr("Play a sound on your phone")
-                        iconPath: Icons.ring
-                        iconSource: Icons.colorSource("find")
-                        feature: home.feature("device.find_phone")
-                        active: home.ringing
-                        onClicked: {
-                            home.ringing = !home.ringing
-                            if (home.ringing) ringTimeout.restart()
-                            AppController.ring(home.deviceId, home.ringing)
-                        }
-                    }
-                }
-            }
-            Row {
-                id: sideCameraGrid
-                width: parent.width
-                spacing: 10
-                readonly property real tileWidth: (width - spacing) / 2
-
-                ActionTile {
-                    width: sideCameraGrid.tileWidth
-                    deviceOnline: home.online
-                    queueableWhenOffline: true
-                    accented: false
-                    title: qsTr("Use camera")
-                    subtitle: AppController.continuityCameraBusy
-                              ? AppController.continuityCameraStatus
-                              : ""
-                    iconPath: Icons.camera
-                    iconSource: Icons.colorSource("camera")
-                    feature: home.feature("camera.continuity")
-                    active: AppController.continuityCameraBusy
-                    onClicked: AppController.startContinuityCamera("photo")
-                    sideIcon: AppController.continuityCameraBusy ? Icons.close : Icons.scan
-                    sideLabel: AppController.continuityCameraBusy
-                               ? qsTr("Cancel")
-                               : qsTr("Scan document")
-                    onSideClicked: {
-                        if (AppController.continuityCameraBusy)
-                            AppController.cancelContinuityCamera()
-                        else
-                            AppController.startContinuityCamera("scan")
-                    }
-                }
-
-                ActionTile {
-                    width: sideCameraGrid.tileWidth
-                    deviceOnline: home.online
-                    playableWhenAddonMissing: true
-                    // Missing registration routes an explicit click to extension setup.
-                    // It never starts the phone camera as a substitute for setup.
-                    title: qsTr("Phone as webcam")
-                    enabled: active || Webcam.outputTarget !== "obs" || Webcam.obsOutputAvailable
-                    subtitle: (Webcam.phase === "streaming" || Webcam.phase === "asking")
-                              && Webcam.activeDevice === home.deviceId
-                              ? (Webcam.statusText.length > 0 ? Webcam.statusText : qsTr("Streaming"))
-                              : Webcam.outputTarget === "obs" && !Webcam.obsOutputAvailable
-                              ? qsTr("OBS Virtual Camera is not ready. Check Camera & Audio settings.")
-                              : ""
-                    iconPath: Icons.video
-                    iconSource: Icons.colorSource("video")
-                    feature: home.onMac && Webcam.outputTarget === "native" && !Webcam.addonRegistered
-                             ? ({ state: "locked", action: "enableAddon", target: "vcam" })
-                             : home.feature("camera.webcam")
-                    active: (Webcam.phase === "streaming" || Webcam.phase === "asking")
-                            && Webcam.activeDevice === home.deviceId
-                    onClicked: {
-                        if (home.onMac && Webcam.outputTarget === "native" && !Webcam.addonRegistered
-                                && Webcam.phase !== "streaming" && Webcam.phase !== "asking") {
-                            if (Webcam.addonSetupAllowed && !Webcam.addonBusy)
-                                Webcam.setupAddon()
-                            return
-                        }
-                        if ((Webcam.phase === "streaming" || Webcam.phase === "asking")
-                            && Webcam.activeDevice === home.deviceId)
-                            Webcam.stop()
-                        else if (Webcam.outputTarget !== "obs" || Webcam.obsOutputAvailable)
-                            Webcam.start(home.deviceId)
-                    }
-                }
-            }
             Card {
-                id: typeOnPhoneCard
-                width: parent.width
-                readonly property var remoteInputFeature: home.feature("mirroring.control")
-                readonly property bool available: remoteInputFeature.state === "available"
-                readonly property bool canStart: home.online
-                readonly property bool activeHere: Mirror.keyboardDevice === home.deviceId
-                // The Mac viewer does not inject keyboard input.
-                readonly property bool macGap: home.onMac && !activeHere
-                property string lastSent: ""
+                Layout.row: home.columns === 2 ? 0 : 1
+                Layout.column: home.columns === 2 ? 1 : 0
+                Layout.fillWidth: true
+                Layout.minimumWidth: 0
+                Layout.fillHeight: true
+                Layout.preferredWidth: home.sideWidth
 
-                onActiveHereChanged: {
-                    if (!activeHere)
-                        lastSent = ""
-                }
-
-                Column {
-                    width: parent.width
-                    spacing: 10
-                    Item {
-                        width: parent.width
-                        height: Math.max(typeHeaderLeft.height, typeToggleBtn.height)
-                        Row {
-                            id: typeHeaderLeft
-                            anchors.left: parent.left
-                            anchors.right: typeToggleBtn.left
-                            anchors.rightMargin: 10
-                            anchors.verticalCenter: parent.verticalCenter
-                            spacing: 10
-                            Rectangle {
-                                width: 32; height: 32
-                                anchors.verticalCenter: parent.verticalCenter
-                                radius: Theme.graphite ? Theme.radiusSm : Theme.radiusMd
-                                color: typeOnPhoneCard.activeHere
-                                    ? Theme.primary
-                                    : (Theme.graphite ? "transparent" : Theme.secondaryContainer)
-                                border.width: Theme.graphite ? 1 : 0
-                                border.color: Theme.outlineVariant
-                                opacity: typeOnPhoneCard.canStart && !typeOnPhoneCard.macGap ? 1 : 0.55
-                                Behavior on color { enabled: !Theme.reduceMotion; ColorAnimation { duration: Theme.fadeFast } }
-                                Icon {
-                                    anchors.centerIn: parent
-                                    width: 17; height: 17
-                                    path: Icons.keyboard
-                                    color: typeOnPhoneCard.activeHere ? Theme.primaryContent : Theme.secondaryContainerContent
-                                }
-                            }
-                            Column {
-                                width: parent.width - 42
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: 1
-                                Txt {
-                                    width: parent.width
-                                    role: "title"
-                                    size: 13
-                                    elide: Text.ElideRight
-                                    text: qsTr("Type on phone")
-                                    opacity: typeOnPhoneCard.canStart && !typeOnPhoneCard.macGap ? 1 : 0.6
-                                }
-                                Txt {
-                                    visible: typeOnPhoneCard.activeHere || !typeOnPhoneCard.canStart
-                                    width: parent.width
-                                    role: "caption"
-                                    muted: true
-                                    elide: Text.ElideRight
-                                    text: typeOnPhoneCard.activeHere
-                                        ? (typeOnPhoneCard.lastSent.length > 0
-                                            ? qsTr("Sent: %1").arg(typeOnPhoneCard.lastSent)
-                                            : qsTr("Listening for keys"))
-                                        : qsTr("When connected")
-                                }
-                            }
-                        }
-                        Button {
-                            id: typeToggleBtn
-                            anchors.right: parent.right
-                            anchors.verticalCenter: parent.verticalCenter
-                            visible: typeOnPhoneCard.canStart
-                            enabled: !typeOnPhoneCard.macGap
-                            variant: typeOnPhoneCard.activeHere ? "fill" : "tonal"
-                            size: "sm"
-                            text: typeOnPhoneCard.activeHere ? qsTr("Stop") : qsTr("Start")
-                            onClicked: {
-                                if (typeOnPhoneCard.activeHere) {
-                                    Mirror.stopKeyboard()
-                                } else {
-                                    Mirror.toggleKeyboard(home.deviceId)
-                                    remoteKeyCapture.forceActiveFocus()
-                                }
-                            }
-                        }
-                    }
-
-                    LockChip {
-                        id: typeLock
-                        visible: !typeOnPhoneCard.available && label.length > 0
-                                 && (home.online || !hideWhileOffline)
-                        feature: home.onMac
-                            ? ({ state: "locked", action: "updateApp", target: "desktop" })
-                            : typeOnPhoneCard.remoteInputFeature
-                        maxWidth: parent.width
-                    }
-
-                    Rectangle {
-                        id: remoteKeyCapture
-                        width: parent.width
-                        height: typeOnPhoneCard.activeHere ? 54 : 0
-                        visible: height > 0
-                        clip: true
-                        Behavior on height {
-                            enabled: !Theme.reduceMotion
-                            NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
-                        }
-                        radius: Theme.radiusMd
-                        color: Theme.graphite ? "transparent" : Theme.surfaceContainerHigh
-                        border.width: activeFocus ? 2 : 1
-                        border.color: activeFocus ? Theme.primary : Theme.outlineVariant
-                        activeFocusOnTab: typeOnPhoneCard.activeHere
-
-                        onVisibleChanged: {
-                            if (visible) forceActiveFocus()
-                        }
-
-                        Keys.onPressed: (event) => {
-                            if (event.key === Qt.Key_Escape) {
-                                Mirror.stopKeyboard()
-                                event.accepted = true
-                                return
-                            }
-                            if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_V) {
-                                Mirror.keyboardPaste(home.deviceId)
-                                typeOnPhoneCard.lastSent = qsTr("Clipboard")
-                                event.accepted = true
-                                return
-                            }
-                            let keyName = ""
-                            switch (event.key) {
-                            case Qt.Key_Return:
-                            case Qt.Key_Enter: keyName = "enter"; break
-                            case Qt.Key_Backspace: keyName = "backspace"; break
-                            case Qt.Key_Delete: keyName = "delete"; break
-                            case Qt.Key_Left: keyName = "left"; break
-                            case Qt.Key_Right: keyName = "right"; break
-                            case Qt.Key_Up: keyName = "up"; break
-                            case Qt.Key_Down: keyName = "down"; break
-                            case Qt.Key_Tab: keyName = "tab"; break
-                            default: break
-                            }
-                            if (keyName.length > 0) {
-                                Mirror.keyboardPress(home.deviceId, keyName)
-                                typeOnPhoneCard.lastSent = keyName
-                                event.accepted = true
-                                return
-                            }
-                            if (event.text && event.text.length > 0
-                                    && !(event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) {
-                                Mirror.keyboardText(home.deviceId, event.text)
-                                typeOnPhoneCard.lastSent = event.text
-                                event.accepted = true
-                            }
-                        }
-
-                        Row {
-                            x: 12
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: parent.width - 24
-                            spacing: 8
-                            Column {
-                                width: parent.width - pasteBtn.width - 8
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: 2
-                                Txt {
-                                    width: parent.width
-                                    role: "bodySmall"
-                                    weight: 600
-                                    elide: Text.ElideRight
-                                    color: remoteKeyCapture.activeFocus ? Theme.primary : Theme.surfaceContent
-                                    text: remoteKeyCapture.activeFocus
-                                        ? qsTr("Type here: keys go to %1").arg(home.name)
-                                        : qsTr("Click to focus keyboard")
-                                }
-                                Txt {
-                                    width: parent.width
-                                    role: "caption"
-                                    muted: true
-                                    elide: Text.ElideRight
-                                    text: qsTr("Ctrl+V pastes · Esc stops")
-                                }
-                            }
-                            Button {
-                                id: pasteBtn
-                                anchors.verticalCenter: parent.verticalCenter
-                                variant: "outline"
-                                size: "sm"
-                                iconPath: Icons.clipboard
-                                text: qsTr("Paste")
-                                onClicked: {
-                                    Mirror.keyboardPaste(home.deviceId)
-                                    typeOnPhoneCard.lastSent = qsTr("Clipboard")
-                                    remoteKeyCapture.forceActiveFocus()
-                                }
-                            }
-                        }
-                        TapHandler {
-                            onTapped: remoteKeyCapture.forceActiveFocus()
-                        }
-                    }
-                }
-            }
-            Card {
                 id: phoneControls
-                width: parent.width
+
+                objectName: "home-phone-controls"
+                padding: 14
+                color: Theme.panelColor
+                border.width: 0
                 visible: home.online && state !== null
-                property bool expanded: false
+                property bool expanded: home.onMac
                 property bool confirmWifiOff: false
                 property var hoveredLockedFeature: null
                 readonly property var state: {
@@ -1252,11 +815,12 @@ Item {
 
                 Column {
                     width: parent.width
-                    spacing: 12
+                    spacing: home.onMac ? 8 : 12
 
                     Item {
                         width: parent.width
                         height: 24
+                        visible: !home.onMac
                         Txt {
                             anchors.left: parent.left
                             anchors.verticalCenter: parent.verticalCenter
@@ -1274,7 +838,7 @@ Item {
                         }
                     }
 
-                    Row {
+                    Flow {
                         id: toggleRow
                         width: parent.width
                         spacing: 6
@@ -1282,7 +846,8 @@ Item {
                         readonly property real buttonWidth: (width - spacing * (buttonCount - 1)) / buttonCount
 
                         QuickToggleButton {
-                            width: toggleRow.buttonWidth
+                            compact: home.onMac
+                            width: home.onMac ? implicitWidth : toggleRow.buttonWidth
                             iconPath: Icons.moon
                             shortTitle: qsTr("DND")
                             label: qsTr("Do Not Disturb")
@@ -1292,8 +857,9 @@ Item {
                             onClicked: AppController.setPhoneToggle(home.deviceId, "dnd", String(!active))
                         }
                         QuickToggleButton {
+                            compact: home.onMac
                             visible: phoneControls.hasFlashlight
-                            width: toggleRow.buttonWidth
+                            width: home.onMac ? implicitWidth : toggleRow.buttonWidth
                             iconPath: Icons.flashlight
                             shortTitle: qsTr("Torch")
                             label: qsTr("Flashlight")
@@ -1303,7 +869,8 @@ Item {
                             onClicked: AppController.setPhoneToggle(home.deviceId, "flashlight", String(!active))
                         }
                         QuickToggleButton {
-                            width: toggleRow.buttonWidth
+                            compact: home.onMac
+                            width: home.onMac ? implicitWidth : toggleRow.buttonWidth
                             iconPath: Icons.wifi
                             shortTitle: qsTr("Wi‑Fi")
                             label: qsTr("Wi‑Fi")
@@ -1318,7 +885,8 @@ Item {
                             }
                         }
                         QuickToggleButton {
-                            width: toggleRow.buttonWidth
+                            compact: home.onMac
+                            width: home.onMac ? implicitWidth : toggleRow.buttonWidth
                             iconPath: Icons.bluetooth
                             shortTitle: qsTr("BT")
                             label: qsTr("Bluetooth")
@@ -1328,43 +896,15 @@ Item {
                             onClicked: AppController.setPhoneToggle(home.deviceId, "bluetooth", String(!active))
                         }
                         QuickToggleButton {
-                            width: toggleRow.buttonWidth
-                            iconPath: Icons.wifi
+                            compact: home.onMac
+                            width: home.onMac ? implicitWidth : toggleRow.buttonWidth
+                            iconPath: home.onMac ? Icons.hotspot : Icons.wifi
                             shortTitle: qsTr("Hotspot")
                             label: qsTr("Join phone hotspot")
                             feature: ({ state: "available" })
                             Accessible.role: Accessible.Button
                             onClicked: phoneHotspotSheet.openFor(home.deviceId, home.name)
                         }
-                    }
-
-                    // pc_audio_stream.rs captures with WASAPI only; elsewhere it's a stub.
-                    SwitchBar {
-                        width: parent.width
-                        iconPath: Icons.speaker
-                        title: qsTr("Phone as speaker")
-                        enabled: !home.onMac
-                        caption: home.onMac ? qsTr("Not yet available on Mac")
-                            : checked ? qsTr("Streaming PC audio") : ""
-                        checked: enabled && Preferences.streamPcAudioToPhone
-                        onToggled: (on) => Preferences.streamPcAudioToPhone = on
-                    }
-
-                    // Play on phone: the video playing on this PC, on the phone.
-                    // Greyed out until a video plays; media.stream is Windows-only.
-                    SwitchBar {
-                        readonly property string watch: MediaList.playOnPhoneState
-                        width: parent.width
-                        iconPath: Icons.video
-                        title: qsTr("Play on phone")
-                        enabled: !home.onMac && (watch !== "off" || MediaList.canPlayOnPhone)
-                        checked: watch !== "off"
-                        caption: home.onMac ? qsTr("Not yet available on Mac")
-                            : watch === "watching" ? qsTr("Watching on %1").arg(MediaList.playOnPhoneName)
-                            : watch === "asking" ? qsTr("Tap the notification on %1").arg(MediaList.playOnPhoneName)
-                            : MediaList.canPlayOnPhone ? ""
-                            : qsTr("Play a video on this PC first")
-                        onToggled: (on) => MediaList.setPlayOnPhone(on)
                     }
 
                     LockChip {
@@ -1419,17 +959,47 @@ Item {
 
                     Column {
                         width: parent.width
-                        spacing: 12
-                        visible: phoneControls.expanded
+                        spacing: home.onMac ? 8 : 12
+                        visible: home.onMac || phoneControls.expanded
 
-                        // Ringer mode segmented control.
+                        // Equal text choices keep each ringer mode easy to target on Mac.
                         Column {
+                            id: ringerChoices
                             width: parent.width
                             spacing: 6
+                            readonly property bool available: phoneControls.ringerFeature.state === "available"
+                                || phoneControls.ringerFeature.state === "partial"
+                            Row {
+                                id: ringerButtons
+                                width: parent.width
+                                spacing: 6
+                                visible: home.onMac
+                                Repeater {
+                                    model: [
+                                        { value: "ring", label: qsTr("Ring") },
+                                        { value: "vibrate", label: qsTr("Vibrate") },
+                                        { value: "silent", label: qsTr("Silent") }
+                                    ]
+                                    delegate: Button {
+                                        required property var modelData
+                                        readonly property bool selected: phoneControls.state !== null
+                                            && phoneControls.state.ringer === modelData.value
+                                        width: Math.min(108, (ringerButtons.width - ringerButtons.spacing * 2) / 3)
+                                        size: "sm"
+                                        enabled: ringerChoices.available
+                                        text: modelData.label
+                                        iconPath: selected ? Icons.check : ""
+                                        variant: selected ? "tonal" : "outline"
+                                        Accessible.selected: selected
+                                        onClicked: if (ringerChoices.available)
+                                            AppController.setPhoneToggle(home.deviceId, "ringer", modelData.value)
+                                    }
+                                }
+                            }
                             Segmented {
                                 width: parent.width
-                                enabled: phoneControls.ringerFeature.state === "available"
-                                         || phoneControls.ringerFeature.state === "partial"
+                                visible: !home.onMac
+                                enabled: ringerChoices.available
                                 opacity: enabled ? 1 : 0.5
                                 options: [
                                     { value: "ring", label: qsTr("Ring") },
@@ -1446,396 +1016,392 @@ Item {
                             }
                         }
 
-                        // Media volume slider.
-                        ToggleSlider {
+                        Grid {
+                            id: soundDisplaySliders
                             width: parent.width
-                            deviceId: home.deviceId
-                            toggleId: "volume"
-                            title: qsTr("Volume")
-                            iconPath: shownValue === 0 ? Icons.soundOff : Icons.speaker
-                            phoneValue: phoneControls.state ? phoneControls.state.volume : 0
-                            feature: phoneControls.volumeFeature
+                            columns: home.onMac && width >= 360 ? 2 : 1
+                            spacing: 12
+                            readonly property real sliderWidth: (width - spacing * (columns - 1)) / columns
+
+                            // Media volume slider.
+                            ToggleSlider {
+                                width: soundDisplaySliders.sliderWidth
+                                deviceId: home.deviceId
+                                toggleId: "volume"
+                                title: qsTr("Volume")
+                                iconPath: shownValue === 0 ? Icons.soundOff : Icons.speaker
+                                phoneValue: phoneControls.state ? phoneControls.state.volume : 0
+                                feature: phoneControls.volumeFeature
+                            }
+
+                            // Screen brightness slider.
+                            ToggleSlider {
+                                width: soundDisplaySliders.sliderWidth
+                                deviceId: home.deviceId
+                                toggleId: "brightness"
+                                title: qsTr("Brightness")
+                                iconPath: Icons.brightness
+                                phoneValue: phoneControls.state ? phoneControls.state.brightness : 0
+                                feature: phoneControls.brightnessFeature
+                            }
+                        }
+                    }
+
+                    Flow {
+                        id: phonePlaybackRows
+                        width: parent.width
+                        spacing: home.onMac ? 8 : 12
+
+                        // pc_audio_stream.rs captures with WASAPI only; elsewhere it's a stub.
+                        SwitchBar {
+                            compact: home.onMac
+                            width: home.onMac ? Math.min(implicitWidth, phonePlaybackRows.width) : phonePlaybackRows.width
+                            iconPath: Icons.speaker
+                            title: qsTr("Phone as speaker")
+                            enabled: !home.onMac
+                            caption: home.onMac ? qsTr("Not yet available on Mac")
+                                : checked ? qsTr("Streaming PC audio") : ""
+                            checked: enabled && Preferences.streamPcAudioToPhone
+                            onToggled: (on) => Preferences.streamPcAudioToPhone = on
                         }
 
-                        // Screen brightness slider.
-                        ToggleSlider {
-                            width: parent.width
-                            deviceId: home.deviceId
-                            toggleId: "brightness"
-                            title: qsTr("Brightness")
-                            iconPath: Icons.brightness
-                            phoneValue: phoneControls.state ? phoneControls.state.brightness : 0
-                            feature: phoneControls.brightnessFeature
+                        // Play on phone: the video playing on this PC, on the phone.
+                        // Greyed out until a video plays; media.stream is Windows-only.
+                        SwitchBar {
+                            readonly property string watch: MediaList.playOnPhoneState
+                            compact: home.onMac
+                            width: home.onMac ? Math.min(implicitWidth, phonePlaybackRows.width) : phonePlaybackRows.width
+                            iconPath: Icons.video
+                            title: qsTr("Play on phone")
+                            enabled: !home.onMac && (watch !== "off" || MediaList.canPlayOnPhone)
+                            checked: watch !== "off"
+                            caption: home.onMac ? qsTr("Not yet available on Mac")
+                                : watch === "watching" ? qsTr("Watching on %1").arg(MediaList.playOnPhoneName)
+                                : watch === "asking" ? qsTr("Tap the notification on %1").arg(MediaList.playOnPhoneName)
+                                : MediaList.canPlayOnPhone ? ""
+                                : qsTr("Play a video on this PC first")
+                            onToggled: (on) => MediaList.setPlayOnPhone(on)
                         }
                     }
+
                 }
             }
-            Card {
-                id: sendQueueCard
-                width: parent.width
-                visible: page.selectedQueueItems.length > 0
-                opacity: visible ? 1 : 0
-                Behavior on opacity {
-                    enabled: !Theme.reduceMotion && !page.resizing
-                    NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
-                }
-                Behavior on implicitHeight {
-                    enabled: !Theme.reduceMotion && !page.resizing
-                    NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
-                }
-                Column {
+
+            Column {
+                id: activeSessions
+                Layout.row: home.columns === 2 ? 1 : 2
+                Layout.column: 0
+                Layout.columnSpan: home.columns
+                Layout.fillWidth: true
+                Layout.minimumWidth: 0
+                spacing: 16
+                visible: (PhoneCall.active && PhoneCall.device === home.deviceId) || webcamHomeCard.isThisPhone
+                CallCard {
                     width: parent.width
-                    spacing: 4
-                    Item {
-                        width: parent.width
-                        height: queueHeader.height + queueHeaderActions.height + 4
-                        Txt {
-                            id: queueHeader
-                            anchors.top: parent.top
-                            role: "label"
-                            muted: true
-                            text: page.selectedQueueActive > 0
-                                  ? qsTr("Waiting to send · %1").arg(page.selectedQueueActive)
-                                  : qsTr("Waiting to send")
-                        }
-                        Row {
-                            id: queueHeaderActions
-                            anchors.right: parent.right
-                            anchors.bottom: parent.bottom
-                            spacing: 6
-                            Button {
-                                visible: page.selectedQueueFailures > 0
-                                variant: "text"
-                                size: "sm"
-                                text: qsTr("Retry failed")
-                                onClicked: TransferList.retryFailedQueue(page.currentDeviceId)
-                            }
-                            Button {
-                                visible: page.selectedQueueFailures > 0
-                                variant: "text"
-                                size: "sm"
-                                text: qsTr("Clear")
-                                onClicked: TransferList.clearFinishedQueue(page.currentDeviceId)
-                            }
-                            Button {
-                                visible: page.selectedQueueActive > 0
-                                variant: "text"
-                                size: "sm"
-                                text: qsTr("Cancel all")
-                                onClicked: TransferList.cancelAllQueued(page.currentDeviceId)
-                            }
-                        }
+                    visible: PhoneCall.active && PhoneCall.device === home.deviceId
+                }
+
+                Card {
+                    id: webcamHomeCard
+                    width: parent.width
+                    readonly property var webcamFeature: home.feature("camera.webcam")
+                    readonly property bool isThisPhone: (Webcam.phase === "streaming" || Webcam.phase === "asking")
+                                                        && Webcam.activeDevice === home.deviceId
+                    visible: isThisPhone
+                    onIsThisPhoneChanged: {
+                        if (isThisPhone)
+                            Webcam.setPreviewActive(true)
                     }
-                    Row {
-                        width: parent.width
-                        spacing: 8
-                        Controls.TextField {
-                            id: queueSearch
-                            width: Math.max(80, parent.width - queueKind.width - parent.spacing)
-                            placeholderText: qsTr("Find queued item by name")
-                            Accessible.name: qsTr("Find queued item by name")
-                            selectByMouse: true
-                        }
-                        Controls.ComboBox {
-                            id: queueKind
-                            width: 140
-                            model: [qsTr("All types"), qsTr("Files"), qsTr("Other items")]
-                            Accessible.name: qsTr("Queued item type")
-                        }
-                    }
-                    Txt {
-                        width: parent.width
-                        visible: page.filteredQueueItems.length === 0
-                        text: qsTr("No queued items match your filters.")
-                        wrapMode: Text.WordWrap
-                        muted: true
+                    Component.onCompleted: {
+                        if (isThisPhone)
+                            Webcam.setPreviewActive(true)
                     }
                     Column {
-                        id: sendQueueList
                         width: parent.width
-                        move: Transition {
-                            enabled: !Theme.reduceMotion && !page.resizing
-                            NumberAnimation { properties: "y"; duration: 180; easing.type: Easing.OutCubic }
-                        }
-                        add: Transition {
-                            enabled: !Theme.reduceMotion && !page.resizing
-                            NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 180; easing.type: Easing.OutCubic }
-                        }
-                        Repeater {
-                            model: page.filteredQueueItems
-                            delegate: Item {
-                                id: queueRow
-                                required property var modelData
-                                width: sendQueueList.width
-                                implicitHeight: queueItemCol.height + 18
-
-                                readonly property string itemStatus: queueRow.modelData.status || "waiting"
-                                readonly property bool isFailedOrExpired: itemStatus === "failed" || itemStatus === "expired"
-                                readonly property real totalBytes: Number(queueRow.modelData.totalBytes || 0)
-                                readonly property real progress: Number(queueRow.modelData.progress || 0)
-
-                                Row {
-                                    id: queueRowInner
-                                    x: 4; y: 9
-                                    width: parent.width - 8
-                                    spacing: 12
-
-                                    Rectangle {
-                                        width: 32; height: 32
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        radius: Theme.graphite ? Theme.radiusSm : 16
-                                        color: Theme.graphite ? "transparent" : Theme.secondaryContainer
-                                        border.width: Theme.graphite ? 1 : 0
-                                        border.color: Theme.outlineVariant
-                                        Icon {
-                                            anchors.centerIn: parent
-                                            width: 18; height: 18
-                                            path: queueRow.modelData.icon === "folder" ? Icons.folder
-                                                : queueRow.modelData.icon === "clipboard" ? Icons.clipboard
-                                                : queueRow.modelData.icon === "link" ? Icons.globe
-                                                : queueRow.modelData.icon === "task" ? Icons.bolt
-                                                : queueRow.modelData.icon === "camera" ? Icons.camera
-                                                : Icons.send
-                                            color: Theme.graphite ? Theme.surfaceContent : Theme.secondaryContainerContent
-                                        }
-                                    }
-
-                                    Column {
-                                        id: queueItemCol
-                                        width: Math.max(80, queueRowInner.width - 32 - queueItemActions.width - queueRowInner.spacing * 2)
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        spacing: 4
-                                        Txt {
-                                            width: parent.width
-                                            role: "title"
-                                            size: 14
-                                            elide: (queueRow.modelData.kind === "link"
-                                                    || queueRow.modelData.icon === "link"
-                                                    || (queueRow.modelData.title || "").startsWith("http://")
-                                                    || (queueRow.modelData.title || "").startsWith("https://"))
-                                                ? Text.ElideMiddle
-                                                : Text.ElideRight
-                                            text: queueRow.modelData.title || ""
-                                        }
-                                        Rectangle {
-                                            width: parent.width
-                                            height: 4
-                                            radius: 2
-                                            visible: queueRow.itemStatus === "sending" && queueRow.totalBytes > 0
-                                            color: Theme.surfaceContainerHighest
-                                            Rectangle {
-                                                height: parent.height
-                                                radius: parent.radius
-                                                width: parent.width * Math.max(0, Math.min(1, queueRow.progress))
-                                                color: Theme.primary
-                                                Behavior on width {
-                                                    enabled: !Theme.reduceMotion
-                                                    NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
-                                                }
-                                            }
-                                        }
-                                        Txt {
-                                            width: parent.width
-                                            role: "bodySmall"
-                                            muted: !queueRow.isFailedOrExpired
-                                            color: queueRow.isFailedOrExpired ? Theme.error : Theme.surfaceContentVariant
-                                            elide: Text.ElideRight
-                                            text: {
-                                                const devName = (queueRow.modelData.deviceName && queueRow.modelData.deviceName.length > 0)
-                                                    ? queueRow.modelData.deviceName : home.name
-                                                const sz = page.formatQueueSize(queueRow.totalBytes)
-                                                if (queueRow.itemStatus === "sending") {
-                                                    if (queueRow.totalBytes > 0) {
-                                                        const pct = Math.round(Math.max(0, Math.min(1, queueRow.progress)) * 100)
-                                                        return qsTr("Sending to %1 · %2%").arg(devName).arg(pct)
-                                                    }
-                                                    return qsTr("Sending to %1…").arg(devName)
-                                                }
-                                                if (queueRow.itemStatus === "failed") {
-                                                    const reason = queueRow.modelData.reason || ""
-                                                    return reason.length > 0
-                                                        ? qsTr("Failed · %1").arg(reason)
-                                                        : qsTr("Failed")
-                                                }
-                                                if (queueRow.itemStatus === "expired") {
-                                                    const reason = queueRow.modelData.reason || ""
-                                                    return reason.length > 0 ? reason : qsTr("Expired")
-                                                }
-                                                return sz.length > 0
-                                                    ? qsTr("Waiting for %1 · %2").arg(devName).arg(sz)
-                                                    : qsTr("Waiting for %1").arg(devName)
-                                            }
-                                        }
-                                    }
-
-                                    Row {
-                                        id: queueItemActions
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        spacing: 4
-                                        IconButton {
-                                            visible: queueRow.isFailedOrExpired
-                                            iconPath: Icons.refresh
-                                            label: qsTr("Retry")
-                                            onClicked: TransferList.retryQueueItem(queueRow.modelData.id)
-                                        }
-                                        IconButton {
-                                            iconPath: Icons.close
-                                            label: queueRow.isFailedOrExpired ? qsTr("Dismiss") : qsTr("Cancel")
-                                            onClicked: TransferList.cancelQueueItem(queueRow.modelData.id)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            // ---- Transfers ----
-            Card {
-                width: parent.width
-                visible: TransferList.count > 0
-                Column {
-                    width: parent.width
-                    spacing: 4
-                    Item {
-                        width: parent.width
-                        height: Math.max(transfersHeader.height, clearTransfers.height)
-                        Txt {
-                            id: transfersHeader
-                            anchors.verticalCenter: parent.verticalCenter
-                            role: "label"
-                            muted: true
-                            text: qsTr("Transfers")
-                        }
-                        Row {
-                            anchors.right: parent.right
-                            anchors.verticalCenter: parent.verticalCenter
-                            spacing: 6
-                            Button {
-                                variant: "text"
-                                size: "sm"
-                                text: qsTr("Timeline")
-                                onClicked: AppController.currentPage = "timeline"
-                            }
-                            Button {
-                                id: clearTransfers
-                                visible: TransferList.count > TransferList.active
-                                variant: "text"
-                                size: "sm"
-                                text: qsTr("Clear finished")
-                                onClicked: TransferList.clearFinished()
-                            }
-                        }
-                    }
-                    Column {
-                        id: transferList
-                        width: parent.width
-                        move: Transition {
-                            enabled: !Theme.reduceMotion && !page.resizing
-                            NumberAnimation { properties: "y"; duration: 220; easing.type: Easing.OutCubic }
-                        }
-                        add: Transition {
-                            enabled: !Theme.reduceMotion && !page.resizing
-                            NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 200 }
-                        }
-                        Repeater {
-                            model: TransferList
-                            delegate: TransferItem { width: transferList.width }
-                        }
-                    }
-                }
-            }
-
-            // ---- LocalSend nearby ----
-            LocalSendCard {
-                width: parent.width
-                visible: AppController.localsendEnabled && page.localsendPeers.length > 0
-            }
-        }
-
-        Column {
-            width: home.sideWidth
-            spacing: 14
-            Card {
-                width: parent.width
-                padding: 14
-                Column {
-                    id: summaryPanel
-                    visible: true
-                    width: parent.width
-                    spacing: 8
-
-                    Repeater {
-                        model: MediaList
-                        delegate: NowPlaying {
-                            required property int index
-                            visible: MediaList.revision >= 0 && index === heroCard.activeMediaRow
-                            width: visible ? summaryPanel.width : 0
-                            embeddedInHero: true
-                            hasMultipleSources: heroCard.hasBothMedia
-                            phoneVolume: phoneControls.state ? phoneControls.state.volume : 65
-                            onSourceSelected: (src) => heroCard.preferredMediaSource = src
-                        }
-                    }
-
-                    // Calm glass standby media card when neither Phone nor PC has an active media session
-                    Rectangle {
-                        width: parent.width
-                        height: idleMediaCol.implicitHeight + 24
-                        visible: heroCard.activeMediaRow < 0
-                        radius: Theme.radiusLg
-                        color: Qt.rgba(Theme.panelColor.r, Theme.panelColor.g, Theme.panelColor.b, Theme.dark ? 0.58 : 0.80)
-                        border.width: 0
-
-                        Column {
-                            id: idleMediaCol
-                            x: 14
-                            y: 12
-                            width: parent.width - 28
-                            spacing: 8
-
+                        spacing: 10
+                        Item {
+                            width: parent.width
+                            height: Math.max(webcamHeaderLeft.height, webcamStopBtn.height)
                             Row {
-                                width: parent.width
-                                spacing: 10
-                                Rectangle {
-                                    width: 40; height: 40
-                                    radius: Theme.radiusMd
-                                    color: Theme.secondaryContainer
+                                id: webcamHeaderLeft
+                                anchors.left: parent.left
+                                anchors.right: webcamStopBtn.left
+                                anchors.rightMargin: 12
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 8
+                                Icon {
                                     anchors.verticalCenter: parent.verticalCenter
-                                    Icon {
-                                        anchors.centerIn: parent
-                                        width: 18; height: 18
-                                        path: Icons.music
-                                        color: Theme.secondaryContainerContent
-                                    }
+                                    path: Icons.video
+                                    color: Theme.primary
                                 }
                                 Column {
-                                    width: parent.width - 50
+                                    width: parent.width - 28
                                     anchors.verticalCenter: parent.verticalCenter
                                     spacing: 1
                                     Txt {
                                         width: parent.width
-                                        role: "title"
-                                        size: 13
-                                        text: qsTr("Media player")
+                                        text: qsTr("Webcam")
+                                        role: "label"
                                         elide: Text.ElideRight
                                     }
                                     Txt {
                                         width: parent.width
                                         role: "caption"
                                         muted: true
-                                        text: qsTr("Nothing playing")
                                         elide: Text.ElideRight
+                                        text: Webcam.statusText.length > 0
+                                              ? Webcam.statusText
+                                              : qsTr("Streaming from %1").arg(home.name)
                                     }
                                 }
+                            }
+                            Button {
+                                id: webcamStopBtn
+                                anchors.right: parent.right
+                                anchors.verticalCenter: parent.verticalCenter
+                                variant: "tonal"
+                                size: "sm"
+                                iconPath: Icons.close
+                                text: qsTr("Stop")
+                                onClicked: Webcam.stop()
+                            }
+                        }
+                        Rectangle {
+                            width: parent.width
+                            height: Math.round(width * 9 / 16)
+                            radius: Theme.radiusMd
+                            color: "#121318"
+                            border.width: 1
+                            border.color: Theme.outlineVariant
+                            clip: true
+                            VideoView {
+                                anchors.fill: parent
+                                stream: "webcam"
+                            }
+                        }
+                        Flow {
+                            width: parent.width
+                            spacing: 6
+                            Segmented {
+                                options: [
+                                    { value: "back", label: qsTr("Back") },
+                                    { value: "front", label: qsTr("Front") }
+                                ]
+                                value: Webcam.camera
+                                onPicked: (v) => Webcam.setCamera(v)
+                            }
+                            Segmented {
+                                // 4K only when the phone's camera in use can stream it.
+                                options: [
+                                    { value: "720", label: "720p" },
+                                    { value: "1080", label: "1080p" }
+                                ].concat(Webcam.uhd ? [{ value: "2160", label: "4K" }] : [])
+                                value: String(Webcam.height)
+                                onPicked: (v) => Webcam.setResolution(Number(v))
+                            }
+                            Button {
+                                variant: Webcam.mirror ? "tonal" : "outline"
+                                size: "sm"
+                                iconPath: Icons.mirror
+                                text: qsTr("Mirror")
+                                onClicked: Webcam.setMirrorImage(!Webcam.mirror)
                             }
                         }
                     }
                 }
             }
+
+            Grid {
+                Layout.row: home.columns === 2 ? 1 + dashboard.activeRowCount : 2 + dashboard.activeRowCount
+                Layout.column: 0
+                Layout.fillWidth: true
+                Layout.minimumWidth: 0
+                Layout.fillHeight: true
+                Layout.preferredWidth: (home.columns === 2 ? home.width - home.sideWidth - home.spacing : home.width)
+
+                id: actions
+
+                objectName: "home-quick-actions"
+                columns: width >= 700 ? 4 : 2
+                spacing: 12
+                readonly property real tileWidth: (width - spacing * (columns - 1)) / columns
+                readonly property int actionRows: Math.ceil(4 / columns)
+                Layout.preferredHeight: actionRows * tileHeight + spacing * (actionRows - 1)
+                readonly property real tileHeight: Math.max(mirrorAction.implicitHeight, filesAction.implicitHeight, clipboardAction.implicitHeight, findPhoneAction.implicitHeight)
+                ActionTile {
+                    id: mirrorAction
+                    width: actions.tileWidth
+                    height: (actions.height - actions.spacing * (actions.actionRows - 1)) / actions.actionRows
+                    deviceOnline: home.online
+                    title: qsTr("Mirror phone")
+                    accented: true
+                    subtitle: qsTr("View your phone screen")
+                    iconPath: Icons.mirror
+                    iconSource: Icons.colorSource("mirror")
+                    // The Mac receives the phone's screen; it does not inject input.
+                    feature: home.feature("mirroring.view")
+                    // The phone's screen is showing (its session is 0).
+                    active: {
+                        try {
+                            return JSON.parse(Mirror.windows).some(w => w.device === home.deviceId && w.session === 0
+                                                                       && w.phase !== "ended")
+                        } catch (e) {
+                            return false
+                        }
+                    }
+                    onClicked: Mirror.start(home.deviceId)
+                    sideIcon: Mirror.appWindowsSupported && home.feature("mirroring.app_windows").state === "available" ? Icons.apps : ""
+                    sideLabel: qsTr("Open an app")
+                    onSideClicked: appsSheet.openFor(home.deviceId, home.name)
+                }
+                ActionTile {
+                    id: filesAction
+                    width: actions.tileWidth
+                    height: (actions.height - actions.spacing * (actions.actionRows - 1)) / actions.actionRows
+                    deviceOnline: home.online
+                    queueableWhenOffline: true
+                    title: qsTr("Files & folders")
+                    subtitle: qsTr("Send files to your phone")
+                    iconPath: Icons.send
+                    iconSource: Icons.colorSource("send")
+                    feature: home.feature("files.send")
+                    onClicked: filePicker.open()
+                    sideIcon: Icons.folder
+                    sideLabel: qsTr("Send a folder")
+                    onSideClicked: folderPicker.open()
+                }
+                ActionTile {
+                    id: clipboardAction
+                    width: actions.tileWidth
+                    height: (actions.height - actions.spacing * (actions.actionRows - 1)) / actions.actionRows
+                    deviceOnline: home.online
+                    queueableWhenOffline: true
+                    title: qsTr("Clipboard")
+                    subtitle: qsTr("Send copied text")
+                    iconPath: Icons.clipboard
+                    iconSource: Icons.colorSource("clipboard")
+                    feature: home.feature("clipboard.pc_to_phone")
+                    onClicked: AppController.sendClipboard(home.deviceId)
+                    sideIcon: Preferences.clipboardHistory ? Icons.clipboardList : ""
+                    sideLabel: qsTr("Clipboard history")
+                    sideAlwaysAvailable: true
+                    onSideClicked: {
+                        clipboardSearch.text = ""
+                        clipboardSheet.open()
+                    }
+                }
+                ActionTile {
+                    id: findPhoneAction
+                    width: actions.tileWidth
+                    height: (actions.height - actions.spacing * (actions.actionRows - 1)) / actions.actionRows
+                    deviceOnline: home.online
+                    title: home.ringing ? qsTr("Stop ringing") : qsTr("Find phone")
+                    subtitle: qsTr("Play a sound on your phone")
+                    iconPath: Icons.ring
+                    iconSource: Icons.colorSource("find")
+                    feature: home.feature("device.find_phone")
+                    active: home.ringing
+                    onClicked: {
+                        home.ringing = !home.ringing
+                        if (home.ringing) ringTimeout.restart()
+                        AppController.ring(home.deviceId, home.ringing)
+                    }
+                }
+            }
+
+            Row {
+                Layout.row: home.columns === 2 ? 1 + dashboard.activeRowCount : 3 + dashboard.activeRowCount
+                Layout.column: home.columns === 2 ? 1 : 0
+                Layout.fillWidth: true
+                Layout.minimumWidth: 0
+                Layout.fillHeight: true
+                Layout.preferredWidth: home.sideWidth
+
+                id: sideCameraGrid
+
+                objectName: "home-camera-actions"
+                spacing: 10
+                Layout.preferredHeight: Math.max(continuityAction.implicitHeight, webcamAction.implicitHeight)
+                readonly property real tileWidth: (width - spacing) / 2
+
+                ActionTile {
+                    id: continuityAction
+                    width: sideCameraGrid.tileWidth
+                    height: sideCameraGrid.height
+                    deviceOnline: home.online
+                    queueableWhenOffline: true
+                    accented: false
+                    title: qsTr("Use camera")
+                    subtitle: AppController.continuityCameraBusy
+                              ? AppController.continuityCameraStatus
+                              : ""
+                    iconPath: Icons.camera
+                    iconSource: Icons.colorSource("camera")
+                    feature: home.feature("camera.continuity")
+                    active: AppController.continuityCameraBusy
+                    onClicked: AppController.startContinuityCamera("photo")
+                    sideIcon: AppController.continuityCameraBusy ? Icons.close : Icons.scan
+                    sideLabel: AppController.continuityCameraBusy
+                               ? qsTr("Cancel")
+                               : qsTr("Scan document")
+                    onSideClicked: {
+                        if (AppController.continuityCameraBusy)
+                            AppController.cancelContinuityCamera()
+                        else
+                            AppController.startContinuityCamera("scan")
+                    }
+                }
+
+                ActionTile {
+                    id: webcamAction
+                    width: sideCameraGrid.tileWidth
+                    height: sideCameraGrid.height
+                    deviceOnline: home.online
+                    playableWhenAddonMissing: true
+                    // Missing registration routes an explicit click to extension setup.
+                    // It never starts the phone camera as a substitute for setup.
+                    title: qsTr("Phone as webcam")
+                    enabled: active || Webcam.outputTarget !== "obs" || Webcam.obsOutputAvailable
+                    subtitle: (Webcam.phase === "streaming" || Webcam.phase === "asking")
+                              && Webcam.activeDevice === home.deviceId
+                              ? (Webcam.statusText.length > 0 ? Webcam.statusText : qsTr("Streaming"))
+                              : Webcam.outputTarget === "obs" && !Webcam.obsOutputAvailable
+                              ? qsTr("OBS Virtual Camera is not ready. Check Camera & Audio settings.")
+                              : ""
+                    iconPath: Icons.video
+                    iconSource: Icons.colorSource("video")
+                    feature: home.onMac && Webcam.outputTarget === "native" && !Webcam.addonRegistered
+                             ? ({ state: "locked", action: "enableAddon", target: "vcam" })
+                             : home.feature("camera.webcam")
+                    active: (Webcam.phase === "streaming" || Webcam.phase === "asking")
+                            && Webcam.activeDevice === home.deviceId
+                    onClicked: {
+                        if (home.onMac && Webcam.outputTarget === "native" && !Webcam.addonRegistered
+                                && Webcam.phase !== "streaming" && Webcam.phase !== "asking") {
+                            if (Webcam.addonSetupAllowed && !Webcam.addonBusy)
+                                Webcam.setupAddon()
+                            return
+                        }
+                        if ((Webcam.phase === "streaming" || Webcam.phase === "asking")
+                            && Webcam.activeDevice === home.deviceId)
+                            Webcam.stop()
+                        else if (Webcam.outputTarget !== "obs" || Webcam.obsOutputAvailable)
+                            Webcam.start(home.deviceId)
+                    }
+                }
+            }
+
             Card {
+                Layout.row: home.columns === 2 ? 2 + dashboard.activeRowCount : 4 + dashboard.activeRowCount
+                Layout.column: 0
+                Layout.fillWidth: true
+                Layout.minimumWidth: 0
+                Layout.fillHeight: true
+                Layout.preferredWidth: (home.columns === 2 ? home.width - home.sideWidth - home.spacing : home.width)
+
                 id: feed
-                width: parent.width
+
+                objectName: "home-notifications"
                 readonly property var state: home.feature("notifications.mirror")
                 readonly property int count: NotificationList.count >= 0 ? NotificationList.countFor(home.deviceId) : 0
 
@@ -1988,7 +1554,7 @@ Item {
                     Rectangle {
                         width: parent.width
                         height: toastsOff.height + 20
-                        visible: !AppController.toastsEnabled && feed.state.state === "available"
+                        visible: !home.onMac && !AppController.toastsEnabled && feed.state.state === "available"
                         radius: Theme.radiusMd
                         color: Theme.graphite ? "transparent" : Theme.surfaceContainerHigh
                         border.width: Theme.graphite ? 1 : 0
@@ -2019,116 +1585,690 @@ Item {
                     }
                 }
             }
-            Card {
-                id: timelineHomeCard
-                width: parent.width
-                readonly property var previewItems: {
-                    try {
-                        return AppController.timelinePreview.length > 0
-                            ? JSON.parse(AppController.timelinePreview) : []
-                    } catch (e) {
-                        return []
-                    }
-                }
-                Column {
+
+            Item {
+                Layout.row: home.columns === 2 ? 2 + dashboard.activeRowCount : 5 + dashboard.activeRowCount
+                Layout.column: home.columns === 2 ? 1 : 0
+                Layout.fillWidth: true
+                Layout.minimumWidth: 0
+                Layout.fillHeight: true
+                Layout.preferredWidth: home.sideWidth
+
+                id: activityGroup
+
+                objectName: "home-activity-group"
+                property real spacing: 16
+                implicitHeight: typeOnPhoneCard.implicitHeight + spacing + timelineHomeCard.implicitHeight
+                Card {
+                    id: typeOnPhoneCard
                     width: parent.width
-                    spacing: 8
-                    Item {
-                        width: parent.width
-                        height: 24
-                        Txt {
-                            anchors.left: parent.left
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: qsTr("Timeline")
-                            role: "label"
-                            muted: true
-                        }
-                        Button {
-                            anchors.right: parent.right
-                            anchors.verticalCenter: parent.verticalCenter
-                            variant: "text"
-                            size: "sm"
-                            text: qsTr("View all")
-                            onClicked: AppController.currentPage = "timeline"
-                        }
+                    readonly property var remoteInputFeature: home.feature("mirroring.control")
+                    readonly property bool available: remoteInputFeature.state === "available"
+                    readonly property bool canStart: home.online
+                    readonly property bool activeHere: Mirror.keyboardDevice === home.deviceId
+                    // The Mac viewer does not inject keyboard input.
+                    readonly property bool macGap: home.onMac && !activeHere
+                    property string lastSent: ""
+
+                    onActiveHereChanged: {
+                        if (!activeHere)
+                            lastSent = ""
                     }
-                    Txt {
+
+                    Column {
                         width: parent.width
-                        visible: timelineHomeCard.previewItems.length === 0
-                        role: "bodySmall"
-                        muted: true
-                        wrapMode: Text.WordWrap
-                        text: qsTr("No recent activity")
-                    }
-                    Repeater {
-                        model: timelineHomeCard.previewItems
-                        delegate: Item {
-                            id: previewRow
-                            required property var modelData
+                        spacing: 10
+                        Item {
                             width: parent.width
-                            height: 36
-                            activeFocusOnTab: true
-                            Accessible.role: Accessible.Button
-                            Accessible.name: previewRow.modelData.title || ""
-                            Accessible.description: previewRow.modelData.subtitle || ""
-                            Accessible.onPressAction: AppController.currentPage = "timeline"
+                            height: Math.max(typeHeaderLeft.height, typeToggleBtn.height)
+                            Row {
+                                id: typeHeaderLeft
+                                anchors.left: parent.left
+                                anchors.right: typeToggleBtn.left
+                                anchors.rightMargin: 10
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 10
+                                Rectangle {
+                                    width: 32; height: 32
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    radius: Theme.graphite ? Theme.radiusSm : Theme.radiusMd
+                                    color: typeOnPhoneCard.activeHere
+                                        ? Theme.primary
+                                        : (Theme.graphite ? "transparent" : Theme.secondaryContainer)
+                                    border.width: Theme.graphite ? 1 : 0
+                                    border.color: Theme.outlineVariant
+                                    opacity: typeOnPhoneCard.canStart && !typeOnPhoneCard.macGap ? 1 : 0.55
+                                    Behavior on color { enabled: !Theme.reduceMotion; ColorAnimation { duration: Theme.fadeFast } }
+                                    Icon {
+                                        anchors.centerIn: parent
+                                        width: 20; height: 20
+                                        path: Icons.keyboard
+                                        color: typeOnPhoneCard.activeHere ? Theme.primaryContent : Theme.secondaryContainerContent
+                                    }
+                                }
+                                Column {
+                                    width: parent.width - 42
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    spacing: 1
+                                    Txt {
+                                        width: parent.width
+                                        role: "title"
+                                        size: 13
+                                        elide: Text.ElideRight
+                                        text: qsTr("Type on phone")
+                                        opacity: typeOnPhoneCard.canStart && !typeOnPhoneCard.macGap ? 1 : 0.6
+                                    }
+                                    Txt {
+                                        visible: typeOnPhoneCard.activeHere || !typeOnPhoneCard.canStart
+                                        width: parent.width
+                                        role: "caption"
+                                        muted: true
+                                        elide: Text.ElideRight
+                                        text: typeOnPhoneCard.activeHere
+                                            ? (typeOnPhoneCard.lastSent.length > 0
+                                                ? qsTr("Sent: %1").arg(typeOnPhoneCard.lastSent)
+                                                : qsTr("Listening for keys"))
+                                            : qsTr("When connected")
+                                    }
+                                }
+                            }
+                            Button {
+                                id: typeToggleBtn
+                                anchors.right: parent.right
+                                anchors.verticalCenter: parent.verticalCenter
+                                visible: typeOnPhoneCard.canStart
+                                enabled: !typeOnPhoneCard.macGap
+                                variant: typeOnPhoneCard.activeHere ? "fill" : "tonal"
+                                size: "sm"
+                                text: typeOnPhoneCard.activeHere ? qsTr("Stop") : qsTr("Start")
+                                onClicked: {
+                                    if (typeOnPhoneCard.activeHere) {
+                                        Mirror.stopKeyboard()
+                                    } else {
+                                        Mirror.toggleKeyboard(home.deviceId)
+                                        remoteKeyCapture.forceActiveFocus()
+                                    }
+                                }
+                            }
+                        }
+
+                        LockChip {
+                            id: typeLock
+                            visible: !typeOnPhoneCard.available && label.length > 0
+                                     && (home.online || !hideWhileOffline)
+                            feature: home.onMac
+                                ? ({ state: "locked", action: "updateApp", target: "desktop" })
+                                : typeOnPhoneCard.remoteInputFeature
+                            maxWidth: parent.width
+                        }
+
+                        Rectangle {
+                            id: remoteKeyCapture
+                            width: parent.width
+                            height: typeOnPhoneCard.activeHere ? 54 : 0
+                            visible: height > 0
+                            clip: true
+                            Behavior on height {
+                                enabled: !Theme.reduceMotion
+                                NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+                            }
+                            radius: Theme.radiusMd
+                            color: Theme.graphite ? "transparent" : Theme.surfaceContainerHigh
+                            border.width: activeFocus ? 2 : 1
+                            border.color: activeFocus ? Theme.primary : Theme.outlineVariant
+                            activeFocusOnTab: typeOnPhoneCard.activeHere
+
+                            onVisibleChanged: {
+                                if (visible) forceActiveFocus()
+                            }
+
                             Keys.onPressed: (event) => {
-                                if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
-                                    AppController.currentPage = "timeline"
+                                if (event.key === Qt.Key_Escape) {
+                                    Mirror.stopKeyboard()
+                                    event.accepted = true
+                                    return
+                                }
+                                if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_V) {
+                                    Mirror.keyboardPaste(home.deviceId)
+                                    typeOnPhoneCard.lastSent = qsTr("Clipboard")
+                                    event.accepted = true
+                                    return
+                                }
+                                let keyName = ""
+                                switch (event.key) {
+                                case Qt.Key_Return:
+                                case Qt.Key_Enter: keyName = "enter"; break
+                                case Qt.Key_Backspace: keyName = "backspace"; break
+                                case Qt.Key_Delete: keyName = "delete"; break
+                                case Qt.Key_Left: keyName = "left"; break
+                                case Qt.Key_Right: keyName = "right"; break
+                                case Qt.Key_Up: keyName = "up"; break
+                                case Qt.Key_Down: keyName = "down"; break
+                                case Qt.Key_Tab: keyName = "tab"; break
+                                default: break
+                                }
+                                if (keyName.length > 0) {
+                                    Mirror.keyboardPress(home.deviceId, keyName)
+                                    typeOnPhoneCard.lastSent = keyName
+                                    event.accepted = true
+                                    return
+                                }
+                                if (event.text && event.text.length > 0
+                                        && !(event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) {
+                                    Mirror.keyboardText(home.deviceId, event.text)
+                                    typeOnPhoneCard.lastSent = event.text
                                     event.accepted = true
                                 }
                             }
 
-                            Rectangle {
-                                anchors.fill: parent
-                                anchors.margins: -4
-                                radius: Theme.radiusSm
-                                color: previewHover.hovered ? Theme.surfaceContainerHigh : "transparent"
-                                border.width: Theme.focusVisible(previewRow) ? 2 : 0
-                                border.color: Theme.primary
+                            Row {
+                                x: 12
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: parent.width - 24
+                                spacing: 8
+                                Column {
+                                    width: parent.width - pasteBtn.width - 8
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    spacing: 2
+                                    Txt {
+                                        width: parent.width
+                                        role: "bodySmall"
+                                        weight: 600
+                                        elide: Text.ElideRight
+                                        color: remoteKeyCapture.activeFocus ? Theme.primary : Theme.surfaceContent
+                                        text: remoteKeyCapture.activeFocus
+                                            ? qsTr("Type here: keys go to %1").arg(home.name)
+                                            : qsTr("Click to focus keyboard")
+                                    }
+                                    Txt {
+                                        width: parent.width
+                                        role: "caption"
+                                        muted: true
+                                        elide: Text.ElideRight
+                                        text: qsTr("Ctrl+V pastes · Esc stops")
+                                    }
+                                }
+                                Button {
+                                    id: pasteBtn
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    variant: "outline"
+                                    size: "sm"
+                                    iconPath: Icons.clipboard
+                                    text: qsTr("Paste")
+                                    onClicked: {
+                                        Mirror.keyboardPaste(home.deviceId)
+                                        typeOnPhoneCard.lastSent = qsTr("Clipboard")
+                                        remoteKeyCapture.forceActiveFocus()
+                                    }
+                                }
                             }
+                            TapHandler {
+                                onTapped: remoteKeyCapture.forceActiveFocus()
+                            }
+                        }
+                    }
+                }
 
-                            Icon {
-                                id: previewIcon
+                Card {
+                    id: timelineHomeCard
+                    width: parent.width
+                    y: typeOnPhoneCard.height + activityGroup.spacing
+                    height: Math.max(implicitHeight, activityGroup.height - y)
+                    readonly property var previewItems: {
+                        try {
+                            return AppController.timelinePreview.length > 0
+                                ? JSON.parse(AppController.timelinePreview) : []
+                        } catch (e) {
+                            return []
+                        }
+                    }
+                    Column {
+                        width: parent.width
+                        spacing: 8
+                        Item {
+                            width: parent.width
+                            height: 24
+                            Txt {
                                 anchors.left: parent.left
                                 anchors.verticalCenter: parent.verticalCenter
-                                width: 16; height: 16
-                                path: modelData.kind === "file" ? Icons.folder
-                                    : modelData.kind === "clip" ? Icons.clipboard
-                                    : modelData.kind === "link" ? Icons.globe
-                                    : modelData.kind === "photo" ? Icons.photo
-                                    : modelData.kind === "recording" ? Icons.mic
-                                    : Icons.mirror
-                                color: Theme.primary
+                                text: qsTr("Timeline")
+                                role: "label"
+                                muted: true
                             }
-                            Column {
-                                anchors.left: previewIcon.right
-                                anchors.leftMargin: 10
+                            Button {
                                 anchors.right: parent.right
                                 anchors.verticalCenter: parent.verticalCenter
-                                spacing: 1
-                                Txt {
-                                    width: parent.width
-                                    role: "bodySmall"
-                                    weight: 600
-                                    elide: Text.ElideRight
-                                    text: previewRow.modelData.title || ""
-                                }
-                                Txt {
-                                    width: parent.width
-                                    role: "caption"
-                                    muted: true
-                                    elide: Text.ElideRight
-                                    text: previewRow.modelData.subtitle || ""
-                                }
+                                variant: "text"
+                                size: "sm"
+                                text: qsTr("View all")
+                                onClicked: AppController.currentPage = "timeline"
                             }
-                            HoverHandler { id: previewHover; cursorShape: Qt.PointingHandCursor }
-                            TapHandler { onTapped: AppController.currentPage = "timeline" }
+                        }
+                        Txt {
+                            width: parent.width
+                            visible: timelineHomeCard.previewItems.length === 0
+                            role: "bodySmall"
+                            muted: true
+                            wrapMode: Text.WordWrap
+                            text: qsTr("No recent activity")
+                        }
+                        Repeater {
+                            model: timelineHomeCard.previewItems
+                            delegate: Item {
+                                id: previewRow
+                                required property var modelData
+                                width: parent.width
+                                height: 36
+                                activeFocusOnTab: true
+                                Accessible.role: Accessible.Button
+                                Accessible.name: previewRow.modelData.title || ""
+                                Accessible.description: previewRow.modelData.subtitle || ""
+                                Accessible.onPressAction: AppController.currentPage = "timeline"
+                                Keys.onPressed: (event) => {
+                                    if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+                                        AppController.currentPage = "timeline"
+                                        event.accepted = true
+                                    }
+                                }
+
+                                Rectangle {
+                                    anchors.fill: parent
+                                    anchors.margins: -4
+                                    radius: Theme.radiusSm
+                                    color: previewHover.hovered ? Theme.surfaceContainerHigh : "transparent"
+                                    border.width: Theme.focusVisible(previewRow) ? 2 : 0
+                                    border.color: Theme.primary
+                                }
+
+                                Icon {
+                                    id: previewIcon
+                                    anchors.left: parent.left
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 16; height: 16
+                                    path: modelData.kind === "file" ? Icons.folder
+                                        : modelData.kind === "clip" ? Icons.clipboard
+                                        : modelData.kind === "link" ? Icons.globe
+                                        : modelData.kind === "photo" ? Icons.photo
+                                        : modelData.kind === "recording" ? Icons.mic
+                                        : Icons.mirror
+                                    color: Theme.primary
+                                }
+                                Column {
+                                    anchors.left: previewIcon.right
+                                    anchors.leftMargin: 10
+                                    anchors.right: parent.right
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    spacing: 1
+                                    Txt {
+                                        width: parent.width
+                                        role: "bodySmall"
+                                        weight: 600
+                                        elide: Text.ElideRight
+                                        text: previewRow.modelData.title || ""
+                                    }
+                                    Txt {
+                                        width: parent.width
+                                        role: "caption"
+                                        muted: true
+                                        elide: Text.ElideRight
+                                        text: previewRow.modelData.subtitle || ""
+                                    }
+                                }
+                                HoverHandler { id: previewHover; cursorShape: Qt.PointingHandCursor }
+                                TapHandler { onTapped: AppController.currentPage = "timeline" }
+                            }
                         }
                     }
                 }
             }
+
+            Column {
+                Layout.row: home.columns === 2 ? 3 + dashboard.activeRowCount : 6 + dashboard.activeRowCount
+                Layout.column: 0
+                Layout.columnSpan: home.columns
+                Layout.fillWidth: true
+                Layout.minimumWidth: 0
+                spacing: 16
+                Card {
+                    id: sendQueueCard
+                    width: parent.width
+                    visible: page.selectedQueueItems.length > 0
+                    opacity: visible ? 1 : 0
+                    Behavior on opacity {
+                        enabled: !Theme.reduceMotion && !page.resizing
+                        NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+                    }
+                    Behavior on implicitHeight {
+                        enabled: !Theme.reduceMotion && !page.resizing
+                        NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+                    }
+                    Column {
+                        width: parent.width
+                        spacing: 4
+                        Item {
+                            width: parent.width
+                            height: queueHeader.height + queueHeaderActions.height + 4
+                            Txt {
+                                id: queueHeader
+                                anchors.top: parent.top
+                                role: "label"
+                                muted: true
+                                text: page.selectedQueueActive > 0
+                                      ? qsTr("Waiting to send · %1").arg(page.selectedQueueActive)
+                                      : qsTr("Waiting to send")
+                            }
+                            Row {
+                                id: queueHeaderActions
+                                anchors.right: parent.right
+                                anchors.bottom: parent.bottom
+                                spacing: 6
+                                Button {
+                                    visible: page.selectedQueueFailures > 0
+                                    variant: "text"
+                                    size: "sm"
+                                    text: qsTr("Retry failed")
+                                    onClicked: TransferList.retryFailedQueue(page.currentDeviceId)
+                                }
+                                Button {
+                                    visible: page.selectedQueueFailures > 0
+                                    variant: "text"
+                                    size: "sm"
+                                    text: qsTr("Clear")
+                                    onClicked: TransferList.clearFinishedQueue(page.currentDeviceId)
+                                }
+                                Button {
+                                    visible: page.selectedQueueActive > 0
+                                    variant: "text"
+                                    size: "sm"
+                                    text: qsTr("Cancel all")
+                                    onClicked: TransferList.cancelAllQueued(page.currentDeviceId)
+                                }
+                            }
+                        }
+                        Row {
+                            width: parent.width
+                            spacing: 8
+                            Controls.TextField {
+                                id: queueSearch
+                                width: Math.max(80, parent.width - queueKind.width - parent.spacing)
+                                placeholderText: qsTr("Find queued item by name")
+                                Accessible.name: qsTr("Find queued item by name")
+                                selectByMouse: true
+                            }
+                            Controls.ComboBox {
+                                id: queueKind
+                                width: 140
+                                model: [qsTr("All types"), qsTr("Files"), qsTr("Other items")]
+                                Accessible.name: qsTr("Queued item type")
+                            }
+                        }
+                        Txt {
+                            width: parent.width
+                            visible: page.filteredQueueItems.length === 0
+                            text: qsTr("No queued items match your filters.")
+                            wrapMode: Text.WordWrap
+                            muted: true
+                        }
+                        Column {
+                            id: sendQueueList
+                            width: parent.width
+                            move: Transition {
+                                enabled: !Theme.reduceMotion && !page.resizing
+                                NumberAnimation { properties: "y"; duration: 180; easing.type: Easing.OutCubic }
+                            }
+                            add: Transition {
+                                enabled: !Theme.reduceMotion && !page.resizing
+                                NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 180; easing.type: Easing.OutCubic }
+                            }
+                            Repeater {
+                                model: page.filteredQueueItems
+                                delegate: Item {
+                                    id: queueRow
+                                    required property var modelData
+                                    width: sendQueueList.width
+                                    implicitHeight: queueItemCol.height + 18
+
+                                    readonly property string itemStatus: queueRow.modelData.status || "waiting"
+                                    readonly property bool isFailedOrExpired: itemStatus === "failed" || itemStatus === "expired"
+                                    readonly property real totalBytes: Number(queueRow.modelData.totalBytes || 0)
+                                    readonly property real progress: Number(queueRow.modelData.progress || 0)
+
+                                    Row {
+                                        id: queueRowInner
+                                        x: 4; y: 9
+                                        width: parent.width - 8
+                                        spacing: 12
+
+                                        Rectangle {
+                                            width: 32; height: 32
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            radius: Theme.graphite ? Theme.radiusSm : 16
+                                            color: Theme.graphite ? "transparent" : Theme.secondaryContainer
+                                            border.width: Theme.graphite ? 1 : 0
+                                            border.color: Theme.outlineVariant
+                                            Icon {
+                                                anchors.centerIn: parent
+                                                width: 18; height: 18
+                                                path: queueRow.modelData.icon === "folder" ? Icons.folder
+                                                    : queueRow.modelData.icon === "clipboard" ? Icons.clipboard
+                                                    : queueRow.modelData.icon === "link" ? Icons.globe
+                                                    : queueRow.modelData.icon === "task" ? Icons.bolt
+                                                    : queueRow.modelData.icon === "camera" ? Icons.camera
+                                                    : Icons.send
+                                                color: Theme.graphite ? Theme.surfaceContent : Theme.secondaryContainerContent
+                                            }
+                                        }
+
+                                        Column {
+                                            id: queueItemCol
+                                            width: Math.max(80, queueRowInner.width - 32 - queueItemActions.width - queueRowInner.spacing * 2)
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            spacing: 4
+                                            Txt {
+                                                width: parent.width
+                                                role: "title"
+                                                size: 14
+                                                elide: (queueRow.modelData.kind === "link"
+                                                        || queueRow.modelData.icon === "link"
+                                                        || (queueRow.modelData.title || "").startsWith("http://")
+                                                        || (queueRow.modelData.title || "").startsWith("https://"))
+                                                    ? Text.ElideMiddle
+                                                    : Text.ElideRight
+                                                text: queueRow.modelData.title || ""
+                                            }
+                                            Rectangle {
+                                                width: parent.width
+                                                height: 4
+                                                radius: 2
+                                                visible: queueRow.itemStatus === "sending" && queueRow.totalBytes > 0
+                                                color: Theme.surfaceContainerHighest
+                                                Rectangle {
+                                                    height: parent.height
+                                                    radius: parent.radius
+                                                    width: parent.width * Math.max(0, Math.min(1, queueRow.progress))
+                                                    color: Theme.primary
+                                                    Behavior on width {
+                                                        enabled: !Theme.reduceMotion
+                                                        NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+                                                    }
+                                                }
+                                            }
+                                            Txt {
+                                                width: parent.width
+                                                role: "bodySmall"
+                                                muted: !queueRow.isFailedOrExpired
+                                                color: queueRow.isFailedOrExpired ? Theme.error : Theme.surfaceContentVariant
+                                                elide: Text.ElideRight
+                                                text: {
+                                                    const devName = (queueRow.modelData.deviceName && queueRow.modelData.deviceName.length > 0)
+                                                        ? queueRow.modelData.deviceName : home.name
+                                                    const sz = page.formatQueueSize(queueRow.totalBytes)
+                                                    if (queueRow.itemStatus === "sending") {
+                                                        if (queueRow.totalBytes > 0) {
+                                                            const pct = Math.round(Math.max(0, Math.min(1, queueRow.progress)) * 100)
+                                                            return qsTr("Sending to %1 · %2%").arg(devName).arg(pct)
+                                                        }
+                                                        return qsTr("Sending to %1…").arg(devName)
+                                                    }
+                                                    if (queueRow.itemStatus === "failed") {
+                                                        const reason = queueRow.modelData.reason || ""
+                                                        return reason.length > 0
+                                                            ? qsTr("Failed · %1").arg(reason)
+                                                            : qsTr("Failed")
+                                                    }
+                                                    if (queueRow.itemStatus === "expired") {
+                                                        const reason = queueRow.modelData.reason || ""
+                                                        return reason.length > 0 ? reason : qsTr("Expired")
+                                                    }
+                                                    return sz.length > 0
+                                                        ? qsTr("Waiting for %1 · %2").arg(devName).arg(sz)
+                                                        : qsTr("Waiting for %1").arg(devName)
+                                                }
+                                            }
+                                        }
+
+                                        Row {
+                                            id: queueItemActions
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            spacing: 4
+                                            IconButton {
+                                                visible: queueRow.isFailedOrExpired
+                                                iconPath: Icons.refresh
+                                                label: qsTr("Retry")
+                                                onClicked: TransferList.retryQueueItem(queueRow.modelData.id)
+                                            }
+                                            IconButton {
+                                                iconPath: Icons.close
+                                                label: queueRow.isFailedOrExpired ? qsTr("Dismiss") : qsTr("Cancel")
+                                                onClicked: TransferList.cancelQueueItem(queueRow.modelData.id)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Card {
+                    width: parent.width
+                    visible: TransferList.count > 0
+                    Column {
+                        width: parent.width
+                        spacing: 4
+                        Item {
+                            width: parent.width
+                            height: Math.max(transfersHeader.height, clearTransfers.height)
+                            Txt {
+                                id: transfersHeader
+                                anchors.verticalCenter: parent.verticalCenter
+                                role: "label"
+                                muted: true
+                                text: qsTr("Transfers")
+                            }
+                            Row {
+                                anchors.right: parent.right
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 6
+                                Button {
+                                    variant: "text"
+                                    size: "sm"
+                                    text: qsTr("Timeline")
+                                    onClicked: AppController.currentPage = "timeline"
+                                }
+                                Button {
+                                    id: clearTransfers
+                                    visible: TransferList.count > TransferList.active
+                                    variant: "text"
+                                    size: "sm"
+                                    text: qsTr("Clear finished")
+                                    onClicked: TransferList.clearFinished()
+                                }
+                            }
+                        }
+                        Column {
+                            id: transferList
+                            width: parent.width
+                            move: Transition {
+                                enabled: !Theme.reduceMotion && !page.resizing
+                                NumberAnimation { properties: "y"; duration: 220; easing.type: Easing.OutCubic }
+                            }
+                            add: Transition {
+                                enabled: !Theme.reduceMotion && !page.resizing
+                                NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 200 }
+                            }
+                            Repeater {
+                                model: TransferList
+                                delegate: TransferItem { width: transferList.width }
+                            }
+                        }
+                    }
+                }
+
+                LocalSendCard {
+                    width: parent.width
+                    visible: AppController.localsendEnabled && page.localsendPeers.length > 0
+                }
+            }
         }
+
+        Grid {
+            width: parent.width
+            columns: 3
+            spacing: 12
+            readonly property real tileWidth: (width - spacing * 2) / 3
+            HomeDestination {
+                width: parent.tileWidth
+                title: qsTr("Messages")
+                description: qsTr("Conversations from your phone")
+                iconPath: Icons.messages
+                iconSource: Icons.colorSource("message")
+                onClicked: AppController.currentPage = "messages"
+            }
+            HomeDestination {
+                width: parent.tileWidth
+                title: qsTr("Photos")
+                description: qsTr("Recent photos and screenshots")
+                iconPath: Icons.photo
+                iconSource: Icons.colorSource("photos")
+                onClicked: AppController.currentPage = "photos"
+            }
+            HomeDestination {
+                width: parent.tileWidth
+                title: qsTr("Apps")
+                description: qsTr("Phone apps in one place")
+                iconPath: Icons.apps
+                iconSource: Icons.colorSource("apps")
+                onClicked: AppController.currentPage = "apps"
+            }
+        }
+
+        FileDialog {
+            id: filePicker
+            title: qsTr("Send to %1").arg(home.name)
+            fileMode: FileDialog.OpenFiles
+            onAccepted: TransferList.send(home.deviceId, selectedFiles.map(url => url.toString()))
+        }
+        FileDialog {
+            id: handoffFilePicker
+            title: qsTr("Hand off & open on %1").arg(home.name)
+            fileMode: FileDialog.OpenFile
+            onAccepted: TransferList.sendHandoff(home.deviceId, [selectedFile.toString()])
+        }
+        Connections {
+            target: AppController
+            enabled: home.visible
+            function onFilePickerRequested() {
+                filePicker.open()
+            }
+            function onHandoffFilePickerRequested() {
+                handoffFilePicker.open()
+            }
+        }
+        FolderDialog {
+            id: folderPicker
+            title: qsTr("Send a folder to %1").arg(home.name)
+            onAccepted: TransferList.send(home.deviceId, [selectedFolder.toString()])
         }
     }
 
@@ -2819,7 +2959,8 @@ Item {
                                            || (playableWhenAddonMissing && feature.state === "locked" && feature.action === "enableAddon")
                                            || (queueableWhenOffline && (!tile.deviceOnline || feature.state === "unknown") && feature.state !== "locked" && feature.state !== "unsupported"))
 
-        height: Math.max(84, actionTileContent.implicitHeight + 28)
+        implicitHeight: Math.max(100, actionTileContent.implicitHeight + 28)
+        height: implicitHeight
         activeFocusOnTab: available
         radius: Theme.cardRadius
         color: tile.active || (tile.accented && tile.available)
@@ -2850,15 +2991,14 @@ Item {
             color: tile.ink
             opacity: tap.pressed && tile.available ? 0.08 : 0
         }
-        Row {
+        Column {
             id: actionTileContent
             x: 16
             y: Math.round((tile.height - height) / 2)
-            width: parent.width - 32 - (tile.sideIcon.length > 0 && (tile.available || tile.sideAlwaysAvailable) ? 30 : 0)
-            spacing: 12
+            width: parent.width - 32
+            spacing: 8
             Rectangle {
                 width: 32; height: 32
-                anchors.verticalCenter: parent.verticalCenter
                 radius: 8
                 color: tile.primaryAction
                     ? Qt.rgba(tile.ink.r, tile.ink.g, tile.ink.b, 0.16)
@@ -2866,15 +3006,14 @@ Item {
                 opacity: tile.available ? 1 : 0.55
                 Icon {
                     anchors.centerIn: parent
-                    width: 18; height: 18
+                    width: 20; height: 20
                     path: tile.iconPath
                     source: tile.iconSource
                     color: Theme.primaryContainerContent
                 }
             }
             Column {
-                width: parent.width - 44
-                anchors.verticalCenter: parent.verticalCenter
+                width: parent.width
                 spacing: 2
                 Txt {
                     width: parent.width
@@ -2913,7 +3052,8 @@ Item {
         TapHandler { id: tap; enabled: tile.available; onTapped: tile.clicked() }
         IconButton {
             anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
+            anchors.top: parent.top
+            anchors.topMargin: 8
             anchors.rightMargin: 8
             visible: tile.sideIcon.length > 0 && (tile.available || tile.sideAlwaysAvailable)
             iconPath: tile.sideIcon
@@ -2932,6 +3072,7 @@ Item {
         property string iconPath
         property string shortTitle
         property string label
+        property bool compact: false
         property bool active: false
         property var feature: ({})
         readonly property bool available: feature.state === "available"
@@ -2939,7 +3080,8 @@ Item {
         signal clicked
         signal lockedClicked
 
-        height: 52
+        implicitWidth: compact ? quickToggleContent.implicitWidth + 24 : 64
+        height: compact ? 40 : 52
         activeFocusOnTab: available
 
         Accessible.role: Accessible.CheckBox
@@ -2988,21 +3130,26 @@ Item {
                 opacity: qtap.pressed ? 0.09 : 0
             }
 
-            Column {
+            Grid {
+                id: quickToggleContent
                 anchors.centerIn: parent
-                width: parent.width - 4
-                spacing: 3
-                Icon {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    width: 17; height: 17
-                    path: qbtn.iconPath
-                    color: qbtn.contentColor
+                columns: qbtn.compact ? 2 : 1
+                spacing: qbtn.compact ? 5 : 3
+                Item {
+                    width: qbtn.compact ? 20 : qbtn.width - 4
+                    height: 20
+                    Icon {
+                        anchors.centerIn: parent
+                        width: 20; height: 20
+                        path: qbtn.iconPath
+                        color: qbtn.contentColor
+                    }
                 }
                 Txt {
-                    width: parent.width
+                    width: qbtn.compact ? implicitWidth : qbtn.width - 4
                     horizontalAlignment: Text.AlignHCenter
                     role: "caption"
-                    size: Theme.graphite ? 9 : 11
+                    size: qbtn.compact ? 12 : (Theme.graphite ? 9 : 11)
                     font.letterSpacing: Theme.graphite ? 0 : (graphiteLabel ? Theme.labelStyle.tracking : spec.tracking) * size
                     color: qbtn.contentColor
                     text: qbtn.shortTitle
@@ -3062,7 +3209,7 @@ Item {
                 spacing: 6
                 Icon {
                     anchors.verticalCenter: parent.verticalCenter
-                    width: 15; height: 15
+                    width: 20; height: 20
                     path: slider.iconPath
                     color: slider.available ? Theme.surfaceContent : Theme.surfaceContentVariant
                 }

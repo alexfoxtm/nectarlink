@@ -16,6 +16,13 @@ Item {
     property string cellType: ""
     property int wifiBars: -1
     property var screenData: null
+    property bool largeStatus: false
+    property string connectionText: ""
+    signal connectionHelpRequested
+    readonly property bool connectionInPortrait: largeStatus && handset.height >= 220 && handset.width >= 72
+        && screen.y + Math.max(batteryDial.visible ? batteryDial.y + batteryDial.height : 0,
+                               statusPanel.visible ? statusPanel.y + statusPanel.height : 0) * screen.detailScale + 8
+           <= connectionButton.y
 
     readonly property bool hasStockImage: model.trim().toUpperCase() === "SM-F956B"
     readonly property bool hasBattery: online && battery >= 0 && battery <= 100
@@ -95,8 +102,15 @@ Item {
 
         Item {
             id: screen
-            anchors.fill: parent
-            anchors.margins: portrait.hasStockImage ? 4 : 5
+            readonly property real detailScale: portrait.largeStatus
+                ? Math.max(1, Math.min(handset.height < 220 ? 1.2 : 1.65,
+                                      handset.width / 64, handset.height / 136)) : 1
+            x: portrait.hasStockImage ? 4 : 5
+            y: x
+            width: (parent.width - x * 2) / detailScale
+            height: (parent.height - y * 2) / detailScale
+            scale: detailScale
+            transformOrigin: Item.TopLeft
             // Extremely wide/narrow reported screens use a compact battery-only layout.
             readonly property bool roomForDetails: width >= 47 && height >= 112
 
@@ -128,7 +142,7 @@ Item {
                     visible: portrait.cellBars >= 0 && text.length > 0
                     text: portrait.cellType.length <= 3 ? portrait.cellType : ""
                     font.family: Theme.fontUi
-                    font.pixelSize: 9
+                    font.pixelSize: portrait.largeStatus ? 11 / screen.detailScale : 9
                     font.weight: Font.DemiBold
                     color: portrait.screenInk
                     textFormat: Text.PlainText
@@ -146,19 +160,19 @@ Item {
             Item {
                 id: batteryDial
                 anchors.horizontalCenter: parent.horizontalCenter
-                y: screen.roomForDetails ? 35 : (parent.height - height) / 2
-                width: Math.min(44, screen.width)
-                height: 44
+                y: screen.roomForDetails ? (portrait.largeStatus ? 32 : 35) : (parent.height - height) / 2
+                width: portrait.largeStatus ? screen.width : Math.min(44, screen.width)
+                height: portrait.largeStatus ? 38 : 44
                 visible: portrait.online
                 Rectangle {
                     anchors.fill: parent
                     radius: width / 2
-                    visible: screen.roomForDetails
+                    visible: screen.roomForDetails && !portrait.largeStatus
                     color: portrait.hasStockImage ? "#DD20252E" : Theme.panelColor
                 }
                 Shape {
                     anchors.fill: parent
-                    visible: screen.roomForDetails
+                    visible: screen.roomForDetails && !portrait.largeStatus
                     preferredRendererType: Shape.CurveRenderer
                     ShapePath {
                         strokeColor: Qt.rgba(portrait.screenInk.r, portrait.screenInk.g, portrait.screenInk.b, 0.22)
@@ -189,7 +203,7 @@ Item {
                     Icon {
                         anchors.horizontalCenter: parent.horizontalCenter
                         width: 10; height: 10
-                        visible: portrait.charging
+                        visible: portrait.charging && !portrait.largeStatus
                         path: Icons.bolt
                         color: "#4ADE80"
                     }
@@ -198,38 +212,104 @@ Item {
                         anchors.horizontalCenter: parent.horizontalCenter
                         text: portrait.hasBattery ? portrait.battery + (screen.width < 38 ? "\n%" : "%") : "—"
                         font.family: Theme.fontUi
-                        font.pixelSize: screen.roomForDetails ? 14 : 12
+                        font.pixelSize: portrait.largeStatus ? Math.min(32, handset.width * 0.3) / screen.detailScale
+                            : (screen.roomForDetails ? 14 : 12)
                         horizontalAlignment: Text.AlignHCenter
                         font.weight: Font.Bold
                         color: portrait.screenInk
                         textFormat: Text.PlainText
                     }
                 }
+                Rectangle {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    y: parent.height - height
+                    width: Math.min(32, parent.width)
+                    height: 2
+                    radius: 1
+                    visible: portrait.largeStatus && portrait.hasBattery && screen.roomForDetails
+                    color: Qt.rgba(portrait.screenInk.r, portrait.screenInk.g, portrait.screenInk.b, 0.2)
+                    Rectangle {
+                        width: parent.width * portrait.battery / 100
+                        height: parent.height
+                        radius: parent.radius
+                        color: portrait.battery <= 20 && !portrait.charging ? Theme.error : portrait.screenInk
+                    }
+                }
             }
 
             Rectangle {
+                id: statusPanel
                 anchors.horizontalCenter: parent.horizontalCenter
-                y: portrait.online ? 84 : (parent.height - height) / 2
+                y: portrait.online ? (portrait.largeStatus ? 78 : 84) : (parent.height - height) / 2
                 width: parent.width - 2
                 height: statusLabel.implicitHeight + 5
                 radius: 5
                 visible: portrait.statusText.length > 0 && (!portrait.online || screen.roomForDetails)
-                color: portrait.hasStockImage ? "#DD20252E" : Theme.panelColor
+                color: portrait.largeStatus ? "transparent" : (portrait.hasStockImage ? "#DD20252E" : Theme.panelColor)
                 Text {
                     id: statusLabel
                     objectName: "phoneStatusLabel"
                     anchors.centerIn: parent
                     width: parent.width - 2
-                    text: portrait.statusText
+                    text: portrait.largeStatus && portrait.charging && portrait.hasBattery && portrait.batteryFullIn > 0
+                        ? qsTr("Charging") + "\n" + portrait.statusText.replace("\n", " ")
+                        : portrait.statusText
                     font.family: Theme.fontUi
-                    font.pixelSize: 9
-                    font.weight: Font.DemiBold
+                    font.pixelSize: portrait.largeStatus ? 11 / screen.detailScale : 9
+                    font.weight: portrait.largeStatus ? Font.Normal : Font.DemiBold
                     color: portrait.screenInk
+                    opacity: portrait.largeStatus ? 0.72 : 1
                     textFormat: Text.PlainText
                     horizontalAlignment: Text.AlignHCenter
                     wrapMode: Text.WordWrap
                 }
             }
+        }
+
+        // The existing connection label is also the entry to connection diagnostics.
+        FocusScope {
+            id: connectionButton
+            visible: portrait.connectionInPortrait && portrait.connectionText.length > 0
+            x: 6
+            y: parent.height - height - 12
+            width: parent.width - 12
+            height: Math.max(36, connectionLabel.implicitHeight + 12)
+            activeFocusOnTab: visible
+            Accessible.role: Accessible.Button
+            Accessible.name: portrait.connectionText
+            Accessible.description: qsTr("Connection diagnostics")
+            Accessible.onPressAction: portrait.connectionHelpRequested()
+            Keys.onPressed: (event) => {
+                if (!event.isAutoRepeat && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space)) {
+                    portrait.connectionHelpRequested()
+                    event.accepted = true
+                }
+            }
+            Rectangle {
+                anchors.fill: parent
+                radius: 6
+                color: "transparent"
+                border.width: Theme.focusVisible(connectionButton) ? 2 : 0
+                border.color: Theme.primary
+            }
+            Text {
+                id: connectionLabel
+                anchors.centerIn: parent
+                width: parent.width - 8
+                text: portrait.connectionText.replace(" · ", "\n")
+                font.family: Theme.fontUi
+                font.pixelSize: 11
+                font.weight: Font.Normal
+                color: portrait.screenInk
+                opacity: 0.72
+                textFormat: Text.PlainText
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.WordWrap
+                maximumLineCount: 3
+                elide: Text.ElideRight
+            }
+            HoverHandler { cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: portrait.connectionHelpRequested() }
         }
     }
 }

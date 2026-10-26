@@ -1382,6 +1382,7 @@ private fun KeyboardBanner(from: String, onStop: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PeerCard(
     device: Device,
@@ -1437,7 +1438,10 @@ private fun PeerCard(
                 )
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             FilledTonalButton(
                 contentPadding = CardButtonPadding,
                 enabled = device.online && device.has("pair.ring"),
@@ -1445,7 +1449,7 @@ private fun PeerCard(
                     ringing = !ringing
                     onRing(device.id, ringing)
                 },
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
             ) {
                 Icon(imageVector = BellIcon, contentDescription = null, modifier = Modifier.size(15.dp))
                 Spacer(Modifier.width(6.dp))
@@ -1455,7 +1459,7 @@ private fun PeerCard(
                 contentPadding = CardButtonPadding,
                 enabled = !device.online || device.has("pair.files"),
                 onClick = { pickFiles.launch(arrayOf("*/*")) },
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
             ) {
                 Icon(imageVector = SendArrowIcon, contentDescription = null, modifier = Modifier.size(15.dp))
                 Spacer(Modifier.width(6.dp))
@@ -1466,7 +1470,7 @@ private fun PeerCard(
             contentPadding = CardButtonPadding,
             enabled = !device.online || device.has("pair.clipboard"),
             onClick = { context.startActivity(SendActivity.sendClipboardIntent(context, device.id)) },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
         ) {
             Icon(imageVector = ClipboardIcon, contentDescription = null, modifier = Modifier.size(15.dp))
             Spacer(Modifier.width(6.dp))
@@ -1697,7 +1701,6 @@ internal fun PcCard(
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            val powerWidth = with(density) { (if (stacked) workspaceWidthPx else (workspaceWidthPx - gapPx) / 2).toDp() }
                             OutlinedButton(
                                 contentPadding = CardButtonPadding,
                                 shape = RoundedCornerShape(WaypairDesign.controlRadius),
@@ -1705,7 +1708,7 @@ internal fun PcCard(
                                 colors = outlined,
                                 border = outline,
                                 onClick = { onPower(device.id, false) },
-                                modifier = Modifier.width(powerWidth).heightIn(min = WaypairDesign.touchTarget),
+                                modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
                             ) { ButtonLabel(stringResource(R.string.action_lock_pc)) }
                             OutlinedButton(
                                 contentPadding = CardButtonPadding,
@@ -1714,7 +1717,7 @@ internal fun PcCard(
                                 colors = outlined,
                                 border = outline,
                                 onClick = { onPower(device.id, true) },
-                                modifier = Modifier.width(powerWidth).heightIn(min = WaypairDesign.touchTarget),
+                                modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
                             ) { ButtonLabel(stringResource(R.string.action_sleep_pc)) }
                         }
                     }
@@ -3217,7 +3220,8 @@ private fun TimelineDialog(
                                             }
                                         },
                                         enabled = !loadingMore,
-                                        modifier = Modifier.fillMaxWidth(),
+                                        contentPadding = CardButtonPadding,
+                                        modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
                                     ) {
                                         Text(stringResource(R.string.timeline_action_load_more))
                                     }

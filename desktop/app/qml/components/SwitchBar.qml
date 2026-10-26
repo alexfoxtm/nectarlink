@@ -12,11 +12,16 @@ Rectangle {
     // Shown under the title when not empty.
     property string caption
     property bool checked: false
+    property bool compact: false
     signal toggled(bool on)
 
     readonly property color ink: checked ? Theme.secondaryContainerContent : Theme.surfaceContent
 
-    height: 44
+    implicitWidth: compact
+        ? 12 + 17 + 10 + Math.max(titleLabel.implicitWidth, caption.length > 0 ? captionLabel.implicitWidth : 0)
+          + 8 + barSwitch.implicitWidth + 10
+        : 0
+    height: compact ? 40 : 44
     radius: Theme.controlRadius
     color: checked ? Theme.secondaryContainer : Theme.insetColor
     border.width: 0
@@ -40,6 +45,7 @@ Rectangle {
             anchors.verticalCenter: parent.verticalCenter
             spacing: 1
             Txt {
+                id: titleLabel
                 width: parent.width
                 role: "label"
                 elide: Text.ElideRight
@@ -47,6 +53,7 @@ Rectangle {
                 text: bar.title
             }
             Txt {
+                id: captionLabel
                 visible: bar.caption.length > 0
                 width: parent.width
                 role: "caption"

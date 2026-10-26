@@ -3,14 +3,15 @@ pragma Singleton
 import QtQuick
 import app.nectarlink
 
-// Waypair's native violet palette is shared across all screens. Legacy style
-// preferences remain stored for compatibility; light/dark follows colorMode.
+// Mac uses neutral surfaces and monochrome actions. Legacy style preferences
+// remain stored for compatibility; light/dark follows colorMode.
 QtObject {
     id: theme
 
+    readonly property bool onMac: Qt.platform.os === "osx" || Qt.platform.os === "macos"
     readonly property bool hive: false
     readonly property bool graphite: false
-    readonly property bool glass: false
+    readonly property bool glass: onMac
     readonly property bool dark: Preferences.colorMode === "dark"
                                  || (Preferences.colorMode === "system" && AppController.systemDark)
     readonly property bool amoled: false
@@ -23,7 +24,8 @@ QtObject {
     readonly property bool combMotion: hive && Preferences.combMotion && !reduceMotion && !AppController.powerSaver
     readonly property color combLine: Qt.rgba(primary.r, primary.g, primary.b,
                                               dark ? comb.lineAlphaDark : comb.lineAlphaLight)
-    readonly property color combGlow: dark ? Qt.rgba(1.0, 0.62, 0.18, comb.glowAlphaDark)
+    readonly property color combGlow: onMac ? Qt.rgba(primary.r, primary.g, primary.b, dark ? comb.glowAlphaDark : comb.glowAlphaLight)
+        : dark ? Qt.rgba(1.0, 0.62, 0.18, comb.glowAlphaDark)
                                            : Qt.rgba(1.0, 0.72, 0.37, comb.glowAlphaLight)
     // One clock for every comb in the app (seconds), so two combs never draw
     // twice as often. The main window runs it while it's in front.
@@ -111,7 +113,23 @@ QtObject {
           : (seed === "wallpaper" ? wallpaperSeed : bloomSeeds[seed])
     // Semantic colors are deliberately independent from retired style presets,
     // so existing saved Glass/Graphite preferences also receive this redesign.
-    readonly property var palette: ({
+    readonly property var palette: onMac ? ({
+        primary: dark ? "#FFFFFF" : "#171717",
+        onPrimary: dark ? "#171717" : "#FFFFFF",
+        primaryContainer: dark ? "#353535" : "#EAEAEA",
+        onPrimaryContainer: dark ? "#FFFFFF" : "#171717",
+        secondaryContainer: dark ? "#2B2C2E" : "#EAEAEA",
+        onSecondaryContainer: dark ? "#FFFFFF" : "#171717",
+        surface: dark ? "#19191A" : "#F5F5F5",
+        surfaceContainerLow: dark ? "#1E1E1E" : "#FFFFFF",
+        surfaceContainer: dark ? "#1E1E1E" : "#FFFFFF",
+        surfaceContainerHigh: dark ? "#2B2C2E" : "#F5F5F5",
+        surfaceContainerHighest: dark ? "#353535" : "#EAEAEA",
+        onSurface: dark ? "#FFFFFF" : "#171717",
+        onSurfaceVariant: dark ? "#C2C2C2" : "#555555",
+        outline: dark ? "#454545" : "#DADADA",
+        outlineVariant: dark ? "#353535" : "#DADADA"
+    }) : ({
         primary: dark ? "#C28AF0" : "#772AB7",
         onPrimary: dark ? "#261734" : "#FFFFFF",
         primaryContainer: dark ? "#3B2D49" : "#F1E9F8",
@@ -158,22 +176,28 @@ QtObject {
     readonly property color errorContainer: dark ? "#422732" : "#FCEBF0"
     readonly property color errorContainerContent: dark ? "#FFD8DE" : "#A22B40"
 
-    // Opaque panels and quiet insets keep the dashboard readable in both modes.
+    // Neutral translucent panels reveal the existing QML ambient layer on Mac.
     readonly property color canvasColor: surface
-    readonly property color panelColor: surfaceContainer
-    readonly property color panelBorder: outlineVariant
-    readonly property color insetColor: dark ? "#28232F" : "#F8F5FB"
+    readonly property color panelColor: glass
+        ? Qt.rgba(surfaceContainer.r, surfaceContainer.g, surfaceContainer.b, dark ? 0.84 : 0.88)
+        : surfaceContainer
+    readonly property color panelBorder: glass
+        ? (dark ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.09))
+        : outlineVariant
+    readonly property color insetColor: glass
+        ? (dark ? Qt.rgba(43 / 255, 44 / 255, 46 / 255, 0.84) : Qt.rgba(234 / 255, 234 / 255, 234 / 255, 0.88))
+        : (onMac ? (dark ? "#2B2C2E" : "#EAEAEA") : (dark ? "#28232F" : "#F8F5FB"))
     readonly property color cardColor: panelColor
     readonly property color cardBorder: panelBorder
     readonly property color tileColor: panelColor
-    readonly property color heroWash: dark ? "#3B2D49" : "#F1E9F8"
-    readonly property color heroWashEnd: dark ? "#342A40" : "#F7F0FC"
+    readonly property color heroWash: onMac ? panelColor : (dark ? "#3B2D49" : "#F1E9F8")
+    readonly property color heroWashEnd: onMac ? panelColor : (dark ? "#342A40" : "#F7F0FC")
     readonly property color heroColor: heroWash
     readonly property color heroContent: surfaceContent
-    readonly property color railColor: dark ? "#35104F" : "#4D137C"
-    readonly property color railContent: "#FFFFFF"
-    readonly property color railMuted: dark ? "#D8C7E5" : "#DDCCEC"
-    readonly property color railSelected: Qt.rgba(1, 1, 1, 0.16)
+    readonly property color railColor: onMac ? (dark ? "#161616" : "#F1F1F1") : (dark ? "#35104F" : "#4D137C")
+    readonly property color railContent: onMac ? surfaceContent : "#FFFFFF"
+    readonly property color railMuted: onMac ? surfaceContentVariant : (dark ? "#D8C7E5" : "#DDCCEC")
+    readonly property color railSelected: onMac ? (dark ? "#353535" : "#DADADA") : Qt.rgba(1, 1, 1, 0.16)
     readonly property color indicator: primaryContainer
     readonly property color indicatorContent: primaryContainerContent
     readonly property color actionColor: primary
@@ -181,7 +205,7 @@ QtObject {
     readonly property color focusColor: primary
     readonly property color glow: "transparent"
     readonly property color buttonShadow: "transparent"
-    readonly property color scrim: Qt.rgba(0.04, 0.08, 0.15, dark ? 0.64 : 0.30)
+    readonly property color scrim: onMac ? Qt.rgba(0, 0, 0, dark ? 0.64 : 0.30) : Qt.rgba(0.04, 0.08, 0.15, dark ? 0.64 : 0.30)
     readonly property int controlRadius: 6
     readonly property int cardRadius: 10
     readonly property int heroRadius: 14
