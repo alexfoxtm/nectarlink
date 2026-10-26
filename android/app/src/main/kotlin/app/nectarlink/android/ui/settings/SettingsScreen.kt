@@ -8,6 +8,15 @@ import android.os.Build
 import android.provider.Settings
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.material3.Icon
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
+import app.nectarlink.android.ui.theme.WaypairBrand
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -149,7 +158,7 @@ fun SettingsScreen(
     var confirmClearEverything by remember { mutableStateOf(false) }
     var pickLanguage by remember { mutableStateOf(false) }
     var showLicenses by remember { mutableStateOf(false) }
-    var activeCategory by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("all") }
+    var activeCategory by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("appearance") }
     var focusedAppsPcId by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
     var pulsingSectionKey by remember { mutableStateOf<String?>(null) }
     val isGlass = LocalGlassTheme.current
@@ -231,52 +240,36 @@ fun SettingsScreen(
             .wrapContentWidth(Alignment.CenterHorizontally)
             .widthIn(max = 600.dp)
             .glassModalBlur(isGlass && anyDialogOpen),
-        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 104.dp),
+        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingMd),
     ) {
         item(key = "header", contentType = "header") {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .shadow(
-                            elevation = 8.dp,
-                            shape = RoundedCornerShape(24.dp),
-                            ambientColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                            spotColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
-                        )
-                        .background(
-                            brush = Brush.verticalGradient(
-                                listOf(
-                                    MaterialTheme.colorScheme.surfaceContainerHigh,
-                                    MaterialTheme.colorScheme.surface,
-                                ),
-                            ),
-                            shape = RoundedCornerShape(24.dp),
-                        )
-                        .padding(24.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Text(
-                        stringResource(R.string.settings_title),
-                        style = MaterialTheme.typography.headlineMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    TextButton(
-                        onClick = onOpenFeaturesGuide,
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.heightIn(min = 48.dp),
-                        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 12.dp),
+                    WaypairBrand(Modifier.weight(1f))
+                    FilledTonalIconButton(
+                        onClick = onPairNew,
+                        shape = RoundedCornerShape(WaypairDesign.controlRadius),
+                        modifier = Modifier.size(WaypairDesign.touchTarget),
                     ) {
-                        Text(stringResource(R.string.guide_title))
+                        Icon(painterResource(R.drawable.wp_qr), contentDescription = stringResource(R.string.action_pair_new))
                     }
                 }
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth().selectableGroup(),
+                Text(
+                    stringResource(R.string.settings_title),
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).selectableGroup(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    categories.forEach { (id, label) ->
+                    categories.sortedBy { if (it.first == "appearance") 0 else 1 }.forEach { (id, label) ->
                         val selected = activeCategory == id
                         val shape = RoundedCornerShape(16.dp)
                         Surface(
@@ -1684,7 +1677,7 @@ private fun Section(
     }
 }
 
-/** Content-sized options keep labels readable as pane width and text size change. */
+/** Equal mode choices become full-width rows at large text sizes. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun AppearanceChoice(
@@ -1696,90 +1689,85 @@ internal fun AppearanceChoice(
     onSelect: (String) -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    val density = LocalDensity.current
+    val stacked = density.fontScale >= 1.5f
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (label.isNotEmpty()) {
-            Text(label, style = MaterialTheme.typography.titleSmall, color = scheme.onSurfaceVariant)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(
+                    painterResource(if (showModePreview) R.drawable.wp_sun else R.drawable.wp_globe),
+                    contentDescription = null,
+                    tint = scheme.primary,
+                    modifier = Modifier.size(20.dp),
+                )
+                Text(label, style = MaterialTheme.typography.titleSmall, color = scheme.onSurfaceVariant)
+            }
         }
-        FlowRow(
-            modifier = Modifier.fillMaxWidth().selectableGroup(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            maxItemsInEachRow = maxItemsInEachRow,
-        ) {
-            options.forEach { (value, text) ->
-                val isSelected = value == selected
-                val shape = RoundedCornerShape(16.dp)
-                Surface(
-                    modifier = Modifier
-                        .widthIn(min = 104.dp)
-                        .heightIn(min = 48.dp)
-                        .shadow(
-                            elevation = if (isSelected) 1.dp else 4.dp,
-                            shape = shape,
-                            ambientColor = scheme.primary.copy(alpha = 0.10f),
-                            spotColor = scheme.primary.copy(alpha = 0.16f),
-                        )
-                        .clip(shape)
-                        .selectable(
-                            selected = isSelected,
-                            role = Role.RadioButton,
-                            onClick = { onSelect(value) },
-                        ),
-                    shape = shape,
-                    color = if (isSelected) scheme.surfaceContainerLow else scheme.surfaceContainerHigh,
-                    contentColor = if (isSelected) scheme.primary else scheme.onSurface,
-                    border = if (isSelected) BorderStroke(1.dp, scheme.primary.copy(alpha = 0.35f)) else null,
-                ) {
-                    Column(
-                        modifier = Modifier.padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val maxColumns = when {
+                stacked -> 1
+                showModePreview -> if (maxWidth < 250.dp) 2 else 3
+                maxWidth >= 400.dp -> 3
+                maxWidth >= 280.dp -> 2
+                else -> 1
+            }
+            val columns = minOf(options.size, maxItemsInEachRow, maxColumns).coerceAtLeast(1)
+            val gapPx = with(density) { 8.dp.roundToPx() }
+            val optionWidth = with(density) { ((constraints.maxWidth - gapPx * (columns - 1)) / columns).toDp() }
+            FlowRow(
+                modifier = Modifier.fillMaxWidth().selectableGroup(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                maxItemsInEachRow = columns,
+            ) {
+                options.forEach { (value, text) ->
+                    val isSelected = value == selected
+                    val shape = RoundedCornerShape(WaypairDesign.controlRadius)
+                    Surface(
+                        modifier = Modifier.width(optionWidth).heightIn(min = WaypairDesign.touchTarget)
+                            .shadow(elevation = if (isSelected) 0.dp else 3.dp, shape = shape, ambientColor = scheme.primary.copy(alpha = 0.08f), spotColor = scheme.primary.copy(alpha = 0.08f))
+                            .clip(shape)
+                            .selectable(selected = isSelected, role = Role.RadioButton, onClick = { onSelect(value) }),
+                        shape = shape,
+                        color = if (isSelected) scheme.primaryContainer else scheme.surfaceContainerHighest,
+                        contentColor = if (isSelected) scheme.primary else scheme.onSurfaceVariant,
+                        border = BorderStroke(1.dp, if (isSelected) scheme.primary else WaypairDesign.panelBorder()),
                     ) {
-                        if (showModePreview) {
-                            androidx.compose.foundation.layout.Box(
-                                modifier = Modifier
-                                    .size(width = 88.dp, height = 44.dp)
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .drawBehind {
-                                        val light = androidx.compose.ui.graphics.Color(0xFFD8DCF0)
-                                        val dark = androidx.compose.ui.graphics.Color(0xFF25284D)
-                                        drawRect(if (value == "dark") dark else light)
-                                        if (value == "system") {
-                                            drawRect(
-                                                color = dark,
-                                                topLeft = androidx.compose.ui.geometry.Offset(size.width / 2f, 0f),
-                                            )
-                                        }
-                                        drawRect(
-                                            color = androidx.compose.ui.graphics.Color(0xFF3E48AA),
-                                            topLeft = androidx.compose.ui.geometry.Offset(8.dp.toPx(), 8.dp.toPx()),
-                                            size = androidx.compose.ui.geometry.Size(24.dp.toPx(), 4.dp.toPx()),
-                                        )
-                                        drawRect(
-                                            color = androidx.compose.ui.graphics.Color(0xFFA9AEFF).copy(alpha = 0.35f),
-                                            topLeft = androidx.compose.ui.geometry.Offset(8.dp.toPx(), 20.dp.toPx()),
-                                            size = androidx.compose.ui.geometry.Size(size.width - 16.dp.toPx(), 16.dp.toPx()),
-                                        )
-                                    }
-                                    .clearAndSetSemantics {},
-                            )
+                        val choiceIcon: @Composable () -> Unit = {
+                            if (showModePreview) {
+                                Icon(
+                                    painterResource(when (value) { "light" -> R.drawable.wp_sun; "dark" -> R.drawable.wp_moon; else -> R.drawable.wp_monitor }),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(24.dp),
+                                )
+                            }
                         }
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Text(text, style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f, fill = false))
-                            androidx.compose.foundation.layout.Box(
-                                modifier = Modifier.size(20.dp),
-                                contentAlignment = Alignment.Center,
+                        val check: @Composable () -> Unit = {
+                            Box(Modifier.size(18.dp), contentAlignment = Alignment.Center) {
+                                if (isSelected) Icon(painterResource(R.drawable.wp_check), contentDescription = null, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                        if (stacked || !showModePreview) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
                             ) {
-                                if (isSelected) {
-                                    androidx.compose.foundation.Canvas(Modifier.size(20.dp).clearAndSetSemantics {}) {
-                                        val ink = scheme.primary
-                                        val stroke = 2.dp.toPx()
-                                        drawLine(ink, androidx.compose.ui.geometry.Offset(size.width * 0.2f, size.height * 0.5f), androidx.compose.ui.geometry.Offset(size.width * 0.42f, size.height * 0.72f), stroke, androidx.compose.ui.graphics.StrokeCap.Round)
-                                        drawLine(ink, androidx.compose.ui.geometry.Offset(size.width * 0.42f, size.height * 0.72f), androidx.compose.ui.geometry.Offset(size.width * 0.8f, size.height * 0.28f), stroke, androidx.compose.ui.graphics.StrokeCap.Round)
-                                    }
+                                choiceIcon()
+                                Text(text, style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+                                check()
+                            }
+                        } else {
+                            Box(Modifier.fillMaxWidth()) {
+                                Column(
+                                    Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 16.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                                ) {
+                                    choiceIcon()
+                                    Text(text, style = MaterialTheme.typography.labelLarge, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                                 }
+                                Box(Modifier.align(Alignment.TopEnd).padding(4.dp)) { check() }
                             }
                         }
                     }

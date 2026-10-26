@@ -29,28 +29,43 @@ object PcCompanion {
         1,
     )
 
+    /** z-base-32, as device IDs are written (`core/nectarlink-protocol/src/id.rs`). */
+    private const val ZBASE32 = "ybndrfg8ejkmcpqxot1uwisza345h769"
+
+    /** Decodes canonical z-base-32 bytes, accepting the protocol's trimmed, case-insensitive input. */
+    fun decodeZBase32(text: String): ByteArray? {
+        val out = java.io.ByteArrayOutputStream()
+        var buffer = 0
+        var bits = 0
+        for (c in text.trim()) {
+            val normalized = if (c in 'A'..'Z') c.lowercaseChar() else c
+            val value = ZBASE32.indexOf(normalized)
+            if (value < 0) return null
+            buffer = (buffer shl 5) or value
+            bits += 5
+            if (bits >= 8) {
+                bits -= 8
+                out.write((buffer shr bits) and 0xFF)
+            }
+        }
+        // A canonical encoding has fewer than 5 unused bits, all zero.
+        if (bits >= 5 || (buffer and ((1 shl bits) - 1)) != 0) return null
+        return out.toByteArray()
+    }
+
     /**
-     * Builds the manufacturer-specific BLE beacon payload:
-     * 5-byte `NCTR\x01` magic followed by the first 8 bytes of the decoded
-     * hex device ID (13 bytes total), or just the 5-byte magic if [deviceIdHex]
-     * does not contain at least 8 valid hex bytes.
+     * Builds the manufacturer-specific BLE beacon payload: the 5-byte
+     * `NCTR\x01` magic followed by the first 8 bytes of the PC's 32-byte
+     * z-base-32 device ID, or just the magic when [deviceIdHex] is invalid.
+     * The parameter retains its legacy name for source compatibility.
+     * A magic-only fallback broadens discovery; it does not prove identity or grant access.
      */
     fun buildBeaconPayload(deviceIdHex: String?): ByteArray {
-        val clean = deviceIdHex
-            ?.filter { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }
-            .orEmpty()
-        if (clean.length < 16) {
+        val id = deviceIdHex?.let(::decodeZBase32)
+        if (id == null || id.size != 32) {
             return BEACON_MAGIC.copyOf()
         }
-        val out = ByteArray(BEACON_MAGIC.size + 8)
-        BEACON_MAGIC.copyInto(out, 0)
-        for (i in 0 until 8) {
-            val hi = Character.digit(clean[i * 2], 16)
-            val lo = Character.digit(clean[i * 2 + 1], 16)
-            if (hi < 0 || lo < 0) return BEACON_MAGIC.copyOf()
-            out[BEACON_MAGIC.size + i] = ((hi shl 4) or lo).toByte()
-        }
-        return out
+        return BEACON_MAGIC + id.copyOfRange(0, 8)
     }
 
     /**

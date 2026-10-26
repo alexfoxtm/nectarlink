@@ -1,0 +1,17 @@
+Samsung Galaxy Z Fold6 (Navy)
+Author: Mandy Harper
+Source: https://commons.wikimedia.org/wiki/File:Samsung_Galaxy_Z_Fold6.png
+Original PNG: https://upload.wikimedia.org/wikipedia/commons/0/0c/Samsung_Galaxy_Z_Fold6.png
+License: Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)
+License: https://creativecommons.org/licenses/by-sa/4.0/
+Legal code: https://creativecommons.org/licenses/by-sa/4.0/legalcode.en
+Original raster SHA-256: 2de7231f441ac913cf9cdf5c59228464a5f8bfb9b28dfe4e3f13a58660161442
+
+The bundled PNG is byte-for-byte unchanged. PhoneModelPortrait.qml displays only
+the front using a viewport clip and adds a separate live-status overlay. The
+interface does not depict a live screen capture. No endorsement is implied.
+The image is licensed separately from the GPL-3.0-or-later component source.
+The display crop and overlay are identified modifications to the presentation;
+the source image and its CC BY-SA attribution and license remain available here.
+The reviewed stock-model catalogue contains SM-F956B only. Other model IDs use
+a neutral handset; no device has been queried to select or validate this image.

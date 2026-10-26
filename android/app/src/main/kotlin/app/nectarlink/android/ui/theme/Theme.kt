@@ -5,7 +5,19 @@ import android.animation.ValueAnimator
 import android.app.Activity
 import android.graphics.Color as AndroidColor
 import android.os.Build
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.graphics.Brush
+import app.nectarlink.android.R
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -94,6 +106,42 @@ object WaypairDesign {
 
     private fun darkSurface(color: Color): Boolean =
         color.red * 0.299f + color.green * 0.587f + color.blue * 0.114f < 0.5f
+}
+
+/** The same canonical Waypair W asset and wordmark on both root screens. */
+@Composable
+fun WaypairBrand(modifier: Modifier = Modifier) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Box(Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)).background(Color.Black), contentAlignment = Alignment.Center) {
+            Image(painterResource(R.drawable.wp_brand), contentDescription = null, modifier = Modifier.size(26.dp))
+        }
+        Text(stringResource(R.string.app_name), style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
+    }
+}
+
+/** Small raised glass wells use the shared theme, with bounded depth and a lit inset rim. */
+@Composable
+fun Modifier.waypairRaisedWell(enabled: Boolean = true): Modifier {
+    val scheme = MaterialTheme.colorScheme
+    val dark = scheme.surface.red * 0.299f + scheme.surface.green * 0.587f + scheme.surface.blue * 0.114f < 0.5f
+    val shape = RoundedCornerShape(20.dp)
+    val fill = if (enabled) scheme.surfaceContainerHighest else scheme.surfaceContainer
+    return this.shadow(
+        elevation = if (enabled) 7.dp else 0.dp,
+        shape = shape,
+        clip = false,
+        ambientColor = Color.Black.copy(alpha = if (dark) 0.28f else 0.10f),
+        spotColor = scheme.primary.copy(alpha = if (dark) 0.16f else 0.12f),
+    ).drawWithCache {
+        val radius = 20.dp.toPx()
+        val rim = 1.dp.toPx()
+        val brush = Brush.linearGradient(listOf(lerp(fill, Color.White, if (dark) 0.055f else 0.15f), fill))
+        val edge = if (dark) Color.White.copy(alpha = 0.12f) else Color.White.copy(alpha = 0.72f)
+        onDrawBehind {
+            drawRoundRect(brush, cornerRadius = CornerRadius(radius))
+            drawRoundRect(edge, topLeft = Offset(rim / 2, rim / 2), size = Size((size.width - rim).coerceAtLeast(0f), (size.height - rim).coerceAtLeast(0f)), cornerRadius = CornerRadius(radius), style = Stroke(rim))
+        }
+    }
 }
 
 val LocalReducedMotion = compositionLocalOf { false }
@@ -428,23 +476,23 @@ fun NectarlinkTheme(
     // One reference-led visual system; stored legacy skin preferences remain readable.
     val targetScheme = remember(dark) {
         val palette = if (dark) Palette(
-            primary = Color(0xFFA9AEFF), onPrimary = Color(0xFF171A3E),
-            primaryContainer = Color(0xFF373A6D), onPrimaryContainer = Color(0xFFE0E2FF),
-            secondaryContainer = Color(0xFF30335D), onSecondaryContainer = Color(0xFFE0E2F5),
-            surface = Color(0xFF16172F), surfaceContainerLow = Color(0xFF202243),
-            surfaceContainer = Color(0xFF25284D), surfaceContainerHigh = Color(0xFF30335D),
-            surfaceContainerHighest = Color(0xFF3A3E6D), onSurface = Color(0xFFEEF0FF),
-            onSurfaceVariant = Color(0xFFBCC0E0), outline = Color(0xFF9399C2),
-            outlineVariant = Color(0xFF41466F),
+            primary = Color(0xFFB4A8FF), onPrimary = Color(0xFF201D42),
+            primaryContainer = Color(0xFF39375E), onPrimaryContainer = Color(0xFFEEE9FF),
+            secondaryContainer = Color(0xFF242A42), onSecondaryContainer = Color(0xFFE9E9F7),
+            surface = Color(0xFF14172A), surfaceContainerLow = Color(0xFF1D2339),
+            surfaceContainer = Color(0xFF272D47), surfaceContainerHigh = Color(0xFF242A42),
+            surfaceContainerHighest = Color(0xFF1D2339), onSurface = Color(0xFFF1F2FA),
+            onSurfaceVariant = Color(0xFFBBC2DC), outline = Color(0xFF959AB4),
+            outlineVariant = Color(0xFF474D6A),
         ) else Palette(
-            primary = Color(0xFF3E48AA), onPrimary = Color.White,
-            primaryContainer = Color(0xFFDCE0FF), onPrimaryContainer = Color(0xFF262F78),
-            secondaryContainer = Color(0xFFCDD2EE), onSecondaryContainer = Color(0xFF30375D),
-            surface = Color(0xFFC1C5E1), surfaceContainerLow = Color(0xFFC9CEE8),
-            surfaceContainer = Color(0xFFD8DCF0), surfaceContainerHigh = Color(0xFFD8DCF0),
-            surfaceContainerHighest = Color(0xFFE3E6F6), onSurface = Color(0xFF22254C),
-            onSurfaceVariant = Color(0xFF555C86), outline = Color(0xFF6E76A1),
-            outlineVariant = Color(0xFFADB5D8),
+            primary = Color(0xFF5B4AC7), onPrimary = Color.White,
+            primaryContainer = Color(0xFFE1DCF6), onPrimaryContainer = Color(0xFF493CA5),
+            secondaryContainer = Color(0xFFE4E4F3), onSecondaryContainer = Color(0xFF35364E),
+            surface = Color(0xFFE9ECF8), surfaceContainerLow = Color(0xFFE7E9F6),
+            surfaceContainer = Color(0xFFF5F6FD), surfaceContainerHigh = Color(0xFFF5F6FD),
+            surfaceContainerHighest = Color(0xFFE8ECF8), onSurface = Color(0xFF24243B),
+            onSurfaceVariant = Color(0xFF59617B), outline = Color(0xFF777E9B),
+            outlineVariant = Color(0xFFD4D8EB),
         )
         palette.toScheme(dark, if (dark) Tokens.errorDark else Tokens.errorLight)
     }

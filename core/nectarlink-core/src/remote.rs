@@ -29,13 +29,19 @@ pub(crate) const TOGGLE: &str = "remote_input";
 
 const TIMEOUT: Duration = Duration::from_secs(5);
 
+const RATE_LIMITED: &str = "rate limit exceeded";
+const RATE_LIMIT_RETRY_FOR: Duration = Duration::from_secs(3);
+const RATE_LIMIT_RETRY_AFTER: Duration = Duration::from_millis(25);
+
 /// Maximum rate of incoming datagrams (`move`, `scroll`, `laser`) per peer.
 const DATAGRAM_RATE_PER_SEC: f64 = 240.0;
 const DATAGRAM_BURST: f64 = 60.0;
 
 /// Maximum rate of incoming control-stream `remote.input` requests per peer.
-const CONTROL_RATE_PER_SEC: f64 = 60.0;
-const CONTROL_BURST: f64 = 30.0;
+/// Voice/autocorrect rewrites send one request per backspace or replacement
+/// character; allow that burst while still limiting a runaway input flood.
+const CONTROL_RATE_PER_SEC: f64 = 500.0;
+const CONTROL_BURST: f64 = 500.0;
 
 /// Simple token bucket for per-peer input rate limiting.
 #[derive(Debug, Clone)]
@@ -168,9 +174,63 @@ pub(crate) async fn input(shared: &Arc<Shared>, session: &Arc<Session>, event: R
         check(shared, session).await?;
         return move_pointer(shared, session, dx, dy).await;
     }
-    let env = Envelope::new(types::REMOTE_INPUT, &event)?;
-    session.request(env, TIMEOUT).await?.expect(types::OK)?;
-    Ok(())
+    retry_rate_limited_input(&session.cancel, || async {
+        if shared.cancel.is_cancelled()
+            || !shared.session(&session.peer).is_some_and(|live| Arc::ptr_eq(&live, session))
+        {
+            return Err(Error::Offline);
+        }
+        if !peer_offers(shared, &session.peer, INPUT_INJECT)? {
+            return Err(Error::Unsupported);
+        }
+        let env = Envelope::new(types::REMOTE_INPUT, &event)?;
+        // Reserve this original session's outbox, then repeat admission so a
+        // wait for capacity cannot send into a retired connection/capability.
+        session
+            .request_if_current(env, TIMEOUT, || {
+                !shared.cancel.is_cancelled()
+                    && shared.session(&session.peer).is_some_and(|live| Arc::ptr_eq(&live, session))
+                    && peer_offers(shared, &session.peer, INPUT_INJECT).unwrap_or(false)
+            })
+            .await
+    })
+    .await
+}
+
+/// Only the exact rate denial proves this action was not injected. A timeout
+/// or transport failure can follow delivery, so must never replay the action.
+async fn retry_rate_limited_input<F, Fut>(
+    cancel: &tokio_util::sync::CancellationToken,
+    mut request: F,
+) -> Result<()>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<Envelope>>,
+{
+    let give_up = Instant::now() + RATE_LIMIT_RETRY_FOR;
+    loop {
+        if cancel.is_cancelled() {
+            return Err(Error::Offline);
+        }
+        let reply = request().await?;
+        match reply.expect(types::OK) {
+            Err(nectarlink_protocol::ProtocolError::Remote { code: ErrorCode::Denied, msg })
+                if msg == RATE_LIMITED && Instant::now() < give_up =>
+            {
+                tokio::select! {
+                    biased;
+                    _ = cancel.cancelled() => return Err(Error::Offline),
+                    _ = tokio::time::sleep(RATE_LIMIT_RETRY_AFTER) => {}
+                }
+                // This bounds retry admission, not an already admitted RPC's
+                // timeout. Do not begin another request after the horizon.
+                if Instant::now() >= give_up {
+                    return Err(Error::Denied);
+                }
+            }
+            done => return Ok(done?),
+        }
+    }
 }
 
 /// Sends relative pointer motion `(dx, dy)` in a QUIC datagram (or a dedicated
@@ -263,7 +323,7 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
                         .unwrap_or_else(|e| e.into_inner())
                         .allow_control(session.peer, Instant::now());
                     if !allowed {
-                        Envelope::error(ErrorCode::Denied, "rate limit exceeded")
+                        Envelope::error(ErrorCode::Denied, RATE_LIMITED)
                     } else {
                         let platform = shared.platform.clone();
                         let peer = session.peer;
@@ -341,6 +401,111 @@ mod tests {
         let later = start + Duration::from_millis(100);
         assert!(b.take(later));
         assert!(!b.take(later));
+    }
+
+    #[tokio::test]
+    async fn typing_rewrite_retries_old_receiver_without_reordering_or_duplicates() {
+        let start = Instant::now();
+        let mut current = RemoteState::default();
+        let peer = DeviceId([3; 32]);
+        for _ in 0..500 {
+            assert!(current.allow_control(peer, start));
+        }
+        assert!(!current.allow_control(peer, start));
+        assert!(current.allow_control(peer, start + Duration::from_millis(2)));
+
+        let expected: Vec<_> =
+            std::iter::repeat_with(|| RemoteInput::Key { key: remote_keys::BACKSPACE.into(), mods: vec![] })
+                .take(64)
+                .chain(
+                    "A voice rewrite replaces the previous sentence without dropping characters."
+                        .chars()
+                        .map(|character| RemoteInput::Text { text: character.to_string() }),
+                )
+                .collect();
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let mut old_receiver = TokenBucket::new(30.0, 60.0, Instant::now());
+        let mut delivered = Vec::new();
+        let mut denials = 0;
+        for event in &expected {
+            retry_rate_limited_input(&cancel, || {
+                let reply = if old_receiver.take(Instant::now()) {
+                    delivered.push(event.clone());
+                    Envelope::empty(types::OK)
+                } else {
+                    denials += 1;
+                    Envelope::error(ErrorCode::Denied, RATE_LIMITED)
+                };
+                std::future::ready(Ok(reply))
+            })
+            .await
+            .unwrap();
+        }
+        assert!(denials > 0, "the old receiver must exercise the production retry loop");
+        assert_eq!(delivered, expected, "each accepted action arrives once, in order");
+    }
+
+    #[tokio::test]
+    async fn typing_retry_stops_on_terminal_reply_error_revocation_or_cancellation() {
+        let cancel = tokio_util::sync::CancellationToken::new();
+        for (code, message) in [
+            (ErrorCode::Denied, "remote input is turned off for this device"),
+            (ErrorCode::Denied, "rate limit exceeded "),
+            (ErrorCode::Internal, RATE_LIMITED),
+            (ErrorCode::Unsupported, RATE_LIMITED),
+        ] {
+            let mut attempts = 0;
+            assert!(
+                retry_rate_limited_input(&cancel, || {
+                    attempts += 1;
+                    std::future::ready(Ok(Envelope::error(code.clone(), message)))
+                })
+                .await
+                .is_err()
+            );
+            assert_eq!(attempts, 1, "only exact rate-limit Denied may replay");
+        }
+        for error in [Error::Timeout, Error::Offline, Error::Denied, Error::Network("lost reply".into())] {
+            let mut terminal = Some(error);
+            let mut attempts = 0;
+            assert!(
+                retry_rate_limited_input(&cancel, || {
+                    attempts += 1;
+                    std::future::ready(Err(terminal.take().expect("uncertain delivery must not retry")))
+                })
+                .await
+                .is_err()
+            );
+            assert_eq!(attempts, 1);
+        }
+        let mut attempts = 0;
+        let revoked = retry_rate_limited_input(&cancel, || {
+            attempts += 1;
+            std::future::ready(if attempts == 1 {
+                Ok(Envelope::error(ErrorCode::Denied, RATE_LIMITED))
+            } else {
+                // The production request_if_current check fails closed after
+                // original-session/capability revocation while waiting.
+                Err(Error::Denied)
+            })
+        })
+        .await;
+        assert!(matches!(revoked, Err(Error::Denied)));
+        assert_eq!(attempts, 2, "a revoked request admission must end the retry");
+
+        let mut attempts = 0;
+        let result = retry_rate_limited_input(&cancel, || {
+            attempts += 1;
+            let stopped = cancel.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+                stopped.cancel();
+            });
+            std::future::ready(Ok(Envelope::error(ErrorCode::Denied, RATE_LIMITED)))
+        })
+        .await;
+        assert!(matches!(result, Err(Error::Offline)));
+        assert_eq!(attempts, 1, "Stop during backoff must not send another input");
     }
 
     #[test]

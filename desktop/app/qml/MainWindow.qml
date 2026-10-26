@@ -110,11 +110,11 @@ NativeWindow {
     readonly property string currentDeviceName: DeviceList.count > 0
         ? DeviceList.deviceNameAt(currentDeviceIndex) : ""
 
-    minimumWidth: Theme.layout.minWindow[0]
-    minimumHeight: Theme.layout.minWindow[1]
+    minimumWidth: window.macNavOverflow ? 800 : Theme.layout.minWindow[0]
+    minimumHeight: window.macNavOverflow ? 560 : Theme.layout.minWindow[1]
     property string normalScreen: Preferences.windowScreen
-    property int normalWidth: Math.max(minimumWidth, Preferences.windowWidth > 0 ? Preferences.windowWidth : 1120)
-    property int normalHeight: Math.max(minimumHeight, Preferences.windowHeight > 0 ? Preferences.windowHeight : 740)
+    property int normalWidth: Math.max(minimumWidth, Preferences.windowWidth > 0 ? Preferences.windowWidth : (window.macNavOverflow ? 960 : 1120))
+    property int normalHeight: Math.max(minimumHeight, Preferences.windowHeight > 0 ? Preferences.windowHeight : (window.macNavOverflow ? 640 : 740))
     property int normalX: Preferences.windowX
     property int normalY: Preferences.windowY
     property bool hasNormalPosition: Preferences.hasWindowPosition
@@ -238,8 +238,8 @@ NativeWindow {
         const availW = screenAvailWidth(targetScreen)
         const availH = screenAvailHeight(targetScreen)
 
-        const desiredW = Math.max(minimumWidth, Preferences.windowWidth > 0 ? Preferences.windowWidth : 1120)
-        const desiredH = Math.max(minimumHeight, Preferences.windowHeight > 0 ? Preferences.windowHeight : 740)
+        const desiredW = Math.max(minimumWidth, Preferences.windowWidth > 0 ? Preferences.windowWidth : (window.macNavOverflow ? 960 : 1120))
+        const desiredH = Math.max(minimumHeight, Preferences.windowHeight > 0 ? Preferences.windowHeight : (window.macNavOverflow ? 640 : 740))
         const minW = Math.min(minimumWidth, availW)
         const minH = Math.min(minimumHeight, availH)
         const fittedW = Math.max(minW, Math.min(desiredW, availW))
@@ -552,7 +552,7 @@ NativeWindow {
     Rectangle {
         id: rail
         visible: !window.welcome
-        width: window.wideSidebar ? Theme.sidebarWidth : 88
+        width: window.wideSidebar ? Theme.sidebarWidth : (window.macNavOverflow ? 72 : 88)
         height: parent.height
         color: Theme.railColor
         property string hoveredNav: ""
@@ -563,14 +563,15 @@ NativeWindow {
             x: window.wideSidebar ? Theme.spacingXl : 0
             // Centered on the top bar, level with the page title and the window buttons.
             y: (Theme.topBarHeight - height) / 2
-            width: 38; height: 38
-            radius: 12
-            color: Theme.panelColor
+            width: window.macNavOverflow ? 34 : 38; height: width
+            radius: window.macNavOverflow ? 9 : 12
+            color: window.macNavOverflow ? "transparent" : Theme.panelColor
             Icon {
                 anchors.centerIn: parent
                 path: Icons.mark
                 stroke: 2.4
-                color: Theme.primary
+                width: window.macNavOverflow ? 34 : 24; height: width
+                color: window.macNavOverflow ? Theme.railContent : Theme.primary
             }
         }
         Txt {
@@ -592,10 +593,10 @@ NativeWindow {
             }
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.top: mark.bottom
-            anchors.topMargin: 24
+            anchors.topMargin: window.macNavOverflow ? 18 : 24
             anchors.bottom: railPairButton.top
             anchors.bottomMargin: 16
-            width: rail.width - 24
+            width: rail.width - (window.macNavOverflow ? 16 : 24)
             contentWidth: width
             contentHeight: navColumn.height
             boundsBehavior: Flickable.StopAtBounds
@@ -610,7 +611,7 @@ NativeWindow {
                 onActiveFocusChanged: if (activeFocus) navigationFlick.reveal(this)
                 iconPath: Icons.home
                 text: qsTr("Home")
-                selected: window.page === "home" || window.page === "timeline"
+                selected: window.page === "home" || (!window.macNavOverflow && window.page === "timeline")
                 activeHover: rail.hoveredNav === "home"
                 onHoveredChanged: {
                     if (hovered) rail.hoveredNav = "home"
@@ -636,6 +637,7 @@ NativeWindow {
                 width: parent.width
                 expanded: window.wideSidebar
                 onActiveFocusChanged: if (activeFocus) navigationFlick.reveal(this)
+                visible: !window.macNavOverflow
                 iconPath: Icons.call
                 text: qsTr("Calls")
                 selected: window.page === "calls"
@@ -664,9 +666,23 @@ NativeWindow {
                 width: parent.width
                 expanded: window.wideSidebar
                 onActiveFocusChanged: if (activeFocus) navigationFlick.reveal(this)
+                iconPath: Icons.apps
+                text: qsTr("Apps")
+                selected: window.page === "apps"
+                activeHover: rail.hoveredNav === "apps"
+                onHoveredChanged: {
+                    if (hovered) rail.hoveredNav = "apps"
+                    else if (rail.hoveredNav === "apps") rail.hoveredNav = ""
+                }
+                onClicked: window.page = "apps"
+            }
+            NavItem {
+                width: parent.width
+                expanded: window.wideSidebar
+                onActiveFocusChanged: if (activeFocus) navigationFlick.reveal(this)
                 visible: Qt.platform.os === "osx" && PhoneBrowser.enabled
                 iconPath: Icons.folder
-                text: qsTr("Phone files")
+                text: window.macNavOverflow ? qsTr("Files") : qsTr("Phone files")
                 selected: window.page === "phoneFiles"
                 activeHover: rail.hoveredNav === "phoneFiles"
                 onHoveredChanged: {
@@ -679,15 +695,16 @@ NativeWindow {
                 width: parent.width
                 expanded: window.wideSidebar
                 onActiveFocusChanged: if (activeFocus) navigationFlick.reveal(this)
-                iconPath: Icons.apps
-                text: qsTr("Apps")
-                selected: window.page === "apps"
-                activeHover: rail.hoveredNav === "apps"
+                visible: window.macNavOverflow
+                iconPath: Icons.history
+                text: qsTr("Timeline")
+                selected: window.page === "timeline"
+                activeHover: rail.hoveredNav === "timeline"
                 onHoveredChanged: {
-                    if (hovered) rail.hoveredNav = "apps"
-                    else if (rail.hoveredNav === "apps") rail.hoveredNav = ""
+                    if (hovered) rail.hoveredNav = "timeline"
+                    else if (rail.hoveredNav === "timeline") rail.hoveredNav = ""
                 }
-                onClicked: window.page = "apps"
+                onClicked: window.page = "timeline"
             }
             NavItem {
                 width: parent.width
@@ -728,7 +745,7 @@ NativeWindow {
                 visible: window.macNavOverflow
                 iconPath: Icons.more
                 text: qsTr("More")
-                selected: window.page === "deck" || window.page === "guide"
+                selected: window.page === "calls" || window.page === "deck" || window.page === "guide"
                 activeHover: rail.hoveredNav === "more"
                 Accessible.role: Accessible.Button
                 Accessible.selected: false
@@ -762,6 +779,10 @@ NativeWindow {
                             if (restoreFocus && !moreMenu.visible && moreItem.visible && window.active)
                                 moreItem.forceActiveFocus(Qt.TabFocusReason)
                         })
+                    }
+                    QQC2.MenuItem {
+                        text: qsTr("Calls")
+                        onTriggered: window.page = "calls"
                     }
                     QQC2.MenuItem {
                         text: qsTr("Deck")
@@ -830,7 +851,8 @@ NativeWindow {
                 anchors.left: backToHome.visible ? backToHome.right : parent.left
                 anchors.leftMargin: backToHome.visible ? 6 : Theme.contentPadding
                 anchors.verticalCenter: parent.verticalCenter
-                text: window.page === "home" ? qsTr("Home")
+                text: window.macNavOverflow ? qsTr("Waypair Link")
+                    : window.page === "home" ? qsTr("Home")
                     : window.page === "timeline" ? qsTr("Timeline")
                     : window.page === "messages" ? qsTr("Messages")
                     : window.page === "calls" ? qsTr("Calls")
@@ -840,9 +862,9 @@ NativeWindow {
                     : window.page === "deck" ? qsTr("Deck")
                     : window.page === "guide" ? qsTr("Features guide")
                     : qsTr("Settings")
-                role: "headline"
-                size: 32
-                weight: 700
+                role: window.macNavOverflow ? "label" : "headline"
+                size: window.macNavOverflow ? 13 : 32
+                weight: window.macNavOverflow ? 600 : 700
             }
             // Screen sharing: a live pill in the title bar, so the page never shifts. It sits
             // centered, and slides aside rather than overlap the title or the actions.

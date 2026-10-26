@@ -9,10 +9,7 @@ import android.util.LruCache
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -102,7 +99,14 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import app.nectarlink.android.ui.theme.WaypairBrand
+import app.nectarlink.android.ui.theme.waypairRaisedWell
 import androidx.compose.ui.unit.sp
 import app.nectarlink.android.NectarlinkApplication
 import app.nectarlink.android.R
@@ -317,51 +321,48 @@ fun HomeScreen(
                 Modifier.fillMaxWidth().padding(bottom = WaypairDesign.spacingSm),
                 verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingSm),
             ) {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(WaypairDesign.spacingSm),
-                ) {
-                    Text(
-                        stringResource(R.string.home_title),
-                        style = MaterialTheme.typography.headlineLarge,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.weight(1f),
-                    )
-                    // Reconnects and syncs with the PCs; spins once to say so.
-                    val spin = remember { androidx.compose.animation.core.Animatable(0f) }
-                    val scope = rememberCoroutineScope()
-                    IconButton(modifier = Modifier.size(WaypairDesign.touchTarget), onClick = {
-                        onRefresh()
-                        if (!reducedMotion) {
-                            scope.launch {
-                                spin.snapTo(0f)
-                                spin.animateTo(360f, androidx.compose.animation.core.tween(700))
+                val headerActions: @Composable () -> Unit = {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        val spin = remember { androidx.compose.animation.core.Animatable(0f) }
+                        val scope = rememberCoroutineScope()
+                        IconButton(modifier = Modifier.size(WaypairDesign.touchTarget), onClick = {
+                            onRefresh()
+                            if (!reducedMotion) {
+                                scope.launch {
+                                    spin.snapTo(0f)
+                                    spin.animateTo(360f, androidx.compose.animation.core.tween(700))
+                                }
                             }
+                        }) {
+                            Icon(
+                                painterResource(R.drawable.ic_refresh),
+                                contentDescription = stringResource(R.string.action_refresh),
+                                modifier = Modifier.graphicsLayer { rotationZ = spin.value },
+                            )
                         }
-                    }) {
-                        Icon(
-                            painterResource(R.drawable.ic_refresh),
-                            contentDescription = stringResource(R.string.action_refresh),
-                            modifier = Modifier.graphicsLayer { rotationZ = spin.value },
-                        )
+                        FilledTonalIconButton(
+                            onClick = onPairNew,
+                            shape = RoundedCornerShape(WaypairDesign.controlRadius),
+                            modifier = Modifier.size(WaypairDesign.touchTarget),
+                        ) {
+                            Icon(painterResource(R.drawable.wp_qr), contentDescription = stringResource(R.string.action_pair_new))
+                        }
                     }
-                    FilledTonalIconButton(
-                        onClick = onPairNew,
-                        shape = RoundedCornerShape(WaypairDesign.controlRadius),
-                        modifier = Modifier.size(WaypairDesign.touchTarget),
+                }
+                if (LocalDensity.current.fontScale >= 1.5f) {
+                    WaypairBrand(Modifier.fillMaxWidth())
+                    Box(Modifier.align(Alignment.End)) { headerActions() }
+                } else {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(WaypairDesign.spacingSm),
                     ) {
-                        Icon(painterResource(R.drawable.ic_qr), contentDescription = stringResource(R.string.action_pair_new))
+                        WaypairBrand(Modifier.weight(1f))
+                        headerActions()
                     }
                 }
-                TextButton(
-                    onClick = onOpenFeaturesGuide,
-                    shape = RoundedCornerShape(WaypairDesign.controlRadius),
-                    modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                ) {
-                    Text(stringResource(R.string.home_guide_title))
-                }
+
             }
         }
         if (showWhatsNewGuideBanner) {
@@ -683,6 +684,13 @@ fun HomeScreen(
                     onToggleMic = { on -> if (on) onStartMic(device.id) else onStopMic() },
                 )
             }
+        }
+        item(key = "home_features_guide", contentType = "guide") {
+            TextButton(
+                onClick = onOpenFeaturesGuide,
+                shape = RoundedCornerShape(WaypairDesign.controlRadius),
+                modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
+            ) { Text(stringResource(R.string.home_guide_title)) }
         }
         // Another phone or tablet paired with this one.
         items(state.devices.filter { it.isAndroid }, key = { it.id }, contentType = { "peer_card" }) { device ->
@@ -1500,17 +1508,7 @@ internal fun PcCard(
         androidx.compose.material3.LocalContentColor provides MaterialTheme.colorScheme.onSurface,
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .animateContentSize(tween(if (reducedMotion) 0 else 220))
-                .liquidGlassCard(
-                    cornerRadius = WaypairDesign.cardRadius,
-                    isGlass = isGlass,
-                    baseColor = WaypairDesign.panelColor(),
-                    tintColor = MaterialTheme.colorScheme.primary,
-                    outlineColor = WaypairDesign.panelBorder(),
-                )
-                .padding(WaypairDesign.spacingLg),
+            modifier = Modifier.fillMaxWidth(),
         ) {
             val context = LocalContext.current
             val ink = MaterialTheme.colorScheme.onSurface
@@ -1546,54 +1544,48 @@ internal fun PcCard(
             } else {
                 linkText(device.link, device.displayPath, device.usbMedium, device.routeTransport)
             }
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(WaypairDesign.heroRadius))
-                    .background(Brush.verticalGradient(listOf(WaypairDesign.heroWash(), WaypairDesign.panelColor())))
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+            // Connection context stays outside the continuous action workspace.
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                Box(
+                    modifier = Modifier.size(44.dp).waypairRaisedWell(),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Box(
-                        modifier = Modifier.size(56.dp).liquidGlassCard(
-                            cornerRadius = 20.dp,
-                            isGlass = isGlass,
-                            baseColor = WaypairDesign.panelColor(),
-                            tintColor = MaterialTheme.colorScheme.primary,
-                            outlineColor = WaypairDesign.panelBorder(),
-                        ),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(RemotePcIcon, contentDescription = null, modifier = Modifier.size(32.dp), tint = MaterialTheme.colorScheme.primary)
-                    }
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(device.name, style = MaterialTheme.typography.headlineSmall)
-                        device.model?.let {
-                            Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
-                        }
-                    }
+                    Icon(painterResource(R.drawable.wp_monitor), contentDescription = null, modifier = Modifier.size(26.dp), tint = MaterialTheme.colorScheme.primary)
                 }
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth().semantics { stateDescription = connectionStatusLabel },
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Spacer(Modifier.size(8.dp).drawBehind { drawCircle(statusDotColor) })
-                        Text(connectionStatusLabel, style = MaterialTheme.typography.labelLarge)
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(device.name, style = MaterialTheme.typography.titleMedium)
+                    device.model?.let {
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    device.battery?.let { battery ->
-                        Text(
-                            text = if (battery.charging) stringResource(R.string.battery_charging, battery.level.toInt())
-                            else stringResource(R.string.battery_level, battery.level.toInt()),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth().semantics { stateDescription = connectionStatusLabel },
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Icon(
+                                painterResource(if (device.online) R.drawable.wp_check else R.drawable.wp_offline),
+                                contentDescription = null,
+                                tint = statusDotColor,
+                                modifier = Modifier.size(14.dp),
+                            )
+                            Text(connectionStatusLabel, style = MaterialTheme.typography.labelMedium)
+                        }
+                        device.battery?.let { battery ->
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Icon(painterResource(R.drawable.wp_battery), contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(
+                                    text = if (battery.charging) stringResource(R.string.battery_charging, battery.level.toInt())
+                                    else stringResource(R.string.battery_level, battery.level.toInt()),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
                     }
                     if (!device.online && device.canWake && device.wakeState != WakeState.Waking) {
                         FilledTonalButton(
@@ -1608,101 +1600,83 @@ internal fun PcCard(
                     }
                 }
             }
-            Spacer(Modifier.height(20.dp))
-            BoxWithConstraints(Modifier.fillMaxWidth()) {
-                // Real feature tiles follow the available pane and text size.
-                val fontScale = LocalDensity.current.fontScale
-                val columns = ((maxWidth.value + 12f) / (88f * fontScale + 12f)).toInt().coerceIn(1, 4)
-                val actionWidth = (maxWidth - 12.dp * (columns - 1)) / columns
-                val actionModifier = Modifier.width(actionWidth).heightIn(min = WaypairDesign.touchTarget)
-                val controlShape = RoundedCornerShape(WaypairDesign.controlRadius)
+            Spacer(Modifier.height(16.dp))
+            BoxWithConstraints(
+                Modifier.fillMaxWidth()
+                    .liquidGlassCard(
+                        cornerRadius = 28.dp,
+                        isGlass = isGlass,
+                        baseColor = WaypairDesign.panelColor(),
+                        tintColor = MaterialTheme.colorScheme.primary,
+                        outlineColor = WaypairDesign.panelBorder(),
+                    )
+                    .padding(horizontal = 12.dp, vertical = 16.dp),
+            ) {
+                val workspaceWidthPx = constraints.maxWidth
+                val density = LocalDensity.current
+                val stacked = density.fontScale >= 1.5f
+                val columns = when {
+                    stacked -> 1
+                    maxWidth >= 480.dp -> 4
+                    maxWidth >= 296.dp -> 3
+                    else -> 2
+                }
+                val gapPx = with(density) { 12.dp.roundToPx() }
+                val actionWidthPx = (workspaceWidthPx - gapPx * (columns - 1)) / columns
+                val actionWidth = with(density) { actionWidthPx.toDp() }
+                val actions = listOf(
+                    HomeActionItem(stringResource(R.string.action_remote_pc), R.drawable.wp_control_color, controlPcEnabled, controlPcReason) { onRemote(device.id) },
+                    HomeActionItem(stringResource(R.string.action_deck_pc), R.drawable.wp_deck_color, deckEnabled, deckReason) { onDeck(device.id) },
+                    HomeActionItem(stringResource(R.string.action_desk_pc), R.drawable.wp_clock_color, device.online) { onDesk(device.id) },
+                    HomeActionItem(stringResource(if (ownedCameraPermissionMissing) R.string.webcam_allow_camera else R.string.action_webcam_pc), R.drawable.wp_camera_color, webcamEnabled, webcamReason) { onWebcam(device.id) },
+                    HomeActionItem(stringResource(R.string.action_send_files), R.drawable.wp_send_color, if (device.online) device.has("files.send") else true) { pickFiles.launch(arrayOf("*/*")) },
+                    HomeActionItem(stringResource(R.string.action_send_folder), R.drawable.wp_folder_color, if (device.online) device.has("files.send") else true) { pickFolder.launch(null) },
+                    // Offline clipboard and file actions retain their real queued-send admission.
+                    HomeActionItem(stringResource(R.string.action_send_clipboard), R.drawable.wp_clipboard_color, if (device.online) device.usable("clipboard.auto_phone_to_pc") else true) { context.startActivity(SendActivity.sendClipboardIntent(context, device.id)) },
+                    HomeActionItem(stringResource(R.string.action_browse_pc_files), R.drawable.wp_browse_color, browsePcEnabled, browsePcReason) { onBrowsePcFiles(device.id) },
+                    HomeActionItem(stringResource(R.string.action_record_pc), R.drawable.wp_mic_color, device.online) { onRecord(device.id) },
+                    HomeActionItem(stringResource(if (ringing) R.string.action_stop_ringing else R.string.action_ring_pc), R.drawable.wp_bell_color, device.online) {
+                        ringing = !ringing
+                        onRing(device.id, ringing)
+                    },
+                )
+                val captionStyle = MaterialTheme.typography.labelLarge
+                val textMeasurer = rememberTextMeasurer()
+                // Measure ALL current, localized captions using the same width and style as Text.
+                // One slot height prevents a long label from moving the next row's icon wells.
+                val captionWidthPx = actionWidthPx - if (stacked) with(density) {
+                    4.dp.roundToPx() * 2 + 64.dp.roundToPx() + 16.dp.roundToPx()
+                } else 0
+                val captionHeight = with(density) {
+                    actions.maxOf { action ->
+                        textMeasurer.measure(
+                            text = AnnotatedString(action.label),
+                            style = captionStyle,
+                            constraints = Constraints(maxWidth = captionWidthPx.coerceAtLeast(1)),
+                        ).size.height
+                    }.toDp()
+                }
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Text(
-                        text = stringResource(R.string.home_section_screen),
+                        text = stringResource(R.string.home_workspace_title),
                         style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(horizontal = 4.dp),
                     )
                     FlowRow(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
-                        HomeFeatureTile(
-                            label = stringResource(R.string.action_remote_pc),
-                            icon = RemotePcIcon,
-                            enabled = controlPcEnabled,
-                            reason = controlPcReason,
-                            onClick = { onRemote(device.id) },
-                            modifier = actionModifier,
-                        )
-                        HomeFeatureTile(
-                            label = stringResource(R.string.action_deck_pc),
-                            icon = DeckGridIcon,
-                            enabled = deckEnabled,
-                            reason = deckReason,
-                            onClick = { onDeck(device.id) },
-                            modifier = actionModifier,
-                        )
-                        HomeFeatureTile(
-                            label = stringResource(R.string.action_desk_pc),
-                            icon = DeskClockIcon,
-                            enabled = device.online,
-                            onClick = { onDesk(device.id) },
-                            modifier = actionModifier,
-                        )
-                        HomeFeatureTile(
-                            label = stringResource(if (ownedCameraPermissionMissing) R.string.webcam_allow_camera else R.string.action_webcam_pc),
-                            icon = CameraLensIcon,
-                            enabled = webcamEnabled,
-                            reason = webcamReason,
-                            onClick = { onWebcam(device.id) },
-                            modifier = actionModifier,
-                        )
+                        actions.forEach { action ->
+                            HomeFeatureTile(
+                                action = action,
+                                captionHeight = captionHeight,
+                                stacked = stacked,
+                                modifier = Modifier.width(actionWidth),
+                            )
+                        }
                     }
-                    Text(
-                        text = stringResource(R.string.home_section_transfer),
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 8.dp),
-                    )
-                    FlowRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        HomeFeatureTile(
-                            label = stringResource(R.string.action_send_files),
-                            icon = SendArrowIcon,
-                            enabled = if (device.online) device.has("files.send") else true,
-                            onClick = { pickFiles.launch(arrayOf("*/*")) },
-                            modifier = actionModifier,
-                        )
-                        HomeFeatureTile(
-                            label = stringResource(R.string.action_send_folder),
-                            icon = FolderIcon,
-                            enabled = if (device.online) device.has("files.send") else true,
-                            onClick = { pickFolder.launch(null) },
-                            modifier = actionModifier,
-                        )
-                        HomeFeatureTile(
-                            label = stringResource(R.string.action_send_clipboard),
-                            icon = ClipboardIcon,
-                            // Offline, the clip waits in the send queue.
-                            enabled = if (device.online) device.usable("clipboard.auto_phone_to_pc") else true,
-                            onClick = { context.startActivity(SendActivity.sendClipboardIntent(context, device.id)) },
-                            modifier = actionModifier,
-                        )
-                        HomeFeatureTile(
-                            label = stringResource(R.string.action_browse_pc_files),
-                            icon = PcFolderIcon,
-                            enabled = browsePcEnabled,
-                            reason = browsePcReason,
-                            onClick = { onBrowsePcFiles(device.id) },
-                            modifier = actionModifier,
-                        )
-                    }
-
-                    // 3. Live PC media, master volume, mute, and active output device bar
                     val deckState = device.deckState
                     if (device.online && deckState != null) {
                         PcAudioCardSection(
@@ -1716,64 +1690,32 @@ internal fun PcCard(
                             onToggleMic = onToggleMic,
                         )
                     }
-
-                    Text(
-                        text = stringResource(R.string.home_section_system),
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 8.dp),
-                    )
-                    FlowRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        HomeFeatureTile(
-                            label = stringResource(R.string.action_record_pc),
-                            icon = MicIcon,
-                            enabled = device.online,
-                            onClick = { onRecord(device.id) },
-                            modifier = actionModifier,
-                        )
-                        HomeFeatureTile(
-                            label = stringResource(if (ringing) R.string.action_stop_ringing else R.string.action_ring_pc),
-                            icon = BellIcon,
-                            enabled = device.online,
-                            onClick = {
-                                ringing = !ringing
-                                onRing(device.id, ringing)
-                            },
-                            modifier = actionModifier,
-                        )
-                    }
                     if (device.has("device.pc_actions")) {
+                        androidx.compose.material3.HorizontalDivider(color = WaypairDesign.panelBorder())
                         FlowRow(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
+                            val powerWidth = with(density) { (if (stacked) workspaceWidthPx else (workspaceWidthPx - gapPx) / 2).toDp() }
                             OutlinedButton(
                                 contentPadding = CardButtonPadding,
-                                shape = controlShape,
+                                shape = RoundedCornerShape(WaypairDesign.controlRadius),
                                 enabled = device.online,
                                 colors = outlined,
                                 border = outline,
                                 onClick = { onPower(device.id, false) },
-                                modifier = actionModifier,
-                            ) {
-                                ButtonLabel(stringResource(R.string.action_lock_pc))
-                            }
+                                modifier = Modifier.width(powerWidth).heightIn(min = WaypairDesign.touchTarget),
+                            ) { ButtonLabel(stringResource(R.string.action_lock_pc)) }
                             OutlinedButton(
                                 contentPadding = CardButtonPadding,
-                                shape = controlShape,
+                                shape = RoundedCornerShape(WaypairDesign.controlRadius),
                                 enabled = device.online,
                                 colors = outlined,
                                 border = outline,
                                 onClick = { onPower(device.id, true) },
-                                modifier = actionModifier,
-                            ) {
-                                ButtonLabel(stringResource(R.string.action_sleep_pc))
-                            }
+                                modifier = Modifier.width(powerWidth).heightIn(min = WaypairDesign.touchTarget),
+                            ) { ButtonLabel(stringResource(R.string.action_sleep_pc)) }
                         }
                     }
                 }
@@ -1813,52 +1755,91 @@ internal fun PcCard(
     }
 }
 
-/** Native feature tile: real button semantics, negotiated admission and a content-sized caption. */
+private data class HomeActionItem(
+    val label: String,
+    val iconRes: Int,
+    val enabled: Boolean,
+    val reason: String? = null,
+    val onClick: () -> Unit,
+)
+
+/** A real action button with a fixed icon well and a shared, measured caption slot. */
 @Composable
 private fun HomeFeatureTile(
-    label: String,
-    icon: ImageVector,
-    enabled: Boolean,
-    onClick: () -> Unit,
+    action: HomeActionItem,
+    captionHeight: Dp,
+    stacked: Boolean,
     modifier: Modifier = Modifier,
-    reason: String? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
-    CapabilityReasonTooltip(reason, modifier) {
+    val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed && action.enabled && !LocalReducedMotion.current) 0.96f else 1f,
+        animationSpec = tween(if (LocalReducedMotion.current) 0 else 150),
+        label = "home_action_press",
+    )
+    CapabilityReasonTooltip(action.reason, modifier) {
         Button(
-            onClick = onClick,
-            enabled = enabled,
-            shape = RoundedCornerShape(24.dp),
+            onClick = action.onClick,
+            enabled = action.enabled,
+            interactionSource = interactionSource,
+            shape = RoundedCornerShape(WaypairDesign.controlRadius),
             colors = ButtonDefaults.buttonColors(
                 containerColor = Color.Transparent,
-                contentColor = scheme.primary,
+                contentColor = scheme.onSurface,
                 disabledContainerColor = Color.Transparent,
                 disabledContentColor = scheme.onSurfaceVariant,
             ),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 16.dp),
-            modifier = Modifier
-                .fillMaxWidth()
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+            modifier = Modifier.fillMaxWidth()
                 .heightIn(min = WaypairDesign.touchTarget)
-                .liquidGlassCard(
-                    cornerRadius = 24.dp,
-                    isGlass = LocalGlassTheme.current,
-                    baseColor = WaypairDesign.panelColor(),
-                    tintColor = scheme.primary,
-                    outlineColor = WaypairDesign.panelBorder(),
-                )
-                .capabilityReason(reason),
+                .graphicsLayer { scaleX = scale; scaleY = scale }
+                .capabilityReason(action.reason),
         ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Icon(icon, contentDescription = null, modifier = Modifier.size(32.dp))
-                Text(
-                    label,
-                    style = MaterialTheme.typography.labelLarge,
-                    textAlign = TextAlign.Center,
-                    color = if (enabled) scheme.onSurface else scheme.onSurface.copy(alpha = 0.50f),
-                )
+            val well: @Composable () -> Unit = {
+                Box(
+                    Modifier.size(64.dp).waypairRaisedWell(enabled = action.enabled),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    // Full-color authored artwork must not inherit Material's icon tint.
+                    Image(
+                        painterResource(action.iconRes),
+                        contentDescription = null,
+                        modifier = Modifier.size(36.dp),
+                        alpha = if (action.enabled) 1f else 0.42f,
+                    )
+                }
+            }
+            val caption: @Composable (Modifier) -> Unit = { captionModifier ->
+                Box(captionModifier.height(captionHeight), contentAlignment = if (stacked) Alignment.CenterStart else Alignment.TopCenter) {
+                    Text(
+                        action.label,
+                        modifier = Modifier.fillMaxWidth(),
+                        style = MaterialTheme.typography.labelLarge,
+                        textAlign = if (stacked) TextAlign.Start else TextAlign.Center,
+                        color = if (action.enabled) scheme.onSurface else scheme.onSurfaceVariant,
+                    )
+                }
+            }
+            if (stacked) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    well()
+                    caption(Modifier.weight(1f))
+                }
+            } else {
+                Column(
+                    Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    well()
+                    caption(Modifier.fillMaxWidth())
+                }
             }
         }
     }
@@ -3811,20 +3792,6 @@ private val RemotePcIcon: ImageVector by lazy {
     )
 }
 
-private val DeckGridIcon: ImageVector by lazy {
-    softContinuousVector(
-        name = "DeckGrid",
-        svgPath = "M3.5,5.5A2,2 0 0,1 5.5,3.5H9.5A2,2 0 0,1 11.5,5.5V9.5A2,2 0 0,1 9.5,11.5H5.5A2,2 0 0,1 3.5,9.5Z M12.5,5.5A2,2 0 0,1 14.5,3.5H18.5A2,2 0 0,1 20.5,5.5V9.5A2,2 0 0,1 18.5,11.5H14.5A2,2 0 0,1 12.5,9.5Z M3.5,14.5A2,2 0 0,1 5.5,12.5H9.5A2,2 0 0,1 11.5,14.5V18.5A2,2 0 0,1 9.5,20.5H5.5A2,2 0 0,1 3.5,18.5Z M12.5,14.5A2,2 0 0,1 14.5,12.5H18.5A2,2 0 0,1 20.5,14.5V18.5A2,2 0 0,1 18.5,20.5H14.5A2,2 0 0,1 12.5,18.5Z",
-    )
-}
-
-private val CameraLensIcon: ImageVector by lazy {
-    softContinuousVector(
-        name = "CameraLens",
-        svgPath = "M15.5,10.2L20.2,7.3A1,1 0 0,1 21.7,8.1V15.9A1,1 0 0,1 20.2,16.7L15.5,13.8 M2.5,8A2.5,2.5 0 0,1 5,5.5H13A2.5,2.5 0 0,1 15.5,8V16A2.5,2.5 0 0,1 13,18.5H5A2.5,2.5 0 0,1 2.5,16Z",
-    )
-}
-
 private val SendArrowIcon: ImageVector by lazy {
     softContinuousVector(
         name = "SendArrow",
@@ -3840,31 +3807,10 @@ private val ChevronDownIcon: ImageVector by lazy {
     )
 }
 
-private val DeskClockIcon: ImageVector by lazy {
-    softContinuousVector(
-        name = "DeskClock",
-        svgPath = "M3,7A2.5,2.5 0 0,1 5.5,4.5H18.5A2.5,2.5 0 0,1 21,7V17A2.5,2.5 0 0,1 18.5,19.5H5.5A2.5,2.5 0 0,1 3,17Z M12,8.5V12L14.5,13.5",
-    )
-}
-
-private val FolderIcon: ImageVector by lazy {
-    softContinuousVector(
-        name = "Folder",
-        svgPath = "M20,19.5A2,2 0 0,0 22,17.5V8.5A2,2 0 0,0 20,6.5H12.1A2,2 0 0,1 10.4,5.6L9.5,4.4A2,2 0 0,0 7.9,3.5H4A2,2 0 0,0 2,5.5V17.5A2,2 0 0,0 4,19.5Z",
-    )
-}
-
 private val ClipboardIcon: ImageVector by lazy {
     softContinuousVector(
         name = "Clipboard",
         svgPath = "M9,3.5H15A1.5,1.5 0 0,1 16.5,5V5.5A1.5,1.5 0 0,1 15,7H9A1.5,1.5 0 0,1 7.5,5.5V5A1.5,1.5 0 0,1 9,3.5Z M16.5,5H18A2.5,2.5 0 0,1 20.5,7.5V19A2.5,2.5 0 0,1 18,21.5H6A2.5,2.5 0 0,1 3.5,19V7.5A2.5,2.5 0 0,1 6,5H7.5",
-    )
-}
-
-private val PcFolderIcon: ImageVector by lazy {
-    softContinuousVector(
-        name = "PcFolder",
-        svgPath = "M20,19.5A2,2 0 0,0 22,17.5V8.5A2,2 0 0,0 20,6.5H12.1A2,2 0 0,1 10.4,5.6L9.5,4.4A2,2 0 0,0 7.9,3.5H4A2,2 0 0,0 2,5.5V17.5A2,2 0 0,0 4,19.5Z M9,13H15 M12,10.5L14.5,13L12,15.5",
     )
 }
 

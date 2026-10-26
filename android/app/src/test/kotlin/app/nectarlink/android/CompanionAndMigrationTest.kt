@@ -14,37 +14,47 @@ import org.junit.Test
 class CompanionAndMigrationTest {
 
     @Test
-    fun `PcCompanion buildBeaconPayload and buildBeaconMask encode 5-byte magic and 8-byte device ID prefix`() {
-        val hexId = "0123456789abcdef-fedcba9876543210"
-        val payload = PcCompanion.buildBeaconPayload(hexId)
-        assertEquals(13, payload.size)
+    fun `PcCompanion decodes protocol device IDs and matches the PC beacon`() {
         assertArrayEquals(
-            byteArrayOf(
-                'N'.code.toByte(),
-                'C'.code.toByte(),
-                'T'.code.toByte(),
-                'R'.code.toByte(),
-                1,
-                0x01,
-                0x23,
-                0x45,
-                0x67,
-                0x89.toByte(),
-                0xAB.toByte(),
-                0xCD.toByte(),
-                0xEF.toByte(),
-            ),
-            payload,
+            byteArrayOf(0xF0.toByte(), 0xBF.toByte(), 0xC7.toByte()),
+            PcCompanion.decodeZBase32("6n9hq"),
         )
+        assertArrayEquals(
+            ByteArray(32) { it.toByte() },
+            PcCompanion.decodeZBase32("yyyoryarywdyqnyjbefoadeqbhebnrounoktcfaadrpbs8y7daxo"),
+        )
+        // The PC broadcasts the magic and its first eight raw identity bytes.
+        val id = "ww6yb9a1gtm8tgw4ukpjigw4ukpjigw4ukpjigw4ukpjigw4ukpy"
+        val broadcast = PcCompanion.BEACON_MAGIC + byteArrayOf(
+            0xA5.toByte(), 0x3C, 0x00, 0xFF.toByte(), 0x12, 0x34, 0x56, 0x78,
+        )
+        assertArrayEquals(broadcast, PcCompanion.buildBeaconPayload(id))
+        assertArrayEquals(broadcast, PcCompanion.buildBeaconPayload(" ${id.uppercase()} "))
 
         val maskWithId = PcCompanion.buildBeaconMask(hasDeviceId = true)
         assertEquals(13, maskWithId.size)
         assertTrue(maskWithId.all { it == 0xFF.toByte() })
+    }
 
-        val shortPayload = PcCompanion.buildBeaconPayload("abcd")
-        assertArrayEquals(PcCompanion.BEACON_MAGIC, shortPayload)
-        assertArrayEquals(PcCompanion.BEACON_MAGIC, PcCompanion.buildBeaconPayload(null))
-
+    @Test
+    fun `PcCompanion malformed device IDs fall back to discovery magic only`() {
+        val id = "ww6yb9a1gtm8tgw4ukpjigw4ukpjigw4ukpjigw4ukpjigw4ukpy"
+        val nonCanonicalPadding = id.dropLast(1) + "b"
+        assertEquals(null, PcCompanion.decodeZBase32(nonCanonicalPadding))
+        val invalidIds = listOf(
+            null,
+            "",
+            "abcd",
+            "not-an-id",
+            "0123456789abcdef-fedcba9876543210",
+            id.dropLast(1),
+            id + "y",
+            nonCanonicalPadding,
+            id.replaceFirst('k', '\u212A'),
+        )
+        for (invalid in invalidIds) {
+            assertArrayEquals(PcCompanion.BEACON_MAGIC, PcCompanion.buildBeaconPayload(invalid))
+        }
         val maskWithoutId = PcCompanion.buildBeaconMask(hasDeviceId = false)
         assertEquals(5, maskWithoutId.size)
         assertTrue(maskWithoutId.all { it == 0xFF.toByte() })

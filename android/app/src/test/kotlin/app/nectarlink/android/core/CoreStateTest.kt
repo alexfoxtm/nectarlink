@@ -28,6 +28,24 @@ class CoreStateTest {
     )
 
     @Test
+    fun phoneAsSpeakerCountsWhileAConnectedPcHasItOn() {
+        val speaker = app.nectarlink.core.AudioOutputDevice(PHONE_SPEAKER_OUTPUT, "Phone speaker (NectarLink)", false)
+        val headphones = app.nectarlink.core.AudioOutputDevice("hp", "Headphones", true)
+        fun deck(vararg outputs: app.nectarlink.core.AudioOutputDevice) =
+            app.nectarlink.core.DeckState(playing = false, volume = 50u, muted = false, micMuted = null, outputDevices = outputs.toList())
+        val online = CoreState()
+            .reduce(Event.DeviceAdded(pc("a", "Desk", 10)))
+            .reduce(Event.LinkChanged("a", Link.Online(relayed = false, usb = false, rttMs = 5u)))
+        val relayOn = online.reduce(Event.DeckState("a", deck(headphones, speaker)))
+
+        assertTrue("relay on, nothing playing", relayOn.pcSpeakerRelayOn)
+        assertFalse("relay off", relayOn.reduce(Event.DeckState("a", deck(headphones))).pcSpeakerRelayOn)
+        assertFalse("no deck state yet", online.pcSpeakerRelayOn)
+        assertFalse("offline PC with stale deck state", relayOn.reduce(Event.LinkChanged("a", Link.Offline(null))).pcSpeakerRelayOn)
+        assertFalse("session cleanup with stale deck state", relayOn.withDevicesOffline().pcSpeakerRelayOn)
+    }
+
+    @Test
     fun devicesFollowEventsInPairingOrder() {
         var state = CoreState()
             .reduce(Event.DeviceAdded(pc("b", "Laptop", 20)))

@@ -23,7 +23,10 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Column
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -57,8 +60,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.drawWithCache
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -91,12 +92,9 @@ import app.nectarlink.android.ui.remote.RemoteScreen
 import app.nectarlink.android.ui.settings.SettingsScreen
 import app.nectarlink.android.ui.theme.WaypairDesign
 import app.nectarlink.android.ui.theme.Appearance
-import app.nectarlink.android.ui.theme.GlassBackdrop
 import app.nectarlink.android.ui.theme.LocalReducedMotion
 import app.nectarlink.android.ui.theme.NectarlinkTheme
 import app.nectarlink.android.ui.theme.glassBackdropSource
-import app.nectarlink.android.ui.theme.liquidGlass
-import app.nectarlink.android.ui.theme.liquidGlassCard
 import app.nectarlink.android.ui.walkthrough.WalkthroughScreen
 import app.nectarlink.android.ui.walkthrough.WalkthroughStep
 import app.nectarlink.android.ui.walkthrough.resolveStartupWalkthrough
@@ -782,9 +780,6 @@ private fun App(
                             onSelectTab = { tab = it },
                             onlineCount = onlineCount,
                             pairedCount = pairedCount,
-                            isGlass = isGlass,
-                            reducedMotion = reducedMotion,
-                            backdrop = glassBackdrop,
                         )
                     },
                 ) { padding ->
@@ -809,26 +804,12 @@ private fun App(
                     val saveableStateHolder = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
 
                     // Respect the measured dock height so large text never covers the last action.
-                    // Tabs slide toward the side of the tab you picked, on a soft spring.
+                    // Root navigation responds immediately and respects the system motion preference.
                     AnimatedContent(
                         targetState = tab,
                         transitionSpec = {
-                            if (reducedMotion) {
-                                EnterTransition.None togetherWith ExitTransition.None
-                            } else {
-                                val forward = targetState.ordinal > initialState.ordinal
-                                val slide = androidx.compose.animation.core.spring<androidx.compose.ui.unit.IntOffset>(
-                                    dampingRatio = androidx.compose.animation.core.Spring.DampingRatioNoBouncy,
-                                    stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow,
-                                )
-                                (
-                                    slideInHorizontally(slide) { w -> if (forward) w / 6 else -w / 6 } +
-                                        fadeIn(tween(220, easing = FastOutSlowInEasing))
-                                    ) togetherWith (
-                                    slideOutHorizontally(slide) { w -> if (forward) -w / 10 else w / 10 } +
-                                        fadeOut(tween(120))
-                                    )
-                            }
+                            if (reducedMotion) EnterTransition.None togetherWith ExitTransition.None
+                            else fadeIn(tween(120)) togetherWith fadeOut(tween(90))
                         },
                         modifier = Modifier
                             .fillMaxSize()
@@ -1028,79 +1009,35 @@ private fun FloatingBottomPillDock(
     onSelectTab: (Tab) -> Unit,
     onlineCount: Int,
     pairedCount: Int,
-    isGlass: Boolean,
-    reducedMotion: Boolean,
-    backdrop: GlassBackdrop? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
-    val dark = scheme.surface.luminance() < 0.5f
-    val baseFill = if (isGlass) {
-        scheme.surfaceContainerHighest.copy(alpha = 0.92f)
-    } else {
-        // Solid: the list scrolls under it, and text showed through.
-        WaypairDesign.panelColor()
-    }
-    val rimColor = WaypairDesign.panelBorder()
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.navigationBars)
-            .padding(horizontal = WaypairDesign.spacingLg, vertical = WaypairDesign.spacingSm),
-        contentAlignment = Alignment.Center,
+    Column(
+        modifier = Modifier.fillMaxWidth()
+            .background(WaypairDesign.panelColor())
+            .windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.navigationBars),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        HorizontalDivider(color = WaypairDesign.panelBorder())
         androidx.compose.foundation.layout.Row(
-            modifier = Modifier
-                .widthIn(max = 600.dp)
-                .fillMaxWidth()
-                .selectableGroup()
-                .then(
-                    if (isGlass) {
-                        // Content scrolling beneath bends at the rim (Android 13+); a light
-                        // tint keeps the labels readable over anything.
-                        Modifier.liquidGlass(
-                            backdrop = backdrop,
-                            enabled = true,
-                            cornerRadius = WaypairDesign.heroRadius,
-                            tint = scheme.surface.copy(alpha = if (dark) 0.42f else 0.50f),
-                            fallbackColor = baseFill,
-                            rimColor = androidx.compose.ui.graphics.Color.White,
-                            dark = dark,
-                        )
-                    } else {
-                        Modifier.liquidGlassCard(
-                            cornerRadius = WaypairDesign.heroRadius,
-                            isGlass = false,
-                            baseColor = baseFill,
-                            tintColor = scheme.primary,
-                            outlineColor = rimColor,
-                        )
-                    },
-                )
-                .padding(horizontal = 6.dp, vertical = 5.dp),
-            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
+            modifier = Modifier.widthIn(max = 600.dp).fillMaxWidth().selectableGroup().padding(horizontal = 12.dp, vertical = 4.dp),
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             FloatingDockTabPill(
                 modifier = Modifier.weight(1f),
                 selected = selectedTab == Tab.Home,
                 onClick = { onSelectTab(Tab.Home) },
-                iconRes = R.drawable.ic_home,
+                iconRes = if (selectedTab == Tab.Home) R.drawable.wp_home_filled else R.drawable.wp_home,
                 label = stringResource(R.string.home_title),
-                statusDotColor = when {
-                    onlineCount > 0 -> scheme.primary
-                    pairedCount > 0 -> scheme.outline
-                    else -> null
-                },
-                reducedMotion = reducedMotion,
+                statusDotColor = when { onlineCount > 0 -> scheme.primary; pairedCount > 0 -> scheme.outline; else -> null },
             )
             FloatingDockTabPill(
                 modifier = Modifier.weight(1f),
                 selected = selectedTab == Tab.Settings,
                 onClick = { onSelectTab(Tab.Settings) },
-                iconRes = R.drawable.ic_settings,
+                iconRes = if (selectedTab == Tab.Settings) R.drawable.wp_settings_filled else R.drawable.wp_settings,
                 label = stringResource(R.string.settings_title),
                 statusDotColor = null,
-                reducedMotion = reducedMotion,
             )
         }
     }
@@ -1113,73 +1050,40 @@ private fun FloatingDockTabPill(
     iconRes: Int,
     label: String,
     statusDotColor: androidx.compose.ui.graphics.Color?,
-    reducedMotion: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
     val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     val focused by interactionSource.collectIsFocusedAsState()
-    val focusColor = WaypairDesign.focusColor()
-    val tabShape = RoundedCornerShape(WaypairDesign.controlRadius)
-    val bgColorState = androidx.compose.animation.animateColorAsState(
-        targetValue = if (selected) scheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent,
-        animationSpec = if (reducedMotion) {
-            androidx.compose.animation.core.snap()
-        } else {
-            tween(200, easing = FastOutSlowInEasing)
-        },
-        label = "pill_bg",
-    )
-    val contentColor = if (selected) scheme.onPrimaryContainer else scheme.onSurfaceVariant
-    androidx.compose.foundation.layout.Row(
+    val shape = RoundedCornerShape(WaypairDesign.controlRadius)
+    val contentColor = if (selected) scheme.primary else scheme.onSurfaceVariant
+    Column(
         modifier = modifier
-            .border(2.dp, if (focused) focusColor else androidx.compose.ui.graphics.Color.Transparent, tabShape)
-            .clip(tabShape)
-            .semantics {
-                role = Role.Tab
-                this.selected = selected
-            }
-            .drawWithCache {
-                val r = WaypairDesign.controlRadius.toPx()
-                val cr = androidx.compose.ui.geometry.CornerRadius(r, r)
-                onDrawBehind {
-                    val bg = bgColorState.value
-                    if (bg.alpha > 0f) {
-                        drawRoundRect(color = bg, cornerRadius = cr)
-                    }
-                }
-            }
-            .clickable(
-                interactionSource = interactionSource,
-                indication = LocalIndication.current,
-                onClick = onClick,
-            )
+            .border(2.dp, if (focused) WaypairDesign.focusColor() else androidx.compose.ui.graphics.Color.Transparent, shape)
+            .clip(shape)
+            .semantics { role = Role.Tab; this.selected = selected }
+            .clickable(interactionSource = interactionSource, indication = LocalIndication.current, onClick = onClick)
             .heightIn(min = WaypairDesign.touchTarget)
-            .padding(horizontal = WaypairDesign.spacingLg, vertical = WaypairDesign.spacingMd),
-        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(2.dp),
     ) {
-        Icon(
-            painter = painterResource(iconRes),
-            contentDescription = null,
-            tint = contentColor,
-            modifier = Modifier.size(24.dp),
-        )
+        Box(
+            Modifier.size(width = 52.dp, height = 28.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(if (selected) scheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(painterResource(iconRes), contentDescription = null, tint = contentColor, modifier = Modifier.size(22.dp))
+            if (statusDotColor != null) {
+                Box(Modifier.align(Alignment.TopEnd).padding(3.dp).size(5.dp).drawBehind { drawCircle(statusDotColor) })
+            }
+        }
         Text(
             text = label,
             color = contentColor,
-            style = MaterialTheme.typography.labelLarge,
-            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.labelMedium,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
         )
-        if (statusDotColor != null) {
-            androidx.compose.foundation.layout.Spacer(
-                modifier = Modifier
-                    .size(6.dp)
-                    .drawBehind {
-                        drawCircle(color = statusDotColor)
-                    },
-            )
-        }
     }
 }
-

@@ -1465,6 +1465,7 @@
     <string name="settings_apps_service_open">App windows service &amp; setup</string>
     <string name="settings_connection">Connection</string>
     <string name="settings_data_about">Data &amp; about</string>
+    <string name="home_workspace_title">Your workspace</string>
 </resources>
 
 

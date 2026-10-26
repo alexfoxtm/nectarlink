@@ -112,21 +112,21 @@ QtObject {
     // Semantic colors are deliberately independent from retired style presets,
     // so existing saved Glass/Graphite preferences also receive this redesign.
     readonly property var palette: ({
-        primary: dark ? "#C49BFF" : "#8A2ED4",
-        onPrimary: dark ? "#281542" : "#FFFFFF",
-        primaryContainer: dark ? "#45305F" : "#EFE5FF",
-        onPrimaryContainer: dark ? "#E9D7FF" : "#6626A6",
-        secondaryContainer: dark ? "#3A2C50" : "#F0EAF9",
-        onSecondaryContainer: dark ? "#E1CEF9" : "#65427E",
-        surface: dark ? "#171426" : "#EEF0F8",
-        surfaceContainerLow: dark ? "#1C172D" : "#F6F6FC",
-        surfaceContainer: dark ? "#231E38" : "#FFFFFF",
-        surfaceContainerHigh: dark ? "#2E2745" : "#F0EEF8",
-        surfaceContainerHighest: dark ? "#3E3456" : "#E3DFF0",
-        onSurface: dark ? "#EEEBFA" : "#211740",
-        onSurfaceVariant: dark ? "#B9AECC" : "#726984",
-        outline: dark ? "#807091" : "#A69BB8",
-        outlineVariant: dark ? "#393048" : "#E4DEED"
+        primary: dark ? "#C28AF0" : "#772AB7",
+        onPrimary: dark ? "#261734" : "#FFFFFF",
+        primaryContainer: dark ? "#3B2D49" : "#F1E9F8",
+        onPrimaryContainer: dark ? "#D8ABF5" : "#772AB7",
+        secondaryContainer: dark ? "#403246" : "#EEE6F8",
+        onSecondaryContainer: dark ? "#DECAE9" : "#6A4380",
+        surface: dark ? "#24212A" : "#F7F7FA",
+        surfaceContainerLow: dark ? "#28242F" : "#FAF9FC",
+        surfaceContainer: dark ? "#2E2A35" : "#FFFFFF",
+        surfaceContainerHigh: dark ? "#37313F" : "#F1EDF5",
+        surfaceContainerHighest: dark ? "#443B4E" : "#E8E2EE",
+        onSurface: dark ? "#F5F1F8" : "#25222C",
+        onSurfaceVariant: dark ? "#B6AEBF" : "#6A6573",
+        outline: dark ? "#8C8199" : "#99929F",
+        outlineVariant: dark ? "#40394A" : "#E7E4EC"
     })
     readonly property var status: ({
         warning: dark ? "#F2C477" : "#8D5A0E",
@@ -151,7 +151,7 @@ QtObject {
     readonly property color surfaceContentVariant: palette.onSurfaceVariant
     readonly property color outline: palette.outline
     readonly property color outlineVariant: palette.outlineVariant
-    readonly property color success: primary
+    readonly property color success: dark ? "#9BD5B4" : "#2E704D"
     readonly property color warning: status.warning
     readonly property color error: status.error
     readonly property color errorContent: status.onError
@@ -162,29 +162,29 @@ QtObject {
     readonly property color canvasColor: surface
     readonly property color panelColor: surfaceContainer
     readonly property color panelBorder: outlineVariant
-    readonly property color insetColor: dark ? "#1F1A31" : "#F6F4FA"
+    readonly property color insetColor: dark ? "#28232F" : "#F8F5FB"
     readonly property color cardColor: panelColor
     readonly property color cardBorder: panelBorder
     readonly property color tileColor: panelColor
-    readonly property color heroWash: dark ? "#302445" : "#F2EAFE"
-    readonly property color heroWashEnd: dark ? "#352746" : "#F5EEFC"
+    readonly property color heroWash: dark ? "#3B2D49" : "#F1E9F8"
+    readonly property color heroWashEnd: dark ? "#342A40" : "#F7F0FC"
     readonly property color heroColor: heroWash
     readonly property color heroContent: surfaceContent
-    readonly property color railColor: dark ? "#351077" : "#5813D7"
-    readonly property color railContent: "#F8F3FF"
-    readonly property color railMuted: "#CEB9EE"
+    readonly property color railColor: dark ? "#35104F" : "#4D137C"
+    readonly property color railContent: "#FFFFFF"
+    readonly property color railMuted: dark ? "#D8C7E5" : "#DDCCEC"
     readonly property color railSelected: Qt.rgba(1, 1, 1, 0.16)
     readonly property color indicator: primaryContainer
     readonly property color indicatorContent: primaryContainerContent
-    readonly property color actionColor: dark ? "#BE93FF" : "#9A42F4"
+    readonly property color actionColor: primary
     readonly property color actionContent: primaryContent
     readonly property color focusColor: primary
     readonly property color glow: "transparent"
     readonly property color buttonShadow: "transparent"
     readonly property color scrim: Qt.rgba(0.04, 0.08, 0.15, dark ? 0.64 : 0.30)
-    readonly property int controlRadius: 8
-    readonly property int cardRadius: 14
-    readonly property int heroRadius: 20
+    readonly property int controlRadius: 6
+    readonly property int cardRadius: 10
+    readonly property int heroRadius: 14
     readonly property int spacingXs: 4
     readonly property int spacingSm: 8
     readonly property int spacingMd: 12
@@ -192,10 +192,10 @@ QtObject {
     readonly property int spacingXl: 24
     readonly property int spacingXxl: 32
     readonly property int sidebarWidth: 224
-    readonly property int compactRailWidth: 80
+    readonly property int compactRailWidth: 72
 
     // ---- Shape ----
-    readonly property var shape: ({ xs: 4, sm: 6, md: 10, lg: 14, xl: 20, full: 8 })
+    readonly property var shape: ({ xs: 4, sm: 6, md: 8, lg: 10, xl: 14, full: 6 })
     readonly property int radiusXs: shape.xs
     readonly property int radiusSm: shape.sm
     readonly property int radiusMd: shape.md
@@ -214,8 +214,8 @@ QtObject {
 
     // ---- Layout and spacing ----
     readonly property var layout: Tokens.data.layout.desktop
-    readonly property int railWidth: layout.railWidth
-    readonly property int topBarHeight: layout.topBarHeight
+    readonly property int railWidth: Qt.platform.os === "osx" || Qt.platform.os === "macos" ? compactRailWidth : layout.railWidth
+    readonly property int topBarHeight: Qt.platform.os === "osx" || Qt.platform.os === "macos" ? 44 : layout.topBarHeight
     readonly property int contentPadding: spacingXl
     readonly property int gutter: layout.gutter
     function space(step) { return Tokens.data.spacing.scale[step] }
@@ -241,5 +241,5 @@ QtObject {
     readonly property int fadeFast: Tokens.data.motion.fade.fast
     readonly property int fadeNormal: Tokens.data.motion.fade.normal
     readonly property real hoverLift: reduceMotion ? 0 : Tokens.data.motion.hoverLift
-    readonly property real pressScale: reduceMotion ? 1 : Tokens.data.motion.pressScale
+    readonly property real pressScale: reduceMotion ? 1 : 0.96
 }

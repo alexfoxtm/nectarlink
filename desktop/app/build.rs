@@ -43,6 +43,7 @@ const QML: &[&str] = &[
     "qml/components/NavItem.qml",
     "qml/components/NotificationItem.qml",
     "qml/components/NowPlaying.qml",
+    "qml/components/PhoneModelPortrait.qml",
     "qml/components/QrCode.qml",
     "qml/components/RoundedImage.qml",
     "qml/components/Segmented.qml",
@@ -102,6 +103,54 @@ fn fonts_qrc() -> PathBuf {
     }
     qrc.push_str("  </qresource>\n</RCC>\n");
     let out = PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR")).join("fonts.qrc");
+    write_if_changed(&out, qrc);
+    out
+}
+
+/// Authored UI artwork, served under `qrc:/waypair/icons/` and `qrc:/waypair/phones/`.
+fn ui_assets_qrc() -> PathBuf {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/ui");
+    let mut qrc = String::from("<RCC>\n");
+    for (folder, prefix, alias_prefix, extensions) in [
+        ("fluent", "/waypair", "icons/", &["svg"][..]),
+        ("phones", "/waypair/phones", "", &["png", "webp", "jpg", "jpeg", "svg"][..]),
+    ] {
+        let dir =
+            root.join(folder).canonicalize().unwrap_or_else(|e| panic!("missing UI assets {folder}: {e}"));
+        println!("cargo::rerun-if-changed={}", dir.display());
+        let mut files: Vec<PathBuf> = fs::read_dir(&dir)
+            .unwrap_or_else(|e| panic!("read UI assets {}: {e}", dir.display()))
+            .map(|entry| entry.expect("UI asset directory entry").path())
+            .filter(|path| {
+                path.extension()
+                    .and_then(|extension| extension.to_str())
+                    .is_some_and(|extension| extensions.contains(&extension))
+            })
+            .collect();
+        files.sort();
+        qrc.push_str(&format!("  <qresource prefix=\"{prefix}\">\n"));
+        for file in files {
+            let name = file.file_name().and_then(|name| name.to_str()).expect("UTF-8 UI asset name");
+            assert!(
+                name.bytes().all(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'-' | b'.')),
+                "unsafe UI asset name: {name}"
+            );
+            let path = file.canonicalize().unwrap_or_else(|e| panic!("missing UI asset {name}: {e}"));
+            assert!(path.starts_with(&dir) && path.is_file(), "UI asset outside source directory: {name}");
+            println!("cargo::rerun-if-changed={}", path.display());
+            let path = path.display().to_string().trim_start_matches(r"\\?\").replace('\\', "/");
+            let path = path
+                .replace('&', "&amp;")
+                .replace('<', "&lt;")
+                .replace('>', "&gt;")
+                .replace('"', "&quot;")
+                .replace('\'', "&apos;");
+            qrc.push_str(&format!("    <file alias=\"{alias_prefix}{name}\">{path}</file>\n"));
+        }
+        qrc.push_str("  </qresource>\n");
+    }
+    qrc.push_str("</RCC>\n");
+    let out = PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR")).join("ui_assets.qrc");
     write_if_changed(&out, qrc);
     out
 }
@@ -318,6 +367,7 @@ fn main() {
             "cpp/video_view.cpp",
         ])
         .qrc(fonts_qrc())
+        .qrc(ui_assets_qrc())
         .qrc(shaders_qrc())
         .files([
             "src/bridge/native.rs",

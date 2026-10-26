@@ -4,17 +4,18 @@ import QtQuick.Dialogs
 import QtQuick.Controls.Basic as BasicControls
 import app.nectarlink
 
-// Settings: phone setup first, followed by feature settings and this computer.
+// Native settings: appearance and this Mac, then paired-phone and feature settings.
 // Existing section IDs remain stable for guide and highlight navigation.
 Item {
     id: page
     property bool active: false
-    property string currentSection: "devices"
+    property string currentSection: "appearance"
     property int selectedDeviceIndex: 0
     signal pairRequested
 
-    readonly property bool wideLayout: page.width >= 960
-    readonly property int pagePadding: page.width < 680 ? 20 : 28
+    readonly property bool wideLayout: page.width >= 680
+    readonly property int pagePadding: page.width < 680 ? 16 : 24
+    readonly property int sectionTop: 84
 
     // Rows whose backend this Mac build lacks stay listed, greyed, with this reason.
     readonly property bool onMac: Qt.platform.os === "osx" || Qt.platform.os === "macos"
@@ -31,16 +32,16 @@ Item {
     }
 
     readonly property var categories: [
+        { id: "appearance", title: qsTr("Appearance"), icon: Icons.palette, subtitle: qsTr("Choose how Waypair looks on this Mac."), groupTitle: qsTr("This Mac") },
+        { id: "general", title: qsTr("Desktop & clipboard"), icon: Icons.laptop, subtitle: qsTr("Language, startup, desktop features and copied content") },
+        { id: "storage", title: qsTr("History & privacy"), icon: Icons.clipboardList, subtitle: qsTr("Local history, caches and retention") },
+        { id: "connection", title: qsTr("Connection & about"), icon: Icons.wifi, subtitle: page.onMac ? qsTr("Connection checks, API, updates and help") : qsTr("Connection checks, Wake-on-LAN, API, updates and help") },
         { id: "devices", title: qsTr("Phones"), icon: Icons.phone, subtitle: qsTr("Pair phones, choose shared features and manage permissions"), groupTitle: qsTr("Phone setup") },
         { id: "apps_screen", title: qsTr("Apps & screen"), icon: Icons.apps, subtitle: qsTr("Phone apps, screen mirroring and phone control") },
         { id: "notifications", title: qsTr("Notifications"), icon: Icons.bell, subtitle: qsTr("Banners, Do not disturb, quiet hours and app rules"), groupTitle: qsTr("Features") },
         { id: "files_sync", title: qsTr("Files & backup"), icon: Icons.folder, subtitle: qsTr("File sharing, photo backup, recordings and synced folders") },
         { id: "camera_audio", title: qsTr("Camera & audio"), icon: Icons.video, subtitle: qsTr("Camera setup, microphone, speaker and call preferences") },
-        { id: "shortcuts", title: qsTr("Shortcuts & rules"), icon: Icons.bolt, subtitle: page.onMac ? qsTr("Shortcuts, automation rules and OBS Studio") : qsTr("Hotkeys, automation rules and OBS Studio") },
-        { id: "general", title: qsTr("Desktop & clipboard"), icon: Icons.laptop, subtitle: qsTr("Language, startup, desktop features and copied content"), groupTitle: qsTr("This computer") },
-        { id: "appearance", title: qsTr("Appearance"), icon: Icons.palette, subtitle: qsTr("Choose a light or dark appearance, or follow your system") },
-        { id: "storage", title: qsTr("History & privacy"), icon: Icons.clipboardList, subtitle: qsTr("Local history, caches and retention") },
-        { id: "connection", title: qsTr("Connection & about"), icon: Icons.wifi, subtitle: page.onMac ? qsTr("Connection checks, API, updates and help") : qsTr("Connection checks, Wake-on-LAN, API, updates and help") }
+        { id: "shortcuts", title: qsTr("Shortcuts & rules"), icon: Icons.bolt, subtitle: page.onMac ? qsTr("Shortcuts, automation rules and OBS Studio") : qsTr("Hotkeys, automation rules and OBS Studio") }
     ]
 
     // The languages the app speaks besides the system's ({ code, name }).
@@ -273,15 +274,25 @@ Item {
         onAccepted: Preferences.chooseRecordingsFolder(selectedFolder.toString())
     }
 
-    // ---- Left Category Navigation Rail (wide windows >= 680px) ----
+    Column {
+        x: page.pagePadding
+        y: page.pagePadding
+        width: parent.width - page.pagePadding * 2
+        spacing: 4
+        Txt { width: parent.width; text: qsTr("Settings"); role: "headline"; size: 24 }
+        Txt { width: parent.width; text: qsTr("Manage this Mac and your paired phones."); role: "bodySmall"; muted: true; wrapMode: Text.WordWrap }
+    }
+
+    // ---- Grouped category navigation ----
     Flickable {
         id: categoryRail
         visible: page.wideLayout
         x: page.pagePadding
-        y: page.pagePadding
-        width: 208
-        height: parent.height - page.pagePadding * 2
+        y: page.sectionTop
+        width: 172
+        height: parent.height - y - page.pagePadding
         contentHeight: railCol.height
+        BasicControls.ScrollBar.vertical: BasicControls.ScrollBar { policy: BasicControls.ScrollBar.AsNeeded }
         interactive: contentHeight > height
         boundsBehavior: Flickable.StopAtBounds
         clip: true
@@ -306,9 +317,9 @@ Item {
                         text: navGroup.modelData.groupTitle || ""
                         role: "caption"
                         muted: true
-                        topPadding: 12
+                        topPadding: 8
                         bottomPadding: 4
-                        leftPadding: 12
+                        leftPadding: 10
                     }
 
                     Rectangle {
@@ -318,9 +329,18 @@ Item {
                         readonly property bool isHovered: railCol.hoveredCategoryId === modelData.id && navMouse.containsMouse
                         readonly property color fg: selected ? Theme.primaryContainerContent : Theme.surfaceContentVariant
                         width: railCol.width
-                        height: 44
-                        radius: 12
+                        height: 38
+                        radius: Theme.controlRadius
                         activeFocusOnTab: true
+                        onActiveFocusChanged: {
+                            if (activeFocus) {
+                                const top = navGroup.y + y
+                                if (top < categoryRail.contentY)
+                                    categoryRail.contentY = top
+                                else if (top + height > categoryRail.contentY + categoryRail.height)
+                                    categoryRail.contentY = Math.min(top + height - categoryRail.height, categoryRail.contentHeight - categoryRail.height)
+                            }
+                        }
                         color: selected
                             ? Theme.heroWash
                             : (isHovered ? Qt.rgba(Theme.surfaceContent.r, Theme.surfaceContent.g, Theme.surfaceContent.b, Theme.dark ? 0.06 : 0.04) : "transparent")
@@ -340,22 +360,23 @@ Item {
 
                         Row {
                             anchors.left: parent.left
-                            anchors.leftMargin: 12
+                            anchors.leftMargin: 10
                             anchors.right: navBadge.visible ? navBadge.left : parent.right
                             anchors.rightMargin: 8
                             anchors.verticalCenter: parent.verticalCenter
-                            spacing: 12
+                            spacing: 8
                             Icon {
                                 anchors.verticalCenter: parent.verticalCenter
                                 width: 18; height: 18
                                 path: navItem.modelData.icon
+                                selected: navItem.selected
                                 color: navItem.fg
                             }
                             Txt {
-                                width: parent.width - 30
+                                width: parent.width - 26
                                 anchors.verticalCenter: parent.verticalCenter
                                 role: "label"
-                                size: 13
+                                size: 12
                                 text: navItem.modelData.title
                                 color: navItem.fg
                                 elide: Text.ElideRight
@@ -405,19 +426,19 @@ Item {
     Rectangle {
         visible: page.wideLayout
         x: categoryRail.x + categoryRail.width + 16
-        y: page.pagePadding
+        y: page.sectionTop
         width: 1
-        height: parent.height - page.pagePadding * 2
+        height: parent.height - y - page.pagePadding
         color: Theme.outlineVariant
         opacity: 0.6
     }
 
-    // ---- Compact Top Category Pill Bar (narrow windows < 680px) ----
+    // ---- Scrollable categories for narrower content panes ----
     Flickable {
         id: compactCategoryBar
         visible: !page.wideLayout
         x: page.pagePadding
-        y: 12
+        y: page.sectionTop
         width: parent.width - page.pagePadding * 2
         height: 40
         contentWidth: compactRow.width
@@ -467,6 +488,7 @@ Item {
                             anchors.verticalCenter: parent.verticalCenter
                             width: 15; height: 15
                             path: compactTab.modelData.icon
+                            selected: compactTab.selected
                             color: compactTab.fg
                         }
                         Txt {
@@ -490,7 +512,7 @@ Item {
         contentWidth: width
         BasicControls.ScrollBar.vertical: BasicControls.ScrollBar { policy: BasicControls.ScrollBar.AsNeeded }
         x: page.wideLayout ? (categoryRail.x + categoryRail.width + 33) : 0
-        y: page.wideLayout ? 0 : (compactCategoryBar.y + compactCategoryBar.height + 8)
+        y: page.wideLayout ? page.sectionTop : (compactCategoryBar.y + compactCategoryBar.height + 8)
         width: parent.width - x
         height: parent.height - y
         contentHeight: column.height + page.pagePadding * 2
@@ -499,10 +521,10 @@ Item {
 
         Column {
             id: column
-            width: Math.min(880, contentFlickable.width - page.pagePadding * 2)
+            width: Math.min(760, contentFlickable.width - page.pagePadding * 2)
             x: Math.max(page.pagePadding, Math.round((contentFlickable.width - width) / 2))
-            y: page.pagePadding
-            spacing: Theme.spacingXl
+            y: page.wideLayout ? 8 : 16
+            spacing: Theme.spacingLg
             transform: Translate { id: sectionTranslate; y: 0 }
 
             ParallelAnimation {
@@ -537,7 +559,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     text: page.activeCategoryObj.title
                     role: "headline"
-                    size: 24
+                    size: 18
                     wrapMode: Text.WordWrap
                 }
                 Button {
@@ -623,22 +645,107 @@ Item {
                 width: visible ? parent.width : 0
                 spacing: Theme.spacingXl
 
+                Txt { width: parent.width; text: qsTr("Color theme"); role: "label"; size: 12 }
+
+                Row {
+                    id: appearanceChoices
+                    width: parent.width
+                    spacing: 8
+                    Accessible.role: Accessible.Grouping
+                    Accessible.name: qsTr("Color theme")
+                    Repeater {
+                        id: appearanceRepeater
+                        model: [
+                            { value: "system", label: qsTr("System"), icon: Icons.desktop },
+                            { value: "light", label: qsTr("Light"), icon: Icons.sun },
+                            { value: "dark", label: qsTr("Dark"), icon: Icons.moon }
+                        ]
+                        delegate: Rectangle {
+                            id: appearanceOption
+                            required property var modelData
+                            required property int index
+                            readonly property bool selected: Preferences.colorMode === modelData.value
+                            width: Math.max(0, (appearanceChoices.width - appearanceChoices.spacing * 2) / 3)
+                            height: 52
+                            radius: Theme.controlRadius
+                            color: selected ? Theme.primaryContainer : (appearanceMouse.containsMouse ? Theme.surfaceContainerHigh : Theme.insetColor)
+                            border.width: selected || Theme.focusVisible(appearanceOption) ? 2 : 1
+                            border.color: selected || Theme.focusVisible(appearanceOption) ? Theme.primary : Theme.outlineVariant
+                            activeFocusOnTab: true
+                            Accessible.role: Accessible.RadioButton
+                            Accessible.name: modelData.label
+                            Accessible.checked: selected
+                            Accessible.onPressAction: Preferences.colorMode = modelData.value
+                            Keys.onPressed: (event) => {
+                                if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+                                    Preferences.colorMode = appearanceOption.modelData.value
+                                    event.accepted = true
+                                } else if (event.key === Qt.Key_Left || event.key === Qt.Key_Right || event.key === Qt.Key_Home || event.key === Qt.Key_End) {
+                                    const nextIndex = event.key === Qt.Key_Home ? 0 : event.key === Qt.Key_End ? 2
+                                        : (appearanceOption.index + (event.key === Qt.Key_Left ? 2 : 1)) % 3
+                                    const nextOption = appearanceRepeater.itemAt(nextIndex)
+                                    if (nextOption) {
+                                        Preferences.colorMode = nextOption.modelData.value
+                                        nextOption.forceActiveFocus(Qt.TabFocusReason)
+                                    }
+                                    event.accepted = true
+                                }
+                            }
+                            Row {
+                                anchors.centerIn: parent
+                                spacing: 6
+                                Icon {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 18; height: 18
+                                    path: appearanceOption.modelData.icon
+                                    color: appearanceOption.selected ? Theme.primaryContainerContent : Theme.surfaceContentVariant
+                                }
+                                Txt {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: appearanceOption.modelData.label
+                                    role: "label"
+                                    size: 12
+                                    color: appearanceOption.selected ? Theme.primaryContainerContent : Theme.surfaceContent
+                                }
+                                Icon {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 12; height: 12
+                                    path: Icons.check
+                                    opacity: appearanceOption.selected ? 1 : 0
+                                    color: Theme.primaryContainerContent
+                                }
+                            }
+                            MouseArea {
+                                id: appearanceMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: Preferences.colorMode = appearanceOption.modelData.value
+                            }
+                        }
+                    }
+                }
+
+                Txt {
+                    width: parent.width
+                    text: qsTr("System follows your Mac's current light or dark appearance.")
+                    role: "bodySmall"
+                    muted: true
+                    wrapMode: Text.WordWrap
+                }
+
+                Txt { width: parent.width; text: qsTr("On this Mac"); role: "label"; size: 12 }
                 Card {
                     width: parent.width
                     ListRow {
                         width: parent.width
-                        iconPath: Icons.moon
-                        title: qsTr("Appearance")
-                        description: qsTr("Follow your system, or choose light or dark.")
-                        stackBelow: true
-                        Segmented {
-                            options: [
-                                { value: "system", label: qsTr("System") },
-                                { value: "light", label: qsTr("Light") },
-                                { value: "dark", label: qsTr("Dark") }
-                            ]
-                            value: Preferences.colorMode
-                            onPicked: (value) => Preferences.colorMode = value
+                        iconPath: Icons.power
+                        title: page.onMac ? qsTr("Open at login") : qsTr("Start with Windows")
+                        description: page.onMac ? qsTr("Open Waypair when you sign in.") : qsTr("Launch in the tray when you sign in.")
+                        Toggle {
+                            label: page.onMac ? qsTr("Open at login") : qsTr("Start with Windows")
+                            checked: Preferences.startWithWindows
+                            onToggled: (on) => Preferences.startWithWindows = on
                         }
                     }
                 }

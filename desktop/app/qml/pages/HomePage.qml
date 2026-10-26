@@ -3,7 +3,6 @@ import QtQuick
 import QtQuick.Controls as Controls
 import QtQuick.Window
 import QtQuick.Dialogs
-import QtQuick.Shapes
 import app.nectarlink
 
 // Home: the paired phone at a glance (status, battery, power level) and
@@ -138,99 +137,6 @@ Item {
         return m > 0 ? qsTr("~%1h %2m to full").arg(h).arg(m) : qsTr("~%1h to full").arg(h)
     }
 
-    function roundedRectSvg(x, y, w, h, tl, tr, br, bl) {
-        if (w <= 0 || h <= 0) return ""
-        const maxR = Math.min(w, h) * 0.48
-        const rTl = Math.max(0, Math.min(tl, maxR))
-        const rTr = Math.max(0, Math.min(tr, maxR))
-        const rBr = Math.max(0, Math.min(br, maxR))
-        const rBl = Math.max(0, Math.min(bl, maxR))
-        const f = (n) => Number(n).toFixed(2)
-        return "M " + f(x + rTl) + " " + f(y)
-            + " L " + f(x + w - rTr) + " " + f(y)
-            + (rTr > 0 ? " A " + f(rTr) + " " + f(rTr) + " 0 0 1 " + f(x + w) + " " + f(y + rTr) : "")
-            + " L " + f(x + w) + " " + f(y + h - rBr)
-            + (rBr > 0 ? " A " + f(rBr) + " " + f(rBr) + " 0 0 1 " + f(x + w - rBr) + " " + f(y + h) : "")
-            + " L " + f(x + rBl) + " " + f(y + h)
-            + (rBl > 0 ? " A " + f(rBl) + " " + f(rBl) + " 0 0 1 " + f(x) + " " + f(y + h - rBl) : "")
-            + " L " + f(x) + " " + f(y + rTl)
-            + (rTl > 0 ? " A " + f(rTl) + " " + f(rTl) + " 0 0 1 " + f(x + rTl) + " " + f(y) : "")
-            + " Z"
-    }
-
-    function scaleSvgPath(d, w, h, ox, oy) {
-        if (!d || d.length === 0 || w <= 0 || h <= 0) return ""
-        const tokens = d.match(/[a-zA-Z]|[-+]?(?:\d+\.?\d*|\.\d+)/g)
-        if (!tokens) return ""
-        let out = []
-        let i = 0
-        let cmd = ""
-        const fx = (v) => (ox + parseFloat(v) * w).toFixed(2)
-        const fy = (v) => (oy + parseFloat(v) * h).toFixed(2)
-        const sw = (v) => (parseFloat(v) * w).toFixed(2)
-        const sh = (v) => (parseFloat(v) * h).toFixed(2)
-        while (i < tokens.length) {
-            const t = tokens[i]
-            if (/^[a-zA-Z]$/.test(t)) {
-                cmd = t.toUpperCase()
-                out.push(cmd)
-                i++
-                if (cmd === "Z") continue
-            }
-            if (cmd === "M" || cmd === "L" || cmd === "T") {
-                if (i + 1 >= tokens.length) break
-                out.push(fx(tokens[i]), fy(tokens[i + 1]))
-                i += 2
-            } else if (cmd === "H") {
-                out.push(fx(tokens[i]))
-                i += 1
-            } else if (cmd === "V") {
-                out.push(fy(tokens[i]))
-                i += 1
-            } else if (cmd === "Q" || cmd === "S") {
-                if (i + 3 >= tokens.length) break
-                out.push(fx(tokens[i]), fy(tokens[i + 1]), fx(tokens[i + 2]), fy(tokens[i + 3]))
-                i += 4
-            } else if (cmd === "C") {
-                if (i + 5 >= tokens.length) break
-                out.push(
-                    fx(tokens[i]), fy(tokens[i + 1]),
-                    fx(tokens[i + 2]), fy(tokens[i + 3]),
-                    fx(tokens[i + 4]), fy(tokens[i + 5])
-                )
-                i += 6
-            } else if (cmd === "A") {
-                if (i + 6 >= tokens.length) break
-                out.push(
-                    sw(tokens[i]), sh(tokens[i + 1]),
-                    tokens[i + 2], tokens[i + 3], tokens[i + 4],
-                    fx(tokens[i + 5]), fy(tokens[i + 6])
-                )
-                i += 7
-            } else {
-                i++
-            }
-        }
-        return out.join(" ")
-    }
-
-    function cutoutsToSvgPath(cutouts, w, h, ox, oy) {
-        if (!cutouts || !cutouts.length || w <= 0 || h <= 0) return ""
-        let parts = []
-        for (let i = 0; i < cutouts.length; i++) {
-            const c = cutouts[i]
-            const rx = ox + c.x * w
-            const ry = oy + c.y * h
-            const rw = c.w * w
-            const rh = c.h * h
-            if (rw <= 0.5 || rh <= 0.5) continue
-            const topFlush = c.y <= 0.006
-            const r = topFlush ? Math.min(rw * 0.35, rh * 0.55) : Math.min(rw, rh) * 0.5
-            parts.push(roundedRectSvg(rx, ry, rw, rh, topFlush ? 0 : r, topFlush ? 0 : r, r, r))
-        }
-        return parts.join(" ")
-    }
-
     Flickable {
         id: homeScroll
         anchors.fill: parent
@@ -242,12 +148,12 @@ Item {
 
         Column {
             id: column
-            readonly property real maxContentWidth: 1280
+            readonly property real maxContentWidth: 1120
             width: Math.min(parent.width - Theme.contentPadding * 2, maxContentWidth)
             x: Math.round((parent.width - width) / 2)
             y: Theme.contentPadding
             // Generous group spacing keeps the live device and its actions first.
-            spacing: Theme.spacingXl
+            spacing: 16
 
             // Card shown when no phone is paired yet (for example after skipping first-run setup).
             Card {
@@ -572,9 +478,9 @@ Item {
         readonly property bool provenCable: home.displayPath === "usb" && home.usbMedium === "physical"
 
         readonly property int columns: width >= 760 ? 2 : 1
-        spacing: 20
+        spacing: 16
         readonly property real sideWidth: columns === 2
-            ? Math.round(Math.min(360, Math.max(296, home.width * 0.36))) : home.width
+            ? Math.round(Math.min(300, Math.max(272, home.width * 0.34))) : home.width
 
             // ---- Hero ----
             Rectangle {
@@ -615,11 +521,7 @@ Item {
                     return localMediaRow
                 }
                 readonly property bool hasGlanceSummary: activeMediaRow >= 0
-                height: !hasGlanceSummary
-                    ? Math.max(112, topHeroRow.height + 32)
-                    : (wide
-                       ? Math.max(112, Math.max(topHeroRow.height, summaryPanel.height) + 32)
-                       : topHeroRow.height + summaryPanel.height + 52)
+                height: Math.max(136, topHeroRow.height + 24)
                 Behavior on height {
                     enabled: home.canAnimateHero
                     NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
@@ -633,350 +535,24 @@ Item {
 
                 Item {
                     id: topHeroRow
-                    x: 18
-                    y: heroCard.wide || !heroCard.hasGlanceSummary ? Math.round((heroCard.height - height) / 2) : 16
-                    width: heroCard.wide && heroCard.hasGlanceSummary
-                        ? heroCard.width - 36 - summaryPanel.width - 28
-                        : heroCard.width - 36
+                    x: 20
+                    y: Math.round((heroCard.height - height) / 2)
+                    width: heroCard.width - 40
                     height: Math.max(phoneArt.height, identityCol.height)
 
-                    // Vector front-only phone preview measured on the phone, with live status bar & circular battery arc inside.
-                    Item {
+                    // Exact reported-model artwork, with a measured neutral fallback and live status.
+                    PhoneModelPortrait {
                         id: phoneArt
                         anchors.verticalCenter: parent.verticalCenter
-                        readonly property real aspect: {
-                            const s = home.screenData
-                            if (s && s.aspect >= 0.25 && s.aspect <= 2.5)
-                                return s.aspect
-                            return home.kind === "tablet" ? 0.70 : 0.47
-                        }
-                        height: Math.min(80, 84 / aspect)
-                        width: Math.round(height * aspect)
-                        readonly property real bezel: 3.5
-                        readonly property real innerW: Math.max(10, width - bezel * 2)
-                        readonly property real innerH: Math.max(20, height - bezel * 2)
-                        readonly property real defaultCorner: width * 0.14
-                        readonly property real rTl: home.screenData && home.screenData.corners
-                            ? Math.max(3, home.screenData.corners.tl * width) : defaultCorner
-                        readonly property real rTr: home.screenData && home.screenData.corners
-                            ? Math.max(3, home.screenData.corners.tr * width) : defaultCorner
-                        readonly property real rBr: home.screenData && home.screenData.corners
-                            ? Math.max(3, home.screenData.corners.br * width) : defaultCorner
-                        readonly property real rBl: home.screenData && home.screenData.corners
-                            ? Math.max(3, home.screenData.corners.bl * width) : defaultCorner
-                        readonly property var phonePalette: Theme.phonePalette(home.deviceId)
-                        readonly property color seedColor: Theme.primary
-                        readonly property color frameFill: Theme.panelColor
-                        readonly property color frameStroke: Theme.outline
-                        readonly property color screenTop: Theme.primaryContainer
-                        readonly property color screenBottom: Theme.heroWashEnd
-                        readonly property color screenInk: Theme.primaryContainerContent
-                        readonly property string cutoutSvg: {
-                            const s = home.screenData
-                            if (!s) return ""
-                            if (s.cutout_path && s.cutout_path.length > 0)
-                                return page.scaleSvgPath(s.cutout_path, innerW, innerH, bezel, bezel)
-                            if (s.cutouts && s.cutouts.length > 0)
-                                return page.cutoutsToSvgPath(s.cutouts, innerW, innerH, bezel, bezel)
-                            return ""
-                        }
-
-                        opacity: home.online ? 1.0 : 0.56
-                        Behavior on opacity {
-                            enabled: home.canAnimateHero
-                            NumberAnimation { duration: Theme.fadeNormal; easing.type: Easing.OutCubic }
-                        }
-
-                        // Soft accent glow behind the phone front while connected.
-                        Rectangle {
-                            anchors.centerIn: parent
-                            width: parent.width + 18
-                            height: parent.height + 18
-                            radius: Math.max(phoneArt.rTl, phoneArt.rTr) + 9
-                            color: Theme.graphite ? Theme.primary : phoneArt.seedColor
-                            opacity: home.online ? (Theme.dark ? 0.24 : 0.18) : 0.0
-                            visible: opacity > 0
-                            Behavior on opacity {
-                                enabled: home.canAnimateHero
-                                NumberAnimation { duration: Theme.fadeNormal; easing.type: Easing.OutCubic }
-                            }
-                        }
-
-                        Shape {
-                            id: phoneShape
-                            anchors.fill: parent
-                            preferredRendererType: Shape.CurveRenderer
-
-                            // 1. Outer front chassis outline with measured per-corner radii.
-                            ShapePath {
-                                strokeWidth: 1.5
-                                strokeColor: phoneArt.frameStroke
-                                fillColor: phoneArt.frameFill
-                                PathSvg {
-                                    path: page.roundedRectSvg(
-                                        0.75, 0.75,
-                                        phoneArt.width - 1.5, phoneArt.height - 1.5,
-                                        phoneArt.rTl, phoneArt.rTr, phoneArt.rBr, phoneArt.rBl
-                                    )
-                                }
-                            }
-
-                            // 2. Active front display surface.
-                            ShapePath {
-                                strokeWidth: -1
-                                fillGradient: LinearGradient {
-                                    x1: phoneArt.bezel; y1: phoneArt.bezel
-                                    x2: phoneArt.width - phoneArt.bezel; y2: phoneArt.height - phoneArt.bezel
-                                    GradientStop { position: 0.0; color: phoneArt.screenTop }
-                                    GradientStop { position: 1.0; color: phoneArt.screenBottom }
-                                }
-                                PathSvg {
-                                    path: page.roundedRectSvg(
-                                        phoneArt.bezel, phoneArt.bezel,
-                                        phoneArt.innerW, phoneArt.innerH,
-                                        Math.max(2, phoneArt.rTl - phoneArt.bezel),
-                                        Math.max(2, phoneArt.rTr - phoneArt.bezel),
-                                        Math.max(2, phoneArt.rBr - phoneArt.bezel),
-                                        Math.max(2, phoneArt.rBl - phoneArt.bezel)
-                                    )
-                                }
-                            }
-
-                        }
-
-                        // Hive: the comb on the phone's screen, in step with the app's.
-                        HiveBackdrop {
-                            visible: Theme.hive
-                            x: phoneArt.bezel
-                            y: phoneArt.bezel
-                            width: phoneArt.innerW
-                            height: phoneArt.innerH
-                            corner: Math.max(2, Math.min(phoneArt.rTl, phoneArt.rTr) - phoneArt.bezel)
-                            ownClock: false
-                            growIn: false
-                            time: Theme.combTime
-                            animate: Theme.combMotion
-                            cell: 7
-                            strength: home.online ? 1 : 0.6
-                            frameMs: Theme.comb.frameMs
-                            breathSeconds: Theme.comb.breathSeconds
-                            pulseSeconds: Theme.comb.pulseSeconds
-                            lineColor: Theme.dark ? Qt.rgba(1.0, 0.73, 0.37, 0.26) : Qt.rgba(0.54, 0.32, 0.0, 0.16)
-                            glowColor: Theme.combGlow
-                            origin: Qt.point(width / 2, height * 0.42)
-                        }
-
-                        // 3. Measured front camera cutout (SVG path or bounding rects; empty when plain/unknown).
-                        Shape {
-                            anchors.fill: parent
-                            visible: phoneArt.cutoutSvg.length > 0
-                            preferredRendererType: Shape.CurveRenderer
-                            ShapePath {
-                                strokeWidth: 0.8
-                                strokeColor: Qt.rgba(1, 1, 1, Theme.dark ? 0.16 : 0.22)
-                                fillColor: phoneArt.frameFill
-                                PathSvg { path: phoneArt.cutoutSvg }
-                            }
-                        }
-
-                        // Fallback punch-hole camera dot when no measured cutout path is reported
-                        Rectangle {
-                            visible: phoneArt.cutoutSvg.length === 0
-                            width: 5
-                            height: 5
-                            radius: 2.5
-                            anchors.horizontalCenter: parent.horizontalCenter
-                            y: phoneArt.bezel + 4
-                            color: Qt.rgba(0, 0, 0, 0.72)
-                            border.width: 0.5
-                            border.color: Qt.rgba(1, 1, 1, 0.16)
-                        }
-
-                        // ---- Refined miniature status bar inside the phone screen ----
-                        Item {
-                            id: miniStatusBar
-                            x: phoneArt.bezel + 5
-                            y: phoneArt.bezel + 3.5
-                            width: phoneArt.innerW - 10
-                            height: 9
-                            visible: home.online
-
-                            // Left of punch-hole: 4 crisp cellular signal bars + compact 5G/LTE tag
-                            Row {
-                                anchors.left: parent.left
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: 1.5
-                                visible: home.cellBars >= 0
-
-                                Row {
-                                    height: 6.5
-                                    spacing: 1.1
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    Repeater {
-                                        model: 4
-                                        Rectangle {
-                                            required property int index
-                                            width: 1.5
-                                            height: 2.3 + index * 1.4
-                                            anchors.bottom: parent.bottom
-                                            radius: 0.75
-                                            color: index < Math.min(4, Math.max(0, home.cellBars))
-                                                ? phoneArt.screenInk
-                                                : Qt.rgba(phoneArt.screenInk.r, phoneArt.screenInk.g, phoneArt.screenInk.b, 0.28)
-                                        }
-                                    }
-                                }
-                                Txt {
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    size: 6
-                                    weight: Font.Bold
-                                    color: phoneArt.screenInk
-                                    opacity: 0.90
-                                    text: home.cellType.length > 0 && home.cellType.length <= 3 ? home.cellType : ""
-                                    visible: text.length > 0
-                                }
-                            }
-
-                            // Right of punch-hole: crisp Wi-Fi icon
-                            Icon {
-                                anchors.right: parent.right
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: 8.5; height: 8.5
-                                stroke: 1.45
-                                visible: home.wifiBars >= 0
-                                path: Icons.wifi
-                                color: phoneArt.screenInk
-                                opacity: 0.92
-                            }
-                        }
-
-                        // ---- Center of phone screen: Sleek Lockscreen Circular Battery Ring ----
-                        Column {
-                            id: inPhoneBatteryWidget
-                            anchors.centerIn: parent
-                            anchors.verticalCenterOffset: 2
-                            spacing: 4
-                            visible: home.battery >= 0
-
-                            readonly property color ringAccentColor: (home.battery <= 20 && !home.charging)
-                                ? Theme.error
-                                : (home.charging ? "#4ADE80" : phoneArt.screenInk)
-
-                            Item {
-                                width: 46
-                                height: 46
-                                anchors.horizontalCenter: parent.horizontalCenter
-
-                                // Frosted circular glass dial well
-                                Rectangle {
-                                    anchors.fill: parent
-                                    anchors.margins: 2
-                                    radius: width / 2
-                                    color: Qt.rgba(0, 0, 0, Theme.graphite && !Theme.dark ? 0.10 : 0.28)
-                                    border.width: 0.75
-                                    border.color: Qt.rgba(1, 1, 1, 0.16)
-                                }
-
-                                Shape {
-                                    anchors.fill: parent
-                                    preferredRendererType: Shape.CurveRenderer
-
-                                    // Background circular ring track
-                                    ShapePath {
-                                        strokeColor: Qt.rgba(phoneArt.screenInk.r, phoneArt.screenInk.g, phoneArt.screenInk.b, 0.20)
-                                        fillColor: "transparent"
-                                        strokeWidth: 3.2
-                                        capStyle: ShapePath.RoundCap
-                                        PathAngleArc {
-                                            centerX: 23; centerY: 23
-                                            radiusX: 19.5; radiusY: 19.5
-                                            startAngle: 0
-                                            sweepAngle: 360
-                                        }
-                                    }
-
-                                    // Active battery level arc
-                                    ShapePath {
-                                        strokeColor: inPhoneBatteryWidget.ringAccentColor
-                                        fillColor: "transparent"
-                                        strokeWidth: 3.2
-                                        capStyle: ShapePath.RoundCap
-                                        PathAngleArc {
-                                            centerX: 23; centerY: 23
-                                            radiusX: 19.5; radiusY: 19.5
-                                            startAngle: -90
-                                            sweepAngle: 360 * (Math.max(0, Math.min(100, home.battery)) / 100.0)
-                                        }
-                                    }
-                                }
-
-                                Column {
-                                    anchors.centerIn: parent
-                                    spacing: 0
-
-                                    Icon {
-                                        visible: home.charging
-                                        anchors.horizontalCenter: parent.horizontalCenter
-                                        width: 8.5; height: 8.5
-                                        stroke: 1.9
-                                        path: Icons.bolt
-                                        color: "#4ADE80"
-                                    }
-
-                                    Txt {
-                                        anchors.horizontalCenter: parent.horizontalCenter
-                                        size: 11
-                                        weight: Font.Bold
-                                        color: phoneArt.screenInk
-                                        text: home.battery + "%"
-                                    }
-                                }
-                            }
-
-                            // Only show a pill below the battery ring when actively charging or low battery (never redundant LTE/Battery text)
-                            Rectangle {
-                                visible: statusMiniLabel.text.length > 0
-                                anchors.horizontalCenter: parent.horizontalCenter
-                                height: 13
-                                width: Math.min(phoneArt.innerW - 6, Math.max(34, statusMiniLabel.implicitWidth + 10))
-                                radius: 6.5
-                                color: Qt.rgba(0, 0, 0, Theme.graphite && !Theme.dark ? 0.10 : 0.26)
-                                border.width: 0.6
-                                border.color: Qt.rgba(1, 1, 1, 0.14)
-
-                                Txt {
-                                    id: statusMiniLabel
-                                    anchors.centerIn: parent
-                                    width: parent.width - 6
-                                    horizontalAlignment: Text.AlignHCenter
-                                    elide: Text.ElideRight
-                                    size: 6.5
-                                    weight: Font.DemiBold
-                                    color: phoneArt.screenInk
-                                    opacity: 0.90
-                                    text: {
-                                        if (home.charging) {
-                                            const eta = page.formatChargeEta(home.batteryFullIn)
-                                            return eta.length > 0 ? eta : qsTr("Charging")
-                                        }
-                                        if (home.battery <= 20)
-                                            return qsTr("Low")
-                                        return ""
-                                    }
-                                }
-                            }
-                        }
-
-                        // Subtle gesture pill at the bottom of the screen.
-                        Rectangle {
-                            anchors.horizontalCenter: parent.horizontalCenter
-                            anchors.bottom: parent.bottom
-                            anchors.bottomMargin: phoneArt.bezel + 4
-                            width: Math.round(phoneArt.innerW * 0.36)
-                            height: 2.5
-                            radius: 1.25
-                            color: Qt.rgba(phoneArt.screenInk.r, phoneArt.screenInk.g, phoneArt.screenInk.b, 0.38)
-                        }
+                        model: home.model
+                        battery: home.battery
+                        charging: home.charging
+                        batteryFullIn: home.batteryFullIn
+                        online: home.online
+                        cellBars: home.cellBars
+                        cellType: home.cellType
+                        wifiBars: home.wifiBars
+                        screenData: home.screenData
                     }
 
                     Column {
@@ -990,7 +566,7 @@ Item {
                             width: parent.width
                             text: home.name
                             role: "displaySmall"
-                            size: home.name.length > 20 ? 20 : 24
+                            size: home.name.length > 28 ? 17 : 19
                             fontSizeMode: Text.HorizontalFit
                             minimumPixelSize: 16
                             color: Theme.heroContent
@@ -998,7 +574,7 @@ Item {
                         }
                         Txt {
                             width: parent.width
-                            role: "body"
+                            role: "bodySmall"
                             color: Theme.heroContent
                             opacity: 0.78
                             elide: Text.ElideRight
@@ -1039,6 +615,13 @@ Item {
                                                            : qsTr("Offline"))
                             }
                             Chip {
+                                visible: home.online
+                                iconPath: Icons.battery
+                                text: home.battery >= 0 && home.battery <= 100
+                                      ? qsTr("%1% battery").arg(home.battery)
+                                      : qsTr("Battery unavailable")
+                            }
+                            Chip {
                                 visible: home.online && home.charging
                                 iconPath: Icons.bolt
                                 text: {
@@ -1057,705 +640,17 @@ Item {
                     }
                 }
 
-                // Vertical or horizontal divider between phone identity and media player.
-                Rectangle {
-                    id: summaryDivider
-                    visible: heroCard.hasGlanceSummary
-                    x: heroCard.wide ? heroCard.width - summaryPanel.width - 26 : 18
-                    y: heroCard.wide ? 22 : topHeroRow.y + topHeroRow.height + 12
-                    width: heroCard.wide ? 1 : heroCard.width - 36
-                    height: heroCard.wide ? heroCard.height - 44 : 1
-                    color: Qt.rgba(Theme.heroContent.r, Theme.heroContent.g, Theme.heroContent.b, 0.14)
-                }
-
-                // Media Player (Phone + This PC) embedded in the Hero card's right half, scaling dynamically in wide/fullscreen.
-                Column {
-                    id: summaryPanel
-                    visible: heroCard.hasGlanceSummary
-                    width: heroCard.wide
-                        ? Math.min(480, Math.max(256, Math.round(heroCard.width * 0.46)))
-                        : heroCard.width - 36
-                    x: heroCard.wide ? heroCard.width - width - 16 : 18
-                    y: heroCard.wide
-                        ? Math.round((heroCard.height - height) / 2)
-                        : summaryDivider.y + summaryDivider.height + 12
-                    spacing: 8
-
-                    Repeater {
-                        model: MediaList
-                        delegate: NowPlaying {
-                            required property int index
-                            visible: MediaList.revision >= 0 && index === heroCard.activeMediaRow
-                            width: visible ? summaryPanel.width : 0
-                            embeddedInHero: true
-                            hasMultipleSources: heroCard.hasBothMedia
-                            phoneVolume: phoneControls.state ? phoneControls.state.volume : 65
-                            onSourceSelected: (src) => heroCard.preferredMediaSource = src
-                        }
-                    }
-
-                    // Calm glass standby media card when neither Phone nor PC has an active media session
-                    Rectangle {
-                        width: parent.width
-                        height: idleMediaCol.implicitHeight + 24
-                        visible: heroCard.activeMediaRow < 0
-                        radius: Theme.radiusLg
-                        color: Qt.rgba(Theme.panelColor.r, Theme.panelColor.g, Theme.panelColor.b, Theme.dark ? 0.58 : 0.80)
-                        border.width: 0
-
-                        Column {
-                            id: idleMediaCol
-                            x: 14
-                            y: 12
-                            width: parent.width - 28
-                            spacing: 8
-
-                            Row {
-                                width: parent.width
-                                spacing: 10
-                                Rectangle {
-                                    width: 40; height: 40
-                                    radius: Theme.radiusMd
-                                    color: Theme.secondaryContainer
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    Icon {
-                                        anchors.centerIn: parent
-                                        width: 18; height: 18
-                                        path: Icons.music
-                                        color: Theme.secondaryContainerContent
-                                    }
-                                }
-                                Column {
-                                    width: parent.width - 50
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    spacing: 1
-                                    Txt {
-                                        width: parent.width
-                                        role: "title"
-                                        size: 13
-                                        text: qsTr("Media player")
-                                        elide: Text.ElideRight
-                                    }
-                                    Txt {
-                                        width: parent.width
-                                        role: "caption"
-                                        muted: true
-                                        text: qsTr("Nothing playing")
-                                        elide: Text.ElideRight
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
             }
 
             // ---- Quick actions ----
             // Primary phone actions keep their order and capability explanations.
             // Two columns retain readable labels beside the details column.
-            Grid {
-                id: actions
-                width: parent.width
-                columns: width >= 820 ? 4 : 2
-                spacing: Theme.spacingMd
-                readonly property real tileWidth: (width - spacing * (columns - 1)) / columns
-                // Polished reflow: tiles ease when the grid reflows outside
-                // resize/reduceMotion (existing gates plus the Mac gate). No
-                // motion during window resize; no idle animation.
-                move: Transition {
-                    enabled: page.macTidy && !Theme.reduceMotion && !page.resizing
-                    NumberAnimation { properties: "x,y"; duration: 180; easing.type: Easing.OutCubic }
-                }
-
-                ActionTile {
-                    width: actions.tileWidth
-                    deviceOnline: home.online
-                    title: qsTr("Mirror screen")
-                    accented: true
-                    subtitle: ""
-                    iconPath: Icons.mirror
-                    // The Mac receives the phone's screen; it does not inject input.
-                    feature: home.feature("mirroring.view")
-                    // The phone's screen is showing (its session is 0).
-                    active: {
-                        try {
-                            return JSON.parse(Mirror.windows).some(w => w.device === home.deviceId && w.session === 0
-                                                                       && w.phase !== "ended")
-                        } catch (e) {
-                            return false
-                        }
-                    }
-                    onClicked: Mirror.start(home.deviceId)
-                    sideIcon: Mirror.appWindowsSupported && home.feature("mirroring.app_windows").state === "available" ? Icons.apps : ""
-                    sideLabel: qsTr("Open an app")
-                    onSideClicked: appsSheet.openFor(home.deviceId, home.name)
-                }
-                ActionTile {
-                    width: actions.tileWidth
-                    deviceOnline: home.online
-                    queueableWhenOffline: true
-                    title: qsTr("Send files")
-                    subtitle: ""
-                    iconPath: Icons.send
-                    feature: home.feature("files.send")
-                    onClicked: filePicker.open()
-                    sideIcon: Icons.folder
-                    sideLabel: qsTr("Send a folder")
-                    onSideClicked: folderPicker.open()
-                }
-                ActionTile {
-                    width: actions.tileWidth
-                    deviceOnline: home.online
-                    queueableWhenOffline: true
-                    title: qsTr("Send clipboard")
-                    subtitle: ""
-                    iconPath: Icons.clipboard
-                    feature: home.feature("clipboard.pc_to_phone")
-                    onClicked: AppController.sendClipboard(home.deviceId)
-                    sideIcon: Preferences.clipboardHistory ? Icons.clipboardList : ""
-                    sideLabel: qsTr("Clipboard history")
-                    sideAlwaysAvailable: true
-                    onSideClicked: {
-                        clipboardSearch.text = ""
-                        clipboardSheet.open()
-                    }
-                }
-                ActionTile {
-                    width: actions.tileWidth
-                    deviceOnline: home.online
-                    title: home.ringing ? qsTr("Stop ringing") : qsTr("Find phone")
-                    subtitle: ""
-                    iconPath: Icons.ring
-                    feature: home.feature("device.find_phone")
-                    active: home.ringing
-                    onClicked: {
-                        home.ringing = !home.ringing
-                        if (home.ringing) ringTimeout.restart()
-                        AppController.ring(home.deviceId, home.ringing)
-                    }
-                }
-            }
-            FileDialog {
-                id: filePicker
-                title: qsTr("Send to %1").arg(home.name)
-                fileMode: FileDialog.OpenFiles
-                onAccepted: TransferList.send(home.deviceId, selectedFiles.map(url => url.toString()))
-            }
-            FileDialog {
-                id: handoffFilePicker
-                title: qsTr("Hand off & open on %1").arg(home.name)
-                fileMode: FileDialog.OpenFile
-                onAccepted: TransferList.sendHandoff(home.deviceId, [selectedFile.toString()])
-            }
-            Connections {
-                target: AppController
-                enabled: home.visible
-                function onFilePickerRequested() {
-                    filePicker.open()
-                }
-                function onHandoffFilePickerRequested() {
-                    handoffFilePicker.open()
-                }
-            }
-            FolderDialog {
-                id: folderPicker
-                title: qsTr("Send a folder to %1").arg(home.name)
-                onAccepted: TransferList.send(home.deviceId, [selectedFolder.toString()])
-            }
-
-        Grid {
-            width: home.width
-            columns: home.columns
-            spacing: home.spacing
-
-        Column {
-            width: home.columns === 2 ? home.width - home.sideWidth - home.spacing : home.width
-            spacing: Theme.spacingXl
-
-            // ---- Waiting to send ----
-            Card {
-                id: sendQueueCard
-                width: parent.width
-                visible: page.selectedQueueItems.length > 0
-                opacity: visible ? 1 : 0
-                Behavior on opacity {
-                    enabled: !Theme.reduceMotion && !page.resizing
-                    NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
-                }
-                Behavior on implicitHeight {
-                    enabled: !Theme.reduceMotion && !page.resizing
-                    NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
-                }
-                Column {
-                    width: parent.width
-                    spacing: 4
-                    Item {
-                        width: parent.width
-                        height: queueHeader.height + queueHeaderActions.height + 4
-                        Txt {
-                            id: queueHeader
-                            anchors.top: parent.top
-                            role: "label"
-                            muted: true
-                            text: page.selectedQueueActive > 0
-                                  ? qsTr("Waiting to send · %1").arg(page.selectedQueueActive)
-                                  : qsTr("Waiting to send")
-                        }
-                        Row {
-                            id: queueHeaderActions
-                            anchors.right: parent.right
-                            anchors.bottom: parent.bottom
-                            spacing: 6
-                            Button {
-                                visible: page.selectedQueueFailures > 0
-                                variant: "text"
-                                size: "sm"
-                                text: qsTr("Retry failed")
-                                onClicked: TransferList.retryFailedQueue(page.currentDeviceId)
-                            }
-                            Button {
-                                visible: page.selectedQueueFailures > 0
-                                variant: "text"
-                                size: "sm"
-                                text: qsTr("Clear")
-                                onClicked: TransferList.clearFinishedQueue(page.currentDeviceId)
-                            }
-                            Button {
-                                visible: page.selectedQueueActive > 0
-                                variant: "text"
-                                size: "sm"
-                                text: qsTr("Cancel all")
-                                onClicked: TransferList.cancelAllQueued(page.currentDeviceId)
-                            }
-                        }
-                    }
-                    Row {
-                        width: parent.width
-                        spacing: 8
-                        Controls.TextField {
-                            id: queueSearch
-                            width: Math.max(80, parent.width - queueKind.width - parent.spacing)
-                            placeholderText: qsTr("Find queued item by name")
-                            Accessible.name: qsTr("Find queued item by name")
-                            selectByMouse: true
-                        }
-                        Controls.ComboBox {
-                            id: queueKind
-                            width: 140
-                            model: [qsTr("All types"), qsTr("Files"), qsTr("Other items")]
-                            Accessible.name: qsTr("Queued item type")
-                        }
-                    }
-                    Txt {
-                        width: parent.width
-                        visible: page.filteredQueueItems.length === 0
-                        text: qsTr("No queued items match your filters.")
-                        wrapMode: Text.WordWrap
-                        muted: true
-                    }
-                    Column {
-                        id: sendQueueList
-                        width: parent.width
-                        move: Transition {
-                            enabled: !Theme.reduceMotion && !page.resizing
-                            NumberAnimation { properties: "y"; duration: 180; easing.type: Easing.OutCubic }
-                        }
-                        add: Transition {
-                            enabled: !Theme.reduceMotion && !page.resizing
-                            NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 180; easing.type: Easing.OutCubic }
-                        }
-                        Repeater {
-                            model: page.filteredQueueItems
-                            delegate: Item {
-                                id: queueRow
-                                required property var modelData
-                                width: sendQueueList.width
-                                implicitHeight: queueItemCol.height + 18
-
-                                readonly property string itemStatus: queueRow.modelData.status || "waiting"
-                                readonly property bool isFailedOrExpired: itemStatus === "failed" || itemStatus === "expired"
-                                readonly property real totalBytes: Number(queueRow.modelData.totalBytes || 0)
-                                readonly property real progress: Number(queueRow.modelData.progress || 0)
-
-                                Row {
-                                    id: queueRowInner
-                                    x: 4; y: 9
-                                    width: parent.width - 8
-                                    spacing: 12
-
-                                    Rectangle {
-                                        width: 32; height: 32
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        radius: Theme.graphite ? Theme.radiusSm : 16
-                                        color: Theme.graphite ? "transparent" : Theme.secondaryContainer
-                                        border.width: Theme.graphite ? 1 : 0
-                                        border.color: Theme.outlineVariant
-                                        Icon {
-                                            anchors.centerIn: parent
-                                            width: 18; height: 18
-                                            path: queueRow.modelData.icon === "folder" ? Icons.folder
-                                                : queueRow.modelData.icon === "clipboard" ? Icons.clipboard
-                                                : queueRow.modelData.icon === "link" ? Icons.globe
-                                                : queueRow.modelData.icon === "task" ? Icons.bolt
-                                                : queueRow.modelData.icon === "camera" ? Icons.camera
-                                                : Icons.send
-                                            color: Theme.graphite ? Theme.surfaceContent : Theme.secondaryContainerContent
-                                        }
-                                    }
-
-                                    Column {
-                                        id: queueItemCol
-                                        width: Math.max(80, queueRowInner.width - 32 - queueItemActions.width - queueRowInner.spacing * 2)
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        spacing: 4
-                                        Txt {
-                                            width: parent.width
-                                            role: "title"
-                                            size: 14
-                                            elide: (queueRow.modelData.kind === "link"
-                                                    || queueRow.modelData.icon === "link"
-                                                    || (queueRow.modelData.title || "").startsWith("http://")
-                                                    || (queueRow.modelData.title || "").startsWith("https://"))
-                                                ? Text.ElideMiddle
-                                                : Text.ElideRight
-                                            text: queueRow.modelData.title || ""
-                                        }
-                                        Rectangle {
-                                            width: parent.width
-                                            height: 4
-                                            radius: 2
-                                            visible: queueRow.itemStatus === "sending" && queueRow.totalBytes > 0
-                                            color: Theme.surfaceContainerHighest
-                                            Rectangle {
-                                                height: parent.height
-                                                radius: parent.radius
-                                                width: parent.width * Math.max(0, Math.min(1, queueRow.progress))
-                                                color: Theme.primary
-                                                Behavior on width {
-                                                    enabled: !Theme.reduceMotion
-                                                    NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
-                                                }
-                                            }
-                                        }
-                                        Txt {
-                                            width: parent.width
-                                            role: "bodySmall"
-                                            muted: !queueRow.isFailedOrExpired
-                                            color: queueRow.isFailedOrExpired ? Theme.error : Theme.surfaceContentVariant
-                                            elide: Text.ElideRight
-                                            text: {
-                                                const devName = (queueRow.modelData.deviceName && queueRow.modelData.deviceName.length > 0)
-                                                    ? queueRow.modelData.deviceName : home.name
-                                                const sz = page.formatQueueSize(queueRow.totalBytes)
-                                                if (queueRow.itemStatus === "sending") {
-                                                    if (queueRow.totalBytes > 0) {
-                                                        const pct = Math.round(Math.max(0, Math.min(1, queueRow.progress)) * 100)
-                                                        return qsTr("Sending to %1 · %2%").arg(devName).arg(pct)
-                                                    }
-                                                    return qsTr("Sending to %1…").arg(devName)
-                                                }
-                                                if (queueRow.itemStatus === "failed") {
-                                                    const reason = queueRow.modelData.reason || ""
-                                                    return reason.length > 0
-                                                        ? qsTr("Failed · %1").arg(reason)
-                                                        : qsTr("Failed")
-                                                }
-                                                if (queueRow.itemStatus === "expired") {
-                                                    const reason = queueRow.modelData.reason || ""
-                                                    return reason.length > 0 ? reason : qsTr("Expired")
-                                                }
-                                                return sz.length > 0
-                                                    ? qsTr("Waiting for %1 · %2").arg(devName).arg(sz)
-                                                    : qsTr("Waiting for %1").arg(devName)
-                                            }
-                                        }
-                                    }
-
-                                    Row {
-                                        id: queueItemActions
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        spacing: 4
-                                        IconButton {
-                                            visible: queueRow.isFailedOrExpired
-                                            iconPath: Icons.refresh
-                                            label: qsTr("Retry")
-                                            onClicked: TransferList.retryQueueItem(queueRow.modelData.id)
-                                        }
-                                        IconButton {
-                                            iconPath: Icons.close
-                                            label: queueRow.isFailedOrExpired ? qsTr("Dismiss") : qsTr("Cancel")
-                                            onClicked: TransferList.cancelQueueItem(queueRow.modelData.id)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // ---- Transfers ----
-            Card {
-                width: parent.width
-                visible: TransferList.count > 0
-                Column {
-                    width: parent.width
-                    spacing: 4
-                    Item {
-                        width: parent.width
-                        height: Math.max(transfersHeader.height, clearTransfers.height)
-                        Txt {
-                            id: transfersHeader
-                            anchors.verticalCenter: parent.verticalCenter
-                            role: "label"
-                            muted: true
-                            text: qsTr("Transfers")
-                        }
-                        Row {
-                            anchors.right: parent.right
-                            anchors.verticalCenter: parent.verticalCenter
-                            spacing: 6
-                            Button {
-                                variant: "text"
-                                size: "sm"
-                                text: qsTr("Timeline")
-                                onClicked: AppController.currentPage = "timeline"
-                            }
-                            Button {
-                                id: clearTransfers
-                                visible: TransferList.count > TransferList.active
-                                variant: "text"
-                                size: "sm"
-                                text: qsTr("Clear finished")
-                                onClicked: TransferList.clearFinished()
-                            }
-                        }
-                    }
-                    Column {
-                        id: transferList
-                        width: parent.width
-                        move: Transition {
-                            enabled: !Theme.reduceMotion && !page.resizing
-                            NumberAnimation { properties: "y"; duration: 220; easing.type: Easing.OutCubic }
-                        }
-                        add: Transition {
-                            enabled: !Theme.reduceMotion && !page.resizing
-                            NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 200 }
-                        }
-                        Repeater {
-                            model: TransferList
-                            delegate: TransferItem { width: transferList.width }
-                        }
-                    }
-                }
-            }
-
-            // ---- LocalSend nearby ----
-            LocalSendCard {
-                width: parent.width
-                visible: AppController.localsendEnabled && page.localsendPeers.length > 0
-            }
-
-            // ---- Notifications ----
-            Card {
-                id: feed
-                width: parent.width
-                readonly property var state: home.feature("notifications.mirror")
-                readonly property int count: NotificationList.count >= 0 ? NotificationList.countFor(home.deviceId) : 0
-
-                Column {
-                    width: parent.width
-                    spacing: 8
-                    Item {
-                        width: parent.width
-                        height: Math.max(header.height, clearAll.height)
-                        Txt {
-                            id: header
-                            anchors.verticalCenter: parent.verticalCenter
-                            role: "title"
-                            size: 18
-                            text: feed.count > 0 ? qsTr("Notifications · %1").arg(feed.count) : qsTr("Notifications")
-                        }
-                        IconButton {
-                            anchors.right: clearAll.visible ? clearAll.left : parent.right
-                            anchors.rightMargin: clearAll.visible ? 8 : 0
-                            anchors.verticalCenter: parent.verticalCenter
-                            visible: NotificationList.historyEnabled && page.currentDeviceId.length > 0
-                            iconPath: Icons.history
-                            text: qsTr("History")
-                            label: qsTr("Notification history (last 24 hours)")
-                            onClicked: {
-                                historySearch.text = ""
-                                historySheet.open()
-                            }
-                        }
-                        Button {
-                            id: clearAll
-                            anchors.right: parent.right
-                            visible: feed.count > 0
-                            variant: "tonal"
-                            size: "sm"
-                            iconPath: Icons.close
-                            text: qsTr("Clear all")
-                            onClicked: NotificationList.dismissAll(home.deviceId)
-                        }
-                    }
-                    // Calm inline Undo bar after dismissing a notification or app group.
-                    Rectangle {
-                        id: undoBanner
-                        width: parent.width
-                        height: undoRow.height + 16
-                        visible: NotificationList.undoLabel.length > 0
-                        radius: Theme.radiusMd
-                        color: Theme.graphite ? "transparent" : Theme.surfaceContainerHigh
-                        border.width: Theme.graphite ? 1 : 0
-                        border.color: Theme.outlineVariant
-
-                        Timer {
-                            id: undoTimer
-                            interval: 6000
-                            running: NotificationList.undoLabel.length > 0
-                            onTriggered: NotificationList.clearUndo()
-                        }
-                        Connections {
-                            target: NotificationList
-                            function onUndoLabelChanged() {
-                                if (NotificationList.undoLabel.length > 0)
-                                    undoTimer.restart()
-                            }
-                        }
-                        Row {
-                            id: undoRow
-                            x: 12
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: parent.width - 24
-                            spacing: 8
-                            Txt {
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: Math.max(60, parent.width - undoBtn.width - closeUndoBtn.width - 16)
-                                role: "bodySmall"
-                                elide: Text.ElideRight
-                                text: NotificationList.undoLabel
-                            }
-                            Button {
-                                id: undoBtn
-                                anchors.verticalCenter: parent.verticalCenter
-                                variant: "tonal"
-                                size: "sm"
-                                text: qsTr("Undo")
-                                onClicked: NotificationList.undoDismiss()
-                            }
-                            IconButton {
-                                id: closeUndoBtn
-                                anchors.verticalCenter: parent.verticalCenter
-                                iconPath: Icons.close
-                                label: qsTr("Dismiss")
-                                onClicked: NotificationList.clearUndo()
-                            }
-                        }
-                    }
-                    // Ticks every minute so "5 min" ages without new events.
-                    Timer {
-                        id: feedClock
-                        property int minutes: 0
-                        interval: 60000
-                        repeat: true
-                        running: feed.count > 0
-                        onTriggered: minutes++
-                    }
-                    // The page scrolls; this Column lays out every notification cleanly so
-                    // images, replies, and group expansions always size the Card accurately.
-                    Column {
-                        id: list
-                        width: parent.width
-                        spacing: 4
-                        move: Transition {
-                            enabled: !Theme.reduceMotion && !page.resizing
-                            NumberAnimation { properties: "y"; duration: 220; easing.type: Easing.OutCubic }
-                        }
-                        add: Transition {
-                            enabled: !Theme.reduceMotion && !page.resizing
-                            NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 200; easing.type: Easing.OutCubic }
-                        }
-                        Repeater {
-                            model: NotificationList
-                            delegate: NotificationItem {
-                                width: list.width
-                                clock: feedClock.minutes
-                                visible: deviceId === home.deviceId
-                                height: visible ? implicitHeight : 0
-                                canOpenApp: Mirror.appWindowsSupported && home.feature("mirroring.app_windows").state === "available" && app.length > 0
-                                onOpenAppRequested: Mirror.startApp(deviceId, app, appName.length > 0 ? appName : app)
-                                onOptionsRequested: appSheet.openFor(app, appName)
-                                onImageClicked: (url) => imagePreviewSheet.openFor(url, title.length > 0 ? title : appName)
-                            }
-                        }
-                    }
-                    // Empty: say why, and what turns it on.
-                    Txt {
-                        width: parent.width
-                        visible: feed.count === 0 && !lockedHint.visible
-                        role: "bodySmall"
-                        muted: true
-                        wrapMode: Text.WordWrap
-                        text: feed.state.state === "available"
-                              ? qsTr("No notifications")
-                              : home.lastSeen > 0 || home.online
-                                ? qsTr("Notifications unavailable")
-                                : qsTr("Connect %1 to view notifications").arg(home.name)
-                    }
-                    LockChip { id: lockedHint; visible: feed.count === 0 && label.length > 0; feature: feed.state }
-                    // Windows hides every app's notifications when they're
-                    // turned off in Settings; say so instead of staying quiet.
-                    Rectangle {
-                        width: parent.width
-                        height: toastsOff.height + 20
-                        visible: !AppController.toastsEnabled && feed.state.state === "available"
-                        radius: Theme.radiusMd
-                        color: Theme.graphite ? "transparent" : Theme.surfaceContainerHigh
-                        border.width: Theme.graphite ? 1 : 0
-                        border.color: Theme.outlineVariant
-                        Row {
-                            id: toastsOff
-                            x: 12
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: parent.width - 24
-                            spacing: 12
-                            Icon { anchors.verticalCenter: parent.verticalCenter; path: Icons.bell; color: Theme.surfaceContentVariant }
-                            Txt {
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: parent.width - 32 - turnOn.width - 24
-                                role: "bodySmall"
-                                wrapMode: Text.WordWrap
-                                text: qsTr("Windows notifications are off.")
-                            }
-                            Button {
-                                id: turnOn
-                                anchors.verticalCenter: parent.verticalCenter
-                                variant: "tonal"
-                                size: "sm"
-                                text: qsTr("Turn on")
-                                onClicked: Qt.openUrlExternally("ms-settings:notifications")
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // ---- Details ----
-        Column {
-            width: home.sideWidth
-            spacing: Theme.spacingXl
-
             // The call in progress on the phone.
             Binding { target: PhoneCall; property: "device"; value: home.deviceId; when: home.visible; restoreMode: Binding.RestoreNone }
             CallCard {
-                width: home.sideWidth
+                width: parent.width
                 visible: PhoneCall.active && PhoneCall.device === home.deviceId
             }
-
-            // Active webcam session on this phone.
             Card {
                 id: webcamHomeCard
                 width: parent.width
@@ -1865,7 +760,454 @@ Item {
                 }
             }
 
-            // Quick settings on the phone (toggles, plus expandable ringer/volume/brightness).
+            Column {
+                width: parent.width
+                spacing: 4
+                Txt { text: qsTr("Home"); role: "headline"; size: 26; weight: 650 }
+                Txt {
+                    width: parent.width
+                    text: qsTr("Continue with %1").arg(home.name)
+                    role: "bodySmall"
+                    muted: true
+                    elide: Text.ElideRight
+                }
+            }
+
+            Grid {
+                id: actions
+                width: parent.width
+                columns: 2
+                spacing: 12
+                readonly property real tileWidth: (width - spacing) / 2
+                ActionTile {
+                    width: actions.tileWidth
+                    deviceOnline: home.online
+                    title: qsTr("Mirror phone")
+                    accented: true
+                    subtitle: qsTr("View your phone screen")
+                    iconPath: Icons.mirror
+                    iconSource: Icons.colorSource("mirror")
+                    // The Mac receives the phone's screen; it does not inject input.
+                    feature: home.feature("mirroring.view")
+                    // The phone's screen is showing (its session is 0).
+                    active: {
+                        try {
+                            return JSON.parse(Mirror.windows).some(w => w.device === home.deviceId && w.session === 0
+                                                                       && w.phase !== "ended")
+                        } catch (e) {
+                            return false
+                        }
+                    }
+                    onClicked: Mirror.start(home.deviceId)
+                    sideIcon: Mirror.appWindowsSupported && home.feature("mirroring.app_windows").state === "available" ? Icons.apps : ""
+                    sideLabel: qsTr("Open an app")
+                    onSideClicked: appsSheet.openFor(home.deviceId, home.name)
+                }
+                ActionTile {
+                    width: actions.tileWidth
+                    deviceOnline: home.online
+                    queueableWhenOffline: true
+                    title: qsTr("Files & folders")
+                    subtitle: qsTr("Send files to your phone")
+                    iconPath: Icons.send
+                    iconSource: Icons.colorSource("send")
+                    feature: home.feature("files.send")
+                    onClicked: filePicker.open()
+                    sideIcon: Icons.folder
+                    sideLabel: qsTr("Send a folder")
+                    onSideClicked: folderPicker.open()
+                }
+            }
+
+            Grid {
+                width: parent.width
+                columns: 3
+                spacing: 12
+                readonly property real tileWidth: (width - spacing * 2) / 3
+                HomeDestination {
+                    width: parent.tileWidth
+                    title: qsTr("Messages")
+                    description: qsTr("Conversations from your phone")
+                    iconPath: Icons.messages
+                    iconSource: Icons.colorSource("message")
+                    onClicked: AppController.currentPage = "messages"
+                }
+                HomeDestination {
+                    width: parent.tileWidth
+                    title: qsTr("Photos")
+                    description: qsTr("Recent photos and screenshots")
+                    iconPath: Icons.photo
+                    iconSource: Icons.colorSource("photos")
+                    onClicked: AppController.currentPage = "photos"
+                }
+                HomeDestination {
+                    width: parent.tileWidth
+                    title: qsTr("Apps")
+                    description: qsTr("Phone apps in one place")
+                    iconPath: Icons.apps
+                    iconSource: Icons.colorSource("apps")
+                    onClicked: AppController.currentPage = "apps"
+                }
+            }
+
+            FileDialog {
+                id: filePicker
+                title: qsTr("Send to %1").arg(home.name)
+                fileMode: FileDialog.OpenFiles
+                onAccepted: TransferList.send(home.deviceId, selectedFiles.map(url => url.toString()))
+            }
+            FileDialog {
+                id: handoffFilePicker
+                title: qsTr("Hand off & open on %1").arg(home.name)
+                fileMode: FileDialog.OpenFile
+                onAccepted: TransferList.sendHandoff(home.deviceId, [selectedFile.toString()])
+            }
+            Connections {
+                target: AppController
+                enabled: home.visible
+                function onFilePickerRequested() {
+                    filePicker.open()
+                }
+                function onHandoffFilePickerRequested() {
+                    handoffFilePicker.open()
+                }
+            }
+            FolderDialog {
+                id: folderPicker
+                title: qsTr("Send a folder to %1").arg(home.name)
+                onAccepted: TransferList.send(home.deviceId, [selectedFolder.toString()])
+            }
+
+        Grid {
+            width: home.width
+            columns: home.columns
+            spacing: home.spacing
+
+        Column {
+            width: home.columns === 2 ? home.width - home.sideWidth - home.spacing : home.width
+            spacing: 14
+            Column {
+                width: parent.width
+                spacing: 10
+                Txt { text: qsTr("More from your phone"); role: "label"; weight: 600 }
+                Grid {
+                    id: toolsGrid
+                    width: parent.width
+                    columns: 2
+                    spacing: 10
+                    readonly property real tileWidth: (width - spacing) / 2
+                    ActionTile {
+                        width: toolsGrid.tileWidth
+                        deviceOnline: home.online
+                        queueableWhenOffline: true
+                        title: qsTr("Clipboard")
+                        subtitle: qsTr("Send copied text")
+                        iconPath: Icons.clipboard
+                        iconSource: Icons.colorSource("clipboard")
+                        feature: home.feature("clipboard.pc_to_phone")
+                        onClicked: AppController.sendClipboard(home.deviceId)
+                        sideIcon: Preferences.clipboardHistory ? Icons.clipboardList : ""
+                        sideLabel: qsTr("Clipboard history")
+                        sideAlwaysAvailable: true
+                        onSideClicked: {
+                            clipboardSearch.text = ""
+                            clipboardSheet.open()
+                        }
+                    }
+                    ActionTile {
+                        width: toolsGrid.tileWidth
+                        deviceOnline: home.online
+                        title: home.ringing ? qsTr("Stop ringing") : qsTr("Find phone")
+                        subtitle: qsTr("Play a sound on your phone")
+                        iconPath: Icons.ring
+                        iconSource: Icons.colorSource("find")
+                        feature: home.feature("device.find_phone")
+                        active: home.ringing
+                        onClicked: {
+                            home.ringing = !home.ringing
+                            if (home.ringing) ringTimeout.restart()
+                            AppController.ring(home.deviceId, home.ringing)
+                        }
+                    }
+                }
+            }
+            Row {
+                id: sideCameraGrid
+                width: parent.width
+                spacing: 10
+                readonly property real tileWidth: (width - spacing) / 2
+
+                ActionTile {
+                    width: sideCameraGrid.tileWidth
+                    deviceOnline: home.online
+                    queueableWhenOffline: true
+                    accented: false
+                    title: qsTr("Use camera")
+                    subtitle: AppController.continuityCameraBusy
+                              ? AppController.continuityCameraStatus
+                              : ""
+                    iconPath: Icons.camera
+                    iconSource: Icons.colorSource("camera")
+                    feature: home.feature("camera.continuity")
+                    active: AppController.continuityCameraBusy
+                    onClicked: AppController.startContinuityCamera("photo")
+                    sideIcon: AppController.continuityCameraBusy ? Icons.close : Icons.scan
+                    sideLabel: AppController.continuityCameraBusy
+                               ? qsTr("Cancel")
+                               : qsTr("Scan document")
+                    onSideClicked: {
+                        if (AppController.continuityCameraBusy)
+                            AppController.cancelContinuityCamera()
+                        else
+                            AppController.startContinuityCamera("scan")
+                    }
+                }
+
+                ActionTile {
+                    width: sideCameraGrid.tileWidth
+                    deviceOnline: home.online
+                    playableWhenAddonMissing: true
+                    // Missing registration routes an explicit click to extension setup.
+                    // It never starts the phone camera as a substitute for setup.
+                    title: qsTr("Phone as webcam")
+                    enabled: active || Webcam.outputTarget !== "obs" || Webcam.obsOutputAvailable
+                    subtitle: (Webcam.phase === "streaming" || Webcam.phase === "asking")
+                              && Webcam.activeDevice === home.deviceId
+                              ? (Webcam.statusText.length > 0 ? Webcam.statusText : qsTr("Streaming"))
+                              : Webcam.outputTarget === "obs" && !Webcam.obsOutputAvailable
+                              ? qsTr("OBS Virtual Camera is not ready. Check Camera & Audio settings.")
+                              : ""
+                    iconPath: Icons.video
+                    iconSource: Icons.colorSource("video")
+                    feature: home.onMac && Webcam.outputTarget === "native" && !Webcam.addonRegistered
+                             ? ({ state: "locked", action: "enableAddon", target: "vcam" })
+                             : home.feature("camera.webcam")
+                    active: (Webcam.phase === "streaming" || Webcam.phase === "asking")
+                            && Webcam.activeDevice === home.deviceId
+                    onClicked: {
+                        if (home.onMac && Webcam.outputTarget === "native" && !Webcam.addonRegistered
+                                && Webcam.phase !== "streaming" && Webcam.phase !== "asking") {
+                            if (Webcam.addonSetupAllowed && !Webcam.addonBusy)
+                                Webcam.setupAddon()
+                            return
+                        }
+                        if ((Webcam.phase === "streaming" || Webcam.phase === "asking")
+                            && Webcam.activeDevice === home.deviceId)
+                            Webcam.stop()
+                        else if (Webcam.outputTarget !== "obs" || Webcam.obsOutputAvailable)
+                            Webcam.start(home.deviceId)
+                    }
+                }
+            }
+            Card {
+                id: typeOnPhoneCard
+                width: parent.width
+                readonly property var remoteInputFeature: home.feature("mirroring.control")
+                readonly property bool available: remoteInputFeature.state === "available"
+                readonly property bool canStart: home.online
+                readonly property bool activeHere: Mirror.keyboardDevice === home.deviceId
+                // The Mac viewer does not inject keyboard input.
+                readonly property bool macGap: home.onMac && !activeHere
+                property string lastSent: ""
+
+                onActiveHereChanged: {
+                    if (!activeHere)
+                        lastSent = ""
+                }
+
+                Column {
+                    width: parent.width
+                    spacing: 10
+                    Item {
+                        width: parent.width
+                        height: Math.max(typeHeaderLeft.height, typeToggleBtn.height)
+                        Row {
+                            id: typeHeaderLeft
+                            anchors.left: parent.left
+                            anchors.right: typeToggleBtn.left
+                            anchors.rightMargin: 10
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 10
+                            Rectangle {
+                                width: 32; height: 32
+                                anchors.verticalCenter: parent.verticalCenter
+                                radius: Theme.graphite ? Theme.radiusSm : Theme.radiusMd
+                                color: typeOnPhoneCard.activeHere
+                                    ? Theme.primary
+                                    : (Theme.graphite ? "transparent" : Theme.secondaryContainer)
+                                border.width: Theme.graphite ? 1 : 0
+                                border.color: Theme.outlineVariant
+                                opacity: typeOnPhoneCard.canStart && !typeOnPhoneCard.macGap ? 1 : 0.55
+                                Behavior on color { enabled: !Theme.reduceMotion; ColorAnimation { duration: Theme.fadeFast } }
+                                Icon {
+                                    anchors.centerIn: parent
+                                    width: 17; height: 17
+                                    path: Icons.keyboard
+                                    color: typeOnPhoneCard.activeHere ? Theme.primaryContent : Theme.secondaryContainerContent
+                                }
+                            }
+                            Column {
+                                width: parent.width - 42
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 1
+                                Txt {
+                                    width: parent.width
+                                    role: "title"
+                                    size: 13
+                                    elide: Text.ElideRight
+                                    text: qsTr("Type on phone")
+                                    opacity: typeOnPhoneCard.canStart && !typeOnPhoneCard.macGap ? 1 : 0.6
+                                }
+                                Txt {
+                                    visible: typeOnPhoneCard.activeHere || !typeOnPhoneCard.canStart
+                                    width: parent.width
+                                    role: "caption"
+                                    muted: true
+                                    elide: Text.ElideRight
+                                    text: typeOnPhoneCard.activeHere
+                                        ? (typeOnPhoneCard.lastSent.length > 0
+                                            ? qsTr("Sent: %1").arg(typeOnPhoneCard.lastSent)
+                                            : qsTr("Listening for keys"))
+                                        : qsTr("When connected")
+                                }
+                            }
+                        }
+                        Button {
+                            id: typeToggleBtn
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+                            visible: typeOnPhoneCard.canStart
+                            enabled: !typeOnPhoneCard.macGap
+                            variant: typeOnPhoneCard.activeHere ? "fill" : "tonal"
+                            size: "sm"
+                            text: typeOnPhoneCard.activeHere ? qsTr("Stop") : qsTr("Start")
+                            onClicked: {
+                                if (typeOnPhoneCard.activeHere) {
+                                    Mirror.stopKeyboard()
+                                } else {
+                                    Mirror.toggleKeyboard(home.deviceId)
+                                    remoteKeyCapture.forceActiveFocus()
+                                }
+                            }
+                        }
+                    }
+
+                    LockChip {
+                        id: typeLock
+                        visible: !typeOnPhoneCard.available && label.length > 0
+                                 && (home.online || !hideWhileOffline)
+                        feature: home.onMac
+                            ? ({ state: "locked", action: "updateApp", target: "desktop" })
+                            : typeOnPhoneCard.remoteInputFeature
+                        maxWidth: parent.width
+                    }
+
+                    Rectangle {
+                        id: remoteKeyCapture
+                        width: parent.width
+                        height: typeOnPhoneCard.activeHere ? 54 : 0
+                        visible: height > 0
+                        clip: true
+                        Behavior on height {
+                            enabled: !Theme.reduceMotion
+                            NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+                        }
+                        radius: Theme.radiusMd
+                        color: Theme.graphite ? "transparent" : Theme.surfaceContainerHigh
+                        border.width: activeFocus ? 2 : 1
+                        border.color: activeFocus ? Theme.primary : Theme.outlineVariant
+                        activeFocusOnTab: typeOnPhoneCard.activeHere
+
+                        onVisibleChanged: {
+                            if (visible) forceActiveFocus()
+                        }
+
+                        Keys.onPressed: (event) => {
+                            if (event.key === Qt.Key_Escape) {
+                                Mirror.stopKeyboard()
+                                event.accepted = true
+                                return
+                            }
+                            if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_V) {
+                                Mirror.keyboardPaste(home.deviceId)
+                                typeOnPhoneCard.lastSent = qsTr("Clipboard")
+                                event.accepted = true
+                                return
+                            }
+                            let keyName = ""
+                            switch (event.key) {
+                            case Qt.Key_Return:
+                            case Qt.Key_Enter: keyName = "enter"; break
+                            case Qt.Key_Backspace: keyName = "backspace"; break
+                            case Qt.Key_Delete: keyName = "delete"; break
+                            case Qt.Key_Left: keyName = "left"; break
+                            case Qt.Key_Right: keyName = "right"; break
+                            case Qt.Key_Up: keyName = "up"; break
+                            case Qt.Key_Down: keyName = "down"; break
+                            case Qt.Key_Tab: keyName = "tab"; break
+                            default: break
+                            }
+                            if (keyName.length > 0) {
+                                Mirror.keyboardPress(home.deviceId, keyName)
+                                typeOnPhoneCard.lastSent = keyName
+                                event.accepted = true
+                                return
+                            }
+                            if (event.text && event.text.length > 0
+                                    && !(event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) {
+                                Mirror.keyboardText(home.deviceId, event.text)
+                                typeOnPhoneCard.lastSent = event.text
+                                event.accepted = true
+                            }
+                        }
+
+                        Row {
+                            x: 12
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: parent.width - 24
+                            spacing: 8
+                            Column {
+                                width: parent.width - pasteBtn.width - 8
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 2
+                                Txt {
+                                    width: parent.width
+                                    role: "bodySmall"
+                                    weight: 600
+                                    elide: Text.ElideRight
+                                    color: remoteKeyCapture.activeFocus ? Theme.primary : Theme.surfaceContent
+                                    text: remoteKeyCapture.activeFocus
+                                        ? qsTr("Type here: keys go to %1").arg(home.name)
+                                        : qsTr("Click to focus keyboard")
+                                }
+                                Txt {
+                                    width: parent.width
+                                    role: "caption"
+                                    muted: true
+                                    elide: Text.ElideRight
+                                    text: qsTr("Ctrl+V pastes · Esc stops")
+                                }
+                            }
+                            Button {
+                                id: pasteBtn
+                                anchors.verticalCenter: parent.verticalCenter
+                                variant: "outline"
+                                size: "sm"
+                                iconPath: Icons.clipboard
+                                text: qsTr("Paste")
+                                onClicked: {
+                                    Mirror.keyboardPaste(home.deviceId)
+                                    typeOnPhoneCard.lastSent = qsTr("Clipboard")
+                                    remoteKeyCapture.forceActiveFocus()
+                                }
+                            }
+                        }
+                        TapHandler {
+                            onTapped: remoteKeyCapture.forceActiveFocus()
+                        }
+                    }
+                }
+            }
             Card {
                 id: phoneControls
                 width: parent.width
@@ -2128,287 +1470,555 @@ Item {
                     }
                 }
             }
-
-            // Camera & remote typing above Timeline.
-            Row {
-                id: sideCameraGrid
+            Card {
+                id: sendQueueCard
                 width: parent.width
-                spacing: 10
-                readonly property real tileWidth: (width - spacing) / 2
+                visible: page.selectedQueueItems.length > 0
+                opacity: visible ? 1 : 0
+                Behavior on opacity {
+                    enabled: !Theme.reduceMotion && !page.resizing
+                    NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+                }
+                Behavior on implicitHeight {
+                    enabled: !Theme.reduceMotion && !page.resizing
+                    NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+                }
+                Column {
+                    width: parent.width
+                    spacing: 4
+                    Item {
+                        width: parent.width
+                        height: queueHeader.height + queueHeaderActions.height + 4
+                        Txt {
+                            id: queueHeader
+                            anchors.top: parent.top
+                            role: "label"
+                            muted: true
+                            text: page.selectedQueueActive > 0
+                                  ? qsTr("Waiting to send · %1").arg(page.selectedQueueActive)
+                                  : qsTr("Waiting to send")
+                        }
+                        Row {
+                            id: queueHeaderActions
+                            anchors.right: parent.right
+                            anchors.bottom: parent.bottom
+                            spacing: 6
+                            Button {
+                                visible: page.selectedQueueFailures > 0
+                                variant: "text"
+                                size: "sm"
+                                text: qsTr("Retry failed")
+                                onClicked: TransferList.retryFailedQueue(page.currentDeviceId)
+                            }
+                            Button {
+                                visible: page.selectedQueueFailures > 0
+                                variant: "text"
+                                size: "sm"
+                                text: qsTr("Clear")
+                                onClicked: TransferList.clearFinishedQueue(page.currentDeviceId)
+                            }
+                            Button {
+                                visible: page.selectedQueueActive > 0
+                                variant: "text"
+                                size: "sm"
+                                text: qsTr("Cancel all")
+                                onClicked: TransferList.cancelAllQueued(page.currentDeviceId)
+                            }
+                        }
+                    }
+                    Row {
+                        width: parent.width
+                        spacing: 8
+                        Controls.TextField {
+                            id: queueSearch
+                            width: Math.max(80, parent.width - queueKind.width - parent.spacing)
+                            placeholderText: qsTr("Find queued item by name")
+                            Accessible.name: qsTr("Find queued item by name")
+                            selectByMouse: true
+                        }
+                        Controls.ComboBox {
+                            id: queueKind
+                            width: 140
+                            model: [qsTr("All types"), qsTr("Files"), qsTr("Other items")]
+                            Accessible.name: qsTr("Queued item type")
+                        }
+                    }
+                    Txt {
+                        width: parent.width
+                        visible: page.filteredQueueItems.length === 0
+                        text: qsTr("No queued items match your filters.")
+                        wrapMode: Text.WordWrap
+                        muted: true
+                    }
+                    Column {
+                        id: sendQueueList
+                        width: parent.width
+                        move: Transition {
+                            enabled: !Theme.reduceMotion && !page.resizing
+                            NumberAnimation { properties: "y"; duration: 180; easing.type: Easing.OutCubic }
+                        }
+                        add: Transition {
+                            enabled: !Theme.reduceMotion && !page.resizing
+                            NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 180; easing.type: Easing.OutCubic }
+                        }
+                        Repeater {
+                            model: page.filteredQueueItems
+                            delegate: Item {
+                                id: queueRow
+                                required property var modelData
+                                width: sendQueueList.width
+                                implicitHeight: queueItemCol.height + 18
 
-                ActionTile {
-                    width: sideCameraGrid.tileWidth
-                    deviceOnline: home.online
-                    queueableWhenOffline: true
-                    accented: true
-                    title: qsTr("Continuity Camera")
-                    subtitle: AppController.continuityCameraBusy
-                              ? AppController.continuityCameraStatus
-                              : ""
-                    iconPath: Icons.camera
-                    feature: home.feature("camera.continuity")
-                    active: AppController.continuityCameraBusy
-                    onClicked: AppController.startContinuityCamera("photo")
-                    sideIcon: AppController.continuityCameraBusy ? Icons.close : Icons.scan
-                    sideLabel: AppController.continuityCameraBusy
-                               ? qsTr("Cancel")
-                               : qsTr("Scan document")
-                    onSideClicked: {
-                        if (AppController.continuityCameraBusy)
-                            AppController.cancelContinuityCamera()
-                        else
-                            AppController.startContinuityCamera("scan")
+                                readonly property string itemStatus: queueRow.modelData.status || "waiting"
+                                readonly property bool isFailedOrExpired: itemStatus === "failed" || itemStatus === "expired"
+                                readonly property real totalBytes: Number(queueRow.modelData.totalBytes || 0)
+                                readonly property real progress: Number(queueRow.modelData.progress || 0)
+
+                                Row {
+                                    id: queueRowInner
+                                    x: 4; y: 9
+                                    width: parent.width - 8
+                                    spacing: 12
+
+                                    Rectangle {
+                                        width: 32; height: 32
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        radius: Theme.graphite ? Theme.radiusSm : 16
+                                        color: Theme.graphite ? "transparent" : Theme.secondaryContainer
+                                        border.width: Theme.graphite ? 1 : 0
+                                        border.color: Theme.outlineVariant
+                                        Icon {
+                                            anchors.centerIn: parent
+                                            width: 18; height: 18
+                                            path: queueRow.modelData.icon === "folder" ? Icons.folder
+                                                : queueRow.modelData.icon === "clipboard" ? Icons.clipboard
+                                                : queueRow.modelData.icon === "link" ? Icons.globe
+                                                : queueRow.modelData.icon === "task" ? Icons.bolt
+                                                : queueRow.modelData.icon === "camera" ? Icons.camera
+                                                : Icons.send
+                                            color: Theme.graphite ? Theme.surfaceContent : Theme.secondaryContainerContent
+                                        }
+                                    }
+
+                                    Column {
+                                        id: queueItemCol
+                                        width: Math.max(80, queueRowInner.width - 32 - queueItemActions.width - queueRowInner.spacing * 2)
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        spacing: 4
+                                        Txt {
+                                            width: parent.width
+                                            role: "title"
+                                            size: 14
+                                            elide: (queueRow.modelData.kind === "link"
+                                                    || queueRow.modelData.icon === "link"
+                                                    || (queueRow.modelData.title || "").startsWith("http://")
+                                                    || (queueRow.modelData.title || "").startsWith("https://"))
+                                                ? Text.ElideMiddle
+                                                : Text.ElideRight
+                                            text: queueRow.modelData.title || ""
+                                        }
+                                        Rectangle {
+                                            width: parent.width
+                                            height: 4
+                                            radius: 2
+                                            visible: queueRow.itemStatus === "sending" && queueRow.totalBytes > 0
+                                            color: Theme.surfaceContainerHighest
+                                            Rectangle {
+                                                height: parent.height
+                                                radius: parent.radius
+                                                width: parent.width * Math.max(0, Math.min(1, queueRow.progress))
+                                                color: Theme.primary
+                                                Behavior on width {
+                                                    enabled: !Theme.reduceMotion
+                                                    NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+                                                }
+                                            }
+                                        }
+                                        Txt {
+                                            width: parent.width
+                                            role: "bodySmall"
+                                            muted: !queueRow.isFailedOrExpired
+                                            color: queueRow.isFailedOrExpired ? Theme.error : Theme.surfaceContentVariant
+                                            elide: Text.ElideRight
+                                            text: {
+                                                const devName = (queueRow.modelData.deviceName && queueRow.modelData.deviceName.length > 0)
+                                                    ? queueRow.modelData.deviceName : home.name
+                                                const sz = page.formatQueueSize(queueRow.totalBytes)
+                                                if (queueRow.itemStatus === "sending") {
+                                                    if (queueRow.totalBytes > 0) {
+                                                        const pct = Math.round(Math.max(0, Math.min(1, queueRow.progress)) * 100)
+                                                        return qsTr("Sending to %1 · %2%").arg(devName).arg(pct)
+                                                    }
+                                                    return qsTr("Sending to %1…").arg(devName)
+                                                }
+                                                if (queueRow.itemStatus === "failed") {
+                                                    const reason = queueRow.modelData.reason || ""
+                                                    return reason.length > 0
+                                                        ? qsTr("Failed · %1").arg(reason)
+                                                        : qsTr("Failed")
+                                                }
+                                                if (queueRow.itemStatus === "expired") {
+                                                    const reason = queueRow.modelData.reason || ""
+                                                    return reason.length > 0 ? reason : qsTr("Expired")
+                                                }
+                                                return sz.length > 0
+                                                    ? qsTr("Waiting for %1 · %2").arg(devName).arg(sz)
+                                                    : qsTr("Waiting for %1").arg(devName)
+                                            }
+                                        }
+                                    }
+
+                                    Row {
+                                        id: queueItemActions
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        spacing: 4
+                                        IconButton {
+                                            visible: queueRow.isFailedOrExpired
+                                            iconPath: Icons.refresh
+                                            label: qsTr("Retry")
+                                            onClicked: TransferList.retryQueueItem(queueRow.modelData.id)
+                                        }
+                                        IconButton {
+                                            iconPath: Icons.close
+                                            label: queueRow.isFailedOrExpired ? qsTr("Dismiss") : qsTr("Cancel")
+                                            onClicked: TransferList.cancelQueueItem(queueRow.modelData.id)
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
-
-                ActionTile {
-                    width: sideCameraGrid.tileWidth
-                    deviceOnline: home.online
-                    playableWhenAddonMissing: true
-                    // Missing registration routes an explicit click to extension setup.
-                    // It never starts the phone camera as a substitute for setup.
-                    title: qsTr("Phone as webcam")
-                    enabled: active || Webcam.outputTarget !== "obs" || Webcam.obsOutputAvailable
-                    subtitle: (Webcam.phase === "streaming" || Webcam.phase === "asking")
-                              && Webcam.activeDevice === home.deviceId
-                              ? (Webcam.statusText.length > 0 ? Webcam.statusText : qsTr("Streaming"))
-                              : Webcam.outputTarget === "obs" && !Webcam.obsOutputAvailable
-                              ? qsTr("OBS Virtual Camera is not ready. Check Camera & Audio settings.")
-                              : ""
-                    iconPath: Icons.video
-                    feature: home.onMac && Webcam.outputTarget === "native" && !Webcam.addonRegistered
-                             ? ({ state: "locked", action: "enableAddon", target: "vcam" })
-                             : home.feature("camera.webcam")
-                    active: (Webcam.phase === "streaming" || Webcam.phase === "asking")
-                            && Webcam.activeDevice === home.deviceId
-                    onClicked: {
-                        if (home.onMac && Webcam.outputTarget === "native" && !Webcam.addonRegistered
-                                && Webcam.phase !== "streaming" && Webcam.phase !== "asking") {
-                            if (Webcam.addonSetupAllowed && !Webcam.addonBusy)
-                                Webcam.setupAddon()
-                            return
+            }
+            // ---- Transfers ----
+            Card {
+                width: parent.width
+                visible: TransferList.count > 0
+                Column {
+                    width: parent.width
+                    spacing: 4
+                    Item {
+                        width: parent.width
+                        height: Math.max(transfersHeader.height, clearTransfers.height)
+                        Txt {
+                            id: transfersHeader
+                            anchors.verticalCenter: parent.verticalCenter
+                            role: "label"
+                            muted: true
+                            text: qsTr("Transfers")
                         }
-                        if ((Webcam.phase === "streaming" || Webcam.phase === "asking")
-                            && Webcam.activeDevice === home.deviceId)
-                            Webcam.stop()
-                        else if (Webcam.outputTarget !== "obs" || Webcam.obsOutputAvailable)
-                            Webcam.start(home.deviceId)
+                        Row {
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 6
+                            Button {
+                                variant: "text"
+                                size: "sm"
+                                text: qsTr("Timeline")
+                                onClicked: AppController.currentPage = "timeline"
+                            }
+                            Button {
+                                id: clearTransfers
+                                visible: TransferList.count > TransferList.active
+                                variant: "text"
+                                size: "sm"
+                                text: qsTr("Clear finished")
+                                onClicked: TransferList.clearFinished()
+                            }
+                        }
+                    }
+                    Column {
+                        id: transferList
+                        width: parent.width
+                        move: Transition {
+                            enabled: !Theme.reduceMotion && !page.resizing
+                            NumberAnimation { properties: "y"; duration: 220; easing.type: Easing.OutCubic }
+                        }
+                        add: Transition {
+                            enabled: !Theme.reduceMotion && !page.resizing
+                            NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 200 }
+                        }
+                        Repeater {
+                            model: TransferList
+                            delegate: TransferItem { width: transferList.width }
+                        }
                     }
                 }
             }
 
-            // Type on phone (compact card below camera tiles; expands to capture live keystrokes).
-            Card {
-                id: typeOnPhoneCard
+            // ---- LocalSend nearby ----
+            LocalSendCard {
                 width: parent.width
-                readonly property var remoteInputFeature: home.feature("mirroring.control")
-                readonly property bool available: remoteInputFeature.state === "available"
-                readonly property bool canStart: home.online
-                readonly property bool activeHere: Mirror.keyboardDevice === home.deviceId
-                // The Mac viewer does not inject keyboard input.
-                readonly property bool macGap: home.onMac && !activeHere
-                property string lastSent: ""
+                visible: AppController.localsendEnabled && page.localsendPeers.length > 0
+            }
+        }
 
-                onActiveHereChanged: {
-                    if (!activeHere)
-                        lastSent = ""
+        Column {
+            width: home.sideWidth
+            spacing: 14
+            Card {
+                width: parent.width
+                padding: 14
+                Column {
+                    id: summaryPanel
+                    visible: true
+                    width: parent.width
+                    spacing: 8
+
+                    Repeater {
+                        model: MediaList
+                        delegate: NowPlaying {
+                            required property int index
+                            visible: MediaList.revision >= 0 && index === heroCard.activeMediaRow
+                            width: visible ? summaryPanel.width : 0
+                            embeddedInHero: true
+                            hasMultipleSources: heroCard.hasBothMedia
+                            phoneVolume: phoneControls.state ? phoneControls.state.volume : 65
+                            onSourceSelected: (src) => heroCard.preferredMediaSource = src
+                        }
+                    }
+
+                    // Calm glass standby media card when neither Phone nor PC has an active media session
+                    Rectangle {
+                        width: parent.width
+                        height: idleMediaCol.implicitHeight + 24
+                        visible: heroCard.activeMediaRow < 0
+                        radius: Theme.radiusLg
+                        color: Qt.rgba(Theme.panelColor.r, Theme.panelColor.g, Theme.panelColor.b, Theme.dark ? 0.58 : 0.80)
+                        border.width: 0
+
+                        Column {
+                            id: idleMediaCol
+                            x: 14
+                            y: 12
+                            width: parent.width - 28
+                            spacing: 8
+
+                            Row {
+                                width: parent.width
+                                spacing: 10
+                                Rectangle {
+                                    width: 40; height: 40
+                                    radius: Theme.radiusMd
+                                    color: Theme.secondaryContainer
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    Icon {
+                                        anchors.centerIn: parent
+                                        width: 18; height: 18
+                                        path: Icons.music
+                                        color: Theme.secondaryContainerContent
+                                    }
+                                }
+                                Column {
+                                    width: parent.width - 50
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    spacing: 1
+                                    Txt {
+                                        width: parent.width
+                                        role: "title"
+                                        size: 13
+                                        text: qsTr("Media player")
+                                        elide: Text.ElideRight
+                                    }
+                                    Txt {
+                                        width: parent.width
+                                        role: "caption"
+                                        muted: true
+                                        text: qsTr("Nothing playing")
+                                        elide: Text.ElideRight
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
+            }
+            Card {
+                id: feed
+                width: parent.width
+                readonly property var state: home.feature("notifications.mirror")
+                readonly property int count: NotificationList.count >= 0 ? NotificationList.countFor(home.deviceId) : 0
 
                 Column {
                     width: parent.width
-                    spacing: 10
+                    spacing: 8
                     Item {
                         width: parent.width
-                        height: Math.max(typeHeaderLeft.height, typeToggleBtn.height)
-                        Row {
-                            id: typeHeaderLeft
-                            anchors.left: parent.left
-                            anchors.right: typeToggleBtn.left
-                            anchors.rightMargin: 10
-                            anchors.verticalCenter: parent.verticalCenter
-                            spacing: 10
-                            Rectangle {
-                                width: 32; height: 32
-                                anchors.verticalCenter: parent.verticalCenter
-                                radius: Theme.graphite ? Theme.radiusSm : Theme.radiusMd
-                                color: typeOnPhoneCard.activeHere
-                                    ? Theme.primary
-                                    : (Theme.graphite ? "transparent" : Theme.secondaryContainer)
-                                border.width: Theme.graphite ? 1 : 0
-                                border.color: Theme.outlineVariant
-                                opacity: typeOnPhoneCard.canStart && !typeOnPhoneCard.macGap ? 1 : 0.55
-                                Behavior on color { enabled: !Theme.reduceMotion; ColorAnimation { duration: Theme.fadeFast } }
-                                Icon {
-                                    anchors.centerIn: parent
-                                    width: 17; height: 17
-                                    path: Icons.keyboard
-                                    color: typeOnPhoneCard.activeHere ? Theme.primaryContent : Theme.secondaryContainerContent
-                                }
-                            }
-                            Column {
-                                width: parent.width - 42
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: 1
-                                Txt {
-                                    width: parent.width
-                                    role: "title"
-                                    size: 13
-                                    elide: Text.ElideRight
-                                    text: qsTr("Type on phone")
-                                    opacity: typeOnPhoneCard.canStart && !typeOnPhoneCard.macGap ? 1 : 0.6
-                                }
-                                Txt {
-                                    visible: typeOnPhoneCard.activeHere || !typeOnPhoneCard.canStart
-                                    width: parent.width
-                                    role: "caption"
-                                    muted: true
-                                    elide: Text.ElideRight
-                                    text: typeOnPhoneCard.activeHere
-                                        ? (typeOnPhoneCard.lastSent.length > 0
-                                            ? qsTr("Sent: %1").arg(typeOnPhoneCard.lastSent)
-                                            : qsTr("Listening for keys"))
-                                        : qsTr("When connected")
-                                }
+                        height: header.height + clearAll.height + 6
+                        Txt {
+                            id: header
+                            width: parent.width
+                            elide: Text.ElideRight
+                            role: "title"
+                            size: 14
+                            text: feed.count > 0 ? qsTr("Notifications · %1").arg(feed.count) : qsTr("Notifications")
+                        }
+                        IconButton {
+                            anchors.right: clearAll.visible ? clearAll.left : parent.right
+                            anchors.rightMargin: clearAll.visible ? 8 : 0
+                            anchors.bottom: parent.bottom
+                            visible: NotificationList.historyEnabled && page.currentDeviceId.length > 0
+                            iconPath: Icons.history
+                            text: qsTr("History")
+                            label: qsTr("Notification history (last 24 hours)")
+                            onClicked: {
+                                historySearch.text = ""
+                                historySheet.open()
                             }
                         }
                         Button {
-                            id: typeToggleBtn
+                            id: clearAll
                             anchors.right: parent.right
-                            anchors.verticalCenter: parent.verticalCenter
-                            visible: typeOnPhoneCard.canStart
-                            enabled: !typeOnPhoneCard.macGap
-                            variant: typeOnPhoneCard.activeHere ? "fill" : "tonal"
+                            anchors.bottom: parent.bottom
+                            visible: feed.count > 0
+                            variant: "tonal"
                             size: "sm"
-                            text: typeOnPhoneCard.activeHere ? qsTr("Stop") : qsTr("Start")
-                            onClicked: {
-                                if (typeOnPhoneCard.activeHere) {
-                                    Mirror.stopKeyboard()
-                                } else {
-                                    Mirror.toggleKeyboard(home.deviceId)
-                                    remoteKeyCapture.forceActiveFocus()
-                                }
-                            }
+                            iconPath: Icons.close
+                            text: qsTr("Clear all")
+                            onClicked: NotificationList.dismissAll(home.deviceId)
                         }
                     }
-
-                    LockChip {
-                        id: typeLock
-                        visible: !typeOnPhoneCard.available && label.length > 0
-                                 && (home.online || !hideWhileOffline)
-                        feature: home.onMac
-                            ? ({ state: "locked", action: "updateApp", target: "desktop" })
-                            : typeOnPhoneCard.remoteInputFeature
-                        maxWidth: parent.width
-                    }
-
+                    // Calm inline Undo bar after dismissing a notification or app group.
                     Rectangle {
-                        id: remoteKeyCapture
+                        id: undoBanner
                         width: parent.width
-                        height: typeOnPhoneCard.activeHere ? 54 : 0
-                        visible: height > 0
-                        clip: true
-                        Behavior on height {
-                            enabled: !Theme.reduceMotion
-                            NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
-                        }
+                        height: undoRow.height + 16
+                        visible: NotificationList.undoLabel.length > 0
                         radius: Theme.radiusMd
                         color: Theme.graphite ? "transparent" : Theme.surfaceContainerHigh
-                        border.width: activeFocus ? 2 : 1
-                        border.color: activeFocus ? Theme.primary : Theme.outlineVariant
-                        activeFocusOnTab: typeOnPhoneCard.activeHere
+                        border.width: Theme.graphite ? 1 : 0
+                        border.color: Theme.outlineVariant
 
-                        onVisibleChanged: {
-                            if (visible) forceActiveFocus()
+                        Timer {
+                            id: undoTimer
+                            interval: 6000
+                            running: NotificationList.undoLabel.length > 0
+                            onTriggered: NotificationList.clearUndo()
                         }
-
-                        Keys.onPressed: (event) => {
-                            if (event.key === Qt.Key_Escape) {
-                                Mirror.stopKeyboard()
-                                event.accepted = true
-                                return
-                            }
-                            if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_V) {
-                                Mirror.keyboardPaste(home.deviceId)
-                                typeOnPhoneCard.lastSent = qsTr("Clipboard")
-                                event.accepted = true
-                                return
-                            }
-                            let keyName = ""
-                            switch (event.key) {
-                            case Qt.Key_Return:
-                            case Qt.Key_Enter: keyName = "enter"; break
-                            case Qt.Key_Backspace: keyName = "backspace"; break
-                            case Qt.Key_Delete: keyName = "delete"; break
-                            case Qt.Key_Left: keyName = "left"; break
-                            case Qt.Key_Right: keyName = "right"; break
-                            case Qt.Key_Up: keyName = "up"; break
-                            case Qt.Key_Down: keyName = "down"; break
-                            case Qt.Key_Tab: keyName = "tab"; break
-                            default: break
-                            }
-                            if (keyName.length > 0) {
-                                Mirror.keyboardPress(home.deviceId, keyName)
-                                typeOnPhoneCard.lastSent = keyName
-                                event.accepted = true
-                                return
-                            }
-                            if (event.text && event.text.length > 0
-                                    && !(event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))) {
-                                Mirror.keyboardText(home.deviceId, event.text)
-                                typeOnPhoneCard.lastSent = event.text
-                                event.accepted = true
+                        Connections {
+                            target: NotificationList
+                            function onUndoLabelChanged() {
+                                if (NotificationList.undoLabel.length > 0)
+                                    undoTimer.restart()
                             }
                         }
-
                         Row {
+                            id: undoRow
                             x: 12
                             anchors.verticalCenter: parent.verticalCenter
                             width: parent.width - 24
                             spacing: 8
-                            Column {
-                                width: parent.width - pasteBtn.width - 8
+                            Txt {
                                 anchors.verticalCenter: parent.verticalCenter
-                                spacing: 2
-                                Txt {
-                                    width: parent.width
-                                    role: "bodySmall"
-                                    weight: 600
-                                    elide: Text.ElideRight
-                                    color: remoteKeyCapture.activeFocus ? Theme.primary : Theme.surfaceContent
-                                    text: remoteKeyCapture.activeFocus
-                                        ? qsTr("Type here: keys go to %1").arg(home.name)
-                                        : qsTr("Click to focus keyboard")
-                                }
-                                Txt {
-                                    width: parent.width
-                                    role: "caption"
-                                    muted: true
-                                    elide: Text.ElideRight
-                                    text: qsTr("Ctrl+V pastes · Esc stops")
-                                }
+                                width: Math.max(60, parent.width - undoBtn.width - closeUndoBtn.width - 16)
+                                role: "bodySmall"
+                                elide: Text.ElideRight
+                                text: NotificationList.undoLabel
                             }
                             Button {
-                                id: pasteBtn
+                                id: undoBtn
                                 anchors.verticalCenter: parent.verticalCenter
-                                variant: "outline"
+                                variant: "tonal"
                                 size: "sm"
-                                iconPath: Icons.clipboard
-                                text: qsTr("Paste")
-                                onClicked: {
-                                    Mirror.keyboardPaste(home.deviceId)
-                                    typeOnPhoneCard.lastSent = qsTr("Clipboard")
-                                    remoteKeyCapture.forceActiveFocus()
-                                }
+                                text: qsTr("Undo")
+                                onClicked: NotificationList.undoDismiss()
+                            }
+                            IconButton {
+                                id: closeUndoBtn
+                                anchors.verticalCenter: parent.verticalCenter
+                                iconPath: Icons.close
+                                label: qsTr("Dismiss")
+                                onClicked: NotificationList.clearUndo()
                             }
                         }
-                        TapHandler {
-                            onTapped: remoteKeyCapture.forceActiveFocus()
+                    }
+                    // Ticks every minute so "5 min" ages without new events.
+                    Timer {
+                        id: feedClock
+                        property int minutes: 0
+                        interval: 60000
+                        repeat: true
+                        running: feed.count > 0
+                        onTriggered: minutes++
+                    }
+                    // The page scrolls; this Column lays out every notification cleanly so
+                    // images, replies, and group expansions always size the Card accurately.
+                    Column {
+                        id: list
+                        width: parent.width
+                        spacing: 4
+                        move: Transition {
+                            enabled: !Theme.reduceMotion && !page.resizing
+                            NumberAnimation { properties: "y"; duration: 220; easing.type: Easing.OutCubic }
+                        }
+                        add: Transition {
+                            enabled: !Theme.reduceMotion && !page.resizing
+                            NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 200; easing.type: Easing.OutCubic }
+                        }
+                        Repeater {
+                            model: NotificationList
+                            delegate: NotificationItem {
+                                width: list.width
+                                clock: feedClock.minutes
+                                visible: deviceId === home.deviceId
+                                height: visible ? implicitHeight : 0
+                                canOpenApp: Mirror.appWindowsSupported && home.feature("mirroring.app_windows").state === "available" && app.length > 0
+                                onOpenAppRequested: Mirror.startApp(deviceId, app, appName.length > 0 ? appName : app)
+                                onOptionsRequested: appSheet.openFor(app, appName)
+                                onImageClicked: (url) => imagePreviewSheet.openFor(url, title.length > 0 ? title : appName)
+                            }
+                        }
+                    }
+                    // Empty: say why, and what turns it on.
+                    Txt {
+                        width: parent.width
+                        visible: feed.count === 0 && !lockedHint.visible
+                        role: "bodySmall"
+                        muted: true
+                        wrapMode: Text.WordWrap
+                        text: feed.state.state === "available"
+                              ? qsTr("No notifications")
+                              : home.lastSeen > 0 || home.online
+                                ? qsTr("Notifications unavailable")
+                                : qsTr("Connect %1 to view notifications").arg(home.name)
+                    }
+                    LockChip { id: lockedHint; visible: feed.count === 0 && label.length > 0; feature: feed.state }
+                    // Windows hides every app's notifications when they're
+                    // turned off in Settings; say so instead of staying quiet.
+                    Rectangle {
+                        width: parent.width
+                        height: toastsOff.height + 20
+                        visible: !AppController.toastsEnabled && feed.state.state === "available"
+                        radius: Theme.radiusMd
+                        color: Theme.graphite ? "transparent" : Theme.surfaceContainerHigh
+                        border.width: Theme.graphite ? 1 : 0
+                        border.color: Theme.outlineVariant
+                        Row {
+                            id: toastsOff
+                            x: 12
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: parent.width - 24
+                            spacing: 12
+                            Icon { anchors.verticalCenter: parent.verticalCenter; path: Icons.bell; color: Theme.surfaceContentVariant }
+                            Txt {
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: parent.width - 32 - turnOn.width - 24
+                                role: "bodySmall"
+                                wrapMode: Text.WordWrap
+                                text: qsTr("Windows notifications are off.")
+                            }
+                            Button {
+                                id: turnOn
+                                anchors.verticalCenter: parent.verticalCenter
+                                variant: "tonal"
+                                size: "sm"
+                                text: qsTr("Turn on")
+                                onClicked: Qt.openUrlExternally("ms-settings:notifications")
+                            }
                         }
                     }
                 }
             }
-
-            // Recent timeline items across devices (placed below Continuity Camera, Phone as webcam, and Type on phone).
             Card {
                 id: timelineHomeCard
                 width: parent.width
@@ -3133,12 +2743,55 @@ Item {
         }
     }
 
+    // Destinations open the existing device-scoped pages, including their
+    // own unavailable/offline/history states. They do not claim a capability.
+    component HomeDestination: FocusScope {
+        id: destination
+        property string title
+        property string description
+        property string iconPath
+        property url iconSource
+        signal clicked
+        implicitHeight: 112
+        activeFocusOnTab: true
+        Accessible.role: Accessible.Button
+        Accessible.name: title
+        Accessible.description: description
+        Accessible.onPressAction: destination.clicked()
+        Keys.onPressed: event => {
+            if (!event.isAutoRepeat && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space)) {
+                destination.clicked()
+                event.accepted = true
+            }
+        }
+        Rectangle {
+            anchors.fill: parent
+            radius: Theme.cardRadius
+            color: destinationHover.hovered ? Theme.surfaceContainerHigh : Theme.panelColor
+            border.width: Theme.focusVisible(destination) ? 2 : 1
+            border.color: Theme.focusVisible(destination) ? Theme.primary : Theme.panelBorder
+            scale: destinationTap.pressed ? Theme.pressScale : 1
+            Behavior on scale { enabled: !Theme.reduceMotion; NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+        }
+        Column {
+            x: 14; y: 12
+            width: parent.width - 28
+            spacing: 6
+            Icon { width: 26; height: 26; path: destination.iconPath; source: destination.iconSource; color: Theme.primary }
+            Txt { width: parent.width; text: destination.title; role: "title"; size: 13; elide: Text.ElideRight }
+            Txt { width: parent.width; text: destination.description; role: "caption"; muted: true; maximumLineCount: 2; wrapMode: Text.WordWrap; elide: Text.ElideRight }
+        }
+        HoverHandler { id: destinationHover; cursorShape: Qt.PointingHandCursor }
+        TapHandler { id: destinationTap; onTapped: destination.clicked() }
+    }
+
     // A quick action. Unavailable actions are dimmed and say what unlocks them.
     component ActionTile: Rectangle {
         id: tile
         property string title
         property string subtitle
         property string iconPath
+        property url iconSource
         property var feature: ({})
         property bool active: false
         property bool accented: false
@@ -3166,16 +2819,16 @@ Item {
                                            || (playableWhenAddonMissing && feature.state === "locked" && feature.action === "enableAddon")
                                            || (queueableWhenOffline && (!tile.deviceOnline || feature.state === "unknown") && feature.state !== "locked" && feature.state !== "unsupported"))
 
-        height: Math.max(76, actionTileContent.implicitHeight + 28)
+        height: Math.max(84, actionTileContent.implicitHeight + 28)
         activeFocusOnTab: available
         radius: Theme.cardRadius
         color: tile.active || (tile.accented && tile.available)
-            ? Theme.actionColor : Theme.panelColor
-        border.width: Theme.focusVisible(tile) ? 2 : 0
-        border.color: Theme.primary
+            ? Theme.primaryContainer : Theme.panelColor
+        border.width: Theme.focusVisible(tile) ? 2 : 1
+        border.color: Theme.focusVisible(tile) || tile.active ? Theme.primary : Theme.panelBorder
         scale: tap.pressed && available ? Theme.pressScale : 1
         Behavior on color { enabled: !Theme.reduceMotion; ColorAnimation { duration: Theme.fadeFast } }
-        Behavior on scale { enabled: !Theme.reduceMotion; NumberAnimation { duration: 170; easing.type: Easing.OutBack } }
+        Behavior on scale { enabled: !Theme.reduceMotion; NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
         GlassRim { radius: tile.radius; visible: Theme.glass && !tile.active && !Theme.focusVisible(tile) }
 
         Accessible.role: Accessible.Button
@@ -3190,7 +2843,7 @@ Item {
         }
 
         readonly property bool primaryAction: tile.active || (tile.accented && tile.available)
-        readonly property color ink: primaryAction ? Theme.actionContent : Theme.surfaceContent
+        readonly property color ink: primaryAction ? Theme.primaryContainerContent : Theme.surfaceContent
         Rectangle {
             anchors.fill: parent
             radius: parent.radius
@@ -3215,7 +2868,8 @@ Item {
                     anchors.centerIn: parent
                     width: 18; height: 18
                     path: tile.iconPath
-                    color: tile.primaryAction ? Theme.actionContent : Theme.primaryContainerContent
+                    source: tile.iconSource
+                    color: Theme.primaryContainerContent
                 }
             }
             Column {
@@ -3325,7 +2979,7 @@ Item {
             border.color: Theme.focusVisible(qbtn) ? Theme.primary : (Theme.glass ? Theme.cardBorder : Theme.outlineVariant)
             opacity: qbtn.available || qbtn.active ? 1 : 0.55
             scale: qtap.pressed && qbtn.available ? Theme.pressScale : 1
-            Behavior on scale { enabled: !Theme.reduceMotion; NumberAnimation { duration: 170; easing.type: Easing.OutBack } }
+            Behavior on scale { enabled: !Theme.reduceMotion; NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
 
             Rectangle {
                 anchors.fill: parent

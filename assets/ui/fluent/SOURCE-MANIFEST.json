@@ -1,0 +1,1415 @@
+{
+  "family": "Fluent UI System Icons",
+  "version": "1.1.344",
+  "revision": "82ecf7cbdb43684403c7125efa160be04a33dca5",
+  "source": "https://github.com/microsoft/fluentui-system-icons",
+  "tarSHA256": "6fe61f489a6d0d065ec2182794fdadf0e15db7d3388997c5ba8039dcfaaa35e8",
+  "license": "MIT",
+  "licenseURL": "https://raw.githubusercontent.com/microsoft/fluentui-system-icons/82ecf7cbdb43684403c7125efa160be04a33dca5/LICENSE",
+  "baseSource": "6e9722f1f0b5926a7d26c06696d3222481a350ed",
+  "assets": {
+    "accessibility_24_filled.svg": {
+      "npmMember": "package/icons/accessibility_24_filled.svg",
+      "sha256": "fb480912fbf5beafc3d5a14659cea1cc0d97db49dc962251b5af2700e6a03203"
+    },
+    "accessibility_24_regular.svg": {
+      "npmMember": "package/icons/accessibility_24_regular.svg",
+      "sha256": "d923d1faec57feb436d037edf51c474297e91289d6b781752ff1fffbca2b8fe4"
+    },
+    "add_24_filled.svg": {
+      "npmMember": "package/icons/add_24_filled.svg",
+      "sha256": "6162e562c21099eb5474ce95afcd2f39e758f8c7b4c69467d2649bd736dcd2ad"
+    },
+    "add_24_regular.svg": {
+      "npmMember": "package/icons/add_24_regular.svg",
+      "sha256": "e5a1042750088527992b3396337a1962a36161ffe497dc9ac3cdac1a0b91ae91"
+    },
+    "alert_24_color.svg": {
+      "npmMember": "package/icons/alert_24_color.svg",
+      "sha256": "5b7fe49f184648726534a89f16546a1f4e6aec40613746cb11e685147e52d72b"
+    },
+    "alert_24_filled.svg": {
+      "npmMember": "package/icons/alert_24_filled.svg",
+      "sha256": "5c0749d22f231e1722cf2185fe90312de63ae20e10bc0951e5d6c13db3ff6a7b"
+    },
+    "alert_24_regular.svg": {
+      "npmMember": "package/icons/alert_24_regular.svg",
+      "sha256": "5605cb9d31dd5213893b3b92d24207a8f5bd460fbf6e4e6300a486906d30e7fa"
+    },
+    "alert_on_24_filled.svg": {
+      "npmMember": "package/icons/alert_on_24_filled.svg",
+      "sha256": "220fba39565543cb0a497748cb8e6be068ab2fe37f16b25e2aa0190de1d9ec8f"
+    },
+    "alert_on_24_regular.svg": {
+      "npmMember": "package/icons/alert_on_24_regular.svg",
+      "sha256": "e814f5c0dd591753d8c4bc47f1d41334af11a1dc1f5ac91a8f4eaa10e77a0b86"
+    },
+    "apps_24_color.svg": {
+      "npmMember": "package/icons/apps_24_color.svg",
+      "sha256": "7cc0ec84447ab9895301a459cd1726d5814676ec02b588ff24c0705501eb6922"
+    },
+    "apps_24_filled.svg": {
+      "npmMember": "package/icons/apps_24_filled.svg",
+      "sha256": "113f24341c706949632f21b93f2d48949041f4d05d76cf24f1a1c95ebd8df437"
+    },
+    "apps_24_regular.svg": {
+      "npmMember": "package/icons/apps_24_regular.svg",
+      "sha256": "a10d2ae25ca9faaa8aafaa0d03c322782558c951ea87b6778508c8f086b7cc44"
+    },
+    "arrow_download_24_filled.svg": {
+      "npmMember": "package/icons/arrow_download_24_filled.svg",
+      "sha256": "459417511c6b9f3df16d66075a7320191ce3cc9651e827d73836d978e1413688"
+    },
+    "arrow_download_24_regular.svg": {
+      "npmMember": "package/icons/arrow_download_24_regular.svg",
+      "sha256": "650de0475e4ed7559065e68804a7c322bb5866c42e9fe02086bcc6e6dcd4db52"
+    },
+    "arrow_sync_24_filled.svg": {
+      "npmMember": "package/icons/arrow_sync_24_filled.svg",
+      "sha256": "81358e9a0d19b99c4de3ad721f69c4dd6353437d0f8ff1d782b36226fc521251"
+    },
+    "arrow_sync_24_regular.svg": {
+      "npmMember": "package/icons/arrow_sync_24_regular.svg",
+      "sha256": "54305365aa4d78a40d2b771a7c6ebff0a73485d60949b1b64e9ce7d5f79b6eaf"
+    },
+    "backspace_24_filled.svg": {
+      "npmMember": "package/icons/backspace_24_filled.svg",
+      "sha256": "ffc0c12353853a243bb4efe74428205029df7a17706dc8b6a8b1e5835eef3151"
+    },
+    "backspace_24_regular.svg": {
+      "npmMember": "package/icons/backspace_24_regular.svg",
+      "sha256": "20b5e91324b720e7f22f66cf9b52d5d17359158f187e607f276fe2552943260c"
+    },
+    "battery_8_24_filled.svg": {
+      "npmMember": "package/icons/battery_8_24_filled.svg",
+      "sha256": "72bb3854f7fed4f4c33fcb07dcb6d4a5795a2522249600bdfaa0615e8f85e66e"
+    },
+    "battery_8_24_regular.svg": {
+      "npmMember": "package/icons/battery_8_24_regular.svg",
+      "sha256": "be110fbd58d27d1177bc5c7eef395e19454d4c4bcc81cfbdf4902c0a0edae28d"
+    },
+    "bluetooth_24_filled.svg": {
+      "npmMember": "package/icons/bluetooth_24_filled.svg",
+      "sha256": "db5ae114f23faf9e32c700b662ff57fbcb0e6fc3c9593e6ef236d76679e7be34"
+    },
+    "bluetooth_24_regular.svg": {
+      "npmMember": "package/icons/bluetooth_24_regular.svg",
+      "sha256": "7ef35f42d8ddd01b6a7682d86dcf5e1ae2391f03995db725db47afea2db5e524"
+    },
+    "board_24_color.svg": {
+      "npmMember": "package/icons/board_24_color.svg",
+      "sha256": "c1fb03eedb012e95b7b40e0c0a059149d927c46a53e2cd303d42fc95dd1abc8b"
+    },
+    "board_24_filled.svg": {
+      "npmMember": "package/icons/board_24_filled.svg",
+      "sha256": "7dcf5495f4f843640a36e0820a06efb926a6b4ec3d9fb716a0c2d33703c6817e"
+    },
+    "board_24_regular.svg": {
+      "npmMember": "package/icons/board_24_regular.svg",
+      "sha256": "0c7dbf02e17ddb6d2d0d6a775188c218b82acec44b0ad4343f36c3c3c1bd9ab5"
+    },
+    "book_24_filled.svg": {
+      "npmMember": "package/icons/book_24_filled.svg",
+      "sha256": "dc29660788b9f975e2e415b8b9a82fa2e8773ce0a908ff637488a6c0823784c6"
+    },
+    "book_24_regular.svg": {
+      "npmMember": "package/icons/book_24_regular.svg",
+      "sha256": "57d27c95fb8fa3224598562af6ff6c133cc2957b4b42b9a7caf95129b6d9178e"
+    },
+    "call_24_filled.svg": {
+      "npmMember": "package/icons/call_24_filled.svg",
+      "sha256": "0fe2307ffac6ff5a814bf8fcbeeecc3bca287df360bac411d19e3c6961ea5ea1"
+    },
+    "call_24_regular.svg": {
+      "npmMember": "package/icons/call_24_regular.svg",
+      "sha256": "7f274e436dfa5727037d153c6db08d8080ef8cef3a77180229d8608b619b94d9"
+    },
+    "call_end_24_filled.svg": {
+      "npmMember": "package/icons/call_end_24_filled.svg",
+      "sha256": "0c6e92cb36eaf115c703fe51f42a0528e44ce16549b5c9addc324b0ba54c247c"
+    },
+    "call_end_24_regular.svg": {
+      "npmMember": "package/icons/call_end_24_regular.svg",
+      "sha256": "8feb01754c0a24958279d237674a54aabffbf49952590a769f6fa0232a660ffa"
+    },
+    "call_inbound_24_filled.svg": {
+      "npmMember": "package/icons/call_inbound_24_filled.svg",
+      "sha256": "0cb65a66740def2dd7e47512653910ef65dd6c17e06d9fed2b4f0aa87bfaa8f7"
+    },
+    "call_inbound_24_regular.svg": {
+      "npmMember": "package/icons/call_inbound_24_regular.svg",
+      "sha256": "d4b7f682be96d4c3fb94ec048a7525c94d12739e2ca3c5f713a77ebed34e8505"
+    },
+    "call_missed_24_filled.svg": {
+      "npmMember": "package/icons/call_missed_24_filled.svg",
+      "sha256": "604ab3d594aa0ee9bed6b4be6b26fc10bc863672ddca9b58b0a3544162a2ff96"
+    },
+    "call_missed_24_regular.svg": {
+      "npmMember": "package/icons/call_missed_24_regular.svg",
+      "sha256": "bd38b04f567474876eb6aa574b377b0e914266b69db779064d293e5dd5050669"
+    },
+    "call_outbound_24_filled.svg": {
+      "npmMember": "package/icons/call_outbound_24_filled.svg",
+      "sha256": "2ad27d9fc45d63d30c23de1106a5dbe1574d278de61dbfeaaf0bf116510f05a9"
+    },
+    "call_outbound_24_regular.svg": {
+      "npmMember": "package/icons/call_outbound_24_regular.svg",
+      "sha256": "ed30873ac027c8034a50d23dad563fd882f0cef31e908215ad0f06bbe80f6208"
+    },
+    "camera_24_color.svg": {
+      "npmMember": "package/icons/camera_24_color.svg",
+      "sha256": "4e5730f8639e9bf9c37e66ba780a87a67ac09c78b26bd7807fa587495bccf5cd"
+    },
+    "camera_24_filled.svg": {
+      "npmMember": "package/icons/camera_24_filled.svg",
+      "sha256": "6d97f72e3d8dae7af7a238bfcae30d7f9ce9026cb8e31ea1a7cce71f1702278e"
+    },
+    "camera_24_regular.svg": {
+      "npmMember": "package/icons/camera_24_regular.svg",
+      "sha256": "f80251c3a672b3f65d0c24e5cc881fac1e6fbee653805d530c7c395bdfe65acf"
+    },
+    "cellular_data_1_24_filled.svg": {
+      "npmMember": "package/icons/cellular_data_1_24_filled.svg",
+      "sha256": "536cd4835573a805be2aa0ec5d88a29f9d800a15edd55c54f1194588ad121753"
+    },
+    "cellular_data_1_24_regular.svg": {
+      "npmMember": "package/icons/cellular_data_1_24_regular.svg",
+      "sha256": "61d617a6d4dc59859c3f463c62626c7c8e57775213b7882d1a519c109a3e149b"
+    },
+    "chat_24_color.svg": {
+      "npmMember": "package/icons/chat_24_color.svg",
+      "sha256": "11464e1540d1110aba515a6adb3a71444b5b10a4f030990bfb39bb24ec187d8d"
+    },
+    "chat_24_filled.svg": {
+      "npmMember": "package/icons/chat_24_filled.svg",
+      "sha256": "89de4bdbe2c0736ea5040e1ec995736e7c2c14d860f8dd3fc26f8ac62e3d6118"
+    },
+    "chat_24_regular.svg": {
+      "npmMember": "package/icons/chat_24_regular.svg",
+      "sha256": "a31300040c5512fbce86c8504f5276b1a65b8fafe74721ce9dca476f09e8e583"
+    },
+    "checkmark_24_filled.svg": {
+      "npmMember": "package/icons/checkmark_24_filled.svg",
+      "sha256": "d2cb81105664be2f510d29149833562f4bb6a588d04441e754f6c328345cac92"
+    },
+    "checkmark_24_regular.svg": {
+      "npmMember": "package/icons/checkmark_24_regular.svg",
+      "sha256": "3b05851972b1bc66cd30e7c423d44dc59f38cae96eaa2f6dcdd22bb523df0f71"
+    },
+    "chevron_down_24_filled.svg": {
+      "npmMember": "package/icons/chevron_down_24_filled.svg",
+      "sha256": "07851741771f903f53d89b4c12db291cc8263004f957e0392b13b70135612bd5"
+    },
+    "chevron_down_24_regular.svg": {
+      "npmMember": "package/icons/chevron_down_24_regular.svg",
+      "sha256": "ee9fd7bce0165d8da4a34e6ec5056873e5eb55102d78321bfba858daff28a36e"
+    },
+    "chevron_left_24_filled.svg": {
+      "npmMember": "package/icons/chevron_left_24_filled.svg",
+      "sha256": "4f9a2511eec966410c63813b99ebe94a1bf2980ea1f352e65df3c9437d1fb4f0"
+    },
+    "chevron_left_24_regular.svg": {
+      "npmMember": "package/icons/chevron_left_24_regular.svg",
+      "sha256": "77e1e747195d4693256808f4f2dfb528912906d093694b54764929a8d23f0475"
+    },
+    "chevron_right_24_filled.svg": {
+      "npmMember": "package/icons/chevron_right_24_filled.svg",
+      "sha256": "d8d31b25446f35133f228fc308ee3b3196ecbe3bcc1d1437c41fcc1b0e9b682e"
+    },
+    "chevron_right_24_regular.svg": {
+      "npmMember": "package/icons/chevron_right_24_regular.svg",
+      "sha256": "34fd96a5fdf562cdffba50de0b097a0bfaee5a21b54b789030901174ea9de7a1"
+    },
+    "chevron_up_24_filled.svg": {
+      "npmMember": "package/icons/chevron_up_24_filled.svg",
+      "sha256": "380fc20620e7efce64c0de945af36e40f478a91f774d3fc76e37cf6eb27225d4"
+    },
+    "chevron_up_24_regular.svg": {
+      "npmMember": "package/icons/chevron_up_24_regular.svg",
+      "sha256": "3d6410de6c7dc0cf5c865620d2b5c1c7176e5d8bc38542b7aa7d56ce17b05a52"
+    },
+    "clipboard_24_color.svg": {
+      "npmMember": "package/icons/clipboard_24_color.svg",
+      "sha256": "cd41bcd59308ab5fd44a7e713aa9603613132b022743db1fa451d3a28182a40e"
+    },
+    "clipboard_24_filled.svg": {
+      "npmMember": "package/icons/clipboard_24_filled.svg",
+      "sha256": "e5583da210a39d5784554b4ba857ba4bb4aeddc7e337afc231dd5ec0f1a2b534"
+    },
+    "clipboard_24_regular.svg": {
+      "npmMember": "package/icons/clipboard_24_regular.svg",
+      "sha256": "f04fde32802673a811b3745ee3d68654d0231e8ba498f22173e91483e5670384"
+    },
+    "clipboard_text_ltr_24_filled.svg": {
+      "npmMember": "package/icons/clipboard_text_ltr_24_filled.svg",
+      "sha256": "0fe9fb4d5a2f05e243bf8e44869688cd44ccb3f1d837b06e060f09fef738dcee"
+    },
+    "clipboard_text_ltr_24_regular.svg": {
+      "npmMember": "package/icons/clipboard_text_ltr_24_regular.svg",
+      "sha256": "0d2b9784288fdea02c58705becbd9508caffa0f8c68df6c6175ef19a6da90705"
+    },
+    "clock_24_color.svg": {
+      "npmMember": "package/icons/clock_24_color.svg",
+      "sha256": "858bc496aba3e6ae8a1628f05d38dd88de5fe2a5974afffac90171f36927b8ea"
+    },
+    "clock_24_filled.svg": {
+      "npmMember": "package/icons/clock_24_filled.svg",
+      "sha256": "3fa8380b11132cd9ebd2599c14f86355f1210690006bb7af1f1ebf5cb71ac041"
+    },
+    "clock_24_regular.svg": {
+      "npmMember": "package/icons/clock_24_regular.svg",
+      "sha256": "a438e64295e27c63eed57e19ed452629bd714542902de48f4bbbd6a032e8dd3f"
+    },
+    "code_24_filled.svg": {
+      "npmMember": "package/icons/code_24_filled.svg",
+      "sha256": "99df95507dba8f1c4de8e32c96795c7020cdab2e5cdedd763ba6f70d6e1df82b"
+    },
+    "code_24_regular.svg": {
+      "npmMember": "package/icons/code_24_regular.svg",
+      "sha256": "69e2c978bc3abf345f23be3a1e019740da59bcd3a4047e2acea6d54b4e674092"
+    },
+    "color_24_filled.svg": {
+      "npmMember": "package/icons/color_24_filled.svg",
+      "sha256": "3dc87743fbfa98ebcdd819f5afb6c558a3f5eda8a1233e1b59d837e8545faa6f"
+    },
+    "color_24_regular.svg": {
+      "npmMember": "package/icons/color_24_regular.svg",
+      "sha256": "b02805d2847b6262c4f025f5f27a8a077711b2dfded142dba3bb420eb3a65222"
+    },
+    "color_background_24_filled.svg": {
+      "npmMember": "package/icons/color_background_24_filled.svg",
+      "sha256": "279e83c694619494dbfb013b716a503258170348b7265c1d116506c548952cdd"
+    },
+    "color_background_24_regular.svg": {
+      "npmMember": "package/icons/color_background_24_regular.svg",
+      "sha256": "cda1506e41cb1404dfcad7183f4f9d992ddc86e3130a365727cd8bc27dd09d47"
+    },
+    "compass_northwest_24_filled.svg": {
+      "npmMember": "package/icons/compass_northwest_24_filled.svg",
+      "sha256": "f849bd07f02c752c5984ff199540cb5edfd5ac885051384e8ead209bb7a24448"
+    },
+    "compass_northwest_24_regular.svg": {
+      "npmMember": "package/icons/compass_northwest_24_regular.svg",
+      "sha256": "be0194a8c82b949852b92d24b687afa39775f254d9b2f5149ada001a12b49fdd"
+    },
+    "copy_24_filled.svg": {
+      "npmMember": "package/icons/copy_24_filled.svg",
+      "sha256": "1f084e2e1deaa83eec0115997790adf05d60ee053506757b0599d4dbd399f5e3"
+    },
+    "copy_24_regular.svg": {
+      "npmMember": "package/icons/copy_24_regular.svg",
+      "sha256": "626fa727f24d5486f97192267df0b8b125ef9519bd996f8c410ed5cbc9dda6fb"
+    },
+    "delete_24_filled.svg": {
+      "npmMember": "package/icons/delete_24_filled.svg",
+      "sha256": "f5378329bbebcaaa48eb043396bfaea0d309c0d7624492ba83d96b74077d9c05"
+    },
+    "delete_24_regular.svg": {
+      "npmMember": "package/icons/delete_24_regular.svg",
+      "sha256": "04c0fc28e66541a55699e32de594c7d50cec3ce5f6f09173d0ce8e2ea685c97d"
+    },
+    "desktop_24_filled.svg": {
+      "npmMember": "package/icons/desktop_24_filled.svg",
+      "sha256": "291cc516433ec1aa3cebcca044598574a27c78b4ceae392e6e145d6ee92ebf58"
+    },
+    "desktop_24_regular.svg": {
+      "npmMember": "package/icons/desktop_24_regular.svg",
+      "sha256": "df126630843e995cf50c83c730a2c9f829b5c160b9e033737c5bbc56d053ba25"
+    },
+    "desktop_cursor_24_filled.svg": {
+      "npmMember": "package/icons/desktop_cursor_24_filled.svg",
+      "sha256": "8a566808c6ae2536be98c688b56483ec9c59ac2ce44d5795267733a811789e4c"
+    },
+    "desktop_cursor_24_regular.svg": {
+      "npmMember": "package/icons/desktop_cursor_24_regular.svg",
+      "sha256": "dc47a23f801096a69acdf2f5084da0add9ae4b6a9cf6c0fb020b1ba9b813fcaf"
+    },
+    "dialpad_24_filled.svg": {
+      "npmMember": "package/icons/dialpad_24_filled.svg",
+      "sha256": "3068fd6d32c673095c2e14f703e37678e766833e3e9470bac3b6a218d519f580"
+    },
+    "dialpad_24_regular.svg": {
+      "npmMember": "package/icons/dialpad_24_regular.svg",
+      "sha256": "93b1f58c2cb95503a7d6b7d77f48b6c009c1c1b8fac2a3596c2d9ff32975ee5a"
+    },
+    "dismiss_24_filled.svg": {
+      "npmMember": "package/icons/dismiss_24_filled.svg",
+      "sha256": "c58f53b5542b5ab8f10d9a6dd86e38366e59c36d9f63317b91402731d86ecc38"
+    },
+    "dismiss_24_regular.svg": {
+      "npmMember": "package/icons/dismiss_24_regular.svg",
+      "sha256": "7cff7ed321daa78ab1e9346e182c5416d4f1ae88b3d9bf7742f2497be37a7cc5"
+    },
+    "document_24_color.svg": {
+      "npmMember": "package/icons/document_24_color.svg",
+      "sha256": "d52e72b2b78d3485aa2ee8e18e574d52323923d83dd7ba090ce944c3934b6490"
+    },
+    "document_folder_24_color.svg": {
+      "npmMember": "package/icons/document_folder_24_color.svg",
+      "sha256": "c2c8af9f867de76d83057b63acf6d7e18c1361456c75f87e14bdfa324b983c0c"
+    },
+    "document_text_24_color.svg": {
+      "npmMember": "package/icons/document_text_24_color.svg",
+      "sha256": "23a59ee44ec466b54b1276ca0db24c665e2c30623abde4c3d944f953885a6e7f"
+    },
+    "document_text_24_filled.svg": {
+      "npmMember": "package/icons/document_text_24_filled.svg",
+      "sha256": "23030e40454fbc05213d194c858cb3be5cd8c12f62767618083c17b4c3a022e3"
+    },
+    "document_text_24_regular.svg": {
+      "npmMember": "package/icons/document_text_24_regular.svg",
+      "sha256": "46d173dd6621d3a774269edddeee47bc964fbce8e93a38206b1f000cb28a8cb6"
+    },
+    "drink_coffee_24_filled.svg": {
+      "npmMember": "package/icons/drink_coffee_24_filled.svg",
+      "sha256": "b8b80254260274cbdb97981233d2dcfb99e0b9a25c09311604c56ec7de2c0794"
+    },
+    "drink_coffee_24_regular.svg": {
+      "npmMember": "package/icons/drink_coffee_24_regular.svg",
+      "sha256": "57d087497dbe94f179f034c435a1c9e5b8d9aafed24990a8666ee99a9217ee94"
+    },
+    "edit_24_filled.svg": {
+      "npmMember": "package/icons/edit_24_filled.svg",
+      "sha256": "88796a8e7f4fc277c5f1475930d6d85a9286cbb8213ee24cfc951cce23df9775"
+    },
+    "edit_24_regular.svg": {
+      "npmMember": "package/icons/edit_24_regular.svg",
+      "sha256": "90dd323abfe41ff7b0dfdc4525a9c9952b3133f5e6db9c92e3cfed3abc6ede0b"
+    },
+    "flash_24_filled.svg": {
+      "npmMember": "package/icons/flash_24_filled.svg",
+      "sha256": "8a0d9548f1e92dcad8f2800da7d04a0093548ea9ad75c354767429e1c0fdc7d2"
+    },
+    "flash_24_regular.svg": {
+      "npmMember": "package/icons/flash_24_regular.svg",
+      "sha256": "fbab718604280ffce974a47a3fa7e7bd26b49e26dbb7474719a4fe71161e0137"
+    },
+    "flashlight_24_filled.svg": {
+      "npmMember": "package/icons/flashlight_24_filled.svg",
+      "sha256": "49d686cfc007273cf1c70036fbdd982be597ef6aee9a34f06928bb43e7e24102"
+    },
+    "flashlight_24_regular.svg": {
+      "npmMember": "package/icons/flashlight_24_regular.svg",
+      "sha256": "44b266821cfd95d20467ba28dae17d653bf59b5cc636c1c41435bfc1a506c0c5"
+    },
+    "folder_24_filled.svg": {
+      "npmMember": "package/icons/folder_24_filled.svg",
+      "sha256": "1c0d89b5daca6a518ef80570ceb8b4978cfa921386d5136906f1efc986ee16eb"
+    },
+    "folder_24_regular.svg": {
+      "npmMember": "package/icons/folder_24_regular.svg",
+      "sha256": "9699f588e3e77fd73f6cd7d426a1c77bef26f4816ccb6b9e1b93824fffe8a222"
+    },
+    "globe_24_filled.svg": {
+      "npmMember": "package/icons/globe_24_filled.svg",
+      "sha256": "32f5aa5555d80760fabb0365923fb1331ad25af4a66d511c60dab9f7077c28fa"
+    },
+    "globe_24_regular.svg": {
+      "npmMember": "package/icons/globe_24_regular.svg",
+      "sha256": "b4b6c808740358fcd26042d72585c44dd66a166b0b51364a4c931956505598ec"
+    },
+    "headphones_24_color.svg": {
+      "npmMember": "package/icons/headphones_24_color.svg",
+      "sha256": "14e6155fa901a6062d0fcb08e6f39cd83674bc63322394e8196d63877f42eec6"
+    },
+    "history_24_color.svg": {
+      "npmMember": "package/icons/history_24_color.svg",
+      "sha256": "dadebeca949c8da3a3b78832006342016807c01654c03602c638b8d2aaf34335"
+    },
+    "history_24_filled.svg": {
+      "npmMember": "package/icons/history_24_filled.svg",
+      "sha256": "c7dc18e4555f7036a02b552d0fb65b47731ba66e2e0488e8f9a5862aedc8545d"
+    },
+    "history_24_regular.svg": {
+      "npmMember": "package/icons/history_24_regular.svg",
+      "sha256": "e6c4c0ec931c23fe1ebc2f58d6949237ff0b9a08a1947b90cb840e38e353d69d"
+    },
+    "home_24_color.svg": {
+      "npmMember": "package/icons/home_24_color.svg",
+      "sha256": "3e9084a9e5ef3ac859bf9e70c4f79f1583bc50f8e9c60e39123ce6df57e3dafb"
+    },
+    "home_24_filled.svg": {
+      "npmMember": "package/icons/home_24_filled.svg",
+      "sha256": "18eb146d6a02414740c112a2d68d4dc6b8db93d4208434a395211092b0223200"
+    },
+    "home_24_regular.svg": {
+      "npmMember": "package/icons/home_24_regular.svg",
+      "sha256": "3acb8d62ca32b6f79bab49e107741f0d35cf468c49559d6ef24b2132ecacab57"
+    },
+    "image_24_color.svg": {
+      "npmMember": "package/icons/image_24_color.svg",
+      "sha256": "885a0692e6d7c222e0a27eaf52521382330d6a55a7f4a614639b9140bcd30a44"
+    },
+    "image_24_filled.svg": {
+      "npmMember": "package/icons/image_24_filled.svg",
+      "sha256": "6dda0278c5884b3512b610143d1d3c39262b9a72ddf2d1c7a787f55431b35edf"
+    },
+    "image_24_regular.svg": {
+      "npmMember": "package/icons/image_24_regular.svg",
+      "sha256": "028a9cc4eba4b6f9c2264ace17983661011703ab28977258c16040d83e98aa5d"
+    },
+    "info_24_filled.svg": {
+      "npmMember": "package/icons/info_24_filled.svg",
+      "sha256": "28591dc0443fd3bbac897036ab11ca303544743e9465bea4d5162a69170f2e44"
+    },
+    "info_24_regular.svg": {
+      "npmMember": "package/icons/info_24_regular.svg",
+      "sha256": "b3e753274db0a87c3ee5752d8d212267dd5ee32f69c1c14580e4f2348400c8a0"
+    },
+    "keyboard_24_filled.svg": {
+      "npmMember": "package/icons/keyboard_24_filled.svg",
+      "sha256": "e29ea44d43f87daed099818b7d02b64b2880c99252e518b0d1feb7e9f01367fb"
+    },
+    "keyboard_24_regular.svg": {
+      "npmMember": "package/icons/keyboard_24_regular.svg",
+      "sha256": "857b01bc0f8bfc6f54256f0e3274e40495f4b41718444005bdf175ebd8ccd774"
+    },
+    "laptop_24_color.svg": {
+      "npmMember": "package/icons/laptop_24_color.svg",
+      "sha256": "8ecaaec4b22d809e22674ffaad839f8c2dc7a44d66e563f050dd403518315da2"
+    },
+    "laptop_24_filled.svg": {
+      "npmMember": "package/icons/laptop_24_filled.svg",
+      "sha256": "e8ffe70f1e83f90887ad582393886e3fc0532404c77e1a1a76a7b00b2c003e94"
+    },
+    "laptop_24_regular.svg": {
+      "npmMember": "package/icons/laptop_24_regular.svg",
+      "sha256": "dba6e16e63d1072fc2e3717f35b79b4b52b76995b64d342c86691f1f7ad237e1"
+    },
+    "layer_24_filled.svg": {
+      "npmMember": "package/icons/layer_24_filled.svg",
+      "sha256": "a032f60fe51028653e5f59163eb3dfa94f06177fe963c7774e09fcc157c267a3"
+    },
+    "layer_24_regular.svg": {
+      "npmMember": "package/icons/layer_24_regular.svg",
+      "sha256": "4463a1a33b7e96317b14c817a9d54d14e4913dcb0d2bfc1ab15798941fa5e1f5"
+    },
+    "link_24_color.svg": {
+      "npmMember": "package/icons/link_24_color.svg",
+      "sha256": "881644ab7b2acad20ce4f7e48f455237badb36de430088d88ddea9b61a6c6ab8"
+    },
+    "link_dismiss_24_filled.svg": {
+      "npmMember": "package/icons/link_dismiss_24_filled.svg",
+      "sha256": "a925db8ab0be0000b7eda462c73219c7e1bc645603f17b500de73bfd3f88c484"
+    },
+    "link_dismiss_24_regular.svg": {
+      "npmMember": "package/icons/link_dismiss_24_regular.svg",
+      "sha256": "726e80444b22dd6c08f87a0908301f068ae923f4d3f8e560ca580d6bc61ccae7"
+    },
+    "lock_closed_24_filled.svg": {
+      "npmMember": "package/icons/lock_closed_24_filled.svg",
+      "sha256": "8bb5a394e58e889c693632f82e10cc808f9c6ef59990f435d0ebec70df25064d"
+    },
+    "lock_closed_24_regular.svg": {
+      "npmMember": "package/icons/lock_closed_24_regular.svg",
+      "sha256": "19b5446492f774cfb30f0f6daf0f5aa46237083cd3555c1bc5f0d49b2fdfefd8"
+    },
+    "mic_24_color.svg": {
+      "npmMember": "package/icons/mic_24_color.svg",
+      "sha256": "4a128008efda149dfc989423c66a7deffe0298126d7257d8baeec2fb7e3af39e"
+    },
+    "mic_24_filled.svg": {
+      "npmMember": "package/icons/mic_24_filled.svg",
+      "sha256": "d6a95f28f8fcf3e9544dce46baf514fcf4302cd0eac631cc7c476b9b15ac0fdb"
+    },
+    "mic_24_regular.svg": {
+      "npmMember": "package/icons/mic_24_regular.svg",
+      "sha256": "41a27af080ed7830b4cd120c5eabc3098c0472da10421252fdf41a5c0c8cdf10"
+    },
+    "mic_off_24_filled.svg": {
+      "npmMember": "package/icons/mic_off_24_filled.svg",
+      "sha256": "67a8760a7cb9cf752225fd5820c4ef19802e50d690a2dee857cf1e750a7f057b"
+    },
+    "mic_off_24_regular.svg": {
+      "npmMember": "package/icons/mic_off_24_regular.svg",
+      "sha256": "c1d1903a73457e4d946fbf553d760c13c7683c79da519243b4a574121edec124"
+    },
+    "more_horizontal_24_filled.svg": {
+      "npmMember": "package/icons/more_horizontal_24_filled.svg",
+      "sha256": "32f29e4deead82056a3d0e2a518a6eca8979cfc46c72d0bce862167ec101fded"
+    },
+    "more_horizontal_24_regular.svg": {
+      "npmMember": "package/icons/more_horizontal_24_regular.svg",
+      "sha256": "b867db7b6a08e04fe34cdda325a1c300546c9cfc981cf1a75048643a70f36b6f"
+    },
+    "music_note_2_24_filled.svg": {
+      "npmMember": "package/icons/music_note_2_24_filled.svg",
+      "sha256": "a234aa545f3346ce9ed6f5d02c8e622b1926186316f845b5339d1025f41baa1e"
+    },
+    "music_note_2_24_regular.svg": {
+      "npmMember": "package/icons/music_note_2_24_regular.svg",
+      "sha256": "57c3ec194e3868935fd8b9aeca5da21c9a3f182c49ee30fc5c8b49fb4a29aa1f"
+    },
+    "next_24_filled.svg": {
+      "npmMember": "package/icons/next_24_filled.svg",
+      "sha256": "6535e838851436122cec0b890e4b9e2f244d2b9378718ab3e95f8e06a9f287ed"
+    },
+    "next_24_regular.svg": {
+      "npmMember": "package/icons/next_24_regular.svg",
+      "sha256": "b759ed483be5b5b187c12a1b20fe308a2af08cbb1fb9c8fb0853d93199016737"
+    },
+    "open_24_filled.svg": {
+      "npmMember": "package/icons/open_24_filled.svg",
+      "sha256": "6abdd42ddd85bc6d61c5f40b0b7ee3c3e6958d494ebf51170a63f7a31e40aac7"
+    },
+    "open_24_regular.svg": {
+      "npmMember": "package/icons/open_24_regular.svg",
+      "sha256": "c1bdec30a5e39f0c5f0dd0ac0c405c36b8780bd595aadd8810633478f89e4480"
+    },
+    "pause_24_filled.svg": {
+      "npmMember": "package/icons/pause_24_filled.svg",
+      "sha256": "7e48fe97c8d41067e7c7af976aee2e1cd87601f2af5da27e25ab1b2de0754f77"
+    },
+    "pause_24_regular.svg": {
+      "npmMember": "package/icons/pause_24_regular.svg",
+      "sha256": "2850f1b7d01490088c680d40b7af6b0d430dd48336b3c50fa7e3f55cb39e38a1"
+    },
+    "person_24_filled.svg": {
+      "npmMember": "package/icons/person_24_filled.svg",
+      "sha256": "5d602fad4db18587bc0742155d2cd82e13fba169e7a665f0f24fed9c449c3881"
+    },
+    "person_24_regular.svg": {
+      "npmMember": "package/icons/person_24_regular.svg",
+      "sha256": "252544bd3290eb6e67f074cee87557b04680537ab8e207ea5b2ec003aa0f3ece"
+    },
+    "phone_24_color.svg": {
+      "npmMember": "package/icons/phone_24_color.svg",
+      "sha256": "2aca93d8044ba740ccd8269e99fec4eb93bfea4aa59b4f32a1a4e068937179d3"
+    },
+    "phone_24_filled.svg": {
+      "npmMember": "package/icons/phone_24_filled.svg",
+      "sha256": "56f91fdd9fa9404459a67994b218901b9e5cb44b1b11a426346822b766b38f9e"
+    },
+    "phone_24_regular.svg": {
+      "npmMember": "package/icons/phone_24_regular.svg",
+      "sha256": "2659fd73cda299d655f35fee886e3ce1938fdcafd08d822faba0ee61032f9089"
+    },
+    "phone_desktop_24_filled.svg": {
+      "npmMember": "package/icons/phone_desktop_24_filled.svg",
+      "sha256": "290afc54ff14ebfa67fc50afa51bfc851da547d92f87d2e5366ded0d8911b4a4"
+    },
+    "phone_desktop_24_regular.svg": {
+      "npmMember": "package/icons/phone_desktop_24_regular.svg",
+      "sha256": "30f05abdc52b3db285845fa024751d1275be5123457d66082daa3b3ae12a00b3"
+    },
+    "phone_dismiss_24_filled.svg": {
+      "npmMember": "package/icons/phone_dismiss_24_filled.svg",
+      "sha256": "135a9caa6e1b2cb339e22a3a7e44379eac8c74d1092f263ea50b377516187c9d"
+    },
+    "phone_dismiss_24_regular.svg": {
+      "npmMember": "package/icons/phone_dismiss_24_regular.svg",
+      "sha256": "c7174fcd07034050bc9a9ed3330319467d987a8a3e1d7b25202ce80b377f6fb7"
+    },
+    "phone_laptop_24_color.svg": {
+      "npmMember": "package/icons/phone_laptop_24_color.svg",
+      "sha256": "0626bd7ff93e47e2c3158921285cf49e176a600093f666e8156f3bc0d053e9a9"
+    },
+    "pin_24_filled.svg": {
+      "npmMember": "package/icons/pin_24_filled.svg",
+      "sha256": "2938243c0b7105485d0240c95a1842993391020dd6d56177200e566afcd98c74"
+    },
+    "pin_24_regular.svg": {
+      "npmMember": "package/icons/pin_24_regular.svg",
+      "sha256": "8dd9fcf17c2734bd035b13377457aa8908e7c9344572c1a7baab83bc33946a90"
+    },
+    "play_24_filled.svg": {
+      "npmMember": "package/icons/play_24_filled.svg",
+      "sha256": "01618723faf272c1dc6600c725b01400a1dd871e9902198f876742f57ac7a359"
+    },
+    "play_24_regular.svg": {
+      "npmMember": "package/icons/play_24_regular.svg",
+      "sha256": "9e255921f65c4fa9c85c887cac9e0dbeb442089063843d0f4633d44f889c4ac9"
+    },
+    "power_24_filled.svg": {
+      "npmMember": "package/icons/power_24_filled.svg",
+      "sha256": "5b8c51d24e231a16b98dafcb6b0fa51b3ca4a24086145607f5274d151f877b6b"
+    },
+    "power_24_regular.svg": {
+      "npmMember": "package/icons/power_24_regular.svg",
+      "sha256": "3bd0b9667cd7c782c116d4200b3b3d4a28eed35adbc55bf9870a7ade05a76fb9"
+    },
+    "previous_24_filled.svg": {
+      "npmMember": "package/icons/previous_24_filled.svg",
+      "sha256": "81977aa0467b407581f565a53b000fc85f6dd9120218c5329d235f6772f3a5f2"
+    },
+    "previous_24_regular.svg": {
+      "npmMember": "package/icons/previous_24_regular.svg",
+      "sha256": "8644e7b572b73d0d2c1614d8687c442b0bfaa6304bd07f0b3e45c7d1d30d80f6"
+    },
+    "question_circle_24_color.svg": {
+      "npmMember": "package/icons/question_circle_24_color.svg",
+      "sha256": "9a705a4374aaf0f27d34cbcbd2cef45ab225f9f70424f82d8e5b99a61f28bcf8"
+    },
+    "record_24_filled.svg": {
+      "npmMember": "package/icons/record_24_filled.svg",
+      "sha256": "03e7bdf554e16ef244880e6cee4a6b864e5c151dacf71d15401321c510e29c06"
+    },
+    "record_24_regular.svg": {
+      "npmMember": "package/icons/record_24_regular.svg",
+      "sha256": "b21550ff9da182c77e19990e775e2e142eb35672b17e35d8d0378ac66bc19297"
+    },
+    "rectangle_landscape_24_filled.svg": {
+      "npmMember": "package/icons/rectangle_landscape_24_filled.svg",
+      "sha256": "ed6b216a49ac60383c5317d7b8b82bbe7af34620d4c2ce4cdb9b95347612e7df"
+    },
+    "rectangle_landscape_24_regular.svg": {
+      "npmMember": "package/icons/rectangle_landscape_24_regular.svg",
+      "sha256": "81897b52c6c7841de5a8935ef7adeb3541e64e5b178a5669c4ac57bad18b7422"
+    },
+    "scan_24_filled.svg": {
+      "npmMember": "package/icons/scan_24_filled.svg",
+      "sha256": "f6e7e5caf8c490b607692ab89330f164df68cabd119bd0122070814c80633fdd"
+    },
+    "scan_24_regular.svg": {
+      "npmMember": "package/icons/scan_24_regular.svg",
+      "sha256": "b5b5da3f85bd14b63e3bf9bce3510d948a7625ddb19d8e3f5f546e611696e971"
+    },
+    "scan_qr_code_24_filled.svg": {
+      "npmMember": "package/icons/scan_qr_code_24_filled.svg",
+      "sha256": "70380154cf130b19f056a37c3925453dd024aa8105421746244e29151458b1e7"
+    },
+    "scan_qr_code_24_regular.svg": {
+      "npmMember": "package/icons/scan_qr_code_24_regular.svg",
+      "sha256": "2cf0ac5bd57c1db48d88f031d56219597106365790e592fd2c1236e82d2a2036"
+    },
+    "search_24_filled.svg": {
+      "npmMember": "package/icons/search_24_filled.svg",
+      "sha256": "63d745080c83c07f1ad6d39dcbe6400432e97348d7d7490c2fa59716c3945c24"
+    },
+    "search_24_regular.svg": {
+      "npmMember": "package/icons/search_24_regular.svg",
+      "sha256": "7616f8b854157e435a4c7556eebe10a4be065b3380913aba4b1f77f6aeb32ee6"
+    },
+    "send_24_color.svg": {
+      "npmMember": "package/icons/send_24_color.svg",
+      "sha256": "d352525d7e91aec57c2240be5d39fa25cb113378079edeeef01484e55ac041cd"
+    },
+    "send_24_filled.svg": {
+      "npmMember": "package/icons/send_24_filled.svg",
+      "sha256": "828e9149fa17cc44e0c83b88aede65d05b873e89120cc327568529b0d2b6bf46"
+    },
+    "send_24_regular.svg": {
+      "npmMember": "package/icons/send_24_regular.svg",
+      "sha256": "07b5e8efb6739d3c5956bb8a1f84e40cde7bb5418a57dac01f2a1ed497ae2bdb"
+    },
+    "settings_24_color.svg": {
+      "npmMember": "package/icons/settings_24_color.svg",
+      "sha256": "9da5015880e9794795f1f4ad4b3d8be9fc31ce2170cffd9224fe0fd70a54f3fd"
+    },
+    "settings_24_filled.svg": {
+      "npmMember": "package/icons/settings_24_filled.svg",
+      "sha256": "ca4cfdc79742221d2de77e8b3bf60769477fc4ea9c2350314142960d8ab60314"
+    },
+    "settings_24_regular.svg": {
+      "npmMember": "package/icons/settings_24_regular.svg",
+      "sha256": "2d6d320d21346d519f87261c3ce941272b6f6bf54350ed3f00c5494e99f7804f"
+    },
+    "shield_checkmark_24_color.svg": {
+      "npmMember": "package/icons/shield_checkmark_24_color.svg",
+      "sha256": "7f9c92f592ee0441cb92eea7b2f54eda486169a397824f1523b1f8f74e3c8d7c"
+    },
+    "shield_checkmark_24_filled.svg": {
+      "npmMember": "package/icons/shield_checkmark_24_filled.svg",
+      "sha256": "2fead7e4ddfd39df02a6c829f1c232264e0e32b9973b74413e969458f8397218"
+    },
+    "shield_checkmark_24_regular.svg": {
+      "npmMember": "package/icons/shield_checkmark_24_regular.svg",
+      "sha256": "b2d60da29dce77e7da4bf4ff57057cac533806838ce417bcf312c27b6b0743e6"
+    },
+    "skip_back_10_24_filled.svg": {
+      "npmMember": "package/icons/skip_back_10_24_filled.svg",
+      "sha256": "b267e0b51c817992c73eea0274ab7a50c9acf21fcba609e62835d16f3f600d6f"
+    },
+    "skip_back_10_24_regular.svg": {
+      "npmMember": "package/icons/skip_back_10_24_regular.svg",
+      "sha256": "eb5a5b6a167779e0ac1cfda3d0e07483c3e56d79aee1d78ebcb3aba6656e175d"
+    },
+    "skip_forward_10_24_filled.svg": {
+      "npmMember": "package/icons/skip_forward_10_24_filled.svg",
+      "sha256": "c36bdde6f4881b38bc93dbbb5800ea8eade309f1de495a1214f7abf95093cbea"
+    },
+    "skip_forward_10_24_regular.svg": {
+      "npmMember": "package/icons/skip_forward_10_24_regular.svg",
+      "sha256": "5abd4635bbd997af89c349ec3e867b25179dedecc46960db0d78db83757562f1"
+    },
+    "sparkle_24_filled.svg": {
+      "npmMember": "package/icons/sparkle_24_filled.svg",
+      "sha256": "d744e5d94b996a167b9e8c432f25219849e3b1985ae31b04ce48987303902cbf"
+    },
+    "sparkle_24_regular.svg": {
+      "npmMember": "package/icons/sparkle_24_regular.svg",
+      "sha256": "0f8ff7e31164c5119a5e70c4f25021ab11be149651d6e1caa4996217ebc96424"
+    },
+    "speaker_1_24_filled.svg": {
+      "npmMember": "package/icons/speaker_1_24_filled.svg",
+      "sha256": "f828628db3f4944087b41e3e6616ae7798f0b69e32c799fc5192a036f8a500a8"
+    },
+    "speaker_1_24_regular.svg": {
+      "npmMember": "package/icons/speaker_1_24_regular.svg",
+      "sha256": "fa99fd70a727dbb72c3242a43049c6180f0265768539d0b0a24cde612e0d605e"
+    },
+    "speaker_2_24_filled.svg": {
+      "npmMember": "package/icons/speaker_2_24_filled.svg",
+      "sha256": "e6d50e86824ee77fa1e3036876f3df19490c6c43c04bb8a6727d7afe69a20d5c"
+    },
+    "speaker_2_24_regular.svg": {
+      "npmMember": "package/icons/speaker_2_24_regular.svg",
+      "sha256": "be91ede893f8b8515cef94b339a85096193bf4931c0b7cc104b4f5e38019ec03"
+    },
+    "speaker_mute_24_filled.svg": {
+      "npmMember": "package/icons/speaker_mute_24_filled.svg",
+      "sha256": "08d9d6f1034788b615dc2c69478f23dfa4c44dd97b1f434c7636211078efa4e2"
+    },
+    "speaker_mute_24_regular.svg": {
+      "npmMember": "package/icons/speaker_mute_24_regular.svg",
+      "sha256": "17968b9eada023d9f86a7b599626d8b0ce7b5eec83956ac70613e3ea06b11fcd"
+    },
+    "square_multiple_24_filled.svg": {
+      "npmMember": "package/icons/square_multiple_24_filled.svg",
+      "sha256": "0dd22f87c94d90b6b31f46ff88fbd78f2c34394d29e5fd0cd96a5504b21e6003"
+    },
+    "square_multiple_24_regular.svg": {
+      "npmMember": "package/icons/square_multiple_24_regular.svg",
+      "sha256": "42546600628177f0659f8990bc9018359f2937ce356772536c722170e607d9c3"
+    },
+    "star_24_filled.svg": {
+      "npmMember": "package/icons/star_24_filled.svg",
+      "sha256": "5b0190e019f123198eaf75f3a8bff7ea10f53c7d69976b0edd2d33367c95bc85"
+    },
+    "star_24_regular.svg": {
+      "npmMember": "package/icons/star_24_regular.svg",
+      "sha256": "fc3b6b849b9770f319fcfb2726317820ed0dac1fc19d9e1c664f7ba093dea322"
+    },
+    "stop_24_filled.svg": {
+      "npmMember": "package/icons/stop_24_filled.svg",
+      "sha256": "904a657833af0bdd82aa121c0f01373ee9e728ad8e011057ace81cace58f208a"
+    },
+    "stop_24_regular.svg": {
+      "npmMember": "package/icons/stop_24_regular.svg",
+      "sha256": "5c1242adf53802802a9e72418650a49e24fec00916bbe3b705b76c971aa085c8"
+    },
+    "text_font_24_filled.svg": {
+      "npmMember": "package/icons/text_font_24_filled.svg",
+      "sha256": "bd5b44b5efccd134be5c09ae25df682e3437aee6f6183b8f75b3d5653ccd3fac"
+    },
+    "text_font_24_regular.svg": {
+      "npmMember": "package/icons/text_font_24_regular.svg",
+      "sha256": "d2f66c02522c5a24c4e5004ab2c12d0ffe2186a9b4b52a88853196e88092a210"
+    },
+    "usb_plug_24_filled.svg": {
+      "npmMember": "package/icons/usb_plug_24_filled.svg",
+      "sha256": "12f5facb75c5daef0658e3fb4095ca534e198009cf1aaa0668cec76d02ea8aa7"
+    },
+    "usb_plug_24_regular.svg": {
+      "npmMember": "package/icons/usb_plug_24_regular.svg",
+      "sha256": "8573c53dff5bbb62ca712bed7c428c2dea4a6a80b185caf748da1718fc8c8429"
+    },
+    "video_24_color.svg": {
+      "npmMember": "package/icons/video_24_color.svg",
+      "sha256": "93d299f9102863f761cc42fb2c20e8100dca09ab12af7aa034b80851c97e51c8"
+    },
+    "video_24_filled.svg": {
+      "npmMember": "package/icons/video_24_filled.svg",
+      "sha256": "69108914d0f41199ede104fb719475d6fe537971a2dcff1fb8352c43913482b4"
+    },
+    "video_24_regular.svg": {
+      "npmMember": "package/icons/video_24_regular.svg",
+      "sha256": "e3f8e2b1d8f856098a9c66d8d7dfe5d7a2110343ae37042d00449b59c2dcf95b"
+    },
+    "warning_24_filled.svg": {
+      "npmMember": "package/icons/warning_24_filled.svg",
+      "sha256": "376786a857e47e251afbb886992f54da68ff1d0bc524161069c95ab616aeff69"
+    },
+    "warning_24_regular.svg": {
+      "npmMember": "package/icons/warning_24_regular.svg",
+      "sha256": "eb5c30348be332b8997f477c1c184be0eb9f4d04c02539078faca2723e87ec6c"
+    },
+    "weather_moon_24_filled.svg": {
+      "npmMember": "package/icons/weather_moon_24_filled.svg",
+      "sha256": "51096fd10002e2cd8c63a1be12038c9c0a7abb69f59d12ca7a2b44e0b3da3f5c"
+    },
+    "weather_moon_24_regular.svg": {
+      "npmMember": "package/icons/weather_moon_24_regular.svg",
+      "sha256": "31aee46baa96a45bf11430f18757bcc2d4b43de370ca987bd6f727bba4358a43"
+    },
+    "weather_sunny_24_filled.svg": {
+      "npmMember": "package/icons/weather_sunny_24_filled.svg",
+      "sha256": "5636b07751cf16561f9deb7cf3d0c257a022e2dc598cf5a6d33e01fe7993fe6e"
+    },
+    "weather_sunny_24_regular.svg": {
+      "npmMember": "package/icons/weather_sunny_24_regular.svg",
+      "sha256": "e116fcd2927bfdacf3685b03aadd0e87e499789c7ba0bb3531fa3931da378aa8"
+    },
+    "wifi_1_24_filled.svg": {
+      "npmMember": "package/icons/wifi_1_24_filled.svg",
+      "sha256": "c4593794a273b1f8b73ab27f20cc98199a0a73f995b775d24f5544eb09ac2b3c"
+    },
+    "wifi_1_24_regular.svg": {
+      "npmMember": "package/icons/wifi_1_24_regular.svg",
+      "sha256": "2b7030025bef693b0f19453dca1dba8d6946c1610388038886b08e320b94af04"
+    },
+    "wifi_24_color.svg": {
+      "npmMember": "package/icons/wifi_24_color.svg",
+      "sha256": "50520cfa7520ff6f38920fabf599d4d4a9077c784eed5c010b6950c17849d323"
+    },
+    "wifi_off_24_filled.svg": {
+      "npmMember": "package/icons/wifi_off_24_filled.svg",
+      "sha256": "4ad67e9f3352b376546bc03360b30ae7d4f773a4553e497dce9b5344bd80fc2f"
+    },
+    "wifi_off_24_regular.svg": {
+      "npmMember": "package/icons/wifi_off_24_regular.svg",
+      "sha256": "8697e01715577ffdacc85d428c3a2590d53badd9e067331222812cb5f0f969e3"
+    },
+    "window_24_filled.svg": {
+      "npmMember": "package/icons/window_24_filled.svg",
+      "sha256": "5d9f797063a231d0b882751ebf6d4552eb99359285e9a42f4e63a5440ef993d6"
+    },
+    "window_24_regular.svg": {
+      "npmMember": "package/icons/window_24_regular.svg",
+      "sha256": "ddcaef90add10f8a626973bdffa7411280c6c45dec3c151ee61781a506461e6d"
+    }
+  },
+  "qml": {
+    "home": {
+      "regular": "home_24_regular.svg",
+      "filled": "home_24_filled.svg"
+    },
+    "messages": {
+      "regular": "chat_24_regular.svg",
+      "filled": "chat_24_filled.svg"
+    },
+    "person": {
+      "regular": "person_24_regular.svg",
+      "filled": "person_24_filled.svg"
+    },
+    "search": {
+      "regular": "search_24_regular.svg",
+      "filled": "search_24_filled.svg"
+    },
+    "moon": {
+      "regular": "weather_moon_24_regular.svg",
+      "filled": "weather_moon_24_filled.svg"
+    },
+    "bell": {
+      "regular": "alert_24_regular.svg",
+      "filled": "alert_24_filled.svg"
+    },
+    "photo": {
+      "regular": "image_24_regular.svg",
+      "filled": "image_24_filled.svg"
+    },
+    "apps": {
+      "regular": "apps_24_regular.svg",
+      "filled": "apps_24_filled.svg"
+    },
+    "deck": {
+      "regular": "board_24_regular.svg",
+      "filled": "board_24_filled.svg"
+    },
+    "settings": {
+      "regular": "settings_24_regular.svg",
+      "filled": "settings_24_filled.svg"
+    },
+    "clipboard": {
+      "regular": "clipboard_24_regular.svg",
+      "filled": "clipboard_24_filled.svg"
+    },
+    "mirror": {
+      "regular": "phone_desktop_24_regular.svg",
+      "filled": "phone_desktop_24_filled.svg"
+    },
+    "send": {
+      "regular": "send_24_regular.svg",
+      "filled": "send_24_filled.svg"
+    },
+    "play": {
+      "regular": "play_24_regular.svg",
+      "filled": "play_24_filled.svg"
+    },
+    "pause": {
+      "regular": "pause_24_regular.svg",
+      "filled": "pause_24_filled.svg"
+    },
+    "skipNext": {
+      "regular": "next_24_regular.svg",
+      "filled": "next_24_filled.svg"
+    },
+    "skipPrevious": {
+      "regular": "previous_24_regular.svg",
+      "filled": "previous_24_filled.svg"
+    },
+    "rewind10": {
+      "regular": "skip_back_10_24_regular.svg",
+      "filled": "skip_back_10_24_filled.svg"
+    },
+    "forward10": {
+      "regular": "skip_forward_10_24_regular.svg",
+      "filled": "skip_forward_10_24_filled.svg"
+    },
+    "more": {
+      "regular": "more_horizontal_24_regular.svg",
+      "filled": "more_horizontal_24_filled.svg"
+    },
+    "history": {
+      "regular": "history_24_regular.svg",
+      "filled": "history_24_filled.svg"
+    },
+    "music": {
+      "regular": "music_note_2_24_regular.svg",
+      "filled": "music_note_2_24_filled.svg"
+    },
+    "ring": {
+      "regular": "alert_on_24_regular.svg",
+      "filled": "alert_on_24_filled.svg"
+    },
+    "mic": {
+      "regular": "mic_24_regular.svg",
+      "filled": "mic_24_filled.svg"
+    },
+    "micOff": {
+      "regular": "mic_off_24_regular.svg",
+      "filled": "mic_off_24_filled.svg"
+    },
+    "speaker": {
+      "regular": "speaker_2_24_regular.svg",
+      "filled": "speaker_2_24_filled.svg"
+    },
+    "soundOff": {
+      "regular": "speaker_mute_24_regular.svg",
+      "filled": "speaker_mute_24_filled.svg"
+    },
+    "volumeUp": {
+      "regular": "speaker_2_24_regular.svg",
+      "filled": "speaker_2_24_filled.svg"
+    },
+    "volumeDown": {
+      "regular": "speaker_1_24_regular.svg",
+      "filled": "speaker_1_24_filled.svg"
+    },
+    "dialpad": {
+      "regular": "dialpad_24_regular.svg",
+      "filled": "dialpad_24_filled.svg"
+    },
+    "call": {
+      "regular": "call_24_regular.svg",
+      "filled": "call_24_filled.svg"
+    },
+    "callIncoming": {
+      "regular": "call_inbound_24_regular.svg",
+      "filled": "call_inbound_24_filled.svg"
+    },
+    "callOutgoing": {
+      "regular": "call_outbound_24_regular.svg",
+      "filled": "call_outbound_24_filled.svg"
+    },
+    "callMissed": {
+      "regular": "call_missed_24_regular.svg",
+      "filled": "call_missed_24_filled.svg"
+    },
+    "callEnd": {
+      "regular": "call_end_24_regular.svg",
+      "filled": "call_end_24_filled.svg"
+    },
+    "star": {
+      "regular": "star_24_regular.svg",
+      "filled": "star_24_filled.svg"
+    },
+    "backspace": {
+      "regular": "backspace_24_regular.svg",
+      "filled": "backspace_24_filled.svg"
+    },
+    "lock": {
+      "regular": "lock_closed_24_regular.svg",
+      "filled": "lock_closed_24_filled.svg"
+    },
+    "back": {
+      "regular": "chevron_left_24_regular.svg",
+      "filled": "chevron_left_24_filled.svg"
+    },
+    "chevronRight": {
+      "regular": "chevron_right_24_regular.svg",
+      "filled": "chevron_right_24_filled.svg"
+    },
+    "chevronDown": {
+      "regular": "chevron_down_24_regular.svg",
+      "filled": "chevron_down_24_filled.svg"
+    },
+    "chevronUp": {
+      "regular": "chevron_up_24_regular.svg",
+      "filled": "chevron_up_24_filled.svg"
+    },
+    "usb": {
+      "regular": "usb_plug_24_regular.svg",
+      "filled": "usb_plug_24_filled.svg"
+    },
+    "signal": {
+      "regular": "cellular_data_1_24_regular.svg",
+      "filled": "cellular_data_1_24_filled.svg"
+    },
+    "clipboardList": {
+      "regular": "clipboard_text_ltr_24_regular.svg",
+      "filled": "clipboard_text_ltr_24_filled.svg"
+    },
+    "battery": {
+      "regular": "battery_8_24_regular.svg",
+      "filled": "battery_8_24_filled.svg"
+    },
+    "phone": {
+      "regular": "phone_24_regular.svg",
+      "filled": "phone_24_filled.svg"
+    },
+    "laptop": {
+      "regular": "laptop_24_regular.svg",
+      "filled": "laptop_24_filled.svg"
+    },
+    "desktop": {
+      "regular": "desktop_24_regular.svg",
+      "filled": "desktop_24_filled.svg"
+    },
+    "wifi": {
+      "regular": "wifi_1_24_regular.svg",
+      "filled": "wifi_1_24_filled.svg"
+    },
+    "plus": {
+      "regular": "add_24_regular.svg",
+      "filled": "add_24_filled.svg"
+    },
+    "close": {
+      "regular": "dismiss_24_regular.svg",
+      "filled": "dismiss_24_filled.svg"
+    },
+    "check": {
+      "regular": "checkmark_24_regular.svg",
+      "filled": "checkmark_24_filled.svg"
+    },
+    "refresh": {
+      "regular": "arrow_sync_24_regular.svg",
+      "filled": "arrow_sync_24_filled.svg"
+    },
+    "unlink": {
+      "regular": "link_dismiss_24_regular.svg",
+      "filled": "link_dismiss_24_filled.svg"
+    },
+    "copy": {
+      "regular": "copy_24_regular.svg",
+      "filled": "copy_24_filled.svg"
+    },
+    "warning": {
+      "regular": "warning_24_regular.svg",
+      "filled": "warning_24_filled.svg"
+    },
+    "info": {
+      "regular": "info_24_regular.svg",
+      "filled": "info_24_filled.svg"
+    },
+    "palette": {
+      "regular": "color_24_regular.svg",
+      "filled": "color_24_filled.svg"
+    },
+    "colorSwatch": {
+      "regular": "color_background_24_regular.svg",
+      "filled": "color_background_24_filled.svg"
+    },
+    "power": {
+      "regular": "power_24_regular.svg",
+      "filled": "power_24_filled.svg"
+    },
+    "folder": {
+      "regular": "folder_24_regular.svg",
+      "filled": "folder_24_filled.svg"
+    },
+    "sparkle": {
+      "regular": "sparkle_24_regular.svg",
+      "filled": "sparkle_24_filled.svg"
+    },
+    "island": {
+      "regular": "rectangle_landscape_24_regular.svg",
+      "filled": "rectangle_landscape_24_filled.svg"
+    },
+    "shelf": {
+      "regular": "layer_24_regular.svg",
+      "filled": "layer_24_filled.svg"
+    },
+    "glass": {
+      "regular": "square_multiple_24_regular.svg",
+      "filled": "square_multiple_24_filled.svg"
+    },
+    "download": {
+      "regular": "arrow_download_24_regular.svg",
+      "filled": "arrow_download_24_filled.svg"
+    },
+    "openExternal": {
+      "regular": "open_24_regular.svg",
+      "filled": "open_24_filled.svg"
+    },
+    "video": {
+      "regular": "video_24_regular.svg",
+      "filled": "video_24_filled.svg"
+    },
+    "flashlight": {
+      "regular": "flashlight_24_regular.svg",
+      "filled": "flashlight_24_filled.svg"
+    },
+    "bluetooth": {
+      "regular": "bluetooth_24_regular.svg",
+      "filled": "bluetooth_24_filled.svg"
+    },
+    "brightness": {
+      "regular": "weather_sunny_24_regular.svg",
+      "filled": "weather_sunny_24_filled.svg"
+    },
+    "window": {
+      "regular": "window_24_regular.svg",
+      "filled": "window_24_filled.svg"
+    },
+    "camera": {
+      "regular": "camera_24_regular.svg",
+      "filled": "camera_24_filled.svg"
+    },
+    "keyboard": {
+      "regular": "keyboard_24_regular.svg",
+      "filled": "keyboard_24_filled.svg"
+    },
+    "globe": {
+      "regular": "globe_24_regular.svg",
+      "filled": "globe_24_filled.svg"
+    },
+    "text": {
+      "regular": "text_font_24_regular.svg",
+      "filled": "text_font_24_filled.svg"
+    },
+    "terminal": {
+      "regular": "code_24_regular.svg",
+      "filled": "code_24_filled.svg"
+    },
+    "bolt": {
+      "regular": "flash_24_regular.svg",
+      "filled": "flash_24_filled.svg"
+    },
+    "trash": {
+      "regular": "delete_24_regular.svg",
+      "filled": "delete_24_filled.svg"
+    },
+    "edit": {
+      "regular": "edit_24_regular.svg",
+      "filled": "edit_24_filled.svg"
+    },
+    "pin": {
+      "regular": "pin_24_regular.svg",
+      "filled": "pin_24_filled.svg"
+    },
+    "record": {
+      "regular": "record_24_regular.svg",
+      "filled": "record_24_filled.svg"
+    },
+    "stopSquare": {
+      "regular": "stop_24_regular.svg",
+      "filled": "stop_24_filled.svg"
+    },
+    "screenOff": {
+      "regular": "phone_dismiss_24_regular.svg",
+      "filled": "phone_dismiss_24_filled.svg"
+    },
+    "coffee": {
+      "regular": "drink_coffee_24_regular.svg",
+      "filled": "drink_coffee_24_filled.svg"
+    },
+    "qr": {
+      "regular": "scan_qr_code_24_regular.svg",
+      "filled": "scan_qr_code_24_filled.svg"
+    },
+    "scan": {
+      "regular": "scan_24_regular.svg",
+      "filled": "scan_24_filled.svg"
+    },
+    "book": {
+      "regular": "book_24_regular.svg",
+      "filled": "book_24_filled.svg"
+    },
+    "compass": {
+      "regular": "compass_northwest_24_regular.svg",
+      "filled": "compass_northwest_24_filled.svg"
+    },
+    "shield": {
+      "regular": "shield_checkmark_24_regular.svg",
+      "filled": "shield_checkmark_24_filled.svg"
+    },
+    "control": {
+      "regular": "desktop_cursor_24_regular.svg",
+      "filled": "desktop_cursor_24_filled.svg"
+    },
+    "browse": {
+      "regular": "document_text_24_regular.svg",
+      "filled": "document_text_24_filled.svg"
+    },
+    "clock": {
+      "regular": "clock_24_regular.svg",
+      "filled": "clock_24_filled.svg"
+    },
+    "offline": {
+      "regular": "wifi_off_24_regular.svg",
+      "filled": "wifi_off_24_filled.svg"
+    },
+    "sun": {
+      "regular": "weather_sunny_24_regular.svg",
+      "filled": "weather_sunny_24_filled.svg"
+    },
+    "motion": {
+      "regular": "accessibility_24_regular.svg",
+      "filled": "accessibility_24_filled.svg"
+    }
+  },
+  "qmlColorSources": {
+    "message": "chat_24_color.svg",
+    "photos": "image_24_color.svg",
+    "apps": "apps_24_color.svg",
+    "desktop": "laptop_24_color.svg",
+    "music": "headphones_24_color.svg",
+    "link": "link_24_color.svg",
+    "home": "home_24_color.svg",
+    "activity": "history_24_color.svg",
+    "settings": "settings_24_color.svg",
+    "help": "question_circle_24_color.svg",
+    "phone": "phone_24_color.svg",
+    "wifi": "wifi_24_color.svg",
+    "mirror": "phone_laptop_24_color.svg",
+    "folder": "document_folder_24_color.svg",
+    "clipboard": "clipboard_24_color.svg",
+    "camera": "camera_24_color.svg",
+    "find": "phone_24_color.svg",
+    "bell": "alert_24_color.svg",
+    "file": "document_24_color.svg",
+    "preview": "laptop_24_color.svg",
+    "monitor": "laptop_24_color.svg",
+    "control": "laptop_24_color.svg",
+    "deck": "board_24_color.svg",
+    "clock": "clock_24_color.svg",
+    "send": "send_24_color.svg",
+    "browse": "document_text_24_color.svg",
+    "mic": "mic_24_color.svg",
+    "shield": "shield_checkmark_24_color.svg",
+    "video": "video_24_color.svg",
+    "messages": "chat_24_color.svg",
+    "photo": "image_24_color.svg",
+    "history": "history_24_color.svg",
+    "ring": "alert_24_color.svg",
+    "laptop": "laptop_24_color.svg",
+    "folderOpen": "document_text_24_color.svg",
+    "sendFolder": "document_folder_24_color.svg"
+  },
+  "androidVectors": {
+    "wp_home": "home_24_regular.svg",
+    "wp_home_filled": "home_24_filled.svg",
+    "wp_settings": "settings_24_regular.svg",
+    "wp_settings_filled": "settings_24_filled.svg",
+    "wp_qr": "scan_qr_code_24_regular.svg",
+    "wp_wifi": "wifi_1_24_regular.svg",
+    "wp_offline": "wifi_off_24_regular.svg",
+    "wp_battery": "battery_8_24_regular.svg",
+    "wp_check": "checkmark_24_regular.svg",
+    "wp_chevron": "chevron_right_24_regular.svg",
+    "wp_globe": "globe_24_regular.svg",
+    "wp_sun": "weather_sunny_24_regular.svg",
+    "wp_moon": "weather_moon_24_regular.svg",
+    "wp_motion": "accessibility_24_regular.svg",
+    "wp_close": "dismiss_24_regular.svg"
+  },
+  "androidBrand": {
+    "resource": "wp_brand",
+    "source": "assets/brand/waypair/waypair-glyph-monochrome.svg",
+    "sourceSHA256": "dda7e8f307d65071d4ac8c15e9d4a56aaec84c75124b5716dfb7166288facd9d",
+    "transform": "translate(-23.33,-28.08); authored centerline and 11.6 stroke unchanged"
+  },
+  "androidColors": {
+    "wp_control_color": {
+      "source": "laptop_24_color.svg",
+      "output": "android/app/src/main/res/drawable-nodpi/wp_control_color.png",
+      "width": 128,
+      "height": 128,
+      "status": "PASS_ROOT_OFFLINE_CHROMIUM_RASTER",
+      "sha256": "fbceda31290d3e91d4b4f02a6f93bb3c4ee411d73de4faebabbfd84e321c3400"
+    },
+    "wp_deck_color": {
+      "source": "board_24_color.svg",
+      "output": "android/app/src/main/res/drawable-nodpi/wp_deck_color.png",
+      "width": 128,
+      "height": 128,
+      "status": "PASS_ROOT_OFFLINE_CHROMIUM_RASTER",
+      "sha256": "848254d6d2a5231d838a312cc37a12a5dbdbfc2dd5d0e780a6cb7fa1490f4cb8"
+    },
+    "wp_clock_color": {
+      "source": "clock_24_color.svg",
+      "output": "android/app/src/main/res/drawable-nodpi/wp_clock_color.png",
+      "width": 128,
+      "height": 128,
+      "status": "PASS_ROOT_OFFLINE_CHROMIUM_RASTER",
+      "sha256": "bd93110ac9b1ef64e1a738ce8b582ce8bf5c5700899f3ddbd09c700e0c699b91"
+    },
+    "wp_camera_color": {
+      "source": "camera_24_color.svg",
+      "output": "android/app/src/main/res/drawable-nodpi/wp_camera_color.png",
+      "width": 128,
+      "height": 128,
+      "status": "PASS_ROOT_OFFLINE_CHROMIUM_RASTER",
+      "sha256": "81593df8869720d8041c2992d3db2ff70a37fef952c02b64a4d50139b5474bfe"
+    },
+    "wp_send_color": {
+      "source": "send_24_color.svg",
+      "output": "android/app/src/main/res/drawable-nodpi/wp_send_color.png",
+      "width": 128,
+      "height": 128,
+      "status": "PASS_ROOT_OFFLINE_CHROMIUM_RASTER",
+      "sha256": "5d1e8bdbd2cca16fdc4b00874225f1b845ce2f81cedb3300ab65f0cbd191085f"
+    },
+    "wp_folder_color": {
+      "source": "document_folder_24_color.svg",
+      "output": "android/app/src/main/res/drawable-nodpi/wp_folder_color.png",
+      "width": 128,
+      "height": 128,
+      "status": "PASS_ROOT_OFFLINE_CHROMIUM_RASTER",
+      "sha256": "52dc52d32abd49b4e53a4ca68afd383bf746b542548de066b77ed3124f6eebd5"
+    },
+    "wp_clipboard_color": {
+      "source": "clipboard_24_color.svg",
+      "output": "android/app/src/main/res/drawable-nodpi/wp_clipboard_color.png",
+      "width": 128,
+      "height": 128,
+      "status": "PASS_ROOT_OFFLINE_CHROMIUM_RASTER",
+      "sha256": "b986d367e21c5439641f2c7416be8ff2fc65f2a3005a2dee6caa8538227f3c2c"
+    },
+    "wp_browse_color": {
+      "source": "document_text_24_color.svg",
+      "output": "android/app/src/main/res/drawable-nodpi/wp_browse_color.png",
+      "width": 128,
+      "height": 128,
+      "status": "PASS_ROOT_OFFLINE_CHROMIUM_RASTER",
+      "sha256": "dc74fbc453ff75574a1f5abad20d782a6fa115b44abc402b655d04170b12e480"
+    },
+    "wp_mic_color": {
+      "source": "mic_24_color.svg",
+      "output": "android/app/src/main/res/drawable-nodpi/wp_mic_color.png",
+      "width": 128,
+      "height": 128,
+      "status": "PASS_ROOT_OFFLINE_CHROMIUM_RASTER",
+      "sha256": "6c2202e039fef9b59c8cff31351b91145fa65bbed42d954e185ff5966737e3e2"
+    },
+    "wp_bell_color": {
+      "source": "alert_24_color.svg",
+      "output": "android/app/src/main/res/drawable-nodpi/wp_bell_color.png",
+      "width": 128,
+      "height": 128,
+      "status": "PASS_ROOT_OFFLINE_CHROMIUM_RASTER",
+      "sha256": "20ff3432a1713b264af546d942489f52f523db0abe64fe5f75be7a82b4c2fc46"
+    }
+  },
+  "rootExtraMonitorSource": {
+    "source": "desktop_24_regular.svg",
+    "output": "android/app/src/main/res/drawable/wp_monitor.xml",
+    "sourceSHA256": "df126630843e995cf50c83c730a2c9f829b5c160b9e033737c5bbc56d053ba25"
+  },
+  "rasterization": {
+    "method": "Official authored SVG rendered locally to transparent128px PNG; no synthesis or source path changes",
+    "width": 128,
+    "height": 128
+  }
+}

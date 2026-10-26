@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- Canonical Waypair glyph centerline and stroke; tight bounds remove adaptive-icon padding. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="19.73dp" android:viewportWidth="53.34" android:viewportHeight="43.84">
+    <group android:translateX="-23.33" android:translateY="-28.08">
+        <path android:pathData="M29.13 33.88C29.13 40.39 29.13 46.82 29.13 53.33C29.13 60.56 33.84 66.12 39.91 66.12C45.18 66.12 54.61 56.91 54.61 49.45C54.61 46.89 52.56 44.85 50 44.85C47.44 44.85 45.39 46.89 45.39 49.45C45.39 56.91 54.82 66.12 60.09 66.12C66.16 66.12 70.87 60.56 70.87 53.33C70.87 46.82 70.87 40.39 70.87 33.88"
+            android:strokeColor="#FFFFFFFF" android:strokeWidth="11.6" android:strokeLineCap="round"
+            android:fillColor="#00000000" />
+    </group>
+</vector>

@@ -422,7 +422,10 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
             MirrorService.session.map { it.active }.distinctUntilChanged(),
             WebcamService.session.map { it.active || it.connecting }.distinctUntilChanged(),
             MicService.streaming.map { it != null }.distinctUntilChanged(),
-            pcSpeakerPlayer.playing.map { it }.distinctUntilChanged(),
+            // Frames stop during silence while the PC can still have phone-speaker output on.
+            combine(pcSpeakerPlayer.playing, _state.map { it.pcSpeakerRelayOn }) { playing, relayOn ->
+                playing || relayOn
+            }.distinctUntilChanged(),
         ) { hasTransfers: Boolean, isMirroring: Boolean, isWebcam: Boolean, isMic: Boolean, isSpeaker: Boolean ->
             hasTransfers || isMirroring || isWebcam || isMic || isSpeaker
         },

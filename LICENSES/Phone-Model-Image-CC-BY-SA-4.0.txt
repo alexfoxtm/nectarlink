@@ -1,0 +1,9 @@
+Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)
+SPDX-License-Identifier: CC-BY-SA-4.0
+
+Canonical license and legal-code source pointers (no local substitute license):
+https://creativecommons.org/licenses/by-sa/4.0/
+https://creativecommons.org/licenses/by-sa/4.0/legalcode.en
+
+See CREDITS.txt for the licensed work, author, source, and presentation changes.
+This file is a source-license pointer, not a copy of the complete legal code.
