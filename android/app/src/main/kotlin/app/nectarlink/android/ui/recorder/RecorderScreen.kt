@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package app.nectarlink.android.ui.recorder
 
+import app.nectarlink.android.ui.theme.linkSuccessColor
+import app.nectarlink.android.ui.theme.LinkIcon
 import android.Manifest
 import android.media.MediaPlayer
 import android.text.format.Formatter
@@ -174,13 +176,14 @@ fun RecorderScreen(
                         contentDescription = stringResource(R.string.action_back),
                     )
                 }
-                Spacer(Modifier.width(4.dp))
+                LinkIcon(R.drawable.wp_mic_color, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
                 Text(
                     device.name,
                     style = MaterialTheme.typography.headlineSmall,
                     modifier = Modifier.weight(1f),
                 )
-                val dotColor = if (device.online) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                val dotColor = if (device.online) linkSuccessColor(MaterialTheme.colorScheme.onSurface) else MaterialTheme.colorScheme.outline
                 Spacer(
                     modifier = Modifier
                         .size(10.dp)

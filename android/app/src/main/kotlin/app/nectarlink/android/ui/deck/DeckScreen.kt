@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package app.nectarlink.android.ui.deck
 
+import app.nectarlink.android.ui.theme.linkSuccessColor
+import androidx.compose.ui.graphics.luminance
+import app.nectarlink.android.ui.theme.linkIconColor
+import app.nectarlink.android.ui.theme.LinkIcon
 import android.app.Activity
 import android.content.Context
 import android.content.res.Configuration
@@ -182,7 +186,8 @@ fun DeckScreen(
                     contentDescription = stringResource(R.string.action_back),
                 )
             }
-            Spacer(Modifier.width(4.dp))
+            LinkIcon(R.drawable.wp_deck_color, contentDescription = null, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -194,7 +199,7 @@ fun DeckScreen(
                     Spacer(Modifier.width(8.dp))
                     Surface(
                         shape = CircleShape,
-                        color = if (device.online) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                        color = if (device.online) linkSuccessColor(MaterialTheme.colorScheme.onSurface) else MaterialTheme.colorScheme.outline,
                         modifier = Modifier.size(8.dp),
                     ) {}
                 }
@@ -644,7 +649,7 @@ private fun DeckTileButton(
                 ) {
                     DeckIcon(
                         name = iconName,
-                        tint = palette.fg,
+                        tint = if (enabled) deckGlyphColor(tile.color, palette.fg) else palette.fg.copy(alpha = 0.42f),
                         modifier = Modifier.size(if (compact) 18.dp else 20.dp),
                     )
                 }
@@ -742,3 +747,14 @@ private fun fallbackDefaultLayout(context: Context): DeckLayout = DeckLayout(
         ),
     ),
 )
+
+private fun deckGlyphColor(name: String, fallback: Color): Color = when (name.lowercase()) {
+    "amber" -> linkIconColor(R.drawable.wp_bell_color, fallback)
+    "teal" -> linkIconColor(R.drawable.wp_folder_color, fallback)
+    "blue" -> linkIconColor(R.drawable.wp_monitor, fallback)
+    "violet" -> linkIconColor(R.drawable.wp_camera_color, fallback)
+    "slate" -> linkIconColor(R.drawable.wp_settings, fallback)
+    "coral" -> if (fallback.luminance() >= 0.5f) Color(0xFFF5A08B) else Color(0xFFAD503C)
+    "red" -> if (fallback.luminance() >= 0.5f) Color(0xFFFF9C9C) else Color(0xFFBA3A45)
+    else -> fallback
+}

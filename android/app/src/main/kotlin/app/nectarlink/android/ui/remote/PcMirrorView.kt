@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package app.nectarlink.android.ui.remote
 
+import app.nectarlink.android.ui.theme.LinkIcon
 import android.app.Activity
 import android.content.Context
 import android.content.pm.ActivityInfo
@@ -1178,7 +1179,7 @@ fun PcMirrorView(
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
                     modifier = Modifier.semantics { contentDescription = backspaceLabel },
                 ) {
-                    Icon(painterResource(R.drawable.wp_oneui_keyboard_btn_delete), contentDescription = null, modifier = Modifier.size(20.dp))
+                    LinkIcon(R.drawable.wp_oneui_keyboard_btn_delete, contentDescription = null, modifier = Modifier.size(20.dp))
                 }
             }
         }

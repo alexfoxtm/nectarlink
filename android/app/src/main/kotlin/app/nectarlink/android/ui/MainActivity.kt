@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package app.nectarlink.android.ui
 
+import app.nectarlink.android.ui.theme.linkSuccessColor
+import app.nectarlink.android.ui.theme.LinkIcon
 import android.Manifest
 import android.content.Intent
 import android.os.Build
@@ -43,7 +45,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -65,7 +66,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.rememberTextMeasurer
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
@@ -1055,7 +1055,7 @@ private fun FloatingBottomPillDock(
                 selected = selectedTab == Tab.Home, onClick = { onSelectTab(Tab.Home) },
                 iconRes = if (selectedTab == Tab.Home) R.drawable.wp_home_filled else R.drawable.wp_home,
                 label = stringResource(R.string.home_title),
-                statusDotColor = when { onlineCount > 0 -> scheme.primary; pairedCount > 0 -> scheme.outline; else -> null },
+                statusDotColor = when { onlineCount > 0 -> linkSuccessColor(scheme.onSurface); pairedCount > 0 -> scheme.outline; else -> null },
             )
             BoxWithConstraints(
                 modifier = Modifier.weight(1f),
@@ -1080,8 +1080,8 @@ private fun FloatingBottomPillDock(
                         .heightIn(min = WaypairDesign.touchTarget),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                 ) {
-                    Icon(
-                        painterResource(R.drawable.wp_link_search),
+                    LinkIcon(
+                        R.drawable.wp_link_search,
                         contentDescription = if (showLabel) null else searchLabel,
                         modifier = Modifier.size(24.dp),
                     )
@@ -1133,7 +1133,7 @@ private fun FloatingDockTabPill(
                 .background(if (selected) scheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(painterResource(iconRes), contentDescription = null, tint = contentColor, modifier = Modifier.size(22.dp))
+            LinkIcon(iconRes, contentDescription = null, tint = contentColor, modifier = Modifier.size(22.dp))
             if (statusDotColor != null) {
                 Box(Modifier.align(Alignment.TopEnd).padding(3.dp).size(5.dp).drawBehind { drawCircle(statusDotColor) })
             }

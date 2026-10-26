@@ -54,6 +54,7 @@ Card {
             width: 44; height: 44
             tonal: !control.on
             iconPath: control.iconPath
+            semanticTint: !control.on
             label: control.label
             iconColor: control.on ? (Theme.graphite ? Theme.surface : Theme.primaryContent)
                                   : Theme.secondaryContainerContent
@@ -334,6 +335,7 @@ Card {
                         width: 22; height: 22
                         path: Icons.callEnd
                         color: Theme.errorContent
+                        semanticTint: false
                     }
                 }
                 Rectangle {

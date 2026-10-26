@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package app.nectarlink.android.ui.remote
 
+import app.nectarlink.android.ui.theme.linkSuccessColor
+import app.nectarlink.android.ui.theme.LinkIcon
 import android.Manifest
 import android.app.Activity
 import android.content.Context
@@ -60,7 +62,6 @@ import androidx.compose.foundation.verticalScroll
 import app.nectarlink.android.ui.theme.LinkButton as Button
 import androidx.compose.material3.ButtonDefaults
 import app.nectarlink.android.ui.theme.LinkFilledTonalButton as FilledTonalButton
-import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -98,7 +99,6 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -200,12 +200,13 @@ fun RemoteScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconButton(onClick = onBack) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_back),
+                    LinkIcon(
+                        resourceId = R.drawable.ic_back,
                         contentDescription = stringResource(R.string.action_back),
                     )
                 }
-                Spacer(Modifier.width(4.dp))
+                LinkIcon(R.drawable.wp_control_color, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
                 Text(
                     device.name,
                     style = MaterialTheme.typography.headlineSmall,
@@ -213,7 +214,7 @@ fun RemoteScreen(
                 )
                 Surface(
                     shape = CircleShape,
-                    color = if (device.online) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                    color = if (device.online) linkSuccessColor(MaterialTheme.colorScheme.onSurface) else MaterialTheme.colorScheme.outline,
                     modifier = Modifier.size(10.dp),
                 ) {}
             }
@@ -1442,7 +1443,7 @@ private fun SpecialKeysBar(
                             else -> null
                         }
                         if (arrowRes != null) {
-                            Icon(painterResource(arrowRes), contentDescription = null, modifier = Modifier.size(20.dp))
+                            LinkIcon(arrowRes, contentDescription = null, modifier = Modifier.size(20.dp))
                         } else {
                             Text(
                                 text = label,

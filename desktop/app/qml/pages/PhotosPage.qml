@@ -1073,6 +1073,7 @@ Item {
                     width: 30; height: 30
                     path: Icons.play
                     color: "#ffffff"
+                    semanticTint: false
                 }
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
                 TapHandler {
@@ -1345,6 +1346,7 @@ Item {
                     width: 16; height: 16
                     path: Icons.play
                     color: "#ffffff"
+                    semanticTint: false
                 }
             }
 
@@ -1395,6 +1397,7 @@ Item {
                     width: 14; height: 14
                     path: Icons.check
                     color: Theme.primaryContent
+                    semanticTint: false
                 }
                 MouseArea {
                     anchors.fill: parent

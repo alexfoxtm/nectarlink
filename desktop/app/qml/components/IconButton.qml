@@ -10,6 +10,7 @@ FocusScope {
     property string text: ""
     property string label
     property bool tonal: false
+    property bool semanticTint: true
     property color iconColor: tonal ? Theme.secondaryContainerContent : Theme.surfaceContentVariant
     signal clicked
 
@@ -59,6 +60,7 @@ FocusScope {
             width: button.iconSize; height: button.iconSize
             path: button.iconPath
             color: button.iconColor
+            semanticTint: button.semanticTint
         }
         Row {
             id: contentRow
@@ -71,6 +73,7 @@ FocusScope {
                 width: button.iconSize; height: button.iconSize
                 path: button.iconPath
                 color: button.iconColor
+                semanticTint: button.semanticTint
             }
             Txt {
                 anchors.verticalCenter: parent.verticalCenter

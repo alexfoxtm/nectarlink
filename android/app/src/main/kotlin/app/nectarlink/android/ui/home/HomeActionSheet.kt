@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package app.nectarlink.android.ui.home
 
+import app.nectarlink.android.ui.theme.LinkIcon
 import android.net.Uri
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.EnterTransition
@@ -29,7 +30,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -50,7 +50,6 @@ import androidx.compose.ui.unit.LayoutDirection
 import app.nectarlink.android.ui.theme.LocalLinkSheetInputFocus
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
@@ -115,7 +114,7 @@ internal fun HomeActionSheet(
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 if (selectedId != null) {
                     IconButton(onClick = { selectedId = null; query = "" }) {
-                        Icon(painterResource(R.drawable.ic_back), stringResource(R.string.action_back), Modifier.size(24.dp))
+                        LinkIcon(R.drawable.ic_back, stringResource(R.string.action_back), Modifier.size(24.dp))
                     }
                 }
                 Text(
@@ -123,7 +122,7 @@ internal fun HomeActionSheet(
                     style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f),
                 )
                 IconButton(onClick = collapse) {
-                    Icon(painterResource(R.drawable.wp_close), stringResource(R.string.watch_close), Modifier.size(24.dp))
+                    LinkIcon(R.drawable.wp_close, stringResource(R.string.watch_close), Modifier.size(24.dp))
                 }
             }
             OutlinedTextField(
@@ -131,12 +130,12 @@ internal fun HomeActionSheet(
                 modifier = Modifier.fillMaxWidth().onFocusChanged { reportInputFocus(it.isFocused) },
                 textStyle = MaterialTheme.typography.bodyLarge,
                 placeholder = { Text(stringResource(R.string.link_actions_search), style = MaterialTheme.typography.bodyLarge) },
-                leadingIcon = { Icon(painterResource(R.drawable.wp_link_search), null, Modifier.size(24.dp)) },
+                leadingIcon = { LinkIcon(R.drawable.wp_link_search, null, Modifier.size(24.dp)) },
                 shape = RoundedCornerShape(28.dp), singleLine = true,
             )
             if (selectedDevice != null) {
                 LinkFilledTonalButton(onClick = { pickerOpen = true }) {
-                    Icon(painterResource(R.drawable.wp_monitor), null, Modifier.size(24.dp))
+                    LinkIcon(R.drawable.wp_monitor, null, Modifier.size(24.dp), colorize = false)
                     Text(stringResource(R.string.settings_devices), Modifier.padding(start = 8.dp).weight(1f, fill = false))
                 }
             }
@@ -167,7 +166,7 @@ internal fun HomeActionSheet(
                                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Icon(painterResource(R.drawable.wp_monitor), null, Modifier.size(24.dp))
+                                LinkIcon(R.drawable.wp_monitor, null, Modifier.size(24.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text(device.name, style = MaterialTheme.typography.bodyLarge)
                                     Text(
@@ -176,7 +175,7 @@ internal fun HomeActionSheet(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
-                                Icon(painterResource(R.drawable.wp_chevron), null, Modifier.size(20.dp).graphicsLayer { scaleX = direction.toFloat() })
+                                LinkIcon(R.drawable.wp_chevron, null, Modifier.size(20.dp).graphicsLayer { scaleX = direction.toFloat() })
                             }
                         }
                     } else {
@@ -203,7 +202,7 @@ internal fun HomeActionSheet(
                         }
                     }
                     LinkFilledTonalButton(onClick = { onDismiss(); onPairNew() }) {
-                        Icon(painterResource(R.drawable.wp_qr), null, Modifier.size(24.dp))
+                        LinkIcon(R.drawable.wp_qr, null, Modifier.size(24.dp), colorize = false)
                         Text(stringResource(R.string.action_pair_new), Modifier.padding(start = 8.dp).weight(1f, fill = false))
                     }
                 }

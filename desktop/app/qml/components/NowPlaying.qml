@@ -264,6 +264,7 @@ Card {
                                     width: 10; height: 10
                                     path: Icons.phone
                                     color: !card.isLocalPc ? Theme.primaryContent : Theme.surfaceContentVariant
+                                    semanticTint: card.isLocalPc
                                 }
                                 Txt {
                                     anchors.verticalCenter: parent.verticalCenter
@@ -293,6 +294,7 @@ Card {
                                     width: 10; height: 10
                                     path: Icons.desktop
                                     color: card.isLocalPc ? Theme.primaryContent : Theme.surfaceContentVariant
+                                    semanticTint: !card.isLocalPc
                                 }
                                 Txt {
                                     anchors.verticalCenter: parent.verticalCenter

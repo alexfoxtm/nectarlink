@@ -1704,6 +1704,7 @@ Item {
                                         width: 20; height: 20
                                         path: Icons.keyboard
                                         color: typeOnPhoneCard.activeHere ? Theme.primaryContent : Theme.secondaryContainerContent
+                                        semanticTint: !typeOnPhoneCard.activeHere && typeOnPhoneCard.canStart && !typeOnPhoneCard.macGap
                                     }
                                 }
                                 Column {
@@ -3070,6 +3071,7 @@ Item {
                     path: tile.iconPath
                     source: tile.iconSource
                     color: Theme.primaryContainerContent
+                    semanticTint: tile.available
                 }
             }
             Column {
@@ -3217,6 +3219,7 @@ Item {
                         width: 20; height: 20
                         path: qbtn.iconPath
                         color: qbtn.contentColor
+                        semanticTint: qbtn.available && !qbtn.active
                     }
                 }
                 Txt {
@@ -3239,6 +3242,7 @@ Item {
                 width: 10; height: 10
                 path: Icons.lock
                 color: qbtn.contentColor
+                semanticTint: false
                 opacity: 0.7
             }
         }
@@ -3267,7 +3271,7 @@ Item {
                 height: width
                 path: qbtn.iconPath
                 color: qbtn.discInk
-                semanticTint: false
+                semanticTint: qbtn.available
             }
             Txt {
                 id: oneUiLabel

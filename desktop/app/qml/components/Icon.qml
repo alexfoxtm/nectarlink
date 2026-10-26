@@ -11,11 +11,11 @@ Item {
     property real stroke: 1.8
     property url source: ""
     property bool selected: false
-    property bool semanticTint: false
+    property bool semanticTint: true
     readonly property bool hasSource: source.toString().length > 0
     readonly property bool sourcedPath: Icons.isSourced(path)
     readonly property var oneuiPath: Icons.oneuiBinding(path)
-    readonly property color paintColor: semanticTint ? Icons.utilityColor(path, color) : color
+    readonly property color paintColor: semanticTint && enabled ? Icons.utilityColor(path, color) : color
 
     implicitWidth: 20
     implicitHeight: 20

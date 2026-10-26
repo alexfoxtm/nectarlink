@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package app.nectarlink.android.ui.desk
 
+import app.nectarlink.android.ui.theme.LinkIcon
 import android.app.Activity
 import android.view.WindowManager
 import androidx.compose.foundation.BorderStroke
@@ -26,7 +27,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ButtonDefaults
 import app.nectarlink.android.ui.theme.LinkFilledTonalButton as FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
-import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
@@ -52,7 +52,6 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -269,8 +268,8 @@ fun DeskScreen(
                                                 .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)),
                                             contentAlignment = Alignment.Center,
                                         ) {
-                                            Icon(
-                                                painter = painterResource(R.drawable.ic_music),
+                                            LinkIcon(
+                                                resourceId = R.drawable.ic_music,
                                                 contentDescription = null,
                                                 tint = MaterialTheme.colorScheme.primary,
                                                 modifier = Modifier.size(20.dp),
@@ -318,10 +317,11 @@ fun DeskScreen(
                                         ),
                                         modifier = Modifier.size(WaypairDesign.touchTarget),
                                     ) {
-                                        Icon(
-                                            painterResource(R.drawable.ic_skip_previous),
+                                        LinkIcon(
+                                            R.drawable.ic_skip_previous,
                                             contentDescription = stringResource(R.string.media_previous),
                                             modifier = Modifier.size(18.dp),
+                                            colorize = false,
                                         )
                                     }
                                     FilledTonalIconButton(
@@ -340,12 +340,11 @@ fun DeskScreen(
                                         ),
                                         modifier = Modifier.size(WaypairDesign.touchTarget),
                                     ) {
-                                        Icon(
-                                            painterResource(
-                                                if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play,
-                                            ),
+                                        LinkIcon(
+                                            if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play,
                                             contentDescription = stringResource(R.string.deck_default_play_pause),
                                             modifier = Modifier.size(20.dp),
+                                            colorize = false,
                                         )
                                     }
                                     FilledTonalIconButton(
@@ -362,10 +361,11 @@ fun DeskScreen(
                                         ),
                                         modifier = Modifier.size(WaypairDesign.touchTarget),
                                     ) {
-                                        Icon(
-                                            painterResource(R.drawable.ic_skip_next),
+                                        LinkIcon(
+                                            R.drawable.ic_skip_next,
                                             contentDescription = stringResource(R.string.media_next),
                                             modifier = Modifier.size(18.dp),
+                                            colorize = false,
                                         )
                                     }
                                 }
@@ -382,10 +382,8 @@ fun DeskScreen(
                                         onClick = { core.setPcAudio(device.id, null, !deckState.muted) },
                                         modifier = Modifier.size(WaypairDesign.touchTarget),
                                     ) {
-                                        Icon(
-                                            painterResource(
-                                                if (deckState.muted) R.drawable.ic_sound_off else R.drawable.ic_speaker,
-                                            ),
+                                        LinkIcon(
+                                            if (deckState.muted) R.drawable.ic_sound_off else R.drawable.ic_speaker,
                                             contentDescription = null,
                                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                             modifier = Modifier.size(18.dp),

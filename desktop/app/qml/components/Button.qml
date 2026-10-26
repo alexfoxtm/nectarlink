@@ -74,6 +74,7 @@ FocusScope {
                 width: button.small ? 16 : 18; height: width
                 path: button.iconPath
                 color: button.foreground
+                semanticTint: button.variant !== "fill"
             }
             Txt {
                 anchors.verticalCenter: parent.verticalCenter

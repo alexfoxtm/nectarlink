@@ -421,6 +421,7 @@ Window {
                         visible: islandWin.mode === "media"
                         color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.24)
                         Icon {
+                            semanticTint: false
                             anchors.centerIn: parent
                             width: 14; height: 14
                             visible: !(islandWin.mediaArt.length > 0 && compactArtImg.status === Image.Ready)
@@ -471,6 +472,7 @@ Window {
                         }
 
                         Icon {
+                            semanticTint: false
                             anchors.centerIn: parent
                             width: 11; height: 11
                             path: islandWin.transferJustFinished ? Icons.check : Icons.send
@@ -487,6 +489,7 @@ Window {
                             ? Qt.rgba(0.29, 0.87, 0.50, 0.22)
                             : Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.22)
                         Icon {
+                            semanticTint: false
                             anchors.centerIn: parent
                             width: 14; height: 14
                             path: islandWin.mode === "call"
@@ -549,6 +552,7 @@ Window {
                         anchors.verticalCenter: parent.verticalCenter
                         color: cPlayHover.hovered ? Qt.rgba(1, 1, 1, 0.18) : Qt.rgba(1, 1, 1, 0.08)
                         Icon {
+                            semanticTint: false
                             anchors.centerIn: parent
                             width: 12; height: 12
                             path: islandWin.mediaPlaying ? Icons.pause : Icons.play
@@ -573,6 +577,7 @@ Window {
                         anchors.verticalCenter: parent.verticalCenter
                         color: cNextHover.hovered ? Qt.rgba(1, 1, 1, 0.18) : "transparent"
                         Icon {
+                            semanticTint: false
                             anchors.centerIn: parent
                             width: 12; height: 12
                             path: Icons.skipNext
@@ -679,6 +684,7 @@ Window {
                         visible: islandWin.mode === "media"
                         color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.24)
                         Icon {
+                            semanticTint: false
                             anchors.centerIn: parent
                             width: 22; height: 22
                             visible: !(islandWin.mediaArt.length > 0 && expArtImg.status === Image.Ready)
@@ -745,6 +751,7 @@ Window {
                             ? Qt.rgba(0.29, 0.87, 0.50, 0.22)
                             : Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.22)
                         Icon {
+                            semanticTint: false
                             anchors.centerIn: parent
                             width: 22; height: 22
                             path: islandWin.mode === "call"
@@ -822,6 +829,7 @@ Window {
                         width: 32; height: 32; radius: 16
                         color: "#22C55E"
                         Icon {
+                            semanticTint: false
                             anchors.centerIn: parent
                             width: 15; height: 15
                             path: Icons.call
@@ -836,6 +844,7 @@ Window {
                         width: 30; height: 30; radius: 15
                         color: PhoneCall.muted ? Qt.rgba(1, 1, 1, 0.26) : Qt.rgba(1, 1, 1, 0.12)
                         Icon {
+                            semanticTint: false
                             anchors.centerIn: parent
                             width: 14; height: 14
                             path: PhoneCall.muted ? Icons.micOff : Icons.mic
@@ -850,6 +859,7 @@ Window {
                         width: 32; height: 32; radius: 16
                         color: "#EF4444"
                         Icon {
+                            semanticTint: false
                             anchors.centerIn: parent
                             width: 15; height: 15
                             path: Icons.callEnd
@@ -866,6 +876,7 @@ Window {
                         anchors.verticalCenter: parent.verticalCenter
                         color: expPrevHover.hovered ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(1, 1, 1, 0.08)
                         Icon {
+                            semanticTint: false
                             anchors.centerIn: parent
                             width: 13; height: 13
                             path: Icons.skipPrevious
@@ -883,6 +894,7 @@ Window {
                         anchors.verticalCenter: parent.verticalCenter
                         color: Theme.primary
                         Icon {
+                            semanticTint: false
                             anchors.centerIn: parent
                             width: 15; height: 15
                             path: islandWin.mediaPlaying ? Icons.pause : Icons.play
@@ -905,6 +917,7 @@ Window {
                         anchors.verticalCenter: parent.verticalCenter
                         color: expNextHover.hovered ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(1, 1, 1, 0.08)
                         Icon {
+                            semanticTint: false
                             anchors.centerIn: parent
                             width: 13; height: 13
                             path: Icons.skipNext
@@ -923,6 +936,7 @@ Window {
                         anchors.verticalCenter: parent.verticalCenter
                         color: expCancelHover.hovered ? Qt.rgba(1, 0.3, 0.3, 0.28) : Qt.rgba(1, 1, 1, 0.10)
                         Icon {
+                            semanticTint: false
                             anchors.centerIn: parent
                             width: 13; height: 13
                             path: Icons.close

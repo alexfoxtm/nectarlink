@@ -988,6 +988,7 @@ Window {
             iconSize: 14
             iconPath: Icons.soundOff
             iconColor: "white"
+            semanticTint: false
             label: qsTr("Play the phone's sound here")
             onClicked: if (!win.settingsWindow) Mirror.toggleSound()
         }
@@ -1090,6 +1091,7 @@ Window {
             width: 10; height: 10
             path: Icons.info
             color: "white"
+            semanticTint: false
             Accessible.ignored: true
         }
         Button {
@@ -1116,6 +1118,7 @@ Window {
             iconSize: 10
             iconPath: Icons.info
             iconColor: "white"
+            semanticTint: false
             label: qsTr("How to enable")
             enabled: win.canRequestControl && !win.viewOnly
             onClicked: if (win.canRequestControl && !win.viewOnly) Mirror.requestControl(win.mirrorKey)
@@ -1132,6 +1135,7 @@ Window {
             iconSize: win.tinyControlHint ? 10 : 18
             iconPath: Icons.close
             iconColor: "white"
+            semanticTint: false
             label: qsTr("Hide")
             onClicked: closed = true
         }

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package app.nectarlink.android.ui.settings
 
+import app.nectarlink.android.ui.theme.linkSuccessColor
+import app.nectarlink.android.ui.theme.LinkIcon
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -12,10 +14,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.material3.Icon
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.res.painterResource
 import app.nectarlink.android.ui.theme.WaypairBrand
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -270,11 +270,11 @@ fun SettingsScreen(
                         shape = RoundedCornerShape(WaypairDesign.controlRadius),
                         modifier = Modifier.size(WaypairDesign.touchTarget),
                     ) {
-                        Icon(painterResource(R.drawable.wp_qr), contentDescription = stringResource(R.string.action_pair_new))
+                        LinkIcon(R.drawable.wp_qr, contentDescription = stringResource(R.string.action_pair_new), colorize = false)
                     }
                     if (onDismissRequest != null) {
                         androidx.compose.material3.IconButton(onClick = collapse) {
-                            Icon(painterResource(R.drawable.wp_close), contentDescription = stringResource(R.string.watch_close), modifier = Modifier.size(24.dp))
+                            LinkIcon(R.drawable.wp_close, contentDescription = stringResource(R.string.watch_close), modifier = Modifier.size(24.dp))
                         }
                     }
                 }
@@ -321,6 +321,7 @@ fun SettingsScreen(
             item(key = "devices", contentType = "section") {
                 Section(
                     title = stringResource(R.string.settings_devices),
+                    iconRes = R.drawable.wp_monitor,
                     highlighted = pulsingSectionKey == "devices",
                 ) {
                     val context = LocalContext.current
@@ -339,7 +340,7 @@ fun SettingsScreen(
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
                                 Column(Modifier.weight(1f).padding(end = 12.dp)) {
                                     Text(device.name, style = MaterialTheme.typography.titleSmall)
-                                    val dotColor = if (device.online) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                                    val dotColor = if (device.online) linkSuccessColor(MaterialTheme.colorScheme.onSurface) else MaterialTheme.colorScheme.outline
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -416,6 +417,7 @@ fun SettingsScreen(
             item(key = "control", contentType = "section") {
                 Section(
                     title = stringResource(R.string.settings_apps_service),
+                    iconRes = R.drawable.wp_oneui_apps_outline,
                     highlighted = pulsingSectionKey == "control",
                 ) {
                     Text(
@@ -431,7 +433,7 @@ fun SettingsScreen(
 
             appComputers.forEach { device ->
                 item(key = "apps_${device.id}", contentType = "section") {
-                    Section(device.name, highlighted = focusedAppsPcId == device.id) {
+                    Section(device.name, highlighted = focusedAppsPcId == device.id, iconRes = R.drawable.wp_monitor) {
                         Text(
                             stringResource(if (device.online) R.string.connected else R.string.not_connected),
                             style = MaterialTheme.typography.bodyMedium,
@@ -582,7 +584,7 @@ fun SettingsScreen(
             }
             if (appComputers.isEmpty()) {
                 item(key = "apps_empty", contentType = "section") {
-                    Section(stringResource(R.string.settings_apps_screen)) {
+                    Section(stringResource(R.string.settings_apps_screen), iconRes = R.drawable.wp_oneui_apps_outline) {
                         Text(stringResource(R.string.settings_apps_screen_empty), style = MaterialTheme.typography.bodyLarge)
                         TextButton(onClick = { activeCategory = "devices" }) {
                             Text(stringResource(R.string.settings_devices))
@@ -592,7 +594,7 @@ fun SettingsScreen(
             }
 
             item(key = "remote", contentType = "section") {
-                Section(stringResource(R.string.settings_remote)) {
+                Section(stringResource(R.string.settings_remote), iconRes = R.drawable.wp_control_color) {
                     val sensitivityTitle = stringResource(R.string.settings_touchpad_sensitivity)
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
                         Text(
@@ -620,6 +622,7 @@ fun SettingsScreen(
             item(key = "notifications", contentType = "section") {
                 Section(
                     title = stringResource(R.string.settings_notifications),
+                    iconRes = R.drawable.wp_bell_color,
                     highlighted = pulsingSectionKey == "notifications",
                 ) {
                     NotificationAccess(state.notificationAccess, onChooseFilter = {
@@ -629,7 +632,7 @@ fun SettingsScreen(
             }
 
             item(key = "permissions_control", contentType = "section") {
-                Section(stringResource(R.string.settings_control)) {
+                Section(stringResource(R.string.settings_control), iconRes = R.drawable.wp_control_color) {
                     BankingPauseAccess()
                     SettingRowDivider()
                     DndAccess(state.dndAccess)
@@ -641,6 +644,7 @@ fun SettingsScreen(
             item(key = "calls_contacts", contentType = "section") {
                 Section(
                     title = stringResource(R.string.settings_calls_and_contacts),
+                    iconRes = R.drawable.wp_oneui_device_outline,
                     highlighted = pulsingSectionKey == "calls_contacts",
                 ) {
                     RuntimePermissionAccess(
@@ -675,6 +679,7 @@ fun SettingsScreen(
             item(key = "photos", contentType = "section") {
                 Section(
                     title = stringResource(R.string.settings_photos),
+                    iconRes = R.drawable.wp_camera_color,
                     highlighted = pulsingSectionKey == "photos",
                 ) {
                     PhotosAccess(
@@ -695,7 +700,7 @@ fun SettingsScreen(
 
         if (activeCategory == "all" || activeCategory == "connection") {
             item(key = "connection", contentType = "section") {
-                Section(stringResource(R.string.settings_connection)) {
+                Section(stringResource(R.string.settings_connection), iconRes = R.drawable.wp_wifi) {
                     val mobileDataTitle = stringResource(R.string.guide_away_title)
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
                         Column(Modifier.weight(1f).padding(end = 12.dp)) {
@@ -719,6 +724,7 @@ fun SettingsScreen(
             item(key = "background", contentType = "section") {
                 Section(
                     title = stringResource(R.string.settings_background_title),
+                    iconRes = R.drawable.wp_oneui_security_outline,
                     highlighted = pulsingSectionKey == "background",
                 ) {
                     val runInBackgroundTitle = stringResource(R.string.settings_run_in_background)
@@ -776,6 +782,7 @@ fun SettingsScreen(
             item(key = "localsend", contentType = "section") {
                 Section(
                     title = stringResource(R.string.settings_localsend_title),
+                    iconRes = R.drawable.wp_wifi,
                     highlighted = pulsingSectionKey == "localsend",
                 ) {
                     val localsendTitle = stringResource(R.string.settings_localsend_title)
@@ -799,7 +806,7 @@ fun SettingsScreen(
             }
 
             item(key = "local_hotspot", contentType = "section") {
-                Section(stringResource(R.string.local_hotspot_title)) { LocalHotspotAccess() }
+                Section(stringResource(R.string.local_hotspot_title), iconRes = R.drawable.wp_wifi) { LocalHotspotAccess() }
             }
         }
 
@@ -866,6 +873,7 @@ fun SettingsScreen(
             item(key = "clipboard", contentType = "section") {
                 Section(
                     title = stringResource(R.string.settings_clipboard_title),
+                    iconRes = R.drawable.wp_clipboard_color,
                     highlighted = pulsingSectionKey == "clipboard",
                 ) {
                     Text(
@@ -921,6 +929,7 @@ fun SettingsScreen(
             item(key = "data_storage", contentType = "section") {
                 Section(
                     title = stringResource(R.string.settings_data_storage_title),
+                    iconRes = R.drawable.wp_folder_color,
                     highlighted = pulsingSectionKey == "data_storage",
                 ) {
                     // 1. Notification history
@@ -1061,7 +1070,7 @@ fun SettingsScreen(
             }
 
             item(key = "waypair_extras", contentType = "section") {
-                Section(stringResource(R.string.waypair_extras_title)) {
+                Section(stringResource(R.string.waypair_extras_title), iconRes = R.drawable.wp_oneui_star_outline) {
                     Text(
                         stringResource(R.string.waypair_extras_body),
                         style = MaterialTheme.typography.bodyMedium,
@@ -1103,7 +1112,7 @@ fun SettingsScreen(
             }
 
             item(key = "about", contentType = "section") {
-                Section(stringResource(R.string.settings_about)) {
+                Section(stringResource(R.string.settings_about), iconRes = R.drawable.wp_settings) {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
                         Column(Modifier.weight(1f).padding(end = 12.dp)) {
                             Text(stringResource(R.string.guide_title), style = MaterialTheme.typography.titleSmall)
@@ -1694,16 +1703,24 @@ private fun SettingRowDivider() {
 private fun Section(
     title: String,
     highlighted: Boolean = false,
+    iconRes: Int = R.drawable.wp_settings,
     content: @Composable () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
     Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
-        Text(
-            title,
-            style = MaterialTheme.typography.titleLarge,
-            color = if (highlighted) scheme.primary else scheme.onSurfaceVariant,
+        Row(
             modifier = Modifier.padding(start = 4.dp),
-        )
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            LinkIcon(iconRes, contentDescription = null, modifier = Modifier.size(20.dp))
+            Text(
+                title,
+                style = MaterialTheme.typography.titleLarge,
+                color = if (highlighted) scheme.primary else scheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+        }
         Surface(
             modifier = Modifier
                 .fillMaxWidth(),
@@ -1738,8 +1755,8 @@ internal fun AppearanceChoice(
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (label.isNotEmpty()) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(
-                    painterResource(if (showModePreview) R.drawable.wp_sun else R.drawable.wp_globe),
+                LinkIcon(
+                    if (showModePreview) R.drawable.wp_sun else R.drawable.wp_globe,
                     contentDescription = null,
                     tint = scheme.primary,
                     modifier = Modifier.size(20.dp),
@@ -1779,8 +1796,8 @@ internal fun AppearanceChoice(
                     ) {
                         val choiceIcon: @Composable () -> Unit = {
                             if (showModePreview) {
-                                Icon(
-                                    painterResource(when (value) { "light" -> R.drawable.wp_sun; "dark" -> R.drawable.wp_moon; else -> R.drawable.wp_monitor }),
+                                LinkIcon(
+                                    when (value) { "light" -> R.drawable.wp_sun; "dark" -> R.drawable.wp_moon; else -> R.drawable.wp_monitor },
                                     contentDescription = null,
                                     modifier = Modifier.size(20.dp),
                                 )
@@ -1788,7 +1805,7 @@ internal fun AppearanceChoice(
                         }
                         val check: @Composable () -> Unit = {
                             Box(Modifier.size(18.dp), contentAlignment = Alignment.Center) {
-                                if (isSelected) Icon(painterResource(R.drawable.wp_check), contentDescription = null, modifier = Modifier.size(16.dp))
+                                if (isSelected) LinkIcon(R.drawable.wp_check, contentDescription = null, modifier = Modifier.size(16.dp))
                             }
                         }
                         if (stacked || !showModePreview) {

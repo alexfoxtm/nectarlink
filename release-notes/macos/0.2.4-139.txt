@@ -1,0 +1,6 @@
+Waypair Link for macOS — 0.2.4 (139)
+
+- Restored coordinated colored utility icons while preserving neutral glass surfaces and the approved layout.
+- Added restrained blue, teal and violet accents to the native generic phone graphic.
+- Kept overlay, inverted, disabled and media controls legible, with their existing state and contrast.
+- Retained Inter, font selection and text-size controls.

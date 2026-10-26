@@ -1,0 +1,7 @@
+Waypair Link for Android — 0.2.4 (139)
+
+- Restored colorful semantic icons and original device graphics across Home, Settings, pairing, file and media tools.
+- Kept neutral light/dark surfaces, Inter typography and the improved 16/14sp text hierarchy.
+- Settings opens as a rounded sheet over Home; feedback stays visible within it.
+- Retained tighter spacing, the adaptive Home grid and larger-system-text layouts.
+- Preserved custom Deck artwork, QR rendering, status colors, disabled controls and existing permissions.

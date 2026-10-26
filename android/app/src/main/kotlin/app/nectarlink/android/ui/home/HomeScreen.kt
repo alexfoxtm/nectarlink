@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package app.nectarlink.android.ui.home
 
+import app.nectarlink.android.ui.theme.linkSuccessColor
+import app.nectarlink.android.ui.theme.linkIconColor
+import app.nectarlink.android.ui.theme.LinkDeviceGraphic
+import app.nectarlink.android.ui.theme.LinkIcon
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.text.format.DateUtils
@@ -44,7 +48,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import app.nectarlink.android.ui.theme.LinkFilledTonalButton as FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
-import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -85,7 +88,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -334,8 +336,8 @@ fun HomeScreen(
                                 }
                             }
                         }) {
-                            Icon(
-                                painterResource(R.drawable.ic_refresh),
+                            LinkIcon(
+                                R.drawable.ic_refresh,
                                 contentDescription = stringResource(R.string.action_refresh),
                                 modifier = Modifier.graphicsLayer { rotationZ = spin.value },
                             )
@@ -345,7 +347,7 @@ fun HomeScreen(
                             shape = RoundedCornerShape(WaypairDesign.controlRadius),
                             modifier = Modifier.size(WaypairDesign.touchTarget),
                         ) {
-                            Icon(painterResource(R.drawable.wp_qr), contentDescription = stringResource(R.string.action_pair_new))
+                            LinkIcon(R.drawable.wp_qr, contentDescription = stringResource(R.string.action_pair_new), colorize = false)
                         }
                     }
                 }
@@ -1026,7 +1028,7 @@ private fun NoPairedPcCard(
                 ),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(painterResource(R.drawable.wp_monitor), contentDescription = null, modifier = Modifier.size(36.dp), tint = MaterialTheme.colorScheme.primary)
+            LinkDeviceGraphic(modifier = Modifier.size(36.dp))
         }
         Spacer(Modifier.height(8.dp))
         Text(
@@ -1200,7 +1202,7 @@ private fun PermissionsSetupCard(
                 ),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(painterResource(R.drawable.ic_settings), contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
+                LinkIcon(R.drawable.ic_settings, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -1214,8 +1216,8 @@ private fun PermissionsSetupCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Icon(
-                painter = painterResource(R.drawable.wp_oneui_keyboard_arrow_down),
+            LinkIcon(
+                resourceId = R.drawable.wp_oneui_keyboard_arrow_down,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
@@ -1464,7 +1466,7 @@ private fun PeerCard(
                 },
                 modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
             ) {
-                Icon(painter = painterResource(R.drawable.wp_bell_color), contentDescription = null, modifier = Modifier.size(15.dp))
+                LinkIcon(resourceId = R.drawable.wp_bell_color, contentDescription = null, modifier = Modifier.size(15.dp))
                 Spacer(Modifier.width(6.dp))
                 ButtonLabel(stringResource(if (ringing) R.string.action_stop_ringing else R.string.action_ring_device))
             }
@@ -1474,7 +1476,7 @@ private fun PeerCard(
                 onClick = { pickFiles.launch(arrayOf("*/*")) },
                 modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
             ) {
-                Icon(painter = painterResource(R.drawable.wp_send_color), contentDescription = null, modifier = Modifier.size(15.dp))
+                LinkIcon(resourceId = R.drawable.wp_send_color, contentDescription = null, modifier = Modifier.size(15.dp))
                 Spacer(Modifier.width(6.dp))
                 ButtonLabel(stringResource(R.string.action_send_files))
             }
@@ -1485,7 +1487,7 @@ private fun PeerCard(
             onClick = { context.startActivity(SendActivity.sendClipboardIntent(context, device.id)) },
             modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
         ) {
-            Icon(painter = painterResource(R.drawable.ic_clipboard), contentDescription = null, modifier = Modifier.size(15.dp))
+            LinkIcon(resourceId = R.drawable.ic_clipboard, contentDescription = null, modifier = Modifier.size(15.dp))
             Spacer(Modifier.width(6.dp))
             ButtonLabel(stringResource(R.string.action_send_clipboard))
         }
@@ -1539,7 +1541,7 @@ internal fun PcCard(
             )
             val outlined = ButtonDefaults.outlinedButtonColors(contentColor = ink, disabledContentColor = ink.copy(alpha = 0.38f))
             val outline = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
-            val statusDotColor = if (device.online) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+            val statusDotColor = if (device.online) linkSuccessColor(MaterialTheme.colorScheme.onSurface) else MaterialTheme.colorScheme.outline
             // Per-action capability gates from the negotiated matrix. Desk clock
             // renders locally; Browse PC files requires `files.pc_browse` from
             // the desktop's `storage.read` offer.
@@ -1573,7 +1575,7 @@ internal fun PcCard(
                     modifier = Modifier.size(48.dp).waypairRaisedWell(),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(painterResource(R.drawable.wp_monitor), contentDescription = null, modifier = Modifier.size(24.dp), tint = MaterialTheme.colorScheme.onSurface)
+                    LinkDeviceGraphic(modifier = Modifier.size(24.dp))
                 }
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(device.name, style = MaterialTheme.typography.titleLarge)
@@ -1586,8 +1588,8 @@ internal fun PcCard(
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Icon(
-                                painterResource(if (device.online) R.drawable.wp_check else R.drawable.wp_offline),
+                            LinkIcon(
+                                if (device.online) R.drawable.wp_check else R.drawable.wp_offline,
                                 contentDescription = null,
                                 tint = statusDotColor,
                                 modifier = Modifier.size(14.dp),
@@ -1596,7 +1598,7 @@ internal fun PcCard(
                         }
                         device.battery?.let { battery ->
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Icon(painterResource(R.drawable.wp_battery), contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                LinkIcon(R.drawable.wp_battery, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Text(
                                     text = if (battery.charging) stringResource(R.string.battery_charging, battery.level.toInt())
                                     else stringResource(R.string.battery_level, battery.level.toInt()),
@@ -1775,7 +1777,7 @@ private fun HomeFeatureTile(
 ) {
     val scheme = MaterialTheme.colorScheme
     val dark = scheme.surface.luminance() < 0.5f
-    val actionTint = scheme.onSurface
+    val actionTint = linkIconColor(action.iconRes, scheme.onSurface)
     val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
@@ -1809,8 +1811,8 @@ private fun HomeFeatureTile(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Icon(
-                    painterResource(action.iconRes), contentDescription = null,
+                LinkIcon(
+                    action.iconRes, contentDescription = null,
                     modifier = Modifier.size(24.dp),
                     tint = if (action.enabled) actionTint else scheme.onSurfaceVariant.copy(alpha = 0.42f),
                 )
@@ -1907,8 +1909,8 @@ private fun PcAudioCardSection(
                     },
                     modifier = Modifier.size(WaypairDesign.touchTarget),
                 ) {
-                    Icon(
-                        painter = painterResource(if (mediaSummary.playing) R.drawable.ic_pause else R.drawable.ic_play),
+                    LinkIcon(
+                        resourceId = if (mediaSummary.playing) R.drawable.ic_pause else R.drawable.ic_play,
                         contentDescription = stringResource(
                             if (mediaSummary.playing) R.string.media_pause else R.string.media_play,
                         ),
@@ -1920,8 +1922,8 @@ private fun PcAudioCardSection(
                     onClick = { pcMedia?.pressed(app.nectarlink.core.MediaAction.NEXT) },
                     modifier = Modifier.size(WaypairDesign.touchTarget),
                 ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_skip_next),
+                    LinkIcon(
+                        resourceId = R.drawable.ic_skip_next,
                         contentDescription = stringResource(R.string.media_next),
                         tint = ink,
                         modifier = Modifier.size(18.dp),
@@ -1943,8 +1945,8 @@ private fun PcAudioCardSection(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Icon(
-                painter = painterResource(R.drawable.ic_speaker),
+            LinkIcon(
+                resourceId = R.drawable.ic_speaker,
                 contentDescription = null,
                 tint = ink.copy(alpha = 0.9f),
                 modifier = Modifier.size(20.dp),
@@ -1985,8 +1987,8 @@ private fun PcAudioCardSection(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Icon(
-                    painter = painterResource(R.drawable.wp_mic_color),
+                LinkIcon(
+                    resourceId = R.drawable.wp_mic_color,
                     contentDescription = null,
                     tint = ink.copy(alpha = 0.9f),
                     modifier = Modifier.size(20.dp),
@@ -2020,8 +2022,8 @@ private fun PcAudioCardSection(
                 onClick = { onSetPcAudio(null, !deckState.muted) },
                 modifier = Modifier.size(WaypairDesign.touchTarget),
             ) {
-                Icon(
-                    painter = painterResource(if (deckState.muted) R.drawable.ic_sound_off else R.drawable.ic_speaker),
+                LinkIcon(
+                    resourceId = if (deckState.muted) R.drawable.ic_sound_off else R.drawable.ic_speaker,
                     contentDescription = stringResource(
                         if (deckState.muted) R.string.pc_audio_unmute else R.string.pc_audio_mute,
                     ),
@@ -2461,8 +2463,8 @@ private fun LocalSendCard(
                 onClick = onRefresh,
                 modifier = Modifier.size(WaypairDesign.touchTarget),
             ) {
-                Icon(
-                    painterResource(R.drawable.ic_refresh),
+                LinkIcon(
+                    R.drawable.ic_refresh,
                     contentDescription = stringResource(R.string.action_refresh),
                     modifier = Modifier.size(20.dp),
                 )
@@ -2674,8 +2676,8 @@ private fun SendQueueRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Icon(
-                painter = painterResource(kindIcon),
+            LinkIcon(
+                resourceId = kindIcon,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(18.dp),
@@ -2723,8 +2725,8 @@ private fun SendQueueRow(
                         onClick = onCancel,
                         modifier = Modifier.size(WaypairDesign.touchTarget),
                     ) {
-                        Icon(
-                            painter = painterResource(R.drawable.wp_close),
+                        LinkIcon(
+                            resourceId = R.drawable.wp_close,
                             contentDescription = stringResource(R.string.action_cancel),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(18.dp),
@@ -3534,8 +3536,8 @@ private fun PcFilesSheet(
                     Spacer(Modifier.width(4.dp))
                 }
                 IconButton(onClick = { refreshTick++ }) {
-                    Icon(
-                        painterResource(R.drawable.ic_refresh),
+                    LinkIcon(
+                        R.drawable.ic_refresh,
                         contentDescription = stringResource(R.string.action_refresh),
                     )
                 }
@@ -3610,8 +3612,8 @@ private fun PcFilesSheet(
                                         style = MaterialTheme.typography.titleSmall,
                                         modifier = Modifier.weight(1f),
                                     )
-                                    Icon(
-                                        painterResource(R.drawable.wp_chevron),
+                                    LinkIcon(
+                                        R.drawable.wp_chevron,
                                         contentDescription = null,
                                         modifier = Modifier.size(20.dp),
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -3714,8 +3716,8 @@ private fun PcFilesSheet(
                                         }
                                     }
                                     if (isDir) {
-                                        Icon(
-                                            painterResource(R.drawable.wp_chevron),
+                                        LinkIcon(
+                                            R.drawable.wp_chevron,
                                             contentDescription = null,
                                             modifier = Modifier.size(20.dp),
                                             tint = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package app.nectarlink.android.ui.pairing
 
+import app.nectarlink.android.ui.theme.linkSuccessColor
+import app.nectarlink.android.ui.theme.LinkIcon
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -125,21 +127,27 @@ fun PairingScreen(
                 color = androidx.compose.ui.graphics.Color.Transparent,
                 contentColor = MaterialTheme.colorScheme.onSurface,
             ) {
-                Text(
-                    text = when (pairing) {
-                        is PairingState.Comparing, is PairingState.Confirmed -> stringResource(R.string.pair_check_code)
-                        is PairingState.Paired -> stringResource(R.string.pair_done_title)
-                        is PairingState.Failed -> stringResource(R.string.pair_failed_title)
-                        else -> when {
-                            showing -> stringResource(R.string.pair_show_title)
-                            nearby -> stringResource(R.string.pair_nearby_title)
-                            else -> stringResource(R.string.pair_title)
-                        }
-                    },
-                    style = MaterialTheme.typography.headlineMedium,
-                    textAlign = TextAlign.Start,
-                    modifier = Modifier.padding(vertical = WaypairDesign.spacingXl),
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    LinkIcon(R.drawable.wp_qr, contentDescription = null, modifier = Modifier.size(24.dp))
+                    Text(
+                        text = when (pairing) {
+                            is PairingState.Comparing, is PairingState.Confirmed -> stringResource(R.string.pair_check_code)
+                            is PairingState.Paired -> stringResource(R.string.pair_done_title)
+                            is PairingState.Failed -> stringResource(R.string.pair_failed_title)
+                            else -> when {
+                                showing -> stringResource(R.string.pair_show_title)
+                                nearby -> stringResource(R.string.pair_nearby_title)
+                                else -> stringResource(R.string.pair_title)
+                            }
+                        },
+                        style = MaterialTheme.typography.headlineMedium,
+                        textAlign = TextAlign.Start,
+                        modifier = Modifier.weight(1f).padding(vertical = WaypairDesign.spacingXl),
+                    )
+                }
             }
             Spacer(Modifier.height(WaypairDesign.spacingLg))
 
@@ -441,7 +449,7 @@ private fun Outcome(success: Boolean, text: String) {
                     painterResource(if (success) R.drawable.wp_check else R.drawable.wp_oneui_error_2),
                     contentDescription = null,
                     modifier = Modifier.size(28.dp),
-                    tint = if (success) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                    tint = if (success) linkSuccessColor(MaterialTheme.colorScheme.onPrimaryContainer) else MaterialTheme.colorScheme.error,
                 )
             }
         }

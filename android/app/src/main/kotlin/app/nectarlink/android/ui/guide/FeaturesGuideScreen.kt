@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package app.nectarlink.android.ui.guide
 
+import androidx.compose.foundation.layout.size
+import app.nectarlink.android.ui.theme.LinkIcon
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -469,10 +471,14 @@ private fun FeatureGuideCard(
     ) {
         // Title on its own full-width line, with status badge directly underneath when shown
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(
-                text = card.title,
-                style = MaterialTheme.typography.titleMedium,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                LinkIcon(guideIcon(card.id), contentDescription = null, modifier = Modifier.size(20.dp))
+                Text(
+                    text = card.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                )
+            }
             if (card.badge != null && card.badgeText != null) {
                 FeatureBadgeChip(badge = card.badge, text = card.badgeText)
             }
@@ -762,4 +768,20 @@ private fun openDevOptions(context: Context) {
             context.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }
     }
+}
+
+private fun guideIcon(id: String): Int = when (id) {
+    "notification_mirroring", "ring_lock_sleep_wake" -> R.drawable.wp_bell_color
+    "clipboard_sync", "quick_settings_clipboard_tile" -> R.drawable.wp_clipboard_color
+    "send_files_and_folders", "waiting_to_send_queue", "share_sheet_handoff" -> R.drawable.wp_send_color
+    "browse_phone_storage", "browse_pc_files" -> R.drawable.wp_folder_color
+    "media_and_pc_audio" -> R.drawable.ic_music
+    "recent_photos", "phone_as_pc_webcam", "continuity_camera" -> R.drawable.wp_camera_color
+    "voice_recorder" -> R.drawable.wp_mic_color
+    "control_pc_remote", "control_phone_from_pc" -> R.drawable.wp_control_color
+    "deck_control_surface" -> R.drawable.wp_deck_color
+    "desk_mode", "timeline_history" -> R.drawable.wp_clock_color
+    "phone_quick_toggles", "elevated_mode" -> R.drawable.wp_settings
+    "phone_app_windows" -> R.drawable.wp_oneui_apps_outline
+    else -> R.drawable.wp_monitor
 }

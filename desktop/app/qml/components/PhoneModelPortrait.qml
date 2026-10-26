@@ -3,7 +3,7 @@ import QtQuick
 import QtQuick.Shapes
 import app.nectarlink
 
-// A neutral handset follows reported screen geometry and carries live status.
+// A glass handset follows reported screen geometry and carries live status.
 // This is a status illustration, not mirroring.
 Item {
     id: portrait
@@ -123,9 +123,10 @@ Item {
                     fillGradient: LinearGradient {
                         x1: 0; y1: 0
                         x2: genericDeviceDisplay.width; y2: genericDeviceDisplay.height
-                        GradientStop { position: 0; color: "#343434" }
-                        GradientStop { position: 0.32; color: "#202020" }
-                        GradientStop { position: 1; color: "#101010" }
+                        GradientStop { position: 0; color: "#17354F" }
+                        GradientStop { position: 0.32; color: "#092329" }
+                        GradientStop { position: 0.72; color: "#1B1226" }
+                        GradientStop { position: 1; color: "#0C0F16" }
                     }
                     PathSvg { path: portrait.handsetPath(genericDeviceDisplay.width, genericDeviceDisplay.height) }
                 }
@@ -216,6 +217,7 @@ Item {
                     path: Icons.wifi
                     stroke: 1.8
                     color: portrait.screenInk
+                    semanticTint: false
                     opacity: portrait.wifiBars === 0 ? 0.35 : 1
                 }
             }

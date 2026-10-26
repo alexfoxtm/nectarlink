@@ -1461,6 +1461,7 @@ Item {
                                     width: 14; height: 14
                                     path: Icons.speaker
                                     color: bubble.mine ? Theme.primaryContent : Theme.secondaryContainerContent
+                                    semanticTint: !bubble.mine
                                 }
                             }
                             Column {

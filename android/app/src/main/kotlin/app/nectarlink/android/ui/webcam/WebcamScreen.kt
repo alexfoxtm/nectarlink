@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package app.nectarlink.android.ui.webcam
 
+import app.nectarlink.android.ui.theme.linkSuccessColor
+import app.nectarlink.android.ui.theme.LinkIcon
 import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -174,7 +176,8 @@ fun WebcamScreen(
                         contentDescription = stringResource(R.string.action_back),
                     )
                 }
-                Spacer(Modifier.width(4.dp))
+                LinkIcon(R.drawable.wp_camera_color, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
                 Text(
                     device.name,
                     style = MaterialTheme.typography.headlineSmall,
@@ -182,7 +185,7 @@ fun WebcamScreen(
                 )
                 Surface(
                     shape = CircleShape,
-                    color = if (device.online) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                    color = if (device.online) linkSuccessColor(MaterialTheme.colorScheme.onSurface) else MaterialTheme.colorScheme.outline,
                     modifier = Modifier.size(10.dp),
                 ) {}
             }
