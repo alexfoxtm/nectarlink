@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import QtQuick
+import QtQuick.Controls as Controls
 import app.nectarlink
 
 // A destination adapts from a compact rail to a labeled desktop sidebar.
@@ -16,6 +17,10 @@ FocusScope {
     implicitWidth: 72
     implicitHeight: expanded ? 40 : 52
     activeFocusOnTab: true
+
+    Controls.ToolTip.visible: !item.expanded && mouse.containsMouse
+    Controls.ToolTip.text: item.text
+    Controls.ToolTip.delay: 450
 
     Accessible.role: Accessible.PageTab
     Accessible.name: text
@@ -44,9 +49,9 @@ FocusScope {
             height: parent.height
             width: item.selected || item.activeHover ? parent.width : 24
             radius: parent.radius
-            color: item.selected ? Theme.heroWash : Theme.surfaceContent
+            color: item.selected ? Theme.railSelected : Theme.railContent
             opacity: item.selected ? 1.0 : (item.activeHover ? 0.08 : 0.0)
-            border.width: item.selected ? 1 : 0
+            border.width: 0
             border.color: Theme.panelBorder
             Behavior on width {
                 enabled: !Theme.reduceMotion
@@ -68,8 +73,8 @@ FocusScope {
             x: item.expanded ? Theme.spacingMd : 0
             width: 20; height: 20
             path: item.iconPath
-            color: item.selected ? Theme.primary : (item.activeHover ? Theme.surfaceContent : Theme.surfaceContentVariant)
-            scale: item.selected ? 1.05 : (item.activeHover ? 1.02 : 1.0)
+            color: item.selected || item.activeHover ? Theme.railContent : Theme.railMuted
+            scale: Theme.reduceMotion ? 1.0 : (item.selected ? 1.05 : (item.activeHover ? 1.02 : 1.0))
             Behavior on scale {
                 enabled: !Theme.reduceMotion
                 NumberAnimation { duration: 160; easing.type: Easing.OutCubic }
@@ -93,8 +98,8 @@ FocusScope {
         elide: Text.ElideRight
         text: item.text
         role: item.expanded ? "body" : "caption"
-        weight: Theme.graphite ? 400 : (item.selected ? 600 : 500)
-        color: item.selected || item.activeHover ? Theme.surfaceContent : Theme.surfaceContentVariant
+        weight: item.selected ? 600 : 500
+        color: item.selected || item.activeHover ? Theme.railContent : Theme.railMuted
         Behavior on color {
             enabled: !Theme.reduceMotion
             ColorAnimation { duration: Theme.fadeFast }
@@ -106,7 +111,7 @@ FocusScope {
         radius: pill.radius + 4
         color: "transparent"
         border.width: 2
-        border.color: Theme.focusColor
+        border.color: Theme.railContent
         visible: Theme.focusVisible(item)
     }
     MouseArea {

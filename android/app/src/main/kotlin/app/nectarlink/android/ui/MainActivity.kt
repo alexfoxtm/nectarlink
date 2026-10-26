@@ -767,7 +767,7 @@ private fun App(
                 }
             }
             ScreenRoute.Main -> Box(Modifier.fillMaxSize()) {
-                val isGlass = appearance.theme == "glass"
+                val isGlass = app.nectarlink.android.ui.theme.LocalGlassTheme.current
                 val glassBackdrop = app.nectarlink.android.ui.theme.rememberGlassBackdrop()
                 val onlineCount by remember(state.devices) {
                     androidx.compose.runtime.derivedStateOf { state.devices.count { it.online } }
@@ -806,7 +806,6 @@ private fun App(
                     val suggestClipboardActions by preferences.suggestClipboardActions.collectAsStateWithLifecycle()
                     val backgroundServiceEnabled by preferences.backgroundServiceEnabled.collectAsStateWithLifecycle()
                     val copiedLinkOffers by preferences.copiedLinkOffers.collectAsStateWithLifecycle()
-                    val hiveInviteShown by preferences.hiveInviteShown.collectAsStateWithLifecycle()
                     val saveableStateHolder = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
 
                     // Respect the measured dock height so large text never covers the last action.
@@ -819,7 +818,7 @@ private fun App(
                             } else {
                                 val forward = targetState.ordinal > initialState.ordinal
                                 val slide = androidx.compose.animation.core.spring<androidx.compose.ui.unit.IntOffset>(
-                                    dampingRatio = 0.82f,
+                                    dampingRatio = androidx.compose.animation.core.Spring.DampingRatioNoBouncy,
                                     stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow,
                                 )
                                 (
@@ -930,12 +929,6 @@ private fun App(
                                     onOpenRecorder = { pcId -> recordPcId = pcId },
                                     onStopRecorder = { RecorderService.stop(context) },
                                     showWhatsNewGuideBanner = startupWalkthrough.showWhatsNewGuideBanner,
-                                    showHiveInvite = hiveInviteShown && appearance.theme != "hive",
-                                    onTryHive = {
-                                        preferences.answerHiveInvite()
-                                        preferences.update { it.copy(theme = "hive") }
-                                    },
-                                    onDismissHiveInvite = preferences::answerHiveInvite,
                                     backgroundServiceEnabled = backgroundServiceEnabled,
                                     onTurnOnBackgroundService = {
                                         preferences.updateBackgroundServiceEnabled(true)

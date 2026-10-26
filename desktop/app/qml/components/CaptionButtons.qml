@@ -94,7 +94,7 @@ Row {
             anchors.centerIn: parent
             visible: Qt.platform.os === "windows"
             text: button.glyph
-            font.family: "Segoe Fluent Icons"
+            font.family: Qt.platform.os === "windows" ? "Segoe Fluent Icons" : Theme.fontUi
             font.pixelSize: 10
             color: button.danger && (button.hovered || button.pressed) ? "#FFFFFF" : Theme.surfaceContent
             opacity: buttons.window.active || button.hovered ? 1 : 0.45

@@ -181,8 +181,8 @@ Rectangle {
         Behavior on opacity { enabled: !Theme.reduceMotion; NumberAnimation { duration: Theme.fadeFast } }
         width: Math.min(helpTipTxt.implicitWidth + 20, 320)
         height: helpTipTxt.implicitHeight + 12
-        radius: Theme.graphite ? Theme.radiusXs : Theme.radiusSm
-        color: Theme.graphite ? Theme.surface : Theme.surfaceContainerHighest
+        radius: Theme.radiusSm
+        color: Theme.panelColor
         border.width: 1
         border.color: Theme.outlineVariant
         onWidthChanged: if (shown) reposition()

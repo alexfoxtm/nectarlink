@@ -2,7 +2,7 @@
 import QtQuick
 import app.nectarlink
 
-// A pill button. Variants: "fill" (primary action), "tonal", "outline",
+// A native rounded button. Variants: "fill" (primary action), "tonal", "outline",
 // "text". Sizes: "md" (40 px) and "sm" (36 px). Works with mouse, touch and
 // keyboard (Tab to focus, Enter or Space to press).
 FocusScope {
@@ -16,28 +16,11 @@ FocusScope {
 
     readonly property bool small: size === "sm"
     readonly property bool interactive: enabled && !busy
-    readonly property color background: {
-        if (variant === "fill")
-            return Theme.graphite ? Theme.surfaceContent : Theme.primary
-        if (variant === "tonal") {
-            if (Theme.glass)
-                return Qt.tint(
-                    Qt.rgba(1, 1, 1, Theme.dark ? 0.10 : 0.54),
-                    Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Theme.dark ? 0.18 : 0.14)
-                )
-            return Theme.secondaryContainer
-        }
-        return "transparent"
-    }
-    readonly property color foreground: {
-        if (variant === "fill")
-            return Theme.graphite ? Theme.surface : Theme.primaryContent
-        if (variant === "tonal")
-            return Theme.glass ? Theme.surfaceContent : Theme.secondaryContainerContent
-        if (variant === "text")
-            return Theme.graphite ? Theme.surfaceContent : Theme.primary
-        return Theme.surfaceContent
-    }
+    readonly property color background: variant === "fill" ? Theme.actionColor
+        : variant === "tonal" ? Theme.secondaryContainer : "transparent"
+    readonly property color foreground: variant === "fill" ? Theme.actionContent
+        : variant === "tonal" ? Theme.secondaryContainerContent
+        : variant === "text" ? Theme.actionColor : Theme.surfaceContent
 
     implicitHeight: small ? 36 : 40
     implicitWidth: Math.max(36, row.implicitWidth + (variant === "text" ? 20 : (small ? 26 : 36)))
@@ -48,31 +31,10 @@ FocusScope {
     Accessible.name: text
     Accessible.onPressAction: if (interactive) button.clicked()
     Keys.onPressed: (event) => {
-        if (interactive && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space)) {
+        if (interactive && !event.isAutoRepeat && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space)) {
             button.clicked()
             event.accepted = true
         }
-    }
-
-    // Hive: a soft honey halo around a filled button under the pointer.
-    Rectangle {
-        visible: Theme.hive && button.variant === "fill"
-        x: -4; y: -4
-        width: parent.width + 8; height: parent.height + 8
-        radius: body.radius + 4
-        color: Theme.glow
-        opacity: button.interactive && (mouse.containsMouse || Theme.focusVisible(button)) ? 1 : 0
-        scale: body.scale
-        Behavior on opacity { enabled: !Theme.reduceMotion; NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-    }
-
-    // Graphite's flat offset shadow under filled buttons.
-    Rectangle {
-        visible: Theme.graphite && button.variant === "fill"
-        x: 3; y: 3
-        width: parent.width; height: parent.height
-        radius: body.radius
-        color: Theme.buttonShadow
     }
 
     Rectangle {
@@ -82,32 +44,18 @@ FocusScope {
         radius: Theme.controlRadius
         color: button.background
         Behavior on color { enabled: !Theme.reduceMotion; ColorAnimation { duration: Theme.fadeFast } }
-        border.width: button.variant === "outline" || (Theme.glass && (button.variant === "tonal" || button.variant === "fill")) ? 1 : 0
-        border.color: button.variant === "outline"
-            ? (Theme.glass ? Qt.rgba(1, 1, 1, Theme.dark ? 0.14 : 0.38)
-                : (Theme.hive ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Theme.dark ? 0.42 : 0.38) : Theme.outline))
-            : Qt.rgba(1, 1, 1, Theme.dark ? 0.10 : 0.32)
+        border.width: button.variant === "outline" ? 1 : 0
+        border.color: Theme.panelBorder
         scale: mouse.pressed && button.interactive ? Theme.pressScale : 1
         Behavior on scale { enabled: !Theme.reduceMotion; NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
-
-        // Hive: honey catches the light along the top of a filled button.
-        Rectangle {
-            visible: Theme.hive && button.variant === "fill"
-            anchors.fill: parent
-            radius: parent.radius
-            gradient: Gradient {
-                GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, Theme.dark ? 0.22 : 0.16) }
-                GradientStop { position: 0.55; color: Qt.rgba(1, 1, 1, 0) }
-            }
-        }
 
         // Hover & Press state layer.
         Rectangle {
             anchors.fill: parent
             radius: parent.radius
-            color: button.foreground
+            color: button.variant === "fill" && !Theme.dark ? Theme.surfaceContent : button.foreground
             opacity: !button.interactive ? 0 : (mouse.pressed ? 0.14 : (mouse.containsMouse ? 0.07 : 0))
-            Behavior on opacity { enabled: !Theme.reduceMotion; NumberAnimation { duration: Theme.fadeFast } }
+            Behavior on opacity { enabled: !Theme.reduceMotion && !mouse.pressed; NumberAnimation { duration: Theme.fadeFast } }
         }
 
         Row {
@@ -133,7 +81,7 @@ FocusScope {
                 role: "label"
                 color: button.foreground
                 size: button.small ? 13 : 14
-                font.underline: Theme.graphite && button.variant === "text"
+                font.underline: false
                 maximumLineCount: 1
                 elide: Text.ElideRight
             }

@@ -72,7 +72,7 @@ Item {
     Rectangle {
         id: scrim
         anchors.fill: parent
-        color: Qt.rgba(0, 0, 0, Theme.dark ? 0.52 : 0.28)
+        color: Theme.scrim
         TapHandler {
             onTapped: (eventPoint) => {
                 const p = card.mapFromItem(scrim, eventPoint.position)

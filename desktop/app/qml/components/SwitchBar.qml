@@ -14,17 +14,12 @@ Rectangle {
     property bool checked: false
     signal toggled(bool on)
 
-    readonly property color ink: checked
-        ? (Theme.graphite ? Theme.surface : Theme.secondaryContainerContent)
-        : Theme.surfaceContent
+    readonly property color ink: checked ? Theme.secondaryContainerContent : Theme.surfaceContent
 
     height: 44
-    radius: Theme.radiusMd
-    color: checked
-        ? (Theme.graphite ? Theme.surfaceContent : Theme.secondaryContainer)
-        : (Theme.graphite ? "transparent" : Theme.surfaceContainerHigh)
-    border.width: Theme.graphite || checked ? 1 : 0
-    border.color: checked ? Theme.primary : Theme.outlineVariant
+    radius: Theme.controlRadius
+    color: checked ? Theme.secondaryContainer : Theme.insetColor
+    border.width: 0
 
     Row {
         anchors.left: parent.left

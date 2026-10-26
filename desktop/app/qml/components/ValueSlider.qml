@@ -81,7 +81,7 @@ FocusScope {
         color: Theme.graphite ? Theme.surfaceContent : Theme.primary
         border.width: Theme.focusVisible(slider) ? 2 : 0
         border.color: Theme.surface
-        scale: drag.pressed ? 1.15 : 1.0
+        scale: drag.pressed && !Theme.reduceMotion ? 1.15 : 1.0
         Behavior on scale {
             enabled: !Theme.reduceMotion
             NumberAnimation { duration: 150; easing.type: Easing.OutCubic }

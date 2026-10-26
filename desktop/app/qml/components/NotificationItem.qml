@@ -548,8 +548,8 @@ Item {
             width: parent.width
             height: 40
             visible: item.replying
-            radius: Theme.graphite ? Theme.radiusSm : height / 2
-            color: Theme.graphite ? "transparent" : Theme.surfaceContainerHighest
+            radius: Theme.controlRadius
+            color: Theme.insetColor
             border.width: input.activeFocus ? 2 : 1
             border.color: input.activeFocus ? Theme.primary : Theme.outlineVariant
 

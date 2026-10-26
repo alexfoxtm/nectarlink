@@ -232,166 +232,22 @@ Item {
     }
 
     Flickable {
+        id: homeScroll
         anchors.fill: parent
+        contentWidth: width
+        Controls.ScrollBar.vertical: Controls.ScrollBar { policy: Controls.ScrollBar.AsNeeded }
         contentHeight: column.height + Theme.contentPadding * 2
         boundsBehavior: Flickable.StopAtBounds
         clip: true
 
         Column {
             id: column
-            readonly property real maxContentWidth: 1440
+            readonly property real maxContentWidth: 1280
             width: Math.min(parent.width - Theme.contentPadding * 2, maxContentWidth)
             x: Math.round((parent.width - width) / 2)
             y: Theme.contentPadding
             // Generous group spacing keeps the live device and its actions first.
             spacing: Theme.spacingXl
-
-            // Gentle "What's new" banner for returning or upgraded users.
-            Card {
-                id: whatsNewCard
-                width: column.width
-                visible: Preferences.walkthroughCompleted && !Preferences.whatsNewDismissed
-                padding: 16
-                Item {
-                    width: parent.width
-                    height: Math.max(whatsNewTextCol.implicitHeight, whatsNewBtnRow.implicitHeight)
-                    Column {
-                        id: whatsNewTextCol
-                        anchors.left: parent.left
-                        anchors.right: whatsNewBtnRow.left
-                        anchors.rightMargin: 16
-                        anchors.verticalCenter: parent.verticalCenter
-                        spacing: 4
-                        Txt {
-                            width: parent.width
-                            role: "title"
-                            text: qsTr("New: Features guide")
-                            wrapMode: Text.WordWrap
-                        }
-                        Txt {
-                            width: parent.width
-                            role: "bodySmall"
-                            muted: true
-                            text: qsTr("See what each feature needs and where to find it.")
-                            wrapMode: Text.WordWrap
-                        }
-                    }
-                    Row {
-                        id: whatsNewBtnRow
-                        anchors.right: parent.right
-                        anchors.verticalCenter: parent.verticalCenter
-                        spacing: 8
-                        Button {
-                            variant: "text"
-                            size: "sm"
-                            text: qsTr("Dismiss")
-                            onClicked: Preferences.whatsNewDismissed = true
-                        }
-                        Button {
-                            variant: "tonal"
-                            size: "sm"
-                            iconPath: Icons.book
-                            text: qsTr("Open features guide")
-                            onClicked: {
-                                Preferences.whatsNewDismissed = true
-                                AppController.currentPage = "guide"
-                            }
-                        }
-                    }
-                }
-            }
-
-            // A one-time invitation to try Hive, after the What's new card.
-            Card {
-                id: hiveInvite
-                width: column.width
-                visible: Preferences.walkthroughCompleted && Preferences.whatsNewDismissed
-                         && !Preferences.hiveInviteDismissed && !Theme.hive
-                padding: 14
-                Binding {
-                    target: Theme
-                    property: "combPreviewShown"
-                    value: hiveInvite.visible
-                }
-                Item {
-                    width: parent.width
-                    height: Math.max(hiveSample.height, hiveInviteText.implicitHeight, hiveInviteButtons.implicitHeight)
-
-                    // A small window onto the comb, in Hive's own colors.
-                    Rectangle {
-                        id: hiveSample
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: 56; height: 56
-                        radius: 14
-                        color: "#000000"
-                        border.width: 1
-                        border.color: Theme.dark ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(0, 0, 0, 0.12)
-                        HiveBackdrop {
-                            anchors.fill: parent
-                            corner: parent.radius
-                            ownClock: false
-                            growIn: false
-                            time: Theme.combTime
-                            animate: !Theme.reduceMotion && !AppController.powerSaver
-                            cell: 9
-                            lineColor: Theme.dark ? Qt.rgba(1.0, 0.73, 0.37, 0.28) : Qt.rgba(0.54, 0.32, 0.0, 0.16)
-                            glowColor: Theme.dark ? Qt.rgba(1.0, 0.62, 0.18, 0.70) : Qt.rgba(1.0, 0.72, 0.37, 0.75)
-                            origin: Qt.point(width / 2, height / 2)
-                        }
-                        Icon {
-                            anchors.centerIn: parent
-                            width: 22; height: 22
-                            path: Icons.mark
-                            stroke: 2.2
-                            color: "#FFFFFF"
-                        }
-                    }
-                    Column {
-                        id: hiveInviteText
-                        anchors.left: hiveSample.right
-                        anchors.leftMargin: 14
-                        anchors.right: hiveInviteButtons.left
-                        anchors.rightMargin: 16
-                        anchors.verticalCenter: parent.verticalCenter
-                        spacing: 4
-                        Txt {
-                            width: parent.width
-                            role: "title"
-                            text: qsTr("Try Hive, the new theme")
-                            wrapMode: Text.WordWrap
-                        }
-                        Txt {
-                            width: parent.width
-                            role: "bodySmall"
-                            muted: true
-                            text: qsTr("Honey on charcoal or warm wax, with a living honeycomb behind the app. Change it any time in Settings › Appearance.")
-                            wrapMode: Text.WordWrap
-                        }
-                    }
-                    Row {
-                        id: hiveInviteButtons
-                        anchors.right: parent.right
-                        anchors.verticalCenter: parent.verticalCenter
-                        spacing: 8
-                        Button {
-                            variant: "text"
-                            size: "sm"
-                            text: qsTr("Not now")
-                            onClicked: Preferences.hiveInviteDismissed = true
-                        }
-                        Button {
-                            variant: "tonal"
-                            size: "sm"
-                            iconPath: Icons.sparkle
-                            text: qsTr("Try Hive")
-                            onClicked: {
-                                Preferences.hiveInviteDismissed = true
-                                Preferences.theme = "hive"
-                            }
-                        }
-                    }
-                }
-            }
 
             // Card shown when no phone is paired yet (for example after skipping first-run setup).
             Card {
@@ -400,13 +256,11 @@ Item {
                 padding: 20
                 Item {
                     width: parent.width
-                    height: Math.max(noDeviceTextCol.implicitHeight, noDeviceBtnRow.implicitHeight)
+                    height: noDeviceTextCol.implicitHeight + noDeviceBtnRow.implicitHeight + 16
                     Column {
                         id: noDeviceTextCol
                         anchors.left: parent.left
-                        anchors.right: noDeviceBtnRow.left
-                        anchors.rightMargin: 16
-                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.right: parent.right
                         spacing: 4
                         Txt {
                             width: parent.width
@@ -422,10 +276,10 @@ Item {
                             wrapMode: Text.WordWrap
                         }
                     }
-                    Row {
+                    Flow {
                         id: noDeviceBtnRow
-                        anchors.right: parent.right
-                        anchors.verticalCenter: parent.verticalCenter
+                        width: parent.width
+                        y: noDeviceTextCol.height + 16
                         spacing: 8
                         Button {
                             variant: "text"
@@ -522,6 +376,62 @@ Item {
                 width: column.width
                 visible: DeviceList.count === 0 && AppController.localsendEnabled && page.localsendPeers.length > 0
             }
+
+            // Gentle "What's new" banner for returning or upgraded users.
+            Card {
+                id: whatsNewCard
+                width: column.width
+                visible: Preferences.walkthroughCompleted && !Preferences.whatsNewDismissed
+                padding: 16
+                Item {
+                    width: parent.width
+                    height: Math.max(whatsNewTextCol.implicitHeight, whatsNewBtnRow.implicitHeight)
+                    Column {
+                        id: whatsNewTextCol
+                        anchors.left: parent.left
+                        anchors.right: whatsNewBtnRow.left
+                        anchors.rightMargin: 16
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 4
+                        Txt {
+                            width: parent.width
+                            role: "title"
+                            text: qsTr("New: Features guide")
+                            wrapMode: Text.WordWrap
+                        }
+                        Txt {
+                            width: parent.width
+                            role: "bodySmall"
+                            muted: true
+                            text: qsTr("See what each feature needs and where to find it.")
+                            wrapMode: Text.WordWrap
+                        }
+                    }
+                    Row {
+                        id: whatsNewBtnRow
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 8
+                        Button {
+                            variant: "text"
+                            size: "sm"
+                            text: qsTr("Dismiss")
+                            onClicked: Preferences.whatsNewDismissed = true
+                        }
+                        Button {
+                            variant: "tonal"
+                            size: "sm"
+                            iconPath: Icons.book
+                            text: qsTr("Open features guide")
+                            onClicked: {
+                                Preferences.whatsNewDismissed = true
+                                AppController.currentPage = "guide"
+                            }
+                        }
+                    }
+                }
+            }
+
         }
     }
 
@@ -580,7 +490,7 @@ Item {
         }
     }
 
-    component DeviceHome: Grid {
+    component DeviceHome: Column {
         id: home
         required property string deviceId
         required property string name
@@ -661,20 +571,16 @@ Item {
         // update-phone-app prompt.
         readonly property bool provenCable: home.displayPath === "usb" && home.usbMedium === "physical"
 
-        columns: width >= 1080 ? 2 : 1
-        spacing: Theme.spacingXl
+        readonly property int columns: width >= 760 ? 2 : 1
+        spacing: 20
         readonly property real sideWidth: columns === 2
-            ? Math.round(Math.min(380, Math.max(320, home.width * 0.32))) : home.width
-
-        Column {
-            width: home.columns === 2 ? home.width - home.sideWidth - home.spacing : home.width
-            spacing: Theme.spacingXl
+            ? Math.round(Math.min(360, Math.max(296, home.width * 0.36))) : home.width
 
             // ---- Hero ----
             Rectangle {
                 id: heroCard
                 width: parent.width
-                readonly property bool wide: width >= 540
+                readonly property bool wide: width >= 640
                 readonly property int phoneMediaRow: MediaList.revision >= 0 ? MediaList.firstFor(home.deviceId) : -1
                 readonly property int localMediaRow: MediaList.revision >= 0 ? MediaList.firstFor("local") : -1
                 readonly property bool hasBothMedia: phoneMediaRow >= 0 && localMediaRow >= 0
@@ -708,18 +614,19 @@ Item {
                         return phoneMediaRow
                     return localMediaRow
                 }
-                readonly property bool hasGlanceSummary: true
-                height: wide
-                    ? Math.max(216, Math.max(phoneArt.height, Math.max(identityCol.height, summaryPanel.height)) + 48)
-                    : topHeroRow.height + 1 + summaryPanel.height + 60
+                readonly property bool hasGlanceSummary: activeMediaRow >= 0
+                height: !hasGlanceSummary
+                    ? Math.max(112, topHeroRow.height + 32)
+                    : (wide
+                       ? Math.max(112, Math.max(topHeroRow.height, summaryPanel.height) + 32)
+                       : topHeroRow.height + summaryPanel.height + 52)
                 Behavior on height {
                     enabled: home.canAnimateHero
                     NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
                 }
                 radius: Theme.heroRadius
-                color: Theme.heroWash
-                border.width: 1
-                border.color: Theme.panelBorder
+                color: Theme.panelColor
+                border.width: 0
                 Behavior on color { ColorAnimation { duration: Theme.fadeNormal } }
 
                 GlassRim { radius: heroCard.radius }
@@ -727,8 +634,8 @@ Item {
                 Item {
                     id: topHeroRow
                     x: 18
-                    y: heroCard.wide ? Math.round((heroCard.height - height) / 2) : 20
-                    width: heroCard.wide
+                    y: heroCard.wide || !heroCard.hasGlanceSummary ? Math.round((heroCard.height - height) / 2) : 16
+                    width: heroCard.wide && heroCard.hasGlanceSummary
                         ? heroCard.width - 36 - summaryPanel.width - 28
                         : heroCard.width - 36
                     height: Math.max(phoneArt.height, identityCol.height)
@@ -743,7 +650,7 @@ Item {
                                 return s.aspect
                             return home.kind === "tablet" ? 0.70 : 0.47
                         }
-                        height: heroCard.wide ? 156 : 142
+                        height: Math.min(80, 84 / aspect)
                         width: Math.round(height * aspect)
                         readonly property real bezel: 3.5
                         readonly property real innerW: Math.max(10, width - bezel * 2)
@@ -758,33 +665,12 @@ Item {
                         readonly property real rBl: home.screenData && home.screenData.corners
                             ? Math.max(3, home.screenData.corners.bl * width) : defaultCorner
                         readonly property var phonePalette: Theme.phonePalette(home.deviceId)
-                        // Hive keeps its own honey here too, whatever the phone's colors.
-                        readonly property color seedColor: Theme.hive
-                            ? Theme.primary
-                            : phonePalette
-                            ? Qt.color(phonePalette.primary)
-                            : (home.accent && home.accent.length > 0 ? Qt.color(home.accent) : Theme.primary)
-                        readonly property color frameFill: Theme.hive
-                            ? (Theme.dark ? "#0E0E10" : "#2A2420")
-                            : Theme.graphite
-                            ? (Theme.dark ? "#1B1D21" : "#282B30")
-                            : Qt.darker(seedColor, Theme.dark ? 2.8 : 2.3)
-                        readonly property color frameStroke: Theme.graphite
-                            ? Theme.outline
-                            : Qt.rgba(Theme.heroContent.r, Theme.heroContent.g, Theme.heroContent.b, 0.42)
-                        readonly property color screenTop: Theme.hive
-                            ? (Theme.dark ? "#3A2709" : "#FFE2BC")
-                            : Theme.graphite
-                            ? (Theme.dark ? "#262930" : "#E4E7EC")
-                            : (Theme.dark ? Qt.darker(seedColor, 1.85) : Qt.lighter(seedColor, 1.35))
-                        readonly property color screenBottom: Theme.hive
-                            ? (Theme.dark ? "#141210" : "#F1C27F")
-                            : Theme.graphite
-                            ? (Theme.dark ? "#17191D" : "#CFD4DC")
-                            : (Theme.dark ? Qt.darker(seedColor, 2.55) : Qt.darker(seedColor, 1.25))
-                        readonly property color screenInk: Theme.hive
-                            ? (Theme.dark ? "#FFDDB3" : "#2C1600")
-                            : (Theme.graphite && !Theme.dark ? "#1E2025" : "#FFFFFF")
+                        readonly property color seedColor: Theme.primary
+                        readonly property color frameFill: Theme.panelColor
+                        readonly property color frameStroke: Theme.outline
+                        readonly property color screenTop: Theme.primaryContainer
+                        readonly property color screenBottom: Theme.heroWashEnd
+                        readonly property color screenInk: Theme.primaryContainerContent
                         readonly property string cutoutSvg: {
                             const s = home.screenData
                             if (!s) return ""
@@ -1104,7 +990,7 @@ Item {
                             width: parent.width
                             text: home.name
                             role: "displaySmall"
-                            size: home.name.length > 14 ? 20 : (home.name.length > 10 ? 22 : 25)
+                            size: home.name.length > 20 ? 20 : 24
                             fontSizeMode: Text.HorizontalFit
                             minimumPixelSize: 16
                             color: Theme.heroContent
@@ -1214,9 +1100,8 @@ Item {
                         height: idleMediaCol.implicitHeight + 24
                         visible: heroCard.activeMediaRow < 0
                         radius: Theme.radiusLg
-                        color: Qt.rgba(Theme.surface.r, Theme.surface.g, Theme.surface.b, Theme.glass ? (Theme.dark ? 0.42 : 0.52) : (Theme.dark ? 0.44 : 0.58))
-                        border.width: 1
-                        border.color: Qt.rgba(1, 1, 1, Theme.dark ? 0.12 : 0.40)
+                        color: Qt.rgba(Theme.panelColor.r, Theme.panelColor.g, Theme.panelColor.b, Theme.dark ? 0.58 : 0.80)
+                        border.width: 0
 
                         Column {
                             id: idleMediaCol
@@ -1271,7 +1156,7 @@ Item {
             Grid {
                 id: actions
                 width: parent.width
-                columns: width >= 880 ? 4 : 2
+                columns: width >= 820 ? 4 : 2
                 spacing: Theme.spacingMd
                 readonly property real tileWidth: (width - spacing * (columns - 1)) / columns
                 // Polished reflow: tiles ease when the grid reflows outside
@@ -1377,6 +1262,15 @@ Item {
                 title: qsTr("Send a folder to %1").arg(home.name)
                 onAccepted: TransferList.send(home.deviceId, [selectedFolder.toString()])
             }
+
+        Grid {
+            width: home.width
+            columns: home.columns
+            spacing: home.spacing
+
+        Column {
+            width: home.columns === 2 ? home.width - home.sideWidth - home.spacing : home.width
+            spacing: Theme.spacingXl
 
             // ---- Waiting to send ----
             Card {
@@ -1678,8 +1572,8 @@ Item {
                         Txt {
                             id: header
                             anchors.verticalCenter: parent.verticalCenter
-                            role: "label"
-                            muted: true
+                            role: "title"
+                            size: 18
                             text: feed.count > 0 ? qsTr("Notifications · %1").arg(feed.count) : qsTr("Notifications")
                         }
                         IconButton {
@@ -2025,8 +1919,8 @@ Item {
                             anchors.left: parent.left
                             anchors.verticalCenter: parent.verticalCenter
                             text: qsTr("Phone controls")
-                            role: "label"
-                            muted: true
+                            role: "title"
+                            size: 16
                         }
                         Button {
                             anchors.right: parent.right
@@ -2624,6 +2518,7 @@ Item {
                     }
                 }
             }
+        }
         }
     }
 
@@ -3271,20 +3166,13 @@ Item {
                                            || (playableWhenAddonMissing && feature.state === "locked" && feature.action === "enableAddon")
                                            || (queueableWhenOffline && (!tile.deviceOnline || feature.state === "unknown") && feature.state !== "locked" && feature.state !== "unsupported"))
 
-        height: (tile.subtitle.length > 0 || !tile.available) ? 112 : 104
+        height: Math.max(76, actionTileContent.implicitHeight + 28)
         activeFocusOnTab: available
         radius: Theme.cardRadius
-        color: tile.active
-            ? Theme.primary
-            : (tile.accented && !Theme.graphite
-                ? Theme.heroWash
-                : Theme.panelColor)
-        border.width: Theme.focusVisible(tile) ? 2 : 1
-        border.color: Theme.focusVisible(tile)
-            ? Theme.primary
-            : (tile.accented && !Theme.graphite
-                ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Theme.dark ? 0.36 : 0.30)
-                : Theme.panelBorder)
+        color: tile.active || (tile.accented && tile.available)
+            ? Theme.actionColor : Theme.panelColor
+        border.width: Theme.focusVisible(tile) ? 2 : 0
+        border.color: Theme.primary
         scale: tap.pressed && available ? Theme.pressScale : 1
         Behavior on color { enabled: !Theme.reduceMotion; ColorAnimation { duration: Theme.fadeFast } }
         Behavior on scale { enabled: !Theme.reduceMotion; NumberAnimation { duration: 170; easing.type: Easing.OutBack } }
@@ -3301,41 +3189,58 @@ Item {
             }
         }
 
-        readonly property color ink: tile.active ? Theme.primaryContent : Theme.surfaceContent
+        readonly property bool primaryAction: tile.active || (tile.accented && tile.available)
+        readonly property color ink: primaryAction ? Theme.actionContent : Theme.surfaceContent
         Rectangle {
             anchors.fill: parent
             radius: parent.radius
             color: tile.ink
             opacity: tap.pressed && tile.available ? 0.08 : 0
         }
-        Column {
-            anchors.fill: parent
-            anchors.margins: Theme.spacingLg
-            spacing: Theme.spacingSm
+        Row {
+            id: actionTileContent
+            x: 16
+            y: Math.round((tile.height - height) / 2)
+            width: parent.width - 32 - (tile.sideIcon.length > 0 && (tile.available || tile.sideAlwaysAvailable) ? 30 : 0)
+            spacing: 12
             Rectangle {
                 width: 32; height: 32
-                radius: Theme.graphite ? Theme.radiusSm : Theme.radiusMd
-                color: tile.active
-                    ? Qt.rgba(1, 1, 1, 0.18)
-                    : (Theme.graphite ? "transparent" : (tile.accented ? Theme.primaryContainer : Theme.secondaryContainer))
-                border.width: Theme.graphite ? 1 : 0
-                border.color: Theme.outlineVariant
+                anchors.verticalCenter: parent.verticalCenter
+                radius: 8
+                color: tile.primaryAction
+                    ? Qt.rgba(tile.ink.r, tile.ink.g, tile.ink.b, 0.16)
+                    : Theme.secondaryContainer
                 opacity: tile.available ? 1 : 0.55
                 Icon {
                     anchors.centerIn: parent
-                    width: 17; height: 17
+                    width: 18; height: 18
                     path: tile.iconPath
-                    color: tile.active
-                        ? Theme.primaryContent
-                        : (tile.accented && !Theme.graphite ? Theme.primaryContainerContent : Theme.secondaryContainerContent)
+                    color: tile.primaryAction ? Theme.actionContent : Theme.primaryContainerContent
                 }
             }
             Column {
-                width: parent.width
+                width: parent.width - 44
+                anchors.verticalCenter: parent.verticalCenter
                 spacing: 2
-                Txt { width: parent.width; text: tile.title; role: "title"; size: 13; elide: Text.ElideRight; color: tile.ink; opacity: tile.available ? 1 : 0.6 }
-                Txt { width: parent.width; visible: tile.available && tile.subtitle.length > 0; text: tile.subtitle; role: "caption"; elide: Text.ElideRight; color: tile.ink; opacity: tile.active ? 0.82 : 0.78 }
-                // Capabilities unknown until the device has connected once.
+                Txt {
+                    width: parent.width
+                    text: tile.title
+                    role: "title"
+                    size: 14
+                    wrapMode: Text.WordWrap
+                    elide: Text.ElideNone
+                    color: tile.ink
+                    opacity: tile.available ? 1 : 0.6
+                }
+                Txt {
+                    width: parent.width
+                    visible: tile.available && tile.subtitle.length > 0
+                    text: tile.subtitle
+                    role: "caption"
+                    wrapMode: Text.WordWrap
+                    color: tile.ink
+                    opacity: 0.78
+                }
                 Txt {
                     width: parent.width
                     visible: !tile.available && !lock.visible
@@ -3354,8 +3259,8 @@ Item {
         TapHandler { id: tap; enabled: tile.available; onTapped: tile.clicked() }
         IconButton {
             anchors.right: parent.right
-            anchors.top: parent.top
-            anchors.margins: 6
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.rightMargin: 8
             visible: tile.sideIcon.length > 0 && (tile.available || tile.sideAlwaysAvailable)
             iconPath: tile.sideIcon
             label: tile.sideLabel
@@ -3399,14 +3304,14 @@ Item {
 
         readonly property color fillColor: {
             if (active && available)
-                return Theme.graphite ? Theme.surfaceContent : Theme.primary
+                return Theme.actionColor
             if (active && !available)
                 return Theme.graphite ? Theme.surfaceContainerHigh : Theme.secondaryContainer
             return Theme.graphite ? "transparent" : (Theme.glass ? Theme.tileColor : Theme.surfaceContainerHigh)
         }
         readonly property color contentColor: {
             if (active && available)
-                return Theme.graphite ? Theme.surface : Theme.primaryContent
+                return Theme.actionContent
             if (active && !available)
                 return Theme.graphite ? Theme.surfaceContent : Theme.secondaryContainerContent
             return available ? Theme.surfaceContent : Theme.surfaceContentVariant

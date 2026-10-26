@@ -410,17 +410,7 @@ NativeWindow {
 
     // Window background: a tinted veil of the theme over Mica/Acrylic (so the
     // theme's seed color is rich and clear), opaque otherwise.
-    readonly property color windowSurface: Theme.graphite || Theme.amoled || Theme.hive
-        ? Theme.surface
-        : Qt.tint(
-            Theme.surface,
-            Qt.rgba(
-                Theme.primaryContainer.r,
-                Theme.primaryContainer.g,
-                Theme.primaryContainer.b,
-                Theme.isPhoneSeed ? (Theme.dark ? 0.22 : 0.30) : (Theme.dark ? 0.12 : 0.18)
-            )
-        )
+    readonly property color windowSurface: Theme.canvasColor
     Rectangle {
         anchors.fill: parent
         color: window.micaVisible && !Theme.amoled
@@ -555,16 +545,16 @@ NativeWindow {
         }
     }
 
-    readonly property bool wideSidebar: (Qt.platform.os === "osx" || Qt.platform.os === "macos") && window.width >= 1100
+    readonly property bool wideSidebar: false
     readonly property bool macNavOverflow: Qt.platform.os === "osx" || Qt.platform.os === "macos"
 
     // ---- Navigation rail ----
     Rectangle {
         id: rail
         visible: !window.welcome
-        width: window.wideSidebar ? Theme.sidebarWidth : Theme.compactRailWidth
+        width: window.wideSidebar ? Theme.sidebarWidth : 88
         height: parent.height
-        color: Theme.panelColor
+        color: Theme.railColor
         property string hoveredNav: ""
 
         Rectangle {
@@ -574,13 +564,13 @@ NativeWindow {
             // Centered on the top bar, level with the page title and the window buttons.
             y: (Theme.topBarHeight - height) / 2
             width: 38; height: 38
-            radius: Theme.radiusSm
-            color: Theme.primary
+            radius: 12
+            color: Theme.panelColor
             Icon {
                 anchors.centerIn: parent
                 path: Icons.mark
                 stroke: 2.4
-                color: Theme.primaryContent
+                color: Theme.primary
             }
         }
         Txt {
@@ -592,15 +582,32 @@ NativeWindow {
             role: "title"
             size: 17
         }
-        Column {
+        Flickable {
+            id: navigationFlick
+            function reveal(item) {
+                if (item.y < contentY)
+                    contentY = item.y
+                else if (item.y + item.height > contentY + height)
+                    contentY = item.y + item.height - height
+            }
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.top: mark.bottom
-            anchors.topMargin: Theme.spacingXl
-            width: rail.width - Theme.spacingMd * 2
+            anchors.topMargin: 24
+            anchors.bottom: railPairButton.top
+            anchors.bottomMargin: 16
+            width: rail.width - 24
+            contentWidth: width
+            contentHeight: navColumn.height
+            boundsBehavior: Flickable.StopAtBounds
+            clip: true
+        Column {
+            id: navColumn
+            width: parent.width
             spacing: Theme.spacingXs
             NavItem {
                 width: parent.width
                 expanded: window.wideSidebar
+                onActiveFocusChanged: if (activeFocus) navigationFlick.reveal(this)
                 iconPath: Icons.home
                 text: qsTr("Home")
                 selected: window.page === "home" || window.page === "timeline"
@@ -614,6 +621,7 @@ NativeWindow {
             NavItem {
                 width: parent.width
                 expanded: window.wideSidebar
+                onActiveFocusChanged: if (activeFocus) navigationFlick.reveal(this)
                 iconPath: Icons.messages
                 text: qsTr("Messages")
                 selected: window.page === "messages"
@@ -627,6 +635,7 @@ NativeWindow {
             NavItem {
                 width: parent.width
                 expanded: window.wideSidebar
+                onActiveFocusChanged: if (activeFocus) navigationFlick.reveal(this)
                 iconPath: Icons.call
                 text: qsTr("Calls")
                 selected: window.page === "calls"
@@ -640,6 +649,7 @@ NativeWindow {
             NavItem {
                 width: parent.width
                 expanded: window.wideSidebar
+                onActiveFocusChanged: if (activeFocus) navigationFlick.reveal(this)
                 iconPath: Icons.photo
                 text: qsTr("Photos")
                 selected: window.page === "photos"
@@ -653,6 +663,7 @@ NativeWindow {
             NavItem {
                 width: parent.width
                 expanded: window.wideSidebar
+                onActiveFocusChanged: if (activeFocus) navigationFlick.reveal(this)
                 visible: Qt.platform.os === "osx" && PhoneBrowser.enabled
                 iconPath: Icons.folder
                 text: qsTr("Phone files")
@@ -667,6 +678,7 @@ NativeWindow {
             NavItem {
                 width: parent.width
                 expanded: window.wideSidebar
+                onActiveFocusChanged: if (activeFocus) navigationFlick.reveal(this)
                 iconPath: Icons.apps
                 text: qsTr("Apps")
                 selected: window.page === "apps"
@@ -680,6 +692,7 @@ NativeWindow {
             NavItem {
                 width: parent.width
                 expanded: window.wideSidebar
+                onActiveFocusChanged: if (activeFocus) navigationFlick.reveal(this)
                 visible: !window.macNavOverflow
                 iconPath: Icons.deck
                 text: qsTr("Deck")
@@ -694,6 +707,7 @@ NativeWindow {
             NavItem {
                 width: parent.width
                 expanded: window.wideSidebar
+                onActiveFocusChanged: if (activeFocus) navigationFlick.reveal(this)
                 visible: !window.macNavOverflow
                 iconPath: Icons.book
                 text: qsTr("Guide")
@@ -708,6 +722,7 @@ NativeWindow {
             NavItem {
                 width: parent.width
                 expanded: window.wideSidebar
+                onActiveFocusChanged: if (activeFocus) navigationFlick.reveal(this)
                 id: moreItem
                 property bool restoreMenuFocus: false
                 visible: window.macNavOverflow
@@ -761,6 +776,7 @@ NativeWindow {
             NavItem {
                 width: parent.width
                 expanded: window.wideSidebar
+                onActiveFocusChanged: if (activeFocus) navigationFlick.reveal(this)
                 iconPath: Icons.settings
                 text: qsTr("Settings")
                 selected: window.page === "settings"
@@ -772,13 +788,16 @@ NativeWindow {
                 onClicked: window.page = "settings"
             }
         }
+        }
         IconButton {
+            id: railPairButton
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 18
             iconPath: Icons.plus
             label: qsTr("Pair a new device")
             tonal: true
+            iconColor: Theme.secondaryContainerContent
             onClicked: window.openPairing()
         }
     }
@@ -822,7 +841,8 @@ NativeWindow {
                     : window.page === "guide" ? qsTr("Features guide")
                     : qsTr("Settings")
                 role: "headline"
-                size: 24
+                size: 32
+                weight: 700
             }
             // Screen sharing: a live pill in the title bar, so the page never shifts. It sits
             // centered, and slides aside rather than overlap the title or the actions.
@@ -971,7 +991,7 @@ NativeWindow {
             anchors.bottom: parent.bottom
             width: parent.width
             clip: true
-            topLeftRadius: Theme.heroRadius
+            topLeftRadius: 12
             color: Theme.canvasColor
             Behavior on color { ColorAnimation { duration: Theme.fadeNormal } }
             border.width: 0

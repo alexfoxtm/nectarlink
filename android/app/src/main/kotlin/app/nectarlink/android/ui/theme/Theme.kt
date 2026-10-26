@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.ColorUtils
@@ -63,8 +64,8 @@ object WaypairDesign {
         val scheme = MaterialTheme.colorScheme
         return when {
             LocalAmoledTheme.current -> scheme.surfaceContainer
-            darkSurface(scheme.surface) -> scheme.surfaceContainerLow
-            else -> Color.White
+            darkSurface(scheme.surface) -> scheme.surfaceContainer
+            else -> scheme.surfaceContainer
         }
     }
 
@@ -80,7 +81,12 @@ object WaypairDesign {
     @Composable
     fun heroWash(): Color {
         val scheme = MaterialTheme.colorScheme
-        return lerp(panelColor(), scheme.primary, if (darkSurface(scheme.surface)) 0.12f else 0.08f)
+        val dark = darkSurface(scheme.surface)
+        // A cool wash gives the reference's header a visible edge in both modes,
+        // including neutral Graphite and the black Glass swatch.
+        val referenceTint = if (dark) Color(0xFFA9AEFF) else Color(0xFF767EE3)
+        val accent = lerp(referenceTint, scheme.primary, 0.25f)
+        return lerp(panelColor(), accent, if (dark) 0.18f else 0.14f)
     }
 
     @Composable
@@ -419,49 +425,31 @@ fun NectarlinkTheme(
         "dark" -> true
         else -> isSystemInDarkTheme()
     }
-    val graphite = appearance.theme == "graphite"
-    val glass = appearance.theme == "glass"
-    // Hive keeps its own honey: no wallpaper, artwork or phone colors.
-    val hive = appearance.theme == "hive"
-    val isBlackSwatch = !appearance.dynamicColor && appearance.seed == "black"
-    val amoledActive = dark && appearance.amoled && (graphite || isBlackSwatch)
-    val error = when {
-        hive -> if (dark) Tokens.hiveCombError else Tokens.hiveWaxError
-        else -> if (dark) Tokens.errorDark else Tokens.errorLight
+    // One reference-led visual system; stored legacy skin preferences remain readable.
+    val targetScheme = remember(dark) {
+        val palette = if (dark) Palette(
+            primary = Color(0xFFA9AEFF), onPrimary = Color(0xFF171A3E),
+            primaryContainer = Color(0xFF373A6D), onPrimaryContainer = Color(0xFFE0E2FF),
+            secondaryContainer = Color(0xFF30335D), onSecondaryContainer = Color(0xFFE0E2F5),
+            surface = Color(0xFF16172F), surfaceContainerLow = Color(0xFF202243),
+            surfaceContainer = Color(0xFF25284D), surfaceContainerHigh = Color(0xFF30335D),
+            surfaceContainerHighest = Color(0xFF3A3E6D), onSurface = Color(0xFFEEF0FF),
+            onSurfaceVariant = Color(0xFFBCC0E0), outline = Color(0xFF9399C2),
+            outlineVariant = Color(0xFF41466F),
+        ) else Palette(
+            primary = Color(0xFF3E48AA), onPrimary = Color.White,
+            primaryContainer = Color(0xFFDCE0FF), onPrimaryContainer = Color(0xFF262F78),
+            secondaryContainer = Color(0xFFCDD2EE), onSecondaryContainer = Color(0xFF30375D),
+            surface = Color(0xFFC1C5E1), surfaceContainerLow = Color(0xFFC9CEE8),
+            surfaceContainer = Color(0xFFD8DCF0), surfaceContainerHigh = Color(0xFFD8DCF0),
+            surfaceContainerHighest = Color(0xFFE3E6F6), onSurface = Color(0xFF22254C),
+            onSurfaceVariant = Color(0xFF555C86), outline = Color(0xFF6E76A1),
+            outlineVariant = Color(0xFFADB5D8),
+        )
+        palette.toScheme(dark, if (dark) Tokens.errorDark else Tokens.errorLight)
     }
     val context = LocalContext.current
-    // The settings alone pick the color source. Artwork applies only when the user turned
-    // "Media artwork color" on; with nothing playing, it falls back to the wallpaper or preset.
-    val artworkSeed = if (!graphite && !hive && appearance.seed == "artwork") mediaSeedColor else null
-    val wallpaper = !graphite && !hive && appearance.dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-    val wallpaperSeed = rememberWallpaperSeed(enabled = wallpaper && artworkSeed == null)
-    val baseScheme = when {
-        hive -> remember(dark, error) {
-            (if (dark) Tokens.hiveComb else Tokens.hiveWax).toScheme(dark, error)
-        }
-        graphite -> remember(dark, error) {
-            (if (dark) Tokens.graphiteSlate else Tokens.graphitePaper).toScheme(dark, error)
-        }
-        artworkSeed != null -> remember(artworkSeed, dark, error) {
-            schemeFromArtworkSeed(artworkSeed, dark, error)
-        }
-        wallpaper && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> remember(context, dark, error, wallpaperSeed) {
-            wallpaperScheme(context, dark, error, wallpaperSeed)
-        }
-        else -> remember(appearance.seed, dark, error) {
-            val seed = Tokens.bloomSeeds[appearance.seed] ?: Tokens.bloomSeeds.getValue(Tokens.DEFAULT_SEED)
-            (if (dark) seed.dark else seed.light).toScheme(dark, error)
-        }
-    }
-    val combBehind = hive && backdrop
-    val targetScheme = remember(baseScheme, glass, dark, amoledActive, combBehind) {
-        val withGlass = if (glass) baseScheme.toGlassScheme(dark) else baseScheme
-        val withAmoled = if (amoledActive) withGlass.toAmoledScheme(glass) else withGlass
-        // Screens let the comb show through; the window paints the surface under it.
-        if (combBehind) withAmoled.copy(background = Color.Transparent) else withAmoled
-    }
     val reducedMotion = rememberReducedMotion()
-    val powerSaver = rememberPowerSaver()
 
     // System bar icons follow the app's theme, which can differ from the system's.
     val view = LocalView.current
@@ -477,33 +465,20 @@ fun NectarlinkTheme(
     val assets = context.assets
     val fonts = remember(assets) { AppFonts(assets) }
     val currentShapes = remember { shapes() }
-    val currentTypography = remember(fonts, graphite) { typography(fonts, graphite) }
+    val currentTypography = remember(fonts) { typography(fonts, false) }
     CompositionLocalProvider(
         LocalAppFonts provides fonts,
         LocalReducedMotion provides reducedMotion,
-        LocalGlassTheme provides glass,
-        LocalAmoledTheme provides amoledActive,
-        LocalHiveTheme provides hive,
+        LocalGlassTheme provides false,
+        LocalAmoledTheme provides false,
+        LocalHiveTheme provides false,
     ) {
         MaterialTheme(
             colorScheme = targetScheme,
             shapes = currentShapes,
             typography = currentTypography,
         ) {
-            // The content stays in one place for every theme: calling it from
-            // separate branches would rebuild the whole app on a switch to or
-            // from Hive, losing state such as the selected tab.
-            androidx.compose.foundation.layout.Box(
-                androidx.compose.ui.Modifier.fillMaxSize().then(
-                    if (combBehind) androidx.compose.ui.Modifier.background(baseScheme.surface) else androidx.compose.ui.Modifier,
-                ),
-            ) {
-                if (combBehind) {
-                    HiveComb(
-                        dark = dark,
-                        animate = appearance.combMotion && !reducedMotion && !powerSaver,
-                    )
-                }
+            androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize()) {
                 content()
             }
         }
@@ -519,7 +494,13 @@ fun Modifier.liquidGlassCard(
     baseColor: Color,
     @Suppress("UNUSED_PARAMETER") tintColor: Color = Color.Transparent,
     outlineColor: Color = Color.Transparent,
-): Modifier = this.drawWithCache {
+): Modifier = this.shadow(
+    elevation = 6.dp,
+    shape = RoundedCornerShape(cornerRadius),
+    clip = false,
+    ambientColor = Color(0xFF111335).copy(alpha = 0.16f),
+    spotColor = Color(0xFF111335).copy(alpha = 0.22f),
+).drawWithCache {
     val radiusPx = cornerRadius.toPx()
     val cr = CornerRadius(radiusPx, radiusPx)
     val strokePx = 1.dp.toPx()

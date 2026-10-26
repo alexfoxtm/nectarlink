@@ -13,28 +13,43 @@ Item {
         id: welcomeFlick
         anchors.fill: parent
         contentWidth: width
-        contentHeight: Math.max(height, welcomeContent.implicitHeight + 48)
+        contentHeight: Math.max(height, welcomeSheet.height + 48)
         clip: true
         boundsBehavior: Flickable.StopAtBounds
 
+        Rectangle {
+            id: welcomeSheet
+            width: Math.min(640, welcomeFlick.width - 48)
+            height: welcomeContent.implicitHeight + 56
+            x: Math.round((welcomeFlick.width - width) / 2)
+            y: Math.max(24, Math.round((welcomeFlick.height - height) / 2))
+            radius: 14
+            color: Theme.panelColor
+
         Column {
             id: welcomeContent
-            x: Math.round((welcomeFlick.width - width) / 2)
-            y: Math.max(24, Math.round((welcomeFlick.height - implicitHeight) / 2))
-            width: Math.min(560, welcomeFlick.width - 48)
+            x: 28
+            y: 28
+            width: parent.width - 56
             spacing: 24
 
             Rectangle {
                 width: parent.width
-                height: 120
+                height: 164
                 radius: Theme.heroRadius
                 color: Theme.heroWash
-                Icon {
+                Rectangle {
                     anchors.centerIn: parent
-                    width: 40; height: 40
-                    path: Icons.mark
-                    stroke: 2.4
-                    color: Theme.primary
+                    width: 80; height: 80
+                    radius: 12
+                    color: Theme.panelColor
+                    Icon {
+                        anchors.centerIn: parent
+                        width: 38; height: 38
+                        path: Icons.mark
+                        stroke: 2.1
+                        color: Theme.primary
+                    }
                 }
             }
             Column {
@@ -56,7 +71,9 @@ Item {
                     muted: true
                     text: page.status === "failed"
                           ? qsTr("Waypair Link couldn't start.")
-                          : qsTr("Your phone and this PC, together. Pair once and they find each other from then on.")
+                          : (Qt.platform.os === "osx" || Qt.platform.os === "macos"
+                             ? qsTr("Your Android phone and your Mac, together. Pair once and they find each other from then on.")
+                             : qsTr("Your phone and this PC, together. Pair once and they find each other from then on."))
                 }
             }
 
@@ -98,6 +115,7 @@ Item {
                     onClicked: Qt.openUrlExternally(AppController.logsUrl())
                 }
             }
+        }
         }
     }
 }

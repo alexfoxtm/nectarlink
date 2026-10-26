@@ -2,7 +2,7 @@
 import QtQuick
 import app.nectarlink
 
-// A small pill with optional icon. `selected` uses the indicator colors.
+// A compact status label with optional icon. `selected` uses the indicator colors.
 Rectangle {
     id: chip
     property string text
@@ -14,18 +14,9 @@ Rectangle {
     implicitHeight: 30
     implicitWidth: row.implicitWidth + 24
     radius: Theme.controlRadius
-    color: Theme.graphite
-        ? (selected ? Theme.surfaceContent : "transparent")
-        : (Theme.glass
-            ? (selected
-                ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Theme.dark ? 0.28 : 0.22)
-                : Qt.rgba(1, 1, 1, Theme.dark ? 0.10 : 0.50))
-            : (selected ? Theme.secondaryContainer : Theme.surfaceContainerHigh))
+    color: selected ? Theme.primaryContainer : Theme.insetColor
     Behavior on color { enabled: !Theme.reduceMotion; ColorAnimation { duration: Theme.fadeFast } }
-    border.width: Theme.graphite || Theme.glass ? 1 : 0
-    border.color: Theme.glass
-        ? (selected ? Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.55) : Qt.rgba(1, 1, 1, Theme.dark ? 0.22 : 0.68))
-        : (selected ? Theme.surfaceContent : Theme.outlineVariant)
+    border.width: 0
     scale: chip.interactive && mouse.pressed && !Theme.reduceMotion ? Theme.pressScale : 1.0
     Behavior on scale { enabled: !Theme.reduceMotion; NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
 
@@ -74,8 +65,7 @@ Rectangle {
             anchors.verticalCenter: parent.verticalCenter
             text: chip.text
             role: "label"
-            color: Theme.graphite ? (chip.selected ? Theme.surface : Theme.surfaceContent)
-                                  : (chip.selected ? Theme.secondaryContainerContent : Theme.surfaceContent)
+            color: chip.selected ? Theme.primaryContainerContent : Theme.surfaceContentVariant
         }
     }
 

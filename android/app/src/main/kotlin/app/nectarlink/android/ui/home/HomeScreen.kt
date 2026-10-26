@@ -24,6 +24,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -79,6 +80,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
@@ -90,6 +92,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -98,6 +101,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.nectarlink.android.NectarlinkApplication
@@ -313,22 +317,17 @@ fun HomeScreen(
                 Modifier.fillMaxWidth().padding(bottom = WaypairDesign.spacingSm),
                 verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingSm),
             ) {
-                Text(
-                    stringResource(R.string.home_title),
-                    style = MaterialTheme.typography.headlineMedium,
-                )
                 Row(
                     Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(WaypairDesign.spacingSm),
                 ) {
-                    TextButton(
-                        onClick = onOpenFeaturesGuide,
-                        modifier = Modifier.weight(1f).heightIn(min = WaypairDesign.touchTarget),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                    ) {
-                        Text(stringResource(R.string.home_guide_title))
-                    }
+                    Text(
+                        stringResource(R.string.home_title),
+                        style = MaterialTheme.typography.headlineLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f),
+                    )
                     // Reconnects and syncs with the PCs; spins once to say so.
                     val spin = remember { androidx.compose.animation.core.Animatable(0f) }
                     val scope = rememberCoroutineScope()
@@ -347,9 +346,21 @@ fun HomeScreen(
                             modifier = Modifier.graphicsLayer { rotationZ = spin.value },
                         )
                     }
-                    FilledTonalIconButton(onClick = onPairNew, modifier = Modifier.size(WaypairDesign.touchTarget)) {
+                    FilledTonalIconButton(
+                        onClick = onPairNew,
+                        shape = RoundedCornerShape(WaypairDesign.controlRadius),
+                        modifier = Modifier.size(WaypairDesign.touchTarget),
+                    ) {
                         Icon(painterResource(R.drawable.ic_qr), contentDescription = stringResource(R.string.action_pair_new))
                     }
+                }
+                TextButton(
+                    onClick = onOpenFeaturesGuide,
+                    shape = RoundedCornerShape(WaypairDesign.controlRadius),
+                    modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                ) {
+                    Text(stringResource(R.string.home_guide_title))
                 }
             }
         }
@@ -883,17 +894,17 @@ private fun WhatsNewFeaturesGuideCard(
         )
         Text(
             text = stringResource(R.string.home_guide_card_body),
-            style = MaterialTheme.typography.bodySmall,
+            style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface,
         )
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Button(onClick = onOpenGuide) {
+            Button(onClick = onOpenGuide, shape = RoundedCornerShape(WaypairDesign.controlRadius)) {
                 Text(stringResource(R.string.walkthrough_action_open_guide))
             }
-            OutlinedButton(onClick = onDismiss) {
+            OutlinedButton(onClick = onDismiss, shape = RoundedCornerShape(WaypairDesign.controlRadius)) {
                 Text(stringResource(R.string.action_dismiss))
             }
         }
@@ -943,14 +954,14 @@ private fun HiveInviteCard(onTry: () -> Unit, onDismiss: () -> Unit) {
             )
             Text(
                 text = stringResource(R.string.hive_invite_text),
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Button(onClick = onTry) { Text(stringResource(R.string.hive_invite_try)) }
+                Button(onClick = onTry, shape = RoundedCornerShape(WaypairDesign.controlRadius)) { Text(stringResource(R.string.hive_invite_try)) }
                 TextButton(onClick = onDismiss) { Text(stringResource(R.string.hive_invite_dismiss)) }
             }
         }
@@ -973,13 +984,29 @@ private fun NoPairedPcCard(
             .liquidGlassCard(
                 cornerRadius = WaypairDesign.heroRadius,
                 isGlass = isGlass,
-                baseColor = WaypairDesign.heroWash(),
+                baseColor = WaypairDesign.panelColor(),
                 tintColor = MaterialTheme.colorScheme.primary,
                 outlineColor = WaypairDesign.panelBorder(),
             )
+            .padding(1.dp)
+            .clip(RoundedCornerShape(WaypairDesign.heroRadius))
+            .background(Brush.verticalGradient(listOf(WaypairDesign.heroWash(), WaypairDesign.panelColor())))
             .padding(WaypairDesign.spacingXl),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
+        Box(
+            modifier = Modifier
+                .size(64.dp)
+                .bentoWell(
+                    cornerRadius = 16.dp,
+                    fillColor = WaypairDesign.panelColor(),
+                    borderColor = WaypairDesign.panelBorder(),
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(RemotePcIcon, contentDescription = null, modifier = Modifier.size(36.dp), tint = MaterialTheme.colorScheme.primary)
+        }
+        Spacer(Modifier.height(8.dp))
         Text(
             text = stringResource(R.string.home_no_pc_paired),
             style = MaterialTheme.typography.headlineMedium,
@@ -988,20 +1015,20 @@ private fun NoPairedPcCard(
         Text(
             text = stringResource(R.string.home_no_pc_body),
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(4.dp))
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Button(onClick = onPairNew) {
+            Button(onClick = onPairNew, shape = RoundedCornerShape(WaypairDesign.controlRadius), modifier = Modifier.heightIn(min = WaypairDesign.touchTarget)) {
                 Text(stringResource(R.string.action_pair_new))
             }
-            FilledTonalButton(onClick = onOpenWalkthrough) {
+            FilledTonalButton(onClick = onOpenWalkthrough, shape = RoundedCornerShape(WaypairDesign.controlRadius), modifier = Modifier.heightIn(min = WaypairDesign.touchTarget)) {
                 Text(stringResource(R.string.guide_open_walkthrough))
             }
-            OutlinedButton(onClick = onOpenFeaturesGuide) {
+            OutlinedButton(onClick = onOpenFeaturesGuide, shape = RoundedCornerShape(WaypairDesign.controlRadius), modifier = Modifier.heightIn(min = WaypairDesign.touchTarget)) {
                 Text(stringResource(R.string.guide_title))
             }
         }
@@ -1134,16 +1161,26 @@ private fun PermissionsSetupCard(
                 tintColor = MaterialTheme.colorScheme.primary,
                 outlineColor = WaypairDesign.panelBorder(),
             )
-            .padding(20.dp),
+            .padding(16.dp),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(min = WaypairDesign.touchTarget)
                 .clickable(role = Role.Button) { expanded = !expanded },
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+            Box(
+                modifier = Modifier.size(40.dp).bentoWell(
+                    cornerRadius = WaypairDesign.controlRadius,
+                    fillColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+                ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(painterResource(R.drawable.ic_settings), contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
+            }
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = stringResource(R.string.permissions_setup_title, missingCount),
                     style = MaterialTheme.typography.titleMedium,
@@ -1264,6 +1301,7 @@ private fun PermissionsSetupCard(
 }
 
 /** Something the phone needs before mirroring works, with the button that fixes it. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SetupCard(
     title: String,
@@ -1274,24 +1312,31 @@ private fun SetupCard(
     onSecondary: (() -> Unit)? = null,
     onAllow: () -> Unit,
 ) {
-    Surface(shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.secondaryContainer) {
-        Column(Modifier.fillMaxWidth().padding(20.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
+    Surface(
+        shape = RoundedCornerShape(WaypairDesign.cardRadius),
+        color = WaypairDesign.insetColor(),
+        border = BorderStroke(1.dp, WaypairDesign.panelBorder()),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
             Spacer(Modifier.height(4.dp))
-            Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
+            Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (!guide.isNullOrBlank()) {
                 Spacer(Modifier.height(8.dp))
                 Text(
                     guide,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onAllow) { Text(buttonLabel) }
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Button(onClick = onAllow, shape = RoundedCornerShape(WaypairDesign.controlRadius), modifier = Modifier.heightIn(min = WaypairDesign.touchTarget)) { Text(buttonLabel) }
                 if (secondaryLabel != null && onSecondary != null) {
-                    OutlinedButton(onClick = onSecondary) { Text(secondaryLabel) }
+                    OutlinedButton(onClick = onSecondary, shape = RoundedCornerShape(WaypairDesign.controlRadius), modifier = Modifier.heightIn(min = WaypairDesign.touchTarget)) { Text(secondaryLabel) }
                 }
             }
         }
@@ -1422,8 +1467,9 @@ private fun PeerCard(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun PcCard(
+internal fun PcCard(
     device: Device,
     onRing: (String, Boolean) -> Unit,
     onSendFiles: (String, List<Uri>) -> Unit,
@@ -1468,10 +1514,6 @@ private fun PcCard(
         ) {
             val context = LocalContext.current
             val ink = MaterialTheme.colorScheme.onSurface
-            val primaryBtn = ButtonDefaults.buttonColors(
-                disabledContainerColor = ink.copy(alpha = 0.08f),
-                disabledContentColor = ink.copy(alpha = 0.38f),
-            )
             val tonal = ButtonDefaults.filledTonalButtonColors(
                 containerColor = ink.copy(alpha = if (isGlass) 0.14f else 0.10f),
                 contentColor = ink,
@@ -1479,7 +1521,7 @@ private fun PcCard(
                 disabledContentColor = ink.copy(alpha = 0.38f),
             )
             val outlined = ButtonDefaults.outlinedButtonColors(contentColor = ink, disabledContentColor = ink.copy(alpha = 0.38f))
-            val outline = BorderStroke(1.dp, ink.copy(alpha = if (device.online) 0.45f else 0.15f))
+            val outline = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
             val statusDotColor = if (device.online) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
             // Per-action capability gates from the negotiated matrix. Desk clock
             // renders locally; Browse PC files requires `files.pc_browse` from
@@ -1504,333 +1546,234 @@ private fun PcCard(
             } else {
                 linkText(device.link, device.displayPath, device.usbMedium, device.routeTransport)
             }
-            Row(
-                modifier = Modifier.fillMaxWidth().semantics { stateDescription = connectionStatusLabel },
-                verticalAlignment = Alignment.CenterVertically,
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(WaypairDesign.heroRadius))
+                    .background(Brush.verticalGradient(listOf(WaypairDesign.heroWash(), WaypairDesign.panelColor())))
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Spacer(
-                    modifier = Modifier
-                        .size(10.dp)
-                        .padding(1.dp)
-                        .drawBehind { drawCircle(statusDotColor) },
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    connectionStatusLabel,
-                    style = MaterialTheme.typography.labelLarge,
-                    modifier = Modifier.weight(1f),
-                )
-                if (!device.online && device.canWake && device.wakeState != WakeState.Waking) {
-                    Spacer(Modifier.width(8.dp))
-                    FilledTonalButton(
-                        colors = tonal,
-                        onClick = { onWake(device.id) },
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 4.dp),
-                        modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
-                    ) {
-                        Text(
-                            stringResource(R.string.action_wake_pc),
-                            style = MaterialTheme.typography.labelMedium,
-                            maxLines = 1,
-                        )
-                    }
-                }
-            }
-            Spacer(Modifier.height(6.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(device.name, style = MaterialTheme.typography.headlineSmall)
-                    device.model?.let {
-                        Text(it, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 2.dp))
-                    }
-                }
-                device.battery?.let { battery ->
-                    Text(
-                        text = if (battery.charging) stringResource(R.string.battery_charging, battery.level.toInt())
-                        else stringResource(R.string.battery_level, battery.level.toInt()),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = ink,
-                        modifier = Modifier
-                            .bentoWell(
-                                cornerRadius = 14.dp,
-                                fillColor = ink.copy(alpha = 0.10f),
-                            )
-                            .padding(horizontal = 10.dp, vertical = 5.dp),
-                    )
-                }
-            }
-            Spacer(Modifier.height(16.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                // 1. Primary Workspace Bento Grid (2x2): Control PC, Deck, Desk Mode, Webcam
-                Text(
-                    text = stringResource(R.string.home_section_screen),
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 2.dp),
-                )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    CapabilityReasonTooltip(controlPcReason, Modifier.weight(1f)) {
-                        Button(
-                            contentPadding = CardButtonPadding,
-                            enabled = controlPcEnabled,
-                            colors = primaryBtn,
-                            onClick = { onRemote(device.id) },
-                            modifier = Modifier.fillMaxWidth().heightIn(min = WaypairDesign.touchTarget)
-                                .capabilityReason(controlPcReason),
-                        ) {
-                            Icon(
-                                imageVector = RemotePcIcon,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            ButtonLabel(stringResource(R.string.action_remote_pc))
-                        }
-                    }
-                    CapabilityReasonTooltip(deckReason, Modifier.weight(1f)) {
-                        FilledTonalButton(
-                            contentPadding = CardButtonPadding,
-                            enabled = deckEnabled,
-                            colors = tonal,
-                            onClick = { onDeck(device.id) },
-                            modifier = Modifier.fillMaxWidth().heightIn(min = WaypairDesign.touchTarget)
-                                .capabilityReason(deckReason),
-                        ) {
-                            Icon(
-                                imageVector = DeckGridIcon,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            ButtonLabel(stringResource(R.string.action_deck_pc))
-                        }
-                    }
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    FilledTonalButton(
-                        contentPadding = CardButtonPadding,
-                        enabled = device.online,
-                        colors = tonal,
-                        onClick = { onDesk(device.id) },
-                        modifier = Modifier.weight(1f).heightIn(min = WaypairDesign.touchTarget),
+                    Box(
+                        modifier = Modifier.size(56.dp).liquidGlassCard(
+                            cornerRadius = 20.dp,
+                            isGlass = isGlass,
+                            baseColor = WaypairDesign.panelColor(),
+                            tintColor = MaterialTheme.colorScheme.primary,
+                            outlineColor = WaypairDesign.panelBorder(),
+                        ),
+                        contentAlignment = Alignment.Center,
                     ) {
-                        Icon(
-                            imageVector = DeskClockIcon,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        ButtonLabel(stringResource(R.string.action_desk_pc))
+                        Icon(RemotePcIcon, contentDescription = null, modifier = Modifier.size(32.dp), tint = MaterialTheme.colorScheme.primary)
                     }
-                    CapabilityReasonTooltip(webcamReason, Modifier.weight(1f)) {
-                        FilledTonalButton(
-                            contentPadding = CardButtonPadding,
-                            enabled = webcamEnabled,
-                            colors = tonal,
-                            onClick = { onWebcam(device.id) },
-                            modifier = Modifier.fillMaxWidth().heightIn(min = WaypairDesign.touchTarget)
-                                .capabilityReason(webcamReason),
-                        ) {
-                            Icon(
-                                imageVector = CameraLensIcon,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            ButtonLabel(stringResource(
-                                if (ownedCameraPermissionMissing) R.string.webcam_allow_camera else R.string.action_webcam_pc,
-                            ))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(device.name, style = MaterialTheme.typography.headlineSmall)
+                        device.model?.let {
+                            Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
                         }
                     }
                 }
-
-                // 2. Files & Clipboard Bento Strip (Always visible, no hidden expander)
-                Text(
-                    text = stringResource(R.string.home_section_transfer),
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 2.dp, top = 2.dp),
-                )
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .bentoWell(
-                            cornerRadius = 12.dp,
-                            fillColor = ink.copy(alpha = if (isGlass) 0.11f else 0.07f),
-                            borderColor = if (isGlass) ink.copy(alpha = 0.16f) else Color.Transparent,
-                        )
-                        .padding(10.dp),
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth().semantics { stateDescription = connectionStatusLabel },
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Spacer(Modifier.size(8.dp).drawBehind { drawCircle(statusDotColor) })
+                        Text(connectionStatusLabel, style = MaterialTheme.typography.labelLarge)
+                    }
+                    device.battery?.let { battery ->
+                        Text(
+                            text = if (battery.charging) stringResource(R.string.battery_charging, battery.level.toInt())
+                            else stringResource(R.string.battery_level, battery.level.toInt()),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (!device.online && device.canWake && device.wakeState != WakeState.Waking) {
                         FilledTonalButton(
-                            contentPadding = CardButtonPadding,
-                            enabled = if (device.online) device.has("files.send") else true,
                             colors = tonal,
-                            onClick = { pickFiles.launch(arrayOf("*/*")) },
-                            modifier = Modifier.weight(1f).heightIn(min = WaypairDesign.touchTarget),
-                        ) {
-                            Icon(
-                                imageVector = SendArrowIcon,
-                                contentDescription = null,
-                                modifier = Modifier.size(15.dp),
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            ButtonLabel(stringResource(R.string.action_send_files))
-                        }
-                        FilledTonalButton(
+                            shape = RoundedCornerShape(WaypairDesign.controlRadius),
+                            onClick = { onWake(device.id) },
                             contentPadding = CardButtonPadding,
-                            enabled = if (device.online) device.has("files.send") else true,
-                            colors = tonal,
-                            onClick = { pickFolder.launch(null) },
-                            modifier = Modifier.weight(1f).heightIn(min = WaypairDesign.touchTarget),
+                            modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
                         ) {
-                            Icon(
-                                imageVector = FolderIcon,
-                                contentDescription = null,
-                                modifier = Modifier.size(15.dp),
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            ButtonLabel(stringResource(R.string.action_send_folder))
+                            Text(stringResource(R.string.action_wake_pc), style = MaterialTheme.typography.labelMedium)
                         }
                     }
-                    Row(
+                }
+            }
+            Spacer(Modifier.height(20.dp))
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                // Real feature tiles follow the available pane and text size.
+                val fontScale = LocalDensity.current.fontScale
+                val columns = ((maxWidth.value + 12f) / (88f * fontScale + 12f)).toInt().coerceIn(1, 4)
+                val actionWidth = (maxWidth - 12.dp * (columns - 1)) / columns
+                val actionModifier = Modifier.width(actionWidth).heightIn(min = WaypairDesign.touchTarget)
+                val controlShape = RoundedCornerShape(WaypairDesign.controlRadius)
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Text(
+                        text = stringResource(R.string.home_section_screen),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    FlowRow(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        FilledTonalButton(
-                            contentPadding = CardButtonPadding,
+                        HomeFeatureTile(
+                            label = stringResource(R.string.action_remote_pc),
+                            icon = RemotePcIcon,
+                            enabled = controlPcEnabled,
+                            reason = controlPcReason,
+                            onClick = { onRemote(device.id) },
+                            modifier = actionModifier,
+                        )
+                        HomeFeatureTile(
+                            label = stringResource(R.string.action_deck_pc),
+                            icon = DeckGridIcon,
+                            enabled = deckEnabled,
+                            reason = deckReason,
+                            onClick = { onDeck(device.id) },
+                            modifier = actionModifier,
+                        )
+                        HomeFeatureTile(
+                            label = stringResource(R.string.action_desk_pc),
+                            icon = DeskClockIcon,
+                            enabled = device.online,
+                            onClick = { onDesk(device.id) },
+                            modifier = actionModifier,
+                        )
+                        HomeFeatureTile(
+                            label = stringResource(if (ownedCameraPermissionMissing) R.string.webcam_allow_camera else R.string.action_webcam_pc),
+                            icon = CameraLensIcon,
+                            enabled = webcamEnabled,
+                            reason = webcamReason,
+                            onClick = { onWebcam(device.id) },
+                            modifier = actionModifier,
+                        )
+                    }
+                    Text(
+                        text = stringResource(R.string.home_section_transfer),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        HomeFeatureTile(
+                            label = stringResource(R.string.action_send_files),
+                            icon = SendArrowIcon,
+                            enabled = if (device.online) device.has("files.send") else true,
+                            onClick = { pickFiles.launch(arrayOf("*/*")) },
+                            modifier = actionModifier,
+                        )
+                        HomeFeatureTile(
+                            label = stringResource(R.string.action_send_folder),
+                            icon = FolderIcon,
+                            enabled = if (device.online) device.has("files.send") else true,
+                            onClick = { pickFolder.launch(null) },
+                            modifier = actionModifier,
+                        )
+                        HomeFeatureTile(
+                            label = stringResource(R.string.action_send_clipboard),
+                            icon = ClipboardIcon,
                             // Offline, the clip waits in the send queue.
                             enabled = if (device.online) device.usable("clipboard.auto_phone_to_pc") else true,
-                            colors = tonal,
                             onClick = { context.startActivity(SendActivity.sendClipboardIntent(context, device.id)) },
-                            modifier = Modifier.weight(1f).heightIn(min = WaypairDesign.touchTarget),
-                        ) {
-                            Icon(
-                                imageVector = ClipboardIcon,
-                                contentDescription = null,
-                                modifier = Modifier.size(15.dp),
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            ButtonLabel(stringResource(R.string.action_send_clipboard))
-                        }
-                        CapabilityReasonTooltip(browsePcReason, Modifier.weight(1f)) {
-                            FilledTonalButton(
-                                contentPadding = CardButtonPadding,
-                                enabled = browsePcEnabled,
-                                colors = tonal,
-                                onClick = { onBrowsePcFiles(device.id) },
-                                modifier = Modifier.fillMaxWidth().heightIn(min = WaypairDesign.touchTarget).capabilityReason(browsePcReason),
-                            ) {
-                                Icon(
-                                    imageVector = PcFolderIcon,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(15.dp),
-                                )
-                                Spacer(Modifier.width(6.dp))
-                                ButtonLabel(stringResource(R.string.action_browse_pc_files))
-                            }
-                        }
+                            modifier = actionModifier,
+                        )
+                        HomeFeatureTile(
+                            label = stringResource(R.string.action_browse_pc_files),
+                            icon = PcFolderIcon,
+                            enabled = browsePcEnabled,
+                            reason = browsePcReason,
+                            onClick = { onBrowsePcFiles(device.id) },
+                            modifier = actionModifier,
+                        )
                     }
-                }
 
-                // 3. Live PC media, master volume, mute, and active output device bar
-                val deckState = device.deckState
-                if (device.online && deckState != null) {
-                    PcAudioCardSection(
-                        pcId = device.id,
-                        pcName = device.name,
-                        deckState = deckState,
-                        ink = ink,
-                        onSetPcAudio = { vol, muted -> onSetPcAudio(device.id, vol, muted) },
-                        micAvailable = micOn || device.has("media.phone_mic"),
-                        micOn = micOn,
-                        onToggleMic = onToggleMic,
+                    // 3. Live PC media, master volume, mute, and active output device bar
+                    val deckState = device.deckState
+                    if (device.online && deckState != null) {
+                        PcAudioCardSection(
+                            pcId = device.id,
+                            pcName = device.name,
+                            deckState = deckState,
+                            ink = ink,
+                            onSetPcAudio = { vol, muted -> onSetPcAudio(device.id, vol, muted) },
+                            micAvailable = micOn || device.has("media.phone_mic"),
+                            micOn = micOn,
+                            onToggleMic = onToggleMic,
+                        )
+                    }
+
+                    Text(
+                        text = stringResource(R.string.home_section_system),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp),
                     )
-                }
-
-                // 4. Utilities & Power Row (Voice Memo, Ring PC, Lock, Sleep)
-                Text(
-                    text = stringResource(R.string.home_section_system),
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 2.dp, top = 2.dp),
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    FilledTonalButton(
-                        contentPadding = CardButtonPadding,
-                        enabled = device.online,
-                        colors = tonal,
-                        onClick = { onRecord(device.id) },
-                        modifier = Modifier.weight(1f).heightIn(min = WaypairDesign.touchTarget),
-                    ) {
-                        Icon(
-                            imageVector = MicIcon,
-                            contentDescription = null,
-                            modifier = Modifier.size(15.dp),
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        ButtonLabel(stringResource(R.string.action_record_pc))
-                    }
-                    FilledTonalButton(
-                        contentPadding = CardButtonPadding,
-                        enabled = device.online,
-                        colors = tonal,
-                        onClick = {
-                            ringing = !ringing
-                            onRing(device.id, ringing)
-                        },
-                        modifier = Modifier.weight(1f).heightIn(min = WaypairDesign.touchTarget),
-                    ) {
-                        Icon(
-                            imageVector = BellIcon,
-                            contentDescription = null,
-                            modifier = Modifier.size(15.dp),
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        ButtonLabel(stringResource(if (ringing) R.string.action_stop_ringing else R.string.action_ring_pc))
-                    }
-                }
-                if (device.has("device.pc_actions")) {
-                    Row(
+                    FlowRow(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        OutlinedButton(
-                            contentPadding = CardButtonPadding,
+                        HomeFeatureTile(
+                            label = stringResource(R.string.action_record_pc),
+                            icon = MicIcon,
                             enabled = device.online,
-                            colors = outlined,
-                            border = outline,
-                            onClick = { onPower(device.id, false) },
-                            modifier = Modifier.weight(1f).heightIn(min = WaypairDesign.touchTarget),
-                        ) {
-                            ButtonLabel(stringResource(R.string.action_lock_pc))
-                        }
-                        OutlinedButton(
-                            contentPadding = CardButtonPadding,
+                            onClick = { onRecord(device.id) },
+                            modifier = actionModifier,
+                        )
+                        HomeFeatureTile(
+                            label = stringResource(if (ringing) R.string.action_stop_ringing else R.string.action_ring_pc),
+                            icon = BellIcon,
                             enabled = device.online,
-                            colors = outlined,
-                            border = outline,
-                            onClick = { onPower(device.id, true) },
-                            modifier = Modifier.weight(1f).heightIn(min = WaypairDesign.touchTarget),
+                            onClick = {
+                                ringing = !ringing
+                                onRing(device.id, ringing)
+                            },
+                            modifier = actionModifier,
+                        )
+                    }
+                    if (device.has("device.pc_actions")) {
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            ButtonLabel(stringResource(R.string.action_sleep_pc))
+                            OutlinedButton(
+                                contentPadding = CardButtonPadding,
+                                shape = controlShape,
+                                enabled = device.online,
+                                colors = outlined,
+                                border = outline,
+                                onClick = { onPower(device.id, false) },
+                                modifier = actionModifier,
+                            ) {
+                                ButtonLabel(stringResource(R.string.action_lock_pc))
+                            }
+                            OutlinedButton(
+                                contentPadding = CardButtonPadding,
+                                shape = controlShape,
+                                enabled = device.online,
+                                colors = outlined,
+                                border = outline,
+                                onClick = { onPower(device.id, true) },
+                                modifier = actionModifier,
+                            ) {
+                                ButtonLabel(stringResource(R.string.action_sleep_pc))
+                            }
                         }
                     }
                 }
@@ -1865,6 +1808,57 @@ private fun PcCard(
                         color = ink,
                     )
                 }
+            }
+        }
+    }
+}
+
+/** Native feature tile: real button semantics, negotiated admission and a content-sized caption. */
+@Composable
+private fun HomeFeatureTile(
+    label: String,
+    icon: ImageVector,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    reason: String? = null,
+) {
+    val scheme = MaterialTheme.colorScheme
+    CapabilityReasonTooltip(reason, modifier) {
+        Button(
+            onClick = onClick,
+            enabled = enabled,
+            shape = RoundedCornerShape(24.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color.Transparent,
+                contentColor = scheme.primary,
+                disabledContainerColor = Color.Transparent,
+                disabledContentColor = scheme.onSurfaceVariant,
+            ),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = WaypairDesign.touchTarget)
+                .liquidGlassCard(
+                    cornerRadius = 24.dp,
+                    isGlass = LocalGlassTheme.current,
+                    baseColor = WaypairDesign.panelColor(),
+                    tintColor = scheme.primary,
+                    outlineColor = WaypairDesign.panelBorder(),
+                )
+                .capabilityReason(reason),
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Icon(icon, contentDescription = null, modifier = Modifier.size(32.dp))
+                Text(
+                    label,
+                    style = MaterialTheme.typography.labelLarge,
+                    textAlign = TextAlign.Center,
+                    color = if (enabled) scheme.onSurface else scheme.onSurface.copy(alpha = 0.50f),
+                )
             }
         }
     }
@@ -3902,8 +3896,7 @@ private val CloseQueueIcon: ImageVector by lazy {
     )
 }
 
-// The PC card's buttons sit two to a row, so the default 24 dp side padding
-// leaves too little room for labels like "Browse PC files" on narrow phones.
+// Compact padding leaves room for labels as the PC action grid adapts to pane width.
 private val CardButtonPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp)
 
 // Preserve the user's text size and let action rows grow on narrow panes.

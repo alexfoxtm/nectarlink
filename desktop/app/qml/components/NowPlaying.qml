@@ -1,13 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import QtQuick
 import QtQuick.Window
-import QtQuick.Effects
 import app.nectarlink
 
-// What plays on a phone or this PC: compact by default and adjustable (expand/collapse),
-// with a native GPU-blurred album art backdrop, animated equalizer bars,
-// smooth track transitions, a 60fps animated progress bar with traveling shimmer,
-// -10s / +10s seek controls, inline volume slider, and one-tap Glass/Artwork theme sync.
+// Media controls for a phone or this PC, with compact/expanded layouts.
+// Cover artwork stays in its own thumbnail so the panel remains quiet.
 Card {
     id: card
     required property string deviceId
@@ -35,76 +32,21 @@ Card {
     // Compact by default; user can expand/collapse at any time.
     property bool expanded: false
     padding: expanded ? 14 : 12
-    radius: embeddedInHero ? 22 : Theme.radiusLg
+    radius: embeddedInHero ? Theme.controlRadius : Theme.cardRadius
 
     readonly property bool activelyRendered: card.visible
         && Qt.application.state === Qt.ApplicationActive
     readonly property bool windowResizing: Window.window && Window.window.resizing ? true : false
 
-    color: embeddedInHero
-        ? Qt.rgba(Theme.surfaceContainerHigh.r, Theme.surfaceContainerHigh.g, Theme.surfaceContainerHigh.b, Theme.glass ? (Theme.dark ? 0.46 : 0.56) : (Theme.dark ? 0.52 : 0.68))
-        : Theme.cardColor
-    border.width: embeddedInHero ? (Theme.glass ? 1 : 0) : (Theme.graphite || Theme.ambientBlurActive ? 1 : 0)
-    border.color: embeddedInHero
-        ? Qt.rgba(1, 1, 1, Theme.dark ? 0.10 : 0.34)
-        : Theme.cardBorder
+    color: embeddedInHero ? Theme.insetColor : Theme.panelColor
+    border.width: 0
+    border.color: Theme.panelBorder
 
     implicitHeight: contentCol.implicitHeight + padding * 2
     height: implicitHeight
     Behavior on implicitHeight {
         enabled: !Theme.reduceMotion && card.activelyRendered && !card.windowResizing
         NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
-    }
-
-    // Rounded-masked internal blurred album-art glow inside the media player card (zero rectangular corner bleed!)
-    Item {
-        id: cardArtBackdrop
-        x: -card.padding
-        y: -card.padding
-        width: card.width
-        height: card.height
-        z: 0
-        visible: card.art.length > 0 && cardArtBg.status === Image.Ready && !Theme.graphite
-        opacity: Theme.dark ? 0.38 : 0.26
-        Behavior on opacity { NumberAnimation { duration: 320 } }
-
-        Rectangle {
-            id: cardArtMask
-            anchors.fill: parent
-            radius: card.radius
-            visible: false
-            layer.enabled: card.activelyRendered && cardArtBackdrop.visible
-            layer.textureSize: Qt.size(192, 96)
-            layer.smooth: true
-        }
-
-        Image {
-            id: cardArtBg
-            anchors.fill: parent
-            source: card.art
-            sourceSize: Qt.size(96, 96)
-            fillMode: Image.PreserveAspectCrop
-            asynchronous: true
-            visible: false
-            layer.enabled: card.activelyRendered && cardArtBackdrop.visible
-            layer.textureSize: Qt.size(96, 96)
-            layer.smooth: true
-        }
-
-        MultiEffect {
-            visible: card.activelyRendered && cardArtBackdrop.visible
-            anchors.fill: parent
-            source: cardArtBg
-            autoPaddingEnabled: false
-            blurEnabled: true
-            blurMax: 32
-            blur: 1.0
-            saturation: 0.45
-            maskEnabled: true
-            maskSource: cardArtMask
-            maskThresholdMin: 0.5
-            maskSpreadAtMin: 1.0
-        }
     }
 
     // Low-overhead 2Hz timer while playing so seek bar and timestamps advance without continuous 60-120Hz GPU scene-graph redraws.
@@ -396,7 +338,8 @@ Card {
                 }
 
                 IconButton {
-                    visible: !Theme.graphite
+                    // The redesigned palette is fixed; keep old preference backing only.
+                    visible: false
                     width: 24; height: 24
                     iconSize: 13
                     tonal: Theme.isArtworkSeed

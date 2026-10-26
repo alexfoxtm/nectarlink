@@ -3,20 +3,17 @@ pragma Singleton
 import QtQuick
 import app.nectarlink
 
-// The active theme: Bloom (Material You, seed presets, the default), Hive
-// (honey on charcoal or wax), Glass, or Graphite (paper and slate), light
-// or dark, resolved from Preferences and the system. Colors
-// come from Tokens (generated from docs/design/tokens.json); Material's
-// "onX" roles are named "xContent" because QML reserves the "on" prefix.
+// Waypair's native violet palette is shared across all screens. Legacy style
+// preferences remain stored for compatibility; light/dark follows colorMode.
 QtObject {
     id: theme
 
-    readonly property bool hive: Preferences.theme === "hive"
-    readonly property bool graphite: Preferences.theme === "graphite"
-    readonly property bool glass: Preferences.theme === "glass" || Preferences.theme === "blurry"
+    readonly property bool hive: false
+    readonly property bool graphite: false
+    readonly property bool glass: false
     readonly property bool dark: Preferences.colorMode === "dark"
                                  || (Preferences.colorMode === "system" && AppController.systemDark)
-    readonly property bool amoled: dark && Preferences.amoled && (graphite || Preferences.seed === "black")
+    readonly property bool amoled: false
     readonly property bool reduceMotion: AppController.reduceMotion
 
     // ---- Hive's comb ----
@@ -51,7 +48,7 @@ QtObject {
     }
 
     readonly property var bloomSeeds: Tokens.data.themes.bloom.seeds
-    // This build's blue, where no wallpaper, phone or preset seed applies.
+    // Retained seed fallback for stored preference compatibility.
     readonly property string fallbackSeed: "ocean"
     // Colors made from the desktop wallpaper (or null until they're known),
     // in the shape of a preset seed.
@@ -112,12 +109,30 @@ QtObject {
         : (seed === "phone" || seed.startsWith("phone:"))
           ? activePhoneSeed
           : (seed === "wallpaper" ? wallpaperSeed : bloomSeeds[seed])
-    readonly property var palette: hive
-        ? Tokens.data.themes.hive.variants[dark ? "comb" : "wax"]
-        : (graphite
-            ? Tokens.data.themes.graphite.variants[dark ? "slate" : "paper"]
-            : seedColors[dark ? "dark" : "light"])
-    readonly property var status: graphite || hive ? palette : Tokens.data.themes.bloom.status[dark ? "dark" : "light"]
+    // Semantic colors are deliberately independent from retired style presets,
+    // so existing saved Glass/Graphite preferences also receive this redesign.
+    readonly property var palette: ({
+        primary: dark ? "#C49BFF" : "#8A2ED4",
+        onPrimary: dark ? "#281542" : "#FFFFFF",
+        primaryContainer: dark ? "#45305F" : "#EFE5FF",
+        onPrimaryContainer: dark ? "#E9D7FF" : "#6626A6",
+        secondaryContainer: dark ? "#3A2C50" : "#F0EAF9",
+        onSecondaryContainer: dark ? "#E1CEF9" : "#65427E",
+        surface: dark ? "#171426" : "#EEF0F8",
+        surfaceContainerLow: dark ? "#1C172D" : "#F6F6FC",
+        surfaceContainer: dark ? "#231E38" : "#FFFFFF",
+        surfaceContainerHigh: dark ? "#2E2745" : "#F0EEF8",
+        surfaceContainerHighest: dark ? "#3E3456" : "#E3DFF0",
+        onSurface: dark ? "#EEEBFA" : "#211740",
+        onSurfaceVariant: dark ? "#B9AECC" : "#726984",
+        outline: dark ? "#807091" : "#A69BB8",
+        outlineVariant: dark ? "#393048" : "#E4DEED"
+    })
+    readonly property var status: ({
+        warning: dark ? "#F2C477" : "#8D5A0E",
+        error: dark ? "#FFA6AE" : "#C23D50",
+        onError: dark ? "#4C1621" : "#FFFFFF"
+    })
 
     // ---- Color roles ----
     readonly property color primary: palette.primary
@@ -126,112 +141,50 @@ QtObject {
     readonly property color primaryContainerContent: palette.onPrimaryContainer
     readonly property color secondaryContainer: palette.secondaryContainer
     readonly property color secondaryContainerContent: palette.onSecondaryContainer
-    readonly property color surface: amoled ? "#000000" : palette.surface
-    readonly property color surfaceLow: amoled ? "#050507" : palette.surfaceContainerLow
-    readonly property color surfaceContainerLow: amoled ? "#050507" : palette.surfaceContainerLow
-    readonly property color surfaceContainer: amoled ? "#0A0B0E" : palette.surfaceContainer
-    readonly property color surfaceContainerHigh: amoled ? "#121318" : palette.surfaceContainerHigh
-    readonly property color surfaceContainerHighest: amoled ? "#1A1C23" : palette.surfaceContainerHighest
+    readonly property color surface: palette.surface
+    readonly property color surfaceLow: palette.surfaceContainerLow
+    readonly property color surfaceContainerLow: palette.surfaceContainerLow
+    readonly property color surfaceContainer: palette.surfaceContainer
+    readonly property color surfaceContainerHigh: palette.surfaceContainerHigh
+    readonly property color surfaceContainerHighest: palette.surfaceContainerHighest
     readonly property color surfaceContent: palette.onSurface
     readonly property color surfaceContentVariant: palette.onSurfaceVariant
     readonly property color outline: palette.outline
-    readonly property color outlineVariant: amoled ? "#22242C" : palette.outlineVariant
-    // Success never gets its own (green) color: it uses the theme's ink.
+    readonly property color outlineVariant: palette.outlineVariant
     readonly property color success: primary
     readonly property color warning: status.warning
     readonly property color error: status.error
     readonly property color errorContent: status.onError
-    // A quiet error surface (the "sharing your screen" pill): the error hue
-    // over the surface, with the surface's own ink so text stays readable.
-    readonly property color errorContainer: Qt.tint(surfaceContainerHigh, Qt.rgba(error.r, error.g, error.b, dark ? 0.22 : 0.14))
-    readonly property color errorContainerContent: surfaceContent
+    readonly property color errorContainer: dark ? "#422732" : "#FCEBF0"
+    readonly property color errorContainerContent: dark ? "#FFD8DE" : "#A22B40"
 
-    // ---- Component colors (docs/design/assets/nl.css) ----
-    // Hive: nearly opaque, so the comb shows through as texture without
-    // ever crossing text.
-    readonly property color cardColor: hive
-        ? (function() {
-            const c = Qt.tint(surfaceContainer, Qt.rgba(primaryContainer.r, primaryContainer.g, primaryContainer.b, dark ? 0.12 : 0.18))
-            return Qt.rgba(c.r, c.g, c.b, dark ? 0.90 : 0.92)
-        })()
-        : graphite ? "transparent"
-        : (glass
-            ? Qt.tint(
-                Qt.rgba(surfaceContainer.r, surfaceContainer.g, surfaceContainer.b, amoled ? 0.56 : (dark ? 0.36 : 0.52)),
-                Qt.rgba(primary.r, primary.g, primary.b, dark ? 0.08 : 0.06)
-            )
-            : (artworkAmbientActive
-                ? Qt.rgba(surfaceContainer.r, surfaceContainer.g, surfaceContainer.b, dark ? 0.74 : 0.80)
-                : (amoled
-                    ? Qt.tint(surfaceContainer, Qt.rgba(primaryContainer.r, primaryContainer.g, primaryContainer.b, 0.08))
-                    : Qt.tint(
-                        surfaceContainer,
-                        Qt.rgba(primaryContainer.r, primaryContainer.g, primaryContainer.b, isPhoneSeed ? (dark ? 0.28 : 0.36) : (dark ? 0.16 : 0.22))
-                    ))))
-    // Hive: a faint honey edge, like wax around a cell.
-    readonly property color cardBorder: hive
-        ? Qt.rgba(primary.r, primary.g, primary.b, dark ? 0.14 : 0.16)
-        : graphite ? outlineVariant
-        : (glass
-            ? (dark ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(1, 1, 1, 0.28))
-            : (artworkAmbientActive
-                ? Qt.rgba(outlineVariant.r, outlineVariant.g, outlineVariant.b, dark ? 0.36 : 0.45)
-                : (amoled ? "#1D1F27" : "transparent")))
-    readonly property color tileColor: hive
-        ? Qt.tint(surfaceContainerHigh, Qt.rgba(primaryContainer.r, primaryContainer.g, primaryContainer.b, dark ? 0.14 : 0.20))
-        : graphite ? "transparent"
-        : (glass
-            ? Qt.tint(
-                Qt.rgba(1, 1, 1, dark ? 0.08 : 0.48),
-                Qt.rgba(primary.r, primary.g, primary.b, dark ? 0.08 : 0.06)
-            )
-            : (artworkAmbientActive
-                ? Qt.rgba(surfaceContainerHigh.r, surfaceContainerHigh.g, surfaceContainerHigh.b, dark ? 0.76 : 0.82)
-                : (amoled
-                    ? Qt.tint(surfaceContainerHigh, Qt.rgba(primaryContainer.r, primaryContainer.g, primaryContainer.b, 0.10))
-                    : Qt.tint(
-                        surfaceContainerHigh,
-                        Qt.rgba(primaryContainer.r, primaryContainer.g, primaryContainer.b, isPhoneSeed ? (dark ? 0.32 : 0.42) : (dark ? 0.18 : 0.24))
-                    ))))
-    readonly property color heroColor: hive
-        ? Qt.tint(surface, Qt.rgba(primaryContainer.r, primaryContainer.g, primaryContainer.b, dark ? 0.55 : 0.62))
-        : graphite ? "transparent"
-        : Qt.tint(
-            ambientBlurActive
-                ? Qt.rgba(surface.r, surface.g, surface.b, glass ? (amoled ? 0.54 : (dark ? 0.34 : 0.48)) : (dark ? 0.65 : 0.72))
-                : (amoled ? "#090A0E" : surface),
-            Qt.rgba(primaryContainer.r, primaryContainer.g, primaryContainer.b, glass ? (dark ? 0.30 : 0.38) : (artworkAmbientActive ? 0.52 : (amoled ? 0.32 : 0.68)))
-        )
-    readonly property color heroContent: graphite ? surfaceContent : primaryContainerContent
-    // Hive's rail is the comb itself.
-    readonly property color railColor: graphite || hive ? "transparent"
-        : (glass
-            ? Qt.rgba(surfaceLow.r, surfaceLow.g, surfaceLow.b, amoled ? 0.48 : (dark ? 0.28 : 0.42))
-            : (artworkAmbientActive
-                ? Qt.rgba(surfaceLow.r, surfaceLow.g, surfaceLow.b, dark ? 0.62 : 0.68)
-                : (amoled
-                    ? "#030305"
-                    : Qt.tint(
-                        surfaceLow,
-                        Qt.rgba(primaryContainer.r, primaryContainer.g, primaryContainer.b, isPhoneSeed ? (dark ? 0.24 : 0.32) : (dark ? 0.14 : 0.18))
-                    ))))
-    readonly property color indicator: graphite ? surfaceContent : (hive ? primaryContainer : secondaryContainer)
-    readonly property color indicatorContent: graphite ? surface : (hive ? primaryContainerContent : secondaryContainerContent)
-    // Hive: the honey halo around a primary control on hover.
-    readonly property color glow: Qt.rgba(primary.r, primary.g, primary.b, dark ? 0.30 : 0.22)
-    readonly property color buttonShadow: graphite ? palette.buttonShadow : "transparent"
-    readonly property color scrim: Qt.rgba(0, 0, 0, dark ? 0.5 : 0.32)
-
-    // Shared native presentation roles. Palette ownership remains with the user's theme.
+    // Opaque panels and quiet insets keep the dashboard readable in both modes.
     readonly property color canvasColor: surface
-    readonly property color panelColor: amoled ? surfaceContainer : (dark ? surfaceContainerLow : "#FFFFFF")
-    readonly property color panelBorder: Qt.rgba(outlineVariant.r, outlineVariant.g, outlineVariant.b, dark ? 0.65 : 0.50)
-    readonly property color insetColor: surfaceContainerLow
-    readonly property color heroWash: Qt.tint(panelColor, Qt.rgba(primary.r, primary.g, primary.b, dark ? 0.12 : 0.08))
+    readonly property color panelColor: surfaceContainer
+    readonly property color panelBorder: outlineVariant
+    readonly property color insetColor: dark ? "#1F1A31" : "#F6F4FA"
+    readonly property color cardColor: panelColor
+    readonly property color cardBorder: panelBorder
+    readonly property color tileColor: panelColor
+    readonly property color heroWash: dark ? "#302445" : "#F2EAFE"
+    readonly property color heroWashEnd: dark ? "#352746" : "#F5EEFC"
+    readonly property color heroColor: heroWash
+    readonly property color heroContent: surfaceContent
+    readonly property color railColor: dark ? "#351077" : "#5813D7"
+    readonly property color railContent: "#F8F3FF"
+    readonly property color railMuted: "#CEB9EE"
+    readonly property color railSelected: Qt.rgba(1, 1, 1, 0.16)
+    readonly property color indicator: primaryContainer
+    readonly property color indicatorContent: primaryContainerContent
+    readonly property color actionColor: dark ? "#BE93FF" : "#9A42F4"
+    readonly property color actionContent: primaryContent
     readonly property color focusColor: primary
-    readonly property int controlRadius: 12
-    readonly property int cardRadius: 16
-    readonly property int heroRadius: 24
+    readonly property color glow: "transparent"
+    readonly property color buttonShadow: "transparent"
+    readonly property color scrim: Qt.rgba(0.04, 0.08, 0.15, dark ? 0.64 : 0.30)
+    readonly property int controlRadius: 8
+    readonly property int cardRadius: 14
+    readonly property int heroRadius: 20
     readonly property int spacingXs: 4
     readonly property int spacingSm: 8
     readonly property int spacingMd: 12
@@ -242,20 +195,18 @@ QtObject {
     readonly property int compactRailWidth: 80
 
     // ---- Shape ----
-    readonly property var shape: graphite ? Tokens.data.themes.graphite.shape
-        : (hive ? Tokens.data.themes.hive.shape : Tokens.data.themes.bloom.shape)
+    readonly property var shape: ({ xs: 4, sm: 6, md: 10, lg: 14, xl: 20, full: 8 })
     readonly property int radiusXs: shape.xs
     readonly property int radiusSm: shape.sm
     readonly property int radiusMd: shape.md
     readonly property int radiusLg: shape.lg
     readonly property int radiusXl: shape.xl
-    // "Pill": half the height of whatever uses it, in Bloom.
-    function pill(height) { return graphite ? shape.full : height / 2 }
+    function pill(height) { return Math.min(controlRadius, height / 2) }
 
     // ---- Type ----
     // Bundled with the app (assets/fonts).
     readonly property string fontUi: "Figtree"
-    readonly property string fontDisplay: graphite ? "Instrument Serif" : "Figtree"
+    readonly property string fontDisplay: "Figtree"
     readonly property string fontMono: "Space Mono"
     readonly property var typography: Tokens.data.typography
     readonly property var labelStyle: graphite ? Tokens.data.themes.graphite.label

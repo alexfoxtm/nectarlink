@@ -7,9 +7,8 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.border
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Arrangement
@@ -27,21 +26,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -61,10 +53,12 @@ import androidx.compose.ui.platform.LocalContext
 import app.nectarlink.android.ui.AppLanguage
 import androidx.compose.material3.RadioButton
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -92,15 +86,15 @@ import app.nectarlink.android.core.AppsPolicyStatus
 import app.nectarlink.android.core.CoreState
 import app.nectarlink.android.core.Device
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import app.nectarlink.android.notifications.NotificationFilterPage
 import app.nectarlink.android.notifications.NotificationListener
 import app.nectarlink.android.ui.guide.GuideHighlightTarget
 import app.nectarlink.android.ui.theme.Appearance
 import app.nectarlink.android.ui.theme.LocalGlassTheme
-import app.nectarlink.android.ui.theme.Tokens
 import app.nectarlink.android.ui.theme.glassModalBlur
 import app.nectarlink.android.ui.theme.glassModalContainerColor
-import app.nectarlink.android.ui.theme.liquidGlassCard
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -241,52 +235,75 @@ fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingMd),
     ) {
         item(key = "header", contentType = "header") {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .liquidGlassCard(
-                        cornerRadius = WaypairDesign.heroRadius,
-                        isGlass = isGlass,
-                        baseColor = WaypairDesign.heroWash(),
-                        tintColor = MaterialTheme.colorScheme.primary,
-                        outlineColor = WaypairDesign.panelBorder(),
-                    )
-                    .padding(WaypairDesign.spacingLg),
-                verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingMd),
-            ) {
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(WaypairDesign.spacingSm),
-                    horizontalArrangement = Arrangement.spacedBy(WaypairDesign.spacingMd),
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .shadow(
+                            elevation = 8.dp,
+                            shape = RoundedCornerShape(24.dp),
+                            ambientColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                            spotColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+                        )
+                        .background(
+                            brush = Brush.verticalGradient(
+                                listOf(
+                                    MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    MaterialTheme.colorScheme.surface,
+                                ),
+                            ),
+                            shape = RoundedCornerShape(24.dp),
+                        )
+                        .padding(24.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Text(
                         stringResource(R.string.settings_title),
                         style = MaterialTheme.typography.headlineMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
-                    FilledTonalButton(onClick = onOpenFeaturesGuide) {
+                    TextButton(
+                        onClick = onOpenFeaturesGuide,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.heightIn(min = 48.dp),
+                        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 12.dp),
+                    ) {
                         Text(stringResource(R.string.guide_title))
                     }
                 }
                 FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().selectableGroup(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     categories.forEach { (id, label) ->
                         val selected = activeCategory == id
-                        FilterChip(
-                            selected = selected,
-                            onClick = { focusedAppsPcId = null; activeCategory = id },
-                            label = { Text(stringResource(label)) },
-                            modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
-                            // Solid like the cards: the row sits right on the
-                            // background (Hive's comb showed through).
-                            colors = FilterChipDefaults.filterChipColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                            ),
-                        )
+                        val shape = RoundedCornerShape(16.dp)
+                        Surface(
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .shadow(
+                                    elevation = if (selected) 1.dp else 4.dp,
+                                    shape = shape,
+                                    ambientColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+                                    spotColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                                )
+                                .clip(shape)
+                                .selectable(
+                                    selected = selected,
+                                    role = Role.Tab,
+                                    onClick = { focusedAppsPcId = null; activeCategory = id },
+                                ),
+                            shape = shape,
+                            color = if (selected) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surface,
+                            contentColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        ) {
+                            Text(
+                                stringResource(label),
+                                style = MaterialTheme.typography.labelLarge,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
+                            )
+                        }
                     }
                 }
             }
@@ -780,229 +797,54 @@ fun SettingsScreen(
 
         if (activeCategory == "all" || activeCategory == "appearance") {
             item(key = "appearance", contentType = "section") {
-                Section(stringResource(R.string.settings_appearance)) {
-                    Label(stringResource(R.string.settings_theme))
-                    Choice(
-                        listOf(
-                            "hive" to stringResource(R.string.theme_hive),
-                            "bloom" to stringResource(R.string.theme_bloom),
-                            "glass" to "Glass",
-                            "graphite" to stringResource(R.string.theme_graphite),
-                        ),
-                        appearance.theme,
-                    ) { value -> onAppearance { it.copy(theme = value) } }
-                    Label(stringResource(R.string.settings_mode))
-                    Choice(
-                        listOf(
-                            "system" to stringResource(R.string.mode_system),
-                            "light" to stringResource(R.string.mode_light),
-                            "dark" to stringResource(R.string.mode_dark),
-                        ),
-                        appearance.mode,
-                    ) { value -> onAppearance { it.copy(mode = value) } }
-                    if (AppLanguage.supported) {
-                        // System and English, plus the language picked from the list (or More).
-                        val context = LocalContext.current
-                        val language = remember { AppLanguage.current(context) }
-                        val other = AppLanguage.languages.firstOrNull { it.first == language && it.first != "en" }
-                        Label(stringResource(R.string.settings_language))
-                        Choice(
-                            listOf(
-                                "" to stringResource(R.string.mode_system),
-                                "en" to "English",
-                                (other ?: (MORE_LANGUAGES to stringResource(R.string.settings_language_more))),
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        stringResource(R.string.settings_appearance),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 4.dp),
+                    )
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .shadow(
+                                elevation = 6.dp,
+                                shape = RoundedCornerShape(24.dp),
+                                ambientColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+                                spotColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
                             ),
-                            language,
-                        ) { value ->
-                            if (value == "" || value == "en") AppLanguage.set(context, value) else pickLanguage = true
-                        }
-                    }
-                    if (appearance.theme == "hive") {
-                        SettingRowDivider()
-                        val combTitle = stringResource(R.string.settings_comb_motion)
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
-                            Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                                Text(combTitle, style = MaterialTheme.typography.titleSmall)
-                                Text(
-                                    stringResource(R.string.settings_comb_motion_hint),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            Switch(
-                                checked = appearance.combMotion,
-                                onCheckedChange = { on -> onAppearance { it.copy(combMotion = on) } },
-                                colors = app.nectarlink.android.ui.theme.nectarSwitchColors(),
-                                modifier = Modifier.semantics { contentDescription = combTitle },
-                            )
-                        }
-                    }
-                    if (appearance.theme == "graphite" && appearance.mode != "light") {
-                        SettingRowDivider()
-                        val amoledTitle = stringResource(R.string.settings_amoled)
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
-                            Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                                Text(amoledTitle, style = MaterialTheme.typography.titleSmall)
-                                Text(
-                                    stringResource(R.string.settings_amoled_hint),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            Switch(
-                                checked = appearance.amoled,
-                                onCheckedChange = { on -> onAppearance { it.copy(amoled = on) } },
-                                colors = app.nectarlink.android.ui.theme.nectarSwitchColors(),
-                                modifier = Modifier.semantics { contentDescription = amoledTitle },
-                            )
-                        }
-                    }
-                    if (appearance.theme == "bloom" || appearance.theme == "glass") {
-                        SettingRowDivider()
-                        val artworkSync = appearance.seed == "artwork"
-                        val artworkColorLabel = stringResource(R.string.settings_theme_artwork_color)
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
-                            Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                                Text(stringResource(R.string.settings_theme_artwork_color), style = MaterialTheme.typography.titleSmall)
-                                Text(
-                                    stringResource(R.string.settings_theme_artwork_body),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            Switch(
-                                checked = artworkSync,
-                                onCheckedChange = { on ->
-                                    onAppearance {
-                                        it.copy(seed = if (on) "artwork" else Tokens.DEFAULT_SEED)
-                                    }
-                                },
-                                colors = app.nectarlink.android.ui.theme.nectarSwitchColors(),
-                                modifier = Modifier.semantics { contentDescription = artworkColorLabel },
-                            )
-                        }
-                        if (!artworkSync && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                            SettingRowDivider()
-                            val dynamicColorTitle = stringResource(R.string.settings_dynamic_color)
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
-                                Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                                    Text(dynamicColorTitle, style = MaterialTheme.typography.titleSmall)
-                                    Text(
-                                        stringResource(R.string.settings_dynamic_color_hint),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                                Switch(
-                                    checked = appearance.dynamicColor,
-                                    onCheckedChange = { on -> onAppearance { it.copy(dynamicColor = on) } },
-                                    colors = app.nectarlink.android.ui.theme.nectarSwitchColors(),
-                                    modifier = Modifier.semantics { contentDescription = dynamicColorTitle },
-                                )
-                            }
-                        }
-                        if (!artworkSync) {
-                            SettingRowDivider()
-                            val blackSwatchSelected = (!appearance.dynamicColor || Build.VERSION.SDK_INT < Build.VERSION_CODES.S) && appearance.seed == "black"
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Tokens.bloomSeeds.forEach { (name, seed) ->
-                                    val isSelected = (!appearance.dynamicColor || Build.VERSION.SDK_INT < Build.VERSION_CODES.S) && appearance.seed == name
-                                    val seedLabel = stringResource(
-                                        when (name) {
-                                            "honey" -> R.string.settings_seed_honey
-                                            "lavender" -> R.string.settings_seed_lavender
-                                            "ocean" -> R.string.settings_seed_ocean
-                                            "sage" -> R.string.settings_seed_sage
-                                            "black" -> R.string.settings_seed_black
-                                            else -> R.string.settings_seed_honey
-                                        },
-                                    )
-                                    val isBlackSeed = name == "black"
-                                    val borderColor = when {
-                                        isSelected -> MaterialTheme.colorScheme.onSurface
-                                        isBlackSeed -> androidx.compose.ui.graphics.Color.White.copy(alpha = 0.28f)
-                                        else -> MaterialTheme.colorScheme.outlineVariant
-                                    }
-                                    val borderWidth = when {
-                                        isSelected -> 2.5.dp
-                                        isBlackSeed -> 1.2.dp
-                                        else -> 1.dp
-                                    }
-                                    androidx.compose.foundation.layout.Box(
-                                        contentAlignment = Alignment.Center,
-                                        modifier = Modifier
-                                            .size(WaypairDesign.touchTarget)
-                                            .drawBehind {
-                                                drawCircle(color = seed.color)
-                                                val strokePx = borderWidth.toPx()
-                                                drawCircle(
-                                                    color = borderColor,
-                                                    radius = (size.minDimension - strokePx) * 0.5f,
-                                                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = strokePx),
-                                                )
-                                            }
-                                            .clickable {
-                                                onAppearance {
-                                                    it.copy(dynamicColor = false, seed = name)
-                                                }
-                                            }
-                                            .semantics {
-                                                role = Role.RadioButton
-                                                selected = isSelected
-                                                contentDescription = seedLabel
-                                            },
-                                    ) {
-                                        if (isSelected) {
-                                            Text(
-                                                text = "✓",
-                                                style = MaterialTheme.typography.labelLarge,
-                                                color = if (isBlackSeed) androidx.compose.ui.graphics.Color.White else androidx.compose.ui.graphics.Color.Black,
-                                            )
-                                        }
-                                    }
-                                }
-
-                                // Compact inline AMOLED toggle pill inside the swatch row when Black seed is selected
-                                if (blackSwatchSelected) {
-                                    val amoledLabel = stringResource(R.string.settings_amoled)
-                                    Surface(
-                                        shape = RoundedCornerShape(20.dp),
-                                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                        border = BorderStroke(
-                                            1.dp,
-                                            if (appearance.amoled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
-                                        ),
-                                        modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(start = 12.dp, end = 6.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                        ) {
-                                            Text(
-                                                text = "AMOLED",
-                                                style = MaterialTheme.typography.labelMedium,
-                                                color = if (appearance.amoled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                            Switch(
-                                                checked = appearance.amoled,
-                                                onCheckedChange = { on -> onAppearance { it.copy(amoled = on) } },
-                                                colors = app.nectarlink.android.ui.theme.nectarSwitchColors(),
-                                                modifier = Modifier
-                                                    .graphicsLayer {
-                                                        scaleX = 0.76f
-                                                        scaleY = 0.76f
-                                                    }
-                                                    .semantics { contentDescription = amoledLabel },
-                                            )
-                                        }
-                                    }
+                        shape = RoundedCornerShape(24.dp),
+                        color = WaypairDesign.panelColor(),
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(24.dp),
+                        ) {
+                            AppearanceChoice(
+                                label = stringResource(R.string.settings_mode),
+                                options = listOf(
+                                    "system" to stringResource(R.string.mode_system),
+                                    "light" to stringResource(R.string.mode_light),
+                                    "dark" to stringResource(R.string.mode_dark),
+                                ),
+                                selected = appearance.mode,
+                                showModePreview = true,
+                            ) { value -> onAppearance { it.copy(mode = value) } }
+                            if (AppLanguage.supported) {
+                                // System and English, plus the language picked from the list (or More).
+                                val context = LocalContext.current
+                                val language = remember { AppLanguage.current(context) }
+                                val other = AppLanguage.languages.firstOrNull { it.first == language && it.first != "en" }
+                                AppearanceChoice(
+                                    label = stringResource(R.string.settings_language),
+                                    options = listOf(
+                                        "" to stringResource(R.string.mode_system),
+                                        "en" to "English",
+                                        (other ?: (MORE_LANGUAGES to stringResource(R.string.settings_language_more))),
+                                    ),
+                                    selected = language,
+                                ) { value ->
+                                    if (value == "" || value == "en") AppLanguage.set(context, value) else pickLanguage = true
                                 }
                             }
                         }
@@ -1801,7 +1643,7 @@ private fun StorageAccess(
 @Composable
 private fun SettingRowDivider() {
     HorizontalDivider(
-        color = WaypairDesign.panelBorder(),
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f),
     )
 }
 
@@ -1811,42 +1653,140 @@ private fun Section(
     highlighted: Boolean = false,
     content: @Composable () -> Unit,
 ) {
-    val isGlass = LocalGlassTheme.current
     val scheme = MaterialTheme.colorScheme
-    Column(
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
             title,
-            style = MaterialTheme.typography.titleLarge,
+            style = MaterialTheme.typography.titleMedium,
             color = if (highlighted) scheme.primary else scheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 4.dp),
         )
-        Column(
+        Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .liquidGlassCard(
-                    cornerRadius = WaypairDesign.cardRadius,
-                    isGlass = isGlass,
-                    baseColor = if (highlighted) scheme.secondaryContainer else WaypairDesign.panelColor(),
-                    tintColor = scheme.primary,
-                    outlineColor = when {
-                        highlighted -> scheme.primary
-                        isGlass -> scheme.outlineVariant
-                        else -> WaypairDesign.panelBorder()
-                    },
-                )
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+                .shadow(
+                    elevation = 6.dp,
+                    shape = RoundedCornerShape(24.dp),
+                    ambientColor = scheme.primary.copy(alpha = 0.10f),
+                    spotColor = scheme.primary.copy(alpha = 0.16f),
+                ),
+            shape = RoundedCornerShape(24.dp),
+            color = if (highlighted) scheme.secondaryContainer else WaypairDesign.panelColor(),
+            border = if (highlighted) BorderStroke(1.dp, scheme.primary.copy(alpha = 0.5f)) else null,
         ) {
-            content()
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                content()
+            }
         }
     }
 }
 
+/** Content-sized options keep labels readable as pane width and text size change. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun Label(text: String) {
-    Text(text, style = MaterialTheme.typography.titleSmall)
+internal fun AppearanceChoice(
+    label: String,
+    options: List<Pair<String, String>>,
+    selected: String,
+    maxItemsInEachRow: Int = Int.MAX_VALUE,
+    showModePreview: Boolean = false,
+    onSelect: (String) -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (label.isNotEmpty()) {
+            Text(label, style = MaterialTheme.typography.titleSmall, color = scheme.onSurfaceVariant)
+        }
+        FlowRow(
+            modifier = Modifier.fillMaxWidth().selectableGroup(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            maxItemsInEachRow = maxItemsInEachRow,
+        ) {
+            options.forEach { (value, text) ->
+                val isSelected = value == selected
+                val shape = RoundedCornerShape(16.dp)
+                Surface(
+                    modifier = Modifier
+                        .widthIn(min = 104.dp)
+                        .heightIn(min = 48.dp)
+                        .shadow(
+                            elevation = if (isSelected) 1.dp else 4.dp,
+                            shape = shape,
+                            ambientColor = scheme.primary.copy(alpha = 0.10f),
+                            spotColor = scheme.primary.copy(alpha = 0.16f),
+                        )
+                        .clip(shape)
+                        .selectable(
+                            selected = isSelected,
+                            role = Role.RadioButton,
+                            onClick = { onSelect(value) },
+                        ),
+                    shape = shape,
+                    color = if (isSelected) scheme.surfaceContainerLow else scheme.surfaceContainerHigh,
+                    contentColor = if (isSelected) scheme.primary else scheme.onSurface,
+                    border = if (isSelected) BorderStroke(1.dp, scheme.primary.copy(alpha = 0.35f)) else null,
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        if (showModePreview) {
+                            androidx.compose.foundation.layout.Box(
+                                modifier = Modifier
+                                    .size(width = 88.dp, height = 44.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .drawBehind {
+                                        val light = androidx.compose.ui.graphics.Color(0xFFD8DCF0)
+                                        val dark = androidx.compose.ui.graphics.Color(0xFF25284D)
+                                        drawRect(if (value == "dark") dark else light)
+                                        if (value == "system") {
+                                            drawRect(
+                                                color = dark,
+                                                topLeft = androidx.compose.ui.geometry.Offset(size.width / 2f, 0f),
+                                            )
+                                        }
+                                        drawRect(
+                                            color = androidx.compose.ui.graphics.Color(0xFF3E48AA),
+                                            topLeft = androidx.compose.ui.geometry.Offset(8.dp.toPx(), 8.dp.toPx()),
+                                            size = androidx.compose.ui.geometry.Size(24.dp.toPx(), 4.dp.toPx()),
+                                        )
+                                        drawRect(
+                                            color = androidx.compose.ui.graphics.Color(0xFFA9AEFF).copy(alpha = 0.35f),
+                                            topLeft = androidx.compose.ui.geometry.Offset(8.dp.toPx(), 20.dp.toPx()),
+                                            size = androidx.compose.ui.geometry.Size(size.width - 16.dp.toPx(), 16.dp.toPx()),
+                                        )
+                                    }
+                                    .clearAndSetSemantics {},
+                            )
+                        }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(text, style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f, fill = false))
+                            androidx.compose.foundation.layout.Box(
+                                modifier = Modifier.size(20.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (isSelected) {
+                                    androidx.compose.foundation.Canvas(Modifier.size(20.dp).clearAndSetSemantics {}) {
+                                        val ink = scheme.primary
+                                        val stroke = 2.dp.toPx()
+                                        drawLine(ink, androidx.compose.ui.geometry.Offset(size.width * 0.2f, size.height * 0.5f), androidx.compose.ui.geometry.Offset(size.width * 0.42f, size.height * 0.72f), stroke, androidx.compose.ui.graphics.StrokeCap.Round)
+                                        drawLine(ink, androidx.compose.ui.geometry.Offset(size.width * 0.42f, size.height * 0.72f), androidx.compose.ui.geometry.Offset(size.width * 0.8f, size.height * 0.28f), stroke, androidx.compose.ui.graphics.StrokeCap.Round)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /** The third language choice when it isn't a picked language: opens the list. */
@@ -1854,16 +1794,13 @@ private const val MORE_LANGUAGES = "more"
 
 @Composable
 private fun Choice(options: List<Pair<String, String>>, selected: String, onSelect: (String) -> Unit) {
-    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-        options.forEachIndexed { index, (value, label) ->
-            SegmentedButton(
-                modifier = Modifier.heightIn(min = WaypairDesign.touchTarget),
-                selected = value == selected,
-                onClick = { onSelect(value) },
-                shape = SegmentedButtonDefaults.itemShape(index, options.size),
-            ) { Text(label) }
-        }
-    }
+    AppearanceChoice(
+        label = "",
+        options = options,
+        selected = selected,
+        maxItemsInEachRow = 2,
+        onSelect = onSelect,
+    )
 }
 
 

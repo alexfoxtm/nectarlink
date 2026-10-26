@@ -2,7 +2,7 @@
 import QtQuick
 import app.nectarlink
 
-// A round icon button (or compact icon+text pill) with a hover tooltip and accessible name.
+// A rounded icon button (or compact icon+text control) with a hover tooltip and accessible name.
 FocusScope {
     id: button
     property string iconPath
@@ -39,16 +39,9 @@ FocusScope {
         id: body
         anchors.fill: parent
         radius: Theme.controlRadius
-        color: button.tonal
-            ? (Theme.glass
-                ? Qt.tint(Qt.rgba(1, 1, 1, Theme.dark ? 0.10 : 0.54), Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, Theme.dark ? 0.18 : 0.14))
-                : Theme.secondaryContainer)
-            : "transparent"
+        color: button.tonal ? Theme.secondaryContainer : "transparent"
         Behavior on color { enabled: !Theme.reduceMotion; ColorAnimation { duration: Theme.fadeFast } }
-        border.width: (Theme.graphite && button.hasText) || (Theme.glass && button.tonal) ? 1 : 0
-        border.color: Theme.glass
-            ? Qt.rgba(1, 1, 1, Theme.dark ? 0.12 : 0.38)
-            : (button.tonal ? Theme.surfaceContent : Theme.outlineVariant)
+        border.width: 0
         scale: mouse.pressed ? Theme.pressScale : 1
         Behavior on scale { enabled: !Theme.reduceMotion; NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
 
@@ -132,8 +125,8 @@ FocusScope {
         Behavior on opacity { enabled: !Theme.reduceMotion; NumberAnimation { duration: Theme.fadeFast } }
         width: Math.min(tipText.implicitWidth + 18, 300)
         height: tipText.implicitHeight + 10
-        radius: Theme.graphite ? Theme.radiusXs : Theme.radiusSm
-        color: Theme.graphite ? Theme.surface : Theme.surfaceContainerHighest
+        radius: Theme.radiusSm
+        color: Theme.panelColor
         border.width: 1
         border.color: Theme.outlineVariant
         onWidthChanged: if (shown) reposition()
