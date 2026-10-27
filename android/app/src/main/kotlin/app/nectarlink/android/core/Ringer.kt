@@ -66,10 +66,10 @@ class Ringer(context: Context) {
     }
 
     private fun startRingingNow() {
+        main.removeCallbacks(timeout)
         if (player != null) {
             // Overlapping ring request: keep the original saved
             // volume and the player, just extend the bound.
-            main.removeCallbacks(timeout)
             main.postDelayed(timeout, MAX_RING_MS)
             return
         }
