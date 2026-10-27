@@ -19,8 +19,13 @@ import app.nectarlink.core.CallControls
  * MANAGE_ONGOING_CALLS (Android 12+), an app-op Elevated's shell grants.
  */
 class CallCompanion : InCallService() {
-    /** The call being controlled: the active one, or the latest. */
-    private var call: Call? = null
+    /**
+     * The call being controlled: the active one, else the held one, else the
+     * latest. A second call waiting to be answered doesn't take over the one
+     * in progress, so hanging up, holding and keys reach the call a PC shows.
+     */
+    private val call: Call?
+        get() = calls.let { all -> all.getOrNull(controlledIndex(all.map { it.stateNow() })) }
 
     private val callback = object : Call.Callback() {
         override fun onStateChanged(call: Call, state: Int) = changed()
@@ -39,13 +44,11 @@ class CallCompanion : InCallService() {
 
     override fun onCallAdded(call: Call) {
         call.registerCallback(callback)
-        this.call = call
         changed()
     }
 
     override fun onCallRemoved(call: Call) {
         call.unregisterCallback(callback)
-        if (this.call === call) this.call = calls.lastOrNull { it !== call }
         changed()
     }
 
@@ -156,6 +159,16 @@ class CallCompanion : InCallService() {
         fun dtmf(digit: Char): Boolean = instance?.dtmf(digit) ?: false
     }
 }
+
+/**
+ * Which of Telecom's calls, by their states in Telecom's order, a PC
+ * controls: the last active one, else the last held one, else the last not
+ * yet disconnected; -1 when there's none.
+ */
+internal fun controlledIndex(states: List<Int>): Int =
+    states.indexOfLast { it == Call.STATE_ACTIVE }.takeIf { it >= 0 }
+        ?: states.indexOfLast { it == Call.STATE_HOLDING }.takeIf { it >= 0 }
+        ?: states.indexOfLast { it != Call.STATE_DISCONNECTED }
 
 /** The call's state: `Details.getState` from Android 12, `getState` before. */
 private fun Call.stateNow(): Int =
