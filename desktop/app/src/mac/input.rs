@@ -30,7 +30,7 @@ pub fn is_user_active_within_ms(max_idle_ms: u32) -> bool {
 }
 
 fn active_within_ms(idle_secs: f64, max_idle_ms: u32) -> bool {
-    idle_secs.is_finite() && idle_secs >= 0.0 && idle_secs * 1000.0 <= f64::from(max_idle_ms)
+    !idle_secs.is_finite() || idle_secs < 0.0 || idle_secs * 1000.0 <= f64::from(max_idle_ms)
 }
 
 #[cfg(test)]
@@ -46,9 +46,9 @@ mod tests {
     }
 
     #[test]
-    fn invalid_idle_readings_are_not_activity() {
+    fn invalid_idle_readings_count_as_activity() {
         for idle in [-1.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-            assert!(!active_within_ms(idle, u32::MAX));
+            assert!(active_within_ms(idle, 0));
         }
     }
 }
