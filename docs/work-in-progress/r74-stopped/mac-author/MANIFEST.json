@@ -1,0 +1,28 @@
+{
+  "sourceHead": "563bb1784d4c8eec81b8ae6c87b62eb110685f16",
+  "scope": "source-only author packet; no compiler/tests/runtime executed",
+  "files": [
+    {
+      "path": "desktop/app/src/transfers.rs",
+      "beforeSha256": "4af6eee98f275e3bd4718b598d67255b03fa9d03f27a58983e344be6062aa8ce",
+      "afterSha256": "e9fbc140f182bfc6066cccae6a0d6730eb1741ad5474c410d0db625dc8af2173",
+      "sourceUnchanged": true,
+      "addedTests": 2
+    },
+    {
+      "path": "desktop/app/src/bridge/transfers.rs",
+      "beforeSha256": "f48900dae993e2b1ccd2d64e72564d3edc5477c513f1a6ec44e427992fc6aa1b",
+      "afterSha256": "1fe596147b20732ffcaab14c948caa3e8e46dbdbb2878323c24d553d452b518d",
+      "sourceUnchanged": true,
+      "addedTests": 0
+    }
+  ],
+  "patchSha256": "6fef5070da75375cb4c853ec8753f5afba8dee0b4512f51fa0bb3f7a8a46fa76",
+  "totalAddedTests": 2,
+  "staticChecks": [
+    "before files byte-equal immutable source",
+    "exactly two owned after files",
+    "exactly two added tests",
+    "unified diff generated from before/after"
+  ]
+}

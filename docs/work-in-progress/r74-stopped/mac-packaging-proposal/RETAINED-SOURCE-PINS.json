@@ -1,0 +1,24 @@
+{
+  "sourceFileSHA256": {
+    "Cargo.lock": "335bafe6a32509a9d6e78b5c12b655c34a89af13e1a96191d66970483d468061",
+    "Cargo.toml": "5c8ed286591d1cbfe7e821561e753674e6dd9cae431fe9d7765677f6069dce72",
+    "core/nectarlink-adb/Cargo.toml": "9eb8d5ab35de997ce6677c5d485bbccb4d29a66fef917523ee90500eec4bcd76",
+    "core/nectarlink-cli/Cargo.toml": "a9e1b7c37a663f97b30f8e80eed2857c2ea693aea9c04ae6175395753ad92f0d",
+    "core/nectarlink-core/Cargo.toml": "3b3425717dd3f3564373c9c252f7ddd433596c67d0e6fb942312a9cddc9cf9a5",
+    "core/nectarlink-ffi/Cargo.toml": "31ba3242f5842549ba3a08cf9f478b49e5b0844ad30481b9c1a9f0372810b1d9",
+    "core/nectarlink-protocol/Cargo.toml": "10ee2602ac8f86ab60558cbbf6fd0070b91909dce016f1a900882b4d9dc19e9c",
+    "desktop/app/Cargo.toml": "92185cffe4bd9c706b05bad1e095ab73a34a608f82d538e5608019e25153941e",
+    "desktop/vcam/Cargo.toml": "526db3eb7f968217392df378c9ad757b123f8f8ce9d3896be6cfe3a770dff147",
+    "spikes/s1-qt-rust/Cargo.toml": "8476a139a958d796402cfb222e7cbce665533f0c99c0128cdd6006853054e63a",
+    "tools/powertoys-extension/Cargo.lock": "04995d74114851ff8deda93ad7f20586dce4875c646934cff6e38c0a58418d46",
+    "tools/powertoys-extension/Cargo.toml": "718d5fcb23560c098a3031ed7f59a3065ae203b6fa89178bd0b4c361a990c9a2",
+    "tools/xtask/Cargo.toml": "2678c7fd2d716da17e6522bc4ea21851ac49145843c53d194069ef82749990c7",
+    "tools/xtask/src/main.rs": "d8d761c608a249864d02ad46dee4ac24a06bf266f0187b2c763ff4c47cf73294",
+    "tools/xtask/src/notices.rs": "916a39152b4b3447155c5c424a40659566291f0bab97d2cb9239dd99b90ba6e4",
+    "tools/xtask/src/strings.rs": "cd36e64a020de316849faa44b219b6e7a21eae31d2dff142f03aa7891749d69a"
+  },
+  "publicAuditScriptSHA256": {
+    "scripts/macos/prepare-notices.py": "ad753430af900b8a3fed146f897bb80d81f9cf6f9a441741e2ee07aff69e4d00",
+    "scripts/macos/record-minimum-os.py": "a1e12c57a8bf8a2b46decc4bda70a8ae32e2bd3f290275b73d5ecbff563e4cec"
+  }
+}

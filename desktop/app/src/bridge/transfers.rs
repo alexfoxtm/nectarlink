@@ -271,6 +271,12 @@ impl qobject::TransferList {
         let new: Vec<Row> = core_host::host().hub.read(|s| {
             s.transfers
                 .iter()
+                .filter(|view| {
+                    !s.send_queue.iter().any(|item| {
+                        transfers::transfer_display_owner(&view.transfer, item)
+                            == transfers::TransferDisplayOwner::Queue
+                    })
+                })
                 .map(|view| {
                     let device_name = s
                         .name_of(&view.transfer.device)

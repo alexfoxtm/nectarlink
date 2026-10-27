@@ -1,0 +1,60 @@
+{
+  "review": "independent source-only Mac R74 transfer dedup",
+  "verdict": "GO_SOURCE_ONLY",
+  "sourceHead": "563bb1784d4c8eec81b8ae6c87b62eb110685f16",
+  "sourceManifestEntryCount": 1523,
+  "sourceManifestMismatches": [],
+  "snapshotRegularFileCountIncludingTwoMetadataFiles": 1525,
+  "snapshotMetadataFiles": [
+    "SOURCE-HEAD.txt",
+    "SOURCE-MANIFEST.json"
+  ],
+  "files": [
+    {
+      "path": "desktop/app/src/transfers.rs",
+      "beforeSha256": "4af6eee98f275e3bd4718b598d67255b03fa9d03f27a58983e344be6062aa8ce",
+      "afterSha256": "e9fbc140f182bfc6066cccae6a0d6730eb1741ad5474c410d0db625dc8af2173",
+      "immutableSourceSha256": "4af6eee98f275e3bd4718b598d67255b03fa9d03f27a58983e344be6062aa8ce",
+      "beforeByteEqualImmutableSource": true,
+      "manifestHashesMatch": true,
+      "addedTests": [
+        "queued_file_display_preserves_live_controls_and_queue_retry_ownership",
+        "transfer_display_never_merges_other_ids_peers_incoming_or_non_file_items"
+      ],
+      "removedTests": [],
+      "existingAssertionLinesPreserved": true
+    },
+    {
+      "path": "desktop/app/src/bridge/transfers.rs",
+      "beforeSha256": "f48900dae993e2b1ccd2d64e72564d3edc5477c513f1a6ec44e427992fc6aa1b",
+      "afterSha256": "1fe596147b20732ffcaab14c948caa3e8e46dbdbb2878323c24d553d452b518d",
+      "immutableSourceSha256": "f48900dae993e2b1ccd2d64e72564d3edc5477c513f1a6ec44e427992fc6aa1b",
+      "beforeByteEqualImmutableSource": true,
+      "manifestHashesMatch": true,
+      "addedTests": [],
+      "removedTests": [],
+      "existingAssertionLinesPreserved": true
+    }
+  ],
+  "patchSha256": "6fef5070da75375cb4c853ec8753f5afba8dee0b4512f51fa0bb3f7a8a46fa76",
+  "patchHashMatchesManifest": true,
+  "patchMatchesExactBeforeAfterDiff": true,
+  "afterPaths": [
+    "desktop/app/src/bridge/transfers.rs",
+    "desktop/app/src/transfers.rs"
+  ],
+  "totalAddedTests": 2,
+  "performed": [
+    "read HANDOFF.md, MANIFEST.json, full two after files and full patch",
+    "read immutable enum/export/state/diff/QML source context",
+    "file-only SHA-256, source-manifest, exact unified-diff and assertion-line checks"
+  ],
+  "notPerformed": [
+    "compiler, formatter or build",
+    "Rust/Qt/QML tests",
+    "app launch or native rendering/actions",
+    "OS/device/network/account/profile/key access",
+    "Git or primary checkout access",
+    "vault reads/writes"
+  ]
+}

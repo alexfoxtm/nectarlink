@@ -1,0 +1,35 @@
+{
+  "status": "STRICT_CHECK_FAILED_UNCHANGED_CORE_BASELINE",
+  "errorSourcePaths": [
+    {
+      "path": "core/nectarlink-core/src/features.rs",
+      "sha256": "3c39f39139c46c91343c48b057e1fcec7946d247a515193ea91ea8ce30c55c84",
+      "unchangedFromBaseline": true
+    },
+    {
+      "path": "core/nectarlink-core/src/hotspot.rs",
+      "sha256": "77eaa55944d825ea6fa0cb0411a8d5551fbecf0358c3b8b9d2f97e62c3104816",
+      "unchangedFromBaseline": true
+    },
+    {
+      "path": "core/nectarlink-core/src/mirror.rs",
+      "sha256": "ec598e85ddd09b9fffb9c42881ae1f506df241260180d1ef7555ccc73616e13e",
+      "unchangedFromBaseline": true
+    },
+    {
+      "path": "core/nectarlink-core/src/node.rs",
+      "sha256": "bba816754ab3a05ba3a2ac23904cfecef9bdd3452fbe453e1a0d6c0fa277de91",
+      "unchangedFromBaseline": true
+    },
+    {
+      "path": "core/nectarlink-core/src/session.rs",
+      "sha256": "4910c00e7ca353284ad855af12749b6b09ac34f2efafec48de338652d5f24232",
+      "unchangedFromBaseline": true
+    }
+  ],
+  "originalLog": "logs/MAC-R2-strict.log",
+  "warningsNotSuppressed": true,
+  "unrelatedSourceNotChanged": true,
+  "newTransferTests": 6,
+  "queueStateTest": 1
+}

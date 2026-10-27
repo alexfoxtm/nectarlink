@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "sourcePin": "563bb1784d4c8eec81b8ae6c87b62eb110685f16",
+  "files": [
+    {
+      "path": "android/app/src/main/kotlin/app/nectarlink/android/storage/PhoneStorage.kt",
+      "before_sha256": "fe84d380e8edb43627d58942cb0f69fdb9587f454c7927e5e600bbf4a778b2e5",
+      "after_sha256": "c1de9e10934c5d28efab5bb070df11beb83930d23cd4c541938883a4e44b6ee4"
+    },
+    {
+      "path": "android/app/src/test/kotlin/app/nectarlink/android/storage/PhoneStorageTest.kt",
+      "before_sha256": "4b1ece6045090a240b40ab06885ae5f9b5e98d1980ed1079bfda5225ed4f8300",
+      "after_sha256": "3b7eb65379cc9d8096cd8e420c936f06b72b396ba5524bb00f5154e45c0e2be0"
+    }
+  ],
+  "qualification": "source-only; no compiler, JVM, SDK, tests, Git or runtime operations"
+}

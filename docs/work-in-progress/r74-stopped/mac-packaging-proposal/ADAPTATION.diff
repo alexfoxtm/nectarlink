@@ -1,0 +1,226 @@
+--- mac139-packaging/bind-root-source.py
++++ mac-packaging-proposal/bind-root-source.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Root-only offline generation: bind a sealed Mac139 definition and source manifest.
++"""Root-only offline generation: bind a sealed Mac142 definition and source manifest.
+ Reads only its own public templates/pins and the two explicitly sealed JSON inputs.
+ Does not compile, package, inspect donor/artifacts/profiles, or invoke any OS tool.
+ """
+@@ -12,7 +12,7 @@
+ 
+ HERE = Path(__file__).absolute().parent
+ DEFINITION_KEYS = {'schema', 'cohort', 'source', 'tree', 'version', 'build', 'sourceFileCount', 'currentSourceFiles', 'settingsPageSHA256', 'sourceFileSHA256', 'publicAuditScriptSHA256', 'repositoryResources', 'sourceFeatureSHA256', 'approvedAddedQmlImports'}
+-REQUIRED_FEATURES = {'desktop/app/qml/IslandWindow.qml', 'desktop/app/qml/pages/PhotosPage.qml', 'desktop/app/qml/components/CallCard.qml', 'desktop/app/qml/pages/SettingsPage.qml', 'desktop/app/src/settings.rs', 'desktop/app/qml/components/Icon.qml', 'desktop/app/src/bridge/prefs.rs', 'desktop/app/qml/MirrorWindow.qml', 'desktop/app/qml/components/Segmented.qml', 'desktop/app/qml/components/ListRow.qml', 'desktop/app/qml/Icons.qml', 'desktop/app/qml/components/GlassRim.qml', 'desktop/app/qml/components/Button.qml', 'desktop/app/qml/Theme.qml', 'desktop/app/qml/components/PhoneModelPortrait.qml', 'desktop/app/qml/pages/MessagesPage.qml', 'desktop/app/build.rs', 'assets/fonts/Inter-Variable.ttf', 'desktop/app/qml/components/IconButton.qml', 'desktop/app/qml/components/Chip.qml', 'desktop/app/qml/components/Txt.qml', 'desktop/app/qml/components/NowPlaying.qml', 'desktop/app/qml/components/Card.qml', 'desktop/app/qml/components/Sheet.qml', 'assets/fonts/OFL-Inter.txt', 'desktop/app/qml/components/MaterialBackdrop.qml', 'desktop/app/qml/components/CommandPalette.qml', 'docs/design/tokens.json', 'desktop/app/qml/components/NavItem.qml', 'desktop/app/qml/MainWindow.qml', 'desktop/app/qml/Tokens.qml', 'desktop/app/qml/pages/HomePage.qml'}
++REQUIRED_FEATURES = {'desktop/app/src/transfers.rs', 'desktop/app/src/bridge/transfers.rs', 'desktop/app/qml/IslandWindow.qml', 'desktop/app/qml/pages/PhotosPage.qml', 'desktop/app/qml/components/CallCard.qml', 'desktop/app/qml/pages/SettingsPage.qml', 'desktop/app/src/settings.rs', 'desktop/app/qml/components/Icon.qml', 'desktop/app/src/bridge/prefs.rs', 'desktop/app/qml/MirrorWindow.qml', 'desktop/app/qml/components/Segmented.qml', 'desktop/app/qml/components/ListRow.qml', 'desktop/app/qml/Icons.qml', 'desktop/app/qml/components/GlassRim.qml', 'desktop/app/qml/components/Button.qml', 'desktop/app/qml/Theme.qml', 'desktop/app/qml/components/PhoneModelPortrait.qml', 'desktop/app/qml/pages/MessagesPage.qml', 'desktop/app/build.rs', 'assets/fonts/Inter-Variable.ttf', 'desktop/app/qml/components/IconButton.qml', 'desktop/app/qml/components/Chip.qml', 'desktop/app/qml/components/Txt.qml', 'desktop/app/qml/components/NowPlaying.qml', 'desktop/app/qml/components/Card.qml', 'desktop/app/qml/components/Sheet.qml', 'assets/fonts/OFL-Inter.txt', 'desktop/app/qml/components/MaterialBackdrop.qml', 'desktop/app/qml/components/CommandPalette.qml', 'docs/design/tokens.json', 'desktop/app/qml/components/NavItem.qml', 'desktop/app/qml/MainWindow.qml', 'desktop/app/qml/Tokens.qml', 'desktop/app/qml/pages/HomePage.qml'}
+ 
+ 
+ def require(value, reason):
+@@ -61,9 +61,9 @@
+ 
+ def validate(definition, manifest):
+     require(type(definition) is dict and set(definition) == DEFINITION_KEYS, 'Root source definition schema keys mismatch')
+-    require(definition['schema'] == 1 and definition['cohort'] == 'MAC139_R71_ROOT_SOURCE_DEFINITION', 'wrong Root source definition cohort')
++    require(definition['schema'] == 1 and definition['cohort'] == 'MAC142_R74_ROOT_SOURCE_DEFINITION', 'wrong Root source definition cohort')
+     require(all(type(definition[field]) is str and re.fullmatch('[0-9a-f]{40}', definition[field]) for field in ('source', 'tree')), 'actual frozen source and tree required')
+-    require(definition['version'] == '0.2.4' and type(definition['build']) is int and definition['build'] == 139, 'only version0.2.4 build139 admitted')
++    require(definition['version'] == '0.2.4' and type(definition['build']) is int and definition['build'] == 142, 'only version0.2.4 build142 admitted')
+     require(type(definition['sourceFileCount']) is int and definition['sourceFileCount'] > 0, 'actual positive source-file count required')
+     require(type(manifest) is dict and set(manifest) == {'schema', 'source', 'tree', 'files'} and manifest['schema'] == 1, 'complete source manifest schema mismatch')
+     require((manifest['source'], manifest['tree']) == (definition['source'], definition['tree']), 'source manifest source/tree mismatch')
+@@ -80,9 +80,9 @@
+         require(all(files.get(name) == digest for name, digest in definition[field].items()), 'retained source pins differ from new frozen manifest')
+     require(definition['settingsPageSHA256'] == files.get('desktop/app/qml/pages/SettingsPage.qml'), 'current Settings source pin mismatch')
+     features = feature_paths(files)
+-    require(all(name in files for name in features), 'required R71 font/phone/OneUI/build/QML/token source absent')
++    require(all(name in files for name in features), 'required R74 transfer/font/phone/OneUI/build/QML/token source absent')
+     require(any(name.startswith('assets/ui/oneui/') for name in features), 'new OneUI source assets absent')
+-    require(definition['sourceFeatureSHA256'] == {name: files[name] for name in sorted(features)}, 'exact current font/phone/OneUI/build/QML source pin set required')
++    require(definition['sourceFeatureSHA256'] == {name: files[name] for name in sorted(features)}, 'exact current transfer/font/phone/OneUI/build/QML source pin set required')
+     resources = resource_paths(files)
+     expected_resources = {name: {'destination': 'Contents/Resources/LICENSE.txt' if name == 'LICENSE' else 'Contents/Resources/LICENSES/' + (name.removeprefix('LICENSES/') if name.startswith('LICENSES/') else PurePosixPath(name).name), 'sha256': files[name]} for name in sorted(resources)}
+     require(definition['repositoryResources'] == expected_resources, 'exact complete current repository-license and font-notice map required')
+@@ -105,7 +105,7 @@
+     definition = document(binding_path)
+     manifest = document(sealed(definition['currentSourceFiles']))
+     validate(definition, manifest)
+-    template_path = HERE / 'assemble-r71.template.py'
++    template_path = HERE / 'assemble-r74.template.py'
+     require(not template_path.is_symlink(), 'template symlink refused')
+     template = template_path.read_text()
+     values = {'ROOT_SOURCE_DEFINITION': definition, 'ROOT_SOURCE_DEFINITION_SHA256': a.binding_sha256, 'EXPECTED_SOURCE': definition['source'], 'EXPECTED_TREE': definition['tree'], 'EXPECTED_SOURCE_MANIFEST': definition['currentSourceFiles']['sha256'], 'EXPECTED_SETTINGS': definition['settingsPageSHA256'], 'EXPECTED_SOURCE_COUNT': definition['sourceFileCount'], 'SOURCE_FILE_PINS': definition['sourceFileSHA256'], 'AUDIT_SCRIPT_PINS': definition['publicAuditScriptSHA256'], 'REPO_RESOURCE_PINS': definition['repositoryResources'], 'SOURCE_FEATURE_PINS': definition['sourceFeatureSHA256'], 'EXPECTED_ADDED_QML_IMPORTS': definition['approvedAddedQmlImports']}
+@@ -123,4 +123,4 @@
+     try:
+         main()
+     except (ValueError, KeyError, TypeError, OSError, json.JSONDecodeError) as error:
+-        raise SystemExit('MAC139_SOURCE_BINDING_HOLD: ' + str(error))
++        raise SystemExit('MAC142_SOURCE_BINDING_HOLD: ' + str(error))
+--- mac139-packaging/assemble-r71.template.py
++++ mac-packaging-proposal/assemble-r74.template.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Root-only R71 HOST-ONLY Mac139 successor from immutable Mac133.
++"""Root-only R74 HOST-ONLY Mac142 successor from immutable Mac133.
+ Does not sign, install, activate, inspect profiles, run Git, or build product code.
+ Public notice/minimum-OS checks invoke existing local platform audit tools only
+ when Root executes this recipe. No historical release wrapper is called.
+@@ -49,7 +49,7 @@
+ MAIN = 'Contents/MacOS/nectarlink-desktop'
+ LICENSES = 'Contents/Resources/LICENSES'
+ OLD_ARCHIVE = 'Contents/Resources/Source/Waypair-Link-local-133-source.tar.gz'
+-NEW_ARCHIVE = 'Contents/Resources/Source/Waypair-Link-local-139-source.tar.gz'
++NEW_ARCHIVE = 'Contents/Resources/Source/Waypair-Link-local-142-source.tar.gz'
+ MACHO = {bytes.fromhex(s) for s in ['cffaedfe','cefaedfe','feedfacf','feedface','cafebabe','bebafeca','cafebabf','bfbafeca']}
+ 
+ CONFIG_KEYS = {'baselineApp', 'freshQmlImportResolution', 'rpathDelete', 'basicPayloadProof', 'freshImportResolution', 'freshBuildEvidence', 'cohort', 'binary', 'sourceBinding', 'rootSourceInputs', 'sourceArchive', 'freshStaticManifest', 'rpathAdd', 'outputDirectory', 'freshStaticWitness', 'currentSourceFiles', 'rootSourceDefinition', 'baselineManifest', 'loadChanges', 'schema', 'priorICU78Addendum', 'normalHostEntitlements', 'rootDependencyReceipt'}
+@@ -140,11 +140,11 @@
+     require(set(c) == CONFIG_KEYS, 'config schema keys differ: ' + str(set(c) ^ CONFIG_KEYS))
+     definition_path = sealed(c['rootSourceDefinition'])
+     require(sha(definition_path) == ROOT_SOURCE_DEFINITION_SHA256 and json_document(definition_path) == ROOT_SOURCE_DEFINITION, 'generated recipe/source definition mismatch')
+-    require(c['schema'] == 1 and c['cohort'] == 'NORMAL_HOST_ONLY_MAC139_R71_SUCCESSOR', 'wrong cohort')
++    require(c['schema'] == 1 and c['cohort'] == 'NORMAL_HOST_ONLY_MAC142_R74_SUCCESSOR', 'wrong cohort')
+     source_inputs = json_document(sealed(c['rootSourceInputs']))
+     SOURCE, TREE = source_inputs['source'], source_inputs['tree']
+-    require(SOURCE == EXPECTED_SOURCE and TREE == EXPECTED_TREE, 'exact frozen build139 source/tree required')
+-    require(source_inputs['version'] == '0.2.4' and source_inputs['build'] == 139 and source_inputs['profileFreeReleaseCompile'] is True, 'new normal build139 compile receipt required')
++    require(SOURCE == EXPECTED_SOURCE and TREE == EXPECTED_TREE, 'exact frozen build142 source/tree required')
++    require(source_inputs['version'] == '0.2.4' and source_inputs['build'] == 142 and source_inputs['profileFreeReleaseCompile'] is True, 'new normal build142 compile receipt required')
+     BINARY = source_inputs['binarySHA256']
+     require(re.fullmatch('[0-9a-f]{64}', BINARY) and re.fullmatch('[0-9a-f]{64}', source_inputs['archiveSHA256']) and source_inputs['sourceMembers'] == EXPECTED_SOURCE_COUNT, 'actual new binary and exact frozen archive seal required')
+     baseline = Path(c['baselineApp'])
+@@ -160,7 +160,7 @@
+     require(not list(baseline.rglob('*.systemextension')) and not list(baseline.rglob('*.appex')), 'native payload forbidden')
+     require(not list(baseline.rglob('embedded.provisionprofile')), 'profile copy not admitted by host-only recipe')
+     source_manifest_path = sealed(c['currentSourceFiles'])
+-    require(sha(source_manifest_path) == EXPECTED_SOURCE_MANIFEST, 'exact R71 complete source-file manifest required')
++    require(sha(source_manifest_path) == EXPECTED_SOURCE_MANIFEST, 'exact R74 complete source-file manifest required')
+     source_manifest = json_document(source_manifest_path)
+     require(set(source_manifest) == {'schema', 'source', 'tree', 'files'} and source_manifest['schema'] == 1, 'source manifest schema mismatch')
+     require((source_manifest['source'], source_manifest['tree']) == (SOURCE, TREE) and len(source_manifest['files']) == EXPECTED_SOURCE_COUNT, 'complete source manifest binding mismatch')
+@@ -179,7 +179,7 @@
+     require(plistlib.loads(entitlements_file.read_bytes()) == {'com.apple.security.device.audio-input': True}, 'only approved normal host audio-input entitlement admitted')
+     rust = baseline / LICENSES / 'THIRD-PARTY-NOTICES.txt'
+     root_receipt = json.loads(sealed(c['rootDependencyReceipt']).read_text())
+-    require(root_receipt['status'] == 'ROOT_QUALIFIED_MAC139_RETAINED_DONOR_STATIC_COMPATIBILITY', 'Root dependency/source qualification missing')
++    require(root_receipt['status'] == 'ROOT_QUALIFIED_MAC142_RETAINED_DONOR_STATIC_COMPATIBILITY', 'Root dependency/source qualification missing')
+     require(root_receipt['sourceHEAD'] == SOURCE and root_receipt['sourceTree'] == TREE and root_receipt['binarySHA256'] == BINARY and root_receipt['sourceArchiveSHA256'] == sha(archive), 'Root new actual source/binary/archive mismatch')
+     require(root_receipt['rustNoticesSHA256'] == sha(rust), 'current Rust notices binding missing')
+     require(root_receipt['teamID'] == '5H4D7574Z4' and root_receipt['baselineSignedManifestSHA256'] == BASE_MANIFEST, 'identity/baseline changed')
+@@ -207,14 +207,14 @@
+     source_binding_path = sealed(c['sourceBinding'])
+     require(root_receipt['sourceBindingSHA256'] == sha(source_binding_path), 'source binding review seal missing')
+     source_binding = json.loads(source_binding_path.read_text())
+-    require(source_binding['verdict'] == 'GO' and source_binding['scope'] == 'MAC139_R71_FROZEN_SOURCE_BINDING', 'independent current source binding review required')
++    require(source_binding['verdict'] == 'GO' and source_binding['scope'] == 'MAC142_R74_FROZEN_SOURCE_BINDING', 'independent current source binding review required')
+     require((source_binding['sourceHEAD'], source_binding['sourceTree'], source_binding['sourceArchiveSHA256'], source_binding['settingsPageSHA256']) == (SOURCE, TREE, sha(archive), EXPECTED_SETTINGS), 'source review must bind current source/archive/Settings')
+     require(source_binding['newDependencies'] is False and source_binding['nativePayloadChanged'] is False, 'source review scope changed')
+     source_review_evidence = sealed(source_binding['reviewEvidence'])
+     require(root_receipt['sourceBindingReviewEvidenceSHA256'] == sha(source_review_evidence), 'source review evidence seal missing')
+     require(root_receipt['selectorSettingsPageSHA256'] == EXPECTED_SETTINGS, 'current Settings source binding missing')
+     require(root_receipt['sourceFileSHA256'] == SOURCE_FILE_PINS and root_receipt['publicAuditScriptSHA256'] == AUDIT_SCRIPT_PINS, 'exact unchanged dependency/audit source pins required')
+-    require(source_binding['sourceFeatureSHA256'] == SOURCE_FEATURE_PINS and root_receipt['sourceFeatureSHA256'] == SOURCE_FEATURE_PINS, 'current font/phone/OneUI/build/QML feature pins missing')
++    require(source_binding['sourceFeatureSHA256'] == SOURCE_FEATURE_PINS and root_receipt['sourceFeatureSHA256'] == SOURCE_FEATURE_PINS, 'current transfer/font/phone/OneUI/build/QML feature pins missing')
+     require(source_binding['rootSourceDefinitionSHA256'] == ROOT_SOURCE_DEFINITION_SHA256 and root_receipt['rootSourceDefinitionSHA256'] == ROOT_SOURCE_DEFINITION_SHA256, 'Root source definition review seal missing')
+     require(sha(sealed(c['basicPayloadProof'])) == 'e419d8b67959031f1b0d256ed1eb04b415354a3d98c627611dac2b2f739d986f', 'exact immutable Basic payload proof required')
+     basic_proof = json.loads(sealed(c['basicPayloadProof']).read_text())
+@@ -245,7 +245,7 @@
+             require(m.isfile(), 'nonregular source archive member')
+             files[name] = t.extractfile(m).read()
+         prefix = 'waypair-link-source/'
+-        require({name.removeprefix(prefix): hashlib.sha256(data).hexdigest() for name, data in files.items()} == source_manifest['files'], 'complete current archive differs from frozen R71 source files')
++        require({name.removeprefix(prefix): hashlib.sha256(data).hexdigest() for name, data in files.items()} == source_manifest['files'], 'complete current archive differs from frozen R74 source files')
+         with tarfile.open(baseline / OLD_ARCHIVE, 'r:*') as old:
+             old_files = {m.name: m for m in old.getmembers() if m.isfile()}
+             descriptors = {name for name in old_files.keys() | files.keys() if name.endswith('/Cargo.toml') or name.endswith('/Cargo.lock') or '/xtask/' in name}
+@@ -269,7 +269,7 @@
+             require(re.search(r'^module\s+' + re.escape(module) + r'\s*$', (baseline / qmldir).read_text(), re.M), 'retained QML module declaration missing')
+             sealed(row['reviewEvidence'])
+         for name, expected in SOURCE_FEATURE_PINS.items():
+-            require(hashlib.sha256(files[prefix + name]).hexdigest() == expected, 'current font/phone/OneUI/build/QML feature source mismatch')
++            require(hashlib.sha256(files[prefix + name]).hexdigest() == expected, 'current transfer/font/phone/OneUI/build/QML feature source mismatch')
+         settings_page = files[prefix + 'desktop/app/qml/pages/SettingsPage.qml']
+         require(hashlib.sha256(settings_page).hexdigest() == root_receipt['selectorSettingsPageSHA256'], 'reviewed selector postimage/source mismatch')
+         aliases = re.findall(r'^\s*import\s+QtQuick\.Controls\.Basic\s+as\s+(\w+)\s*$', settings_page.decode(), re.M)
+@@ -328,7 +328,7 @@
+         elif name.startswith('@rpath/'):
+             candidates = [executable_dir / p.split('/', 1)[1] / name.split('/', 1)[1] for p in final_paths]
+         require(candidates and any(p.is_file() and app.resolve() in p.resolve().parents for p in candidates), 'main load not closed into preserved bundle')
+-    info['CFBundleVersion'] = '139'
++    info['CFBundleVersion'] = '142'
+     (app / 'Contents/Info.plist').write_bytes(plistlib.dumps(info, sort_keys=False))
+     outer_signature = app / 'Contents/_CodeSignature'
+     require(outer_signature.is_dir() and not outer_signature.is_symlink(), 'expected outer signature directory missing')
+@@ -349,9 +349,9 @@
+             notice_manifest['files'][record['destination'].removeprefix(LICENSES + '/')] = record['sha256']
+     provenance = json.loads((licenses / 'third-party/PROVENANCE.json').read_text())
+     require(provenance['source']['commit'] == '558e1cc6b49ff904b4b651930d7316661143f9cf' and provenance['source']['archiveSha256'] == OLD_SOURCE_SHA, 'old source offer mismatch')
+-    provenance['source'] = {'commit': SOURCE, 'archive': 'bundle:Resources/Source/Waypair-Link-local-139-source.tar.gz', 'archiveSha256': sha(archive), 'repository': 'https://github.com/alexfoxtm/nectarlink', 'published': False}
++    provenance['source'] = {'commit': SOURCE, 'archive': 'bundle:Resources/Source/Waypair-Link-local-142-source.tar.gz', 'archiveSha256': sha(archive), 'repository': 'https://github.com/alexfoxtm/nectarlink', 'published': False}
+     (licenses / 'third-party/PROVENANCE.json').write_text(json.dumps(provenance, indent=2) + '\n')
+-    (licenses / 'SOURCE-OFFER.txt').write_text('Source code for local Waypair Link build139\n\nThis unpublished personal host-only redesign candidate was built from commit\n  ' + SOURCE + '\nThe complete source is included in this app at\n  ' + NEW_ARCHIVE + '\n  SHA-256 ' + sha(archive) + '\nNative Camera Extension payload is not bundled; its provisioning gate remains HOLD.\nNo source push, publication, installation or activation is claimed.\n\nWaypair Link is free software under GNU GPL version3 or later (LICENSE.txt in Resources); core libraries use MPL2.0 (MPL-2.0.txt in this folder). Exact bundled third-party sources: THIRD-PARTY-SOURCES.txt.\n')
++    (licenses / 'SOURCE-OFFER.txt').write_text('Source code for local Waypair Link build142\n\nThis unpublished personal host-only redesign candidate was built from commit\n  ' + SOURCE + '\nThe complete source is included in this app at\n  ' + NEW_ARCHIVE + '\n  SHA-256 ' + sha(archive) + '\nNative Camera Extension payload is not bundled; its provisioning gate remains HOLD.\nNo source push, publication, installation or activation is claimed.\n\nWaypair Link is free software under GNU GPL version3 or later (LICENSE.txt in Resources); core libraries use MPL2.0 (MPL-2.0.txt in this folder). Exact bundled third-party sources: THIRD-PARTY-SOURCES.txt.\n')
+     require(rust.read_text().startswith('Waypair Link for macOS: third-party notices\n') and 'apple-darwin build)' in rust.read_text(), 'not a macOS Rust notice output')
+     require(sha(licenses / 'THIRD-PARTY-NOTICES.txt') == sha(rust), 'unchanged Rust dependency notice was modified')
+     changed_notices = ['SOURCE-OFFER.txt', 'third-party/PROVENANCE.json']
+@@ -394,9 +394,9 @@
+     require(not [p for p in resources.iterdir() if (p.name.startswith('nectarlink_zh') and p.suffix == '.qm') or (p.name.startswith('zh') and p.suffix == '.lproj')], 'Chinese host resources present')
+     require(not [p for p in (resources / 'translations').glob('*.qm') if re.search(r'_zh(?:[_.-]|$)', p.stem)], 'Chinese host Qt catalogs present')
+     require(inventory(baseline) == before, 'immutable predecessor changed')
+-    result = {'rootSourceDefinitionSHA256': ROOT_SOURCE_DEFINITION_SHA256, 'sourceFileCount': EXPECTED_SOURCE_COUNT, 'sourceFeatureSHA256': SOURCE_FEATURE_PINS, 'status': 'UNSIGNED_NORMAL_HOST_ONLY_MAC139_NOT_INSTALLED_NOT_PUBLISHED', 'source': SOURCE, 'tree': TREE, 'version': '0.2.4', 'build': 139, 'rootCompiledBinarySHA256': BINARY, 'relocatedMainSHA256': sha(dest_binary), 'sourceArchiveSHA256': sha(archive), 'baselineSignedManifestSHA256': BASE_MANIFEST, 'nativeExtensionIncluded': False, 'nativeProfileGate': 'HOLD', 'addedQmlImports': sorted(added_imports), 'basicModulePayloadPreserved': True, 'sourceBindingSHA256': sha(source_binding_path), 'sourceBindingReviewEvidenceSHA256': sha(source_review_evidence), 'freshRootEvidenceSHA256': {field: c[field]['sha256'] for field in evidence_fields}, 'dependencyQualificationScope': 'RETAINED_DONOR_QTCORE_ICU78_STATIC_COMPATIBILITY_ONLY', 'completeIncomingDependencyByteEquivalenceClaimed': False, 'runtimeSemanticEquivalenceClaimed': False, 'priorICU78AddendumSHA256': sha(addendum), 'nativeInstallEntitlementAdded': False, 'normalHostEntitlementsSHA256': sha(entitlements_file), 'app': str(app), 'changedPaths': sorted(difference), 'configSHA256': a.config_sha256, 'currentSourceFilesManifestSHA256': EXPECTED_SOURCE_MANIFEST, 'currentLicenseResourcesSHA256': {name: row['sha256'] for name, row in REPO_RESOURCE_PINS.items()}, 'allOtherBytesAndSymlinksMatchMac133': True, 'installed': False, 'published': False, 'signing': 'ROOT_ONLY_UNPERFORMED'}
+-    (output / 'UNSIGNED-HOST139-RESULT.json').write_text(json.dumps(result, indent=2) + '\n')
+-    (output / 'UNSIGNED-HOST139-BUNDLE-MANIFEST.json').write_text(json.dumps(after, indent=2) + '\n')
++    result = {'rootSourceDefinitionSHA256': ROOT_SOURCE_DEFINITION_SHA256, 'sourceFileCount': EXPECTED_SOURCE_COUNT, 'sourceFeatureSHA256': SOURCE_FEATURE_PINS, 'status': 'UNSIGNED_NORMAL_HOST_ONLY_MAC142_NOT_INSTALLED_NOT_PUBLISHED', 'source': SOURCE, 'tree': TREE, 'version': '0.2.4', 'build': 142, 'rootCompiledBinarySHA256': BINARY, 'relocatedMainSHA256': sha(dest_binary), 'sourceArchiveSHA256': sha(archive), 'baselineSignedManifestSHA256': BASE_MANIFEST, 'nativeExtensionIncluded': False, 'nativeProfileGate': 'HOLD', 'addedQmlImports': sorted(added_imports), 'basicModulePayloadPreserved': True, 'sourceBindingSHA256': sha(source_binding_path), 'sourceBindingReviewEvidenceSHA256': sha(source_review_evidence), 'freshRootEvidenceSHA256': {field: c[field]['sha256'] for field in evidence_fields}, 'dependencyQualificationScope': 'RETAINED_DONOR_QTCORE_ICU78_STATIC_COMPATIBILITY_ONLY', 'completeIncomingDependencyByteEquivalenceClaimed': False, 'runtimeSemanticEquivalenceClaimed': False, 'priorICU78AddendumSHA256': sha(addendum), 'nativeInstallEntitlementAdded': False, 'normalHostEntitlementsSHA256': sha(entitlements_file), 'app': str(app), 'changedPaths': sorted(difference), 'configSHA256': a.config_sha256, 'currentSourceFilesManifestSHA256': EXPECTED_SOURCE_MANIFEST, 'currentLicenseResourcesSHA256': {name: row['sha256'] for name, row in REPO_RESOURCE_PINS.items()}, 'allOtherBytesAndSymlinksMatchMac133': True, 'installed': False, 'published': False, 'signing': 'ROOT_ONLY_UNPERFORMED'}
++    (output / 'UNSIGNED-HOST142-RESULT.json').write_text(json.dumps(result, indent=2) + '\n')
++    (output / 'UNSIGNED-HOST142-BUNDLE-MANIFEST.json').write_text(json.dumps(after, indent=2) + '\n')
+     print(result['status'])
+ 
+ 
+@@ -404,4 +404,4 @@
+     try:
+         main()
+     except (ValueError, KeyError, OSError, subprocess.CalledProcessError, tarfile.TarError) as error:
+-        raise SystemExit('HOST139_PACKAGING_HOLD: ' + str(error))
++        raise SystemExit('HOST142_PACKAGING_HOLD: ' + str(error))
+--- mac139-packaging/CONFIG.template.json
++++ mac-packaging-proposal/CONFIG.template.json
+@@ -1,6 +1,6 @@
+ {
+   "schema": 1,
+-  "cohort": "NORMAL_HOST_ONLY_MAC139_R71_SUCCESSOR",
++  "cohort": "NORMAL_HOST_ONLY_MAC142_R74_SUCCESSOR",
+   "baselineApp": "/Users/AleksandrSlobodanyuk/orca/workspaces/waypair-attended-recovery-20261021/continuous-native-cloud-20261022/native-swarm-round13/mac133-attended-root/package-R1/normal-local133.noindex/Waypair Link.app",
+   "baselineManifest": {
+     "path": "/Users/AleksandrSlobodanyuk/orca/workspaces/waypair-attended-recovery-20261021/continuous-native-cloud-20261022/native-swarm-round13/mac133-attended-root/package-R1/SIGNED-BUNDLE-MANIFEST.json",
+@@ -11,7 +11,7 @@
+     "sha256": "ROOT_REQUIRED_SHA256"
+   },
+   "sourceArchive": {
+-    "path": "ROOT_REQUIRED_NEW_R71_SOURCE_ARCHIVE_ABSOLUTE_PATH",
++    "path": "ROOT_REQUIRED_NEW_R74_SOURCE_ARCHIVE_ABSOLUTE_PATH",
+     "sha256": "ROOT_REQUIRED_SHA256"
+   },
+   "rootDependencyReceipt": {
+--- mac139-packaging/ROOT-SOURCE-DEFINITION.template.json
++++ mac-packaging-proposal/ROOT-SOURCE-DEFINITION.template.json
+@@ -1,10 +1,10 @@
+ {
+   "schema": 1,
+-  "cohort": "MAC139_R71_ROOT_SOURCE_DEFINITION",
++  "cohort": "MAC142_R74_ROOT_SOURCE_DEFINITION",
+   "source": "ROOT_REQUIRED_NEW_COMMIT_40_HEX",
+   "tree": "ROOT_REQUIRED_NEW_TREE_40_HEX",
+   "version": "0.2.4",
+-  "build": 139,
++  "build": 142,
+   "sourceFileCount": "ROOT_REQUIRED_ACTUAL_REGULAR_SOURCE_FILE_COUNT",
+   "currentSourceFiles": {
+     "path": "ROOT_REQUIRED_ABSOLUTE_COMPLETE_CURRENT_SOURCE_MANIFEST_JSON",
+@@ -34,7 +34,7 @@
+     "scripts/macos/record-minimum-os.py": "a1e12c57a8bf8a2b46decc4bda70a8ae32e2bd3f290275b73d5ecbff563e4cec"
+   },
+   "repositoryResources": "ROOT_REQUIRED_MAP_OF_LICENSE_AND_ALL_LICENSES_AND_ALL_ASSETS_FONTS_OFL_PATH_TO_DESTINATION_SHA256",
+-  "sourceFeatureSHA256": "ROOT_REQUIRED_EXACT_MAP_OF_REQUIRED_R71_QML_BUILD_PREFS_CANONICAL_TOKENS_INTER_OFL_AND_ALL_FONTS_PHONES_ONEUI_PATH_TO_SHA256",
++  "sourceFeatureSHA256": "ROOT_REQUIRED_EXACT_MAP_OF_REQUIRED_R74_TRANSFER_RUST_QML_BUILD_PREFS_CANONICAL_TOKENS_INTER_OFL_AND_ALL_FONTS_PHONES_ONEUI_PATH_TO_SHA256",
+   "approvedAddedQmlImports": [
+     "QtQuick.Controls.Basic"
+   ]

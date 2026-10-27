@@ -1,0 +1,5 @@
+Waypair Link for Android — 0.2.4 (142)
+
+- Selected-folder storage supports same-name moves between existing subfolders when the document provider supports native moves.
+- Keeps the existing folder grant and refuses collisions, moves across selected roots, or simultaneous move and rename.
+- Backend storage support only: the current Mac phone browser remains read-only. No broader storage permission is requested.

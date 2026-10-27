@@ -1,0 +1,111 @@
+{
+  "schema": 1,
+  "cohort": "NORMAL_HOST_ONLY_MAC142_R74_SUCCESSOR",
+  "baselineApp": "/Users/AleksandrSlobodanyuk/orca/workspaces/waypair-attended-recovery-20261021/continuous-native-cloud-20261022/native-swarm-round13/mac133-attended-root/package-R1/normal-local133.noindex/Waypair Link.app",
+  "baselineManifest": {
+    "path": "/Users/AleksandrSlobodanyuk/orca/workspaces/waypair-attended-recovery-20261021/continuous-native-cloud-20261022/native-swarm-round13/mac133-attended-root/package-R1/SIGNED-BUNDLE-MANIFEST.json",
+    "sha256": "4211679f147968a02505f23dcb50a8edaf1f1b3b1e1b66e446f2c40395e21688"
+  },
+  "binary": {
+    "path": "ROOT_REQUIRED_ABSOLUTE_PATH",
+    "sha256": "ROOT_REQUIRED_SHA256"
+  },
+  "sourceArchive": {
+    "path": "ROOT_REQUIRED_NEW_R74_SOURCE_ARCHIVE_ABSOLUTE_PATH",
+    "sha256": "ROOT_REQUIRED_SHA256"
+  },
+  "rootDependencyReceipt": {
+    "path": "ROOT_REQUIRED_ABSOLUTE_PATH",
+    "sha256": "ROOT_REQUIRED_SHA256"
+  },
+  "outputDirectory": "ROOT_REQUIRED_FRESH_ABSOLUTE_OUTPUT_DIRECTORY",
+  "loadChanges": [
+    {
+      "from": "/opt/homebrew/opt/qtdeclarative/lib/QtQuick.framework/Versions/A/QtQuick",
+      "to": "@executable_path/../Frameworks/QtQuick.framework/Versions/A/QtQuick",
+      "ordinal": "ROOT_REQUIRED_ACTUAL_1_BASED_ORDINAL"
+    },
+    {
+      "from": "/opt/homebrew/opt/qtbase/lib/QtOpenGL.framework/Versions/A/QtOpenGL",
+      "to": "@executable_path/../Frameworks/QtOpenGL.framework/Versions/A/QtOpenGL",
+      "ordinal": "ROOT_REQUIRED_ACTUAL_1_BASED_ORDINAL"
+    },
+    {
+      "from": "/opt/homebrew/opt/qtsvg/lib/QtSvg.framework/Versions/A/QtSvg",
+      "to": "@executable_path/../Frameworks/QtSvg.framework/Versions/A/QtSvg",
+      "ordinal": "ROOT_REQUIRED_ACTUAL_1_BASED_ORDINAL"
+    },
+    {
+      "from": "/opt/homebrew/opt/qtdeclarative/lib/QtQml.framework/Versions/A/QtQml",
+      "to": "@executable_path/../Frameworks/QtQml.framework/Versions/A/QtQml",
+      "ordinal": "ROOT_REQUIRED_ACTUAL_1_BASED_ORDINAL"
+    },
+    {
+      "from": "/opt/homebrew/opt/qtbase/lib/QtNetwork.framework/Versions/A/QtNetwork",
+      "to": "@executable_path/../Frameworks/QtNetwork.framework/Versions/A/QtNetwork",
+      "ordinal": "ROOT_REQUIRED_ACTUAL_1_BASED_ORDINAL"
+    },
+    {
+      "from": "/opt/homebrew/opt/qtbase/lib/QtGui.framework/Versions/A/QtGui",
+      "to": "@executable_path/../Frameworks/QtGui.framework/Versions/A/QtGui",
+      "ordinal": "ROOT_REQUIRED_ACTUAL_1_BASED_ORDINAL"
+    },
+    {
+      "from": "/opt/homebrew/opt/qtbase/lib/QtCore.framework/Versions/A/QtCore",
+      "to": "@executable_path/../Frameworks/QtCore.framework/Versions/A/QtCore",
+      "ordinal": "ROOT_REQUIRED_ACTUAL_1_BASED_ORDINAL"
+    }
+  ],
+  "rpathDelete": [
+    "/opt/homebrew/lib"
+  ],
+  "rpathAdd": [],
+  "normalHostEntitlements": {
+    "path": "/Users/AleksandrSlobodanyuk/orca/workspaces/waypair-attended-recovery-20261021/continuous-native-cloud-20261022/native-swarm-round13/mac133-attended-root/package-R1/existing-entitlements.plist",
+    "sha256": "289696af9834a7ee41aca4c1cd3aa95fc38f9ae2e83655b1d4b86c1ccab771ee"
+  },
+  "rootSourceInputs": {
+    "path": "ROOT_REQUIRED_ABSOLUTE_PATH",
+    "sha256": "ROOT_REQUIRED_SHA256"
+  },
+  "priorICU78Addendum": {
+    "path": "/Users/AleksandrSlobodanyuk/orca/tmp/waypair-redesign-release-R56-20261026/public-packaging-inputs/ICU78-ADDENDUM.json",
+    "sha256": "aa9f731c71f36ec8d0f96fa613834a52e2f4ab294a134f6338e24f8184fed483"
+  },
+  "basicPayloadProof": {
+    "path": "/Users/AleksandrSlobodanyuk/orca/tmp/waypair-redesign-release-R56-20261026/public-packaging-inputs/BASIC-PAYLOAD-PINS.json",
+    "sha256": "e419d8b67959031f1b0d256ed1eb04b415354a3d98c627611dac2b2f739d986f"
+  },
+  "sourceBinding": {
+    "path": "ROOT_REQUIRED_ABSOLUTE_PATH",
+    "sha256": "ROOT_REQUIRED_SHA256"
+  },
+  "freshBuildEvidence": {
+    "path": "ROOT_REQUIRED_ABSOLUTE_PATH",
+    "sha256": "ROOT_REQUIRED_SHA256"
+  },
+  "freshStaticWitness": {
+    "path": "ROOT_REQUIRED_ABSOLUTE_PATH",
+    "sha256": "ROOT_REQUIRED_SHA256"
+  },
+  "freshStaticManifest": {
+    "path": "ROOT_REQUIRED_ABSOLUTE_PATH",
+    "sha256": "ROOT_REQUIRED_SHA256"
+  },
+  "freshImportResolution": {
+    "path": "ROOT_REQUIRED_ABSOLUTE_PATH",
+    "sha256": "ROOT_REQUIRED_SHA256"
+  },
+  "currentSourceFiles": {
+    "path": "ROOT_REQUIRED_ABSOLUTE_PATH",
+    "sha256": "ROOT_REQUIRED_SHA256"
+  },
+  "rootSourceDefinition": {
+    "path": "ROOT_REQUIRED_ABSOLUTE_SEALED_ROOT_SOURCE_DEFINITION_JSON",
+    "sha256": "ROOT_REQUIRED_SHA256"
+  },
+  "freshQmlImportResolution": {
+    "path": "ROOT_REQUIRED_ABSOLUTE_PATH",
+    "sha256": "ROOT_REQUIRED_SHA256"
+  }
+}

@@ -1,0 +1,64 @@
+[
+  {
+    "step": "fmt-owned",
+    "exit": 0,
+    "args": [
+      "rustfmt",
+      "--check",
+      "--edition",
+      "2024",
+      "desktop/app/src/transfers.rs",
+      "desktop/app/src/bridge/transfers.rs"
+    ]
+  },
+  {
+    "step": "transfers",
+    "exit": 0,
+    "args": [
+      "cargo",
+      "test",
+      "--locked",
+      "--offline",
+      "-p",
+      "nectarlink-desktop",
+      "transfers::tests::",
+      "-j",
+      "4"
+    ]
+  },
+  {
+    "step": "queue-state",
+    "exit": 0,
+    "args": [
+      "cargo",
+      "test",
+      "--locked",
+      "--offline",
+      "-p",
+      "nectarlink-desktop",
+      "state::tests::transfer_events_update_matching_send_queue_item_in_place",
+      "-j",
+      "4",
+      "--",
+      "--exact"
+    ]
+  },
+  {
+    "step": "strict",
+    "exit": 101,
+    "args": [
+      "cargo",
+      "clippy",
+      "--locked",
+      "--offline",
+      "-p",
+      "nectarlink-desktop",
+      "--all-targets",
+      "-j",
+      "4",
+      "--",
+      "-D",
+      "warnings"
+    ]
+  }
+]

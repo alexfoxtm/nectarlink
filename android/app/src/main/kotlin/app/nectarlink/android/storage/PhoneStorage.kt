@@ -26,6 +26,70 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.nio.file.Files
 
+/** Provider operations used by the same-tree move path; IDs remain opaque. */
+internal interface SafMoveOperations {
+    val rootId: String
+    fun hasReadWriteGrant(): Boolean
+    fun child(parentId: String, name: String): SafMoveEntry?
+    fun move(documentId: String, sourceParentId: String, targetParentId: String): String?
+}
+
+internal data class SafMoveEntry(
+    val id: String,
+    val name: String,
+    val isDir: Boolean,
+    val supportsMove: Boolean,
+)
+
+internal data class SafMovePath(val tree: String, val segments: List<String>)
+
+/** Validates without writing, then dispatches exactly one provider-native move. */
+internal fun moveSafDocument(from: SafMovePath, to: SafMovePath, provider: SafMoveOperations) {
+    if (from.tree != to.tree || from.segments.isEmpty() || to.segments.isEmpty()) {
+        throw StorageFailure.Unsupported()
+    }
+    if ((from.segments + to.segments).any { !PhoneStorage.isValidName(it) }) {
+        throw StorageFailure.Invalid("invalid SAF move path")
+    }
+    if (from.segments.last() != to.segments.last()) throw StorageFailure.Unsupported()
+    val sourceParent = from.segments.dropLast(1)
+    val targetParent = to.segments.dropLast(1)
+    if (sourceParent == targetParent) throw StorageFailure.Unsupported()
+    if (!provider.hasReadWriteGrant()) throw StorageFailure.Denied()
+
+    fun directory(segments: List<String>, forbiddenId: String? = null): String {
+        var id = provider.rootId
+        if (id == forbiddenId) throw StorageFailure.Invalid("cannot move a folder into itself")
+        for (name in segments) {
+            val entry = provider.child(id, name) ?: throw StorageFailure.NotFound()
+            if (!entry.isDir) throw StorageFailure.NotFound()
+            if (entry.id == forbiddenId) throw StorageFailure.Invalid("cannot move a folder into itself")
+            id = entry.id
+        }
+        return id
+    }
+
+    val sourceParentId = directory(sourceParent)
+    val source = provider.child(sourceParentId, from.segments.last()) ?: throw StorageFailure.NotFound()
+    if (!source.supportsMove) throw StorageFailure.Unsupported()
+    if (source.isDir && targetParent.take(from.segments.size) == from.segments) {
+        throw StorageFailure.Invalid("cannot move a folder into itself")
+    }
+    val targetParentId = directory(targetParent, source.id.takeIf { source.isDir })
+    if (sourceParentId == targetParentId) throw StorageFailure.Unsupported()
+    if (provider.child(targetParentId, to.segments.last()) != null) {
+        throw StorageFailure.Invalid("destination already exists")
+    }
+    // A grant may have been revoked while parent metadata was being read.
+    if (!provider.hasReadWriteGrant()) throw StorageFailure.Denied()
+    val movedId = provider.move(source.id, sourceParentId, targetParentId)
+        ?: throw StorageFailure.Failed("SAF move failed")
+    // Providers may return a changed document ID. Verify the actual result;
+    // a refusal here cannot undo a move the provider has already performed.
+    val moved = provider.child(targetParentId, to.segments.last())
+    if (moved?.id != movedId) throw StorageFailure.Failed("cannot confirm SAF move destination")
+}
+
 /**
  * Exposes this phone's shared storage (or user-picked SAF folders when full
  * storage access is not granted) to paired PCs for browsing in File Explorer
@@ -353,6 +417,7 @@ class PhoneStorage(
         val mime: String,
         val size: Long,
         val modified: Long,
+        val flags: Int = 0,
     ) {
         val isDir: Boolean get() = mime == DocumentsContract.Document.MIME_TYPE_DIR
     }
@@ -365,9 +430,11 @@ class PhoneStorage(
             DocumentsContract.Document.COLUMN_MIME_TYPE,
             DocumentsContract.Document.COLUMN_SIZE,
             DocumentsContract.Document.COLUMN_LAST_MODIFIED,
+            DocumentsContract.Document.COLUMN_FLAGS,
         )
         val result = ArrayList<SafDocMeta>()
         context.contentResolver.query(childrenUri, projection, null, null, null)?.use { c ->
+            val flagsColumn = c.getColumnIndex(DocumentsContract.Document.COLUMN_FLAGS)
             while (c.moveToNext()) {
                 val id = c.getString(0) ?: continue
                 val name = c.getString(1) ?: continue
@@ -375,7 +442,8 @@ class PhoneStorage(
                 val size = if (c.isNull(3)) 0L else c.getLong(3)
                 val modified = if (c.isNull(4)) 0L else c.getLong(4)
                 if (isValidName(name) && !name.startsWith(".nectarlink")) {
-                    result.add(SafDocMeta(id, name, mime, size, modified))
+                    val flags = if (flagsColumn < 0 || c.isNull(flagsColumn)) 0 else c.getInt(flagsColumn)
+                    result.add(SafDocMeta(id, name, mime, size, modified, flags))
                 }
             }
         } ?: throw StorageFailure.Denied()
@@ -527,7 +595,50 @@ class PhoneStorage(
             throw StorageFailure.Unsupported()
         }
         if (srcSub.dropLast(1) != dstSub.dropLast(1)) {
-            throw StorageFailure.Unsupported()
+            providerSecurityAsDenied {
+                moveSafDocument(
+                    SafMovePath(srcFolder.uri.toString(), srcSub),
+                    SafMovePath(dstFolder.uri.toString(), dstSub),
+                    object : SafMoveOperations {
+                        override val rootId = DocumentsContract.getTreeDocumentId(srcFolder.uri)
+
+                        override fun hasReadWriteGrant(): Boolean =
+                            context.contentResolver.persistedUriPermissions.any {
+                                it.uri == srcFolder.uri && it.isReadPermission && it.isWritePermission
+                            }
+
+                        override fun child(parentId: String, name: String): SafMoveEntry? =
+                            findChildSafDoc(srcFolder.uri, parentId, name)?.let {
+                                SafMoveEntry(
+                                    it.docId, it.name, it.isDir,
+                                    it.flags and DocumentsContract.Document.FLAG_SUPPORTS_MOVE != 0,
+                                )
+                            }
+
+                        override fun move(documentId: String, sourceParentId: String, targetParentId: String): String? {
+                            val moved = try {
+                                DocumentsContract.moveDocument(
+                                    context.contentResolver,
+                                    DocumentsContract.buildDocumentUriUsingTree(srcFolder.uri, documentId),
+                                    DocumentsContract.buildDocumentUriUsingTree(srcFolder.uri, sourceParentId),
+                                    DocumentsContract.buildDocumentUriUsingTree(srcFolder.uri, targetParentId),
+                                )
+                            } catch (_: UnsupportedOperationException) {
+                                throw StorageFailure.Unsupported()
+                            }
+                            return moved?.let {
+                                if (it.authority != srcFolder.uri.authority) {
+                                    throw StorageFailure.Failed("unexpected SAF move result")
+                                }
+                                runCatching { DocumentsContract.getDocumentId(it) }.getOrElse {
+                                    throw StorageFailure.Failed("invalid SAF move result")
+                                }
+                            }
+                        }
+                    },
+                )
+            }
+            return
         }
         val docId = resolveSafDocId(srcFolder.uri, srcSub)
         val docUri = DocumentsContract.buildDocumentUriUsingTree(srcFolder.uri, docId)

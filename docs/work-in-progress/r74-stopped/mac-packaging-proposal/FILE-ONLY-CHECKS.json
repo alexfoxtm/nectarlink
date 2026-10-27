@@ -1,0 +1,32 @@
+{
+  "status": "FILE_ONLY_CHECKS_COMPLETED_SOURCE_PROPOSAL_ONLY",
+  "checks": [
+    "Python AST parses; full AST differs only by approved labels/build and exact two feature additions: bind-root-source.py",
+    "Python AST parses; full AST differs only by approved labels/build and exact two feature additions: assemble-r74.template.py",
+    "JSON parses; predecessor paths, proofs, hashes, descriptors and retained pins unchanged; fresh evidence remains placeholders",
+    "All 12 Root binding markers remain unbound and unique; no new source/tree OID or receipt is invented",
+    "Failure admission retained: unbound assembly is rejected before reading config or donor data (source inspection only)"
+  ],
+  "featurePathsAdded": [
+    "desktop/app/src/bridge/transfers.rs",
+    "desktop/app/src/transfers.rs"
+  ],
+  "freshMac142SourceBinding": "ROOT_PENDING",
+  "freshMac142SDKBuild": "ROOT_PENDING",
+  "freshMac142StaticDonorImportProof": "ROOT_PENDING",
+  "strictCICleanClaimed": false,
+  "strictBaselineContextFromRootInstructionNotReexecuted": {
+    "coreLintFailures": 6,
+    "formatPaths": 20,
+    "disposition": "RETAINED_UNRESOLVED_NOT_BLANKET_PASS"
+  },
+  "binderOrAssemblerExecuted": false,
+  "protectedEmbeddedPathsFollowed": false,
+  "files": {
+    "bind-root-source.py": "f4c9a9eab0515712527897a072d49193c6d98b039726dfe024f643ea6a5a6a9b",
+    "assemble-r74.template.py": "34098daebba30e7b9bac20e3b8f7385507b5fe707f39e5e4f13d5aa2d32bc406",
+    "CONFIG.template.json": "3fcfc0e954eaa033cd0c83c934f5826da5396080f909edeced6f96c5ff14126b",
+    "ROOT-SOURCE-DEFINITION.template.json": "c9960e90f78cc4b08f84b9e59250b251b5438720da3cbdc6257895edf6c6b099",
+    "RETAINED-SOURCE-PINS.json": "8598d63f01d9850b3ad4973b4a440ed96c50bb166a4aa81f85fd255a1f4ebd3b"
+  }
+}

@@ -1,0 +1,108 @@
+{
+  "status": "WORKSPACE_FMT_FAILED_PREEXISTING_UNCHANGED_PATHS",
+  "paths": [
+    {
+      "path": "core/nectarlink-adb/src/lib.rs",
+      "sameAsFrozenBaseline": true,
+      "sha256": "137e47a4d23927d28426cbbed51e11b201daee40d81201b8043c9d54016d2a4e"
+    },
+    {
+      "path": "core/nectarlink-core/src/features.rs",
+      "sameAsFrozenBaseline": true,
+      "sha256": "3c39f39139c46c91343c48b057e1fcec7946d247a515193ea91ea8ce30c55c84"
+    },
+    {
+      "path": "core/nectarlink-core/src/hotspot.rs",
+      "sameAsFrozenBaseline": true,
+      "sha256": "77eaa55944d825ea6fa0cb0411a8d5551fbecf0358c3b8b9d2f97e62c3104816"
+    },
+    {
+      "path": "core/nectarlink-core/src/lib.rs",
+      "sameAsFrozenBaseline": true,
+      "sha256": "64e75c3ca4b2ff2f0b30f44195b9a209c59827daeca0e69b5066c52545da1727"
+    },
+    {
+      "path": "core/nectarlink-core/src/mirror.rs",
+      "sameAsFrozenBaseline": true,
+      "sha256": "ec598e85ddd09b9fffb9c42881ae1f506df241260180d1ef7555ccc73616e13e"
+    },
+    {
+      "path": "core/nectarlink-core/src/node.rs",
+      "sameAsFrozenBaseline": true,
+      "sha256": "bba816754ab3a05ba3a2ac23904cfecef9bdd3452fbe453e1a0d6c0fa277de91"
+    },
+    {
+      "path": "core/nectarlink-core/src/transfer.rs",
+      "sameAsFrozenBaseline": true,
+      "sha256": "e7e9ca2160e379b4fda1acac8d9ac3e6ffcdb8b25c87e4794c06baa3f2f38b59"
+    },
+    {
+      "path": "core/nectarlink-core/tests/two_devices.rs",
+      "sameAsFrozenBaseline": true,
+      "sha256": "ee582666ccd78fd7aab884578cd54453b9eb02ad20b3383cec9fc79f5184fd9c"
+    },
+    {
+      "path": "core/nectarlink-ffi/src/lib.rs",
+      "sameAsFrozenBaseline": true,
+      "sha256": "1dea3ea186ad31afa13d3816be6bbb4035c27b97e69707e2f7376789eda29118"
+    },
+    {
+      "path": "core/nectarlink-protocol/src/messages.rs",
+      "sameAsFrozenBaseline": true,
+      "sha256": "fd4891a1fe85ee434bc70eb45a07bbd5d2817dddd69bb15bccbf70f895c0587e"
+    },
+    {
+      "path": "desktop/app/src/bridge/phone_browser.rs",
+      "sameAsFrozenBaseline": true,
+      "sha256": "ddc76e769de925845debc6228cf79a83980d4ab9f433d4ffbbd4645a8fef42e2"
+    },
+    {
+      "path": "desktop/app/src/bridge/prefs.rs",
+      "sameAsFrozenBaseline": true,
+      "sha256": "f4cf098f7966769567b5f3dc1df14405c27517da85063f2ff6b4d558ac87f922"
+    },
+    {
+      "path": "desktop/app/src/hotspot.rs",
+      "sameAsFrozenBaseline": true,
+      "sha256": "c1fffa7a0edd656d956b5532672cf7d6abca3246f24ec62ba0e04033480a0586"
+    },
+    {
+      "path": "desktop/app/src/mac/camera_demand.rs",
+      "sameAsFrozenBaseline": true,
+      "sha256": "feec81a6ac7186723d06d52f394604db0663b509468625d9cba4aefda40e5271"
+    },
+    {
+      "path": "desktop/app/src/mac/mod.rs",
+      "sameAsFrozenBaseline": true,
+      "sha256": "4a5d122dad19608181de2ef66c40d789ccc2326abc7a30830e5634a0f8d3763d"
+    },
+    {
+      "path": "desktop/app/src/mac/wifi.rs",
+      "sameAsFrozenBaseline": true,
+      "sha256": "e75536e454b59c0cd6e1f3b9ab65e91e9e620f1760e9fbee9cff38c182ca63aa"
+    },
+    {
+      "path": "desktop/app/src/mirror.rs",
+      "sameAsFrozenBaseline": true,
+      "sha256": "691be8d49e4f8f72dbb0479e627efeb71949b00f21383840a3319efeae6604e8"
+    },
+    {
+      "path": "desktop/app/src/mirror_scroll.rs",
+      "sameAsFrozenBaseline": true,
+      "sha256": "8271eea82c32acfb2ecb225ac82da4e387fe0f51d12d12114a931bbb87d8c9bc"
+    },
+    {
+      "path": "desktop/app/src/settings.rs",
+      "sameAsFrozenBaseline": true,
+      "sha256": "edb9e3aaef50a9075f0cb1d34658d679933f4619f7ec9974ff8389bf355d8ef7"
+    },
+    {
+      "path": "desktop/app/src/webcam.rs",
+      "sameAsFrozenBaseline": true,
+      "sha256": "6649fff8b8c481731a6ced040b501c17f5231b78f7b9e756d7e1f9d3a1a1e094"
+    }
+  ],
+  "unrelatedFilesNotEdited": true,
+  "originalLog": "logs/MAC-fmt.log",
+  "changedRustFilesAbsentFromFailures": true
+}

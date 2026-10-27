@@ -1,0 +1,27 @@
+--- author/desktop/app/src/transfers.rs
++++ root-format/desktop/app/src/transfers.rs
+@@ -7,7 +7,9 @@
+ use std::path::{Path, PathBuf};
+ use std::process::Command;
+ 
+-use nectarlink_core::{DeviceId, Direction, Error, NodeEvent, QueueItem, QueueStatus, Transfer, TransferState};
++use nectarlink_core::{
++    DeviceId, Direction, Error, NodeEvent, QueueItem, QueueStatus, Transfer, TransferState,
++};
+ 
+ use crate::{
+     bridge::app::{describe, show_message},
+@@ -189,9 +191,10 @@
+                     ("expired", error.as_str())
+                 }
+             };
+-            if s.transfers.iter().any(|view| {
+-                transfer_display_owner(&view.transfer, item) == TransferDisplayOwner::Live
+-            }) {
++            if s.transfers
++                .iter()
++                .any(|view| transfer_display_owner(&view.transfer, item) == TransferDisplayOwner::Live)
++            {
+                 continue;
+             }
+             let icon = match item.kind {

@@ -1,0 +1,5 @@
+Waypair Link for macOS — 0.2.4 (142)
+
+- Avoid duplicate queued and live rows for the same outgoing file send.
+- Keep pause, resume, progress and ETA on active transfer rows, and retry, cancel and expiry details on waiting or failed queue rows.
+- Transfer identity uses the paired device and send ID; similarly named files remain separate.

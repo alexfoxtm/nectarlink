@@ -1,0 +1,160 @@
+--- a/desktop/app/src/transfers.rs
++++ b/desktop/app/src/transfers.rs
+@@ -7,7 +7,7 @@
+ use std::path::{Path, PathBuf};
+ use std::process::Command;
+ 
+-use nectarlink_core::{DeviceId, Direction, Error, NodeEvent, Transfer, TransferState};
++use nectarlink_core::{DeviceId, Direction, Error, NodeEvent, QueueItem, QueueStatus, Transfer, TransferState};
+ 
+ use crate::{
+     bridge::app::{describe, show_message},
+@@ -132,9 +132,38 @@
+     }
+ }
+ 
+-/// Serializes the current `send_queue` into `(json, waiting_count, total_count, has_failed_or_expired)`.
++/// Which representation owns a matching outgoing file transfer's display.
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub(crate) enum TransferDisplayOwner {
++    Independent,
++    Live,
++    Queue,
++}
++
++/// A queue retry or failure owns its row; only a sending queue item yields
++/// to the live Running/Paused row with its progress and pause/resume controls.
++/// This selects presentation only: neither underlying record is removed.
++pub(crate) fn transfer_display_owner(transfer: &Transfer, item: &QueueItem) -> TransferDisplayOwner {
++    if transfer.direction != Direction::Outgoing
++        || transfer.id != item.id
++        || transfer.device != item.peer
++        || !item.kind.is_file_based()
++    {
++        return TransferDisplayOwner::Independent;
++    }
++    if matches!(item.status, QueueStatus::Sending)
++        && matches!(transfer.state, TransferState::Running | TransferState::Paused)
++    {
++        TransferDisplayOwner::Live
++    } else {
++        TransferDisplayOwner::Queue
++    }
++}
++
++/// Serializes displayed queue rows and counts all underlying queue items,
++/// including those currently represented by a live Running/Paused row.
+ pub fn send_queue_snapshot() -> (String, i32, i32, bool) {
+-    use nectarlink_core::{QueueKind, QueueStatus};
++    use nectarlink_core::QueueKind;
+ 
+     core_host::host().hub.read(|s| {
+         let mut waiting_count: i32 = 0;
+@@ -160,6 +189,11 @@
+                     ("expired", error.as_str())
+                 }
+             };
++            if s.transfers.iter().any(|view| {
++                transfer_display_owner(&view.transfer, item) == TransferDisplayOwner::Live
++            }) {
++                continue;
++            }
+             let icon = match item.kind {
+                 QueueKind::Folder => "folder",
+                 QueueKind::Files | QueueKind::HandoffDocument | QueueKind::Recording => "file",
+@@ -385,6 +419,80 @@
+     use super::*;
+     use std::ffi::OsStr;
+ 
++    fn queued_transfer() -> (Transfer, QueueItem) {
++        let peer = DeviceId([3; 32]);
++        let transfer = Transfer {
++            id: "q-file".into(),
++            device: peer,
++            direction: Direction::Outgoing,
++            names: vec!["holiday.mp4".into()],
++            files: 1,
++            total: 1000,
++            done: 400,
++            state: TransferState::Running,
++            recording: false,
++            markers: Vec::new(),
++            open_on_arrival: false,
++        };
++        let item = QueueItem {
++            id: transfer.id.clone(),
++            seq: 1,
++            peer,
++            peer_name: "Pixel".into(),
++            kind: nectarlink_core::QueueKind::Files,
++            status: QueueStatus::Sending,
++            created_at: 100,
++            expires_at: 200,
++            attempts: 1,
++            title: "holiday.mp4".into(),
++            detail: "1000 B".into(),
++            bytes_total: 1000,
++            bytes_done: 400,
++            files_total: 1,
++            files_done: 0,
++            files: Vec::new(),
++        };
++        (transfer, item)
++    }
++
++    #[test]
++    fn queued_file_display_preserves_live_controls_and_queue_retry_ownership() {
++        let (mut transfer, mut item) = queued_transfer();
++        assert_eq!(transfer_display_owner(&transfer, &item), TransferDisplayOwner::Live);
++        transfer.state = TransferState::Paused;
++        assert_eq!(transfer_display_owner(&transfer, &item), TransferDisplayOwner::Live);
++        item.status = QueueStatus::Failed { error: "offline".into() };
++        assert_eq!(transfer_display_owner(&transfer, &item), TransferDisplayOwner::Queue);
++        transfer.state = TransferState::Failed(nectarlink_core::TransferFailure::Unreachable);
++        assert_eq!(transfer_display_owner(&transfer, &item), TransferDisplayOwner::Queue);
++        item.status = QueueStatus::Waiting;
++        assert_eq!(transfer_display_owner(&transfer, &item), TransferDisplayOwner::Queue);
++        transfer.state = TransferState::Running;
++        assert_eq!(transfer_display_owner(&transfer, &item), TransferDisplayOwner::Queue);
++        item.status = QueueStatus::Sending;
++        assert_eq!(transfer_display_owner(&transfer, &item), TransferDisplayOwner::Live);
++        transfer.state = TransferState::Done { saved: Vec::new() };
++        assert_eq!(transfer_display_owner(&transfer, &item), TransferDisplayOwner::Queue);
++        item.status = QueueStatus::Expired { error: "expired".into() };
++        assert_eq!(transfer_display_owner(&transfer, &item), TransferDisplayOwner::Queue);
++    }
++
++    #[test]
++    fn transfer_display_never_merges_other_ids_peers_incoming_or_non_file_items() {
++        let (mut transfer, mut item) = queued_transfer();
++        item.id = "another-send".into();
++        assert_eq!(transfer_display_owner(&transfer, &item), TransferDisplayOwner::Independent);
++        item.id = transfer.id.clone();
++        item.peer = DeviceId([4; 32]);
++        assert_eq!(transfer_display_owner(&transfer, &item), TransferDisplayOwner::Independent);
++        item.peer = transfer.device;
++        transfer.direction = Direction::Incoming;
++        assert_eq!(transfer_display_owner(&transfer, &item), TransferDisplayOwner::Independent);
++        transfer.direction = Direction::Outgoing;
++        item.kind = nectarlink_core::QueueKind::Link;
++        assert_eq!(transfer_display_owner(&transfer, &item), TransferDisplayOwner::Independent);
++    }
++
+     fn args(cmd: &Command) -> Vec<&OsStr> {
+         cmd.get_args().collect()
+     }
+--- a/desktop/app/src/bridge/transfers.rs
++++ b/desktop/app/src/bridge/transfers.rs
+@@ -271,6 +271,12 @@
+         let new: Vec<Row> = core_host::host().hub.read(|s| {
+             s.transfers
+                 .iter()
++                .filter(|view| {
++                    !s.send_queue.iter().any(|item| {
++                        transfers::transfer_display_owner(&view.transfer, item)
++                            == transfers::TransferDisplayOwner::Queue
++                    })
++                })
+                 .map(|view| {
+                     let device_name = s
+                         .name_of(&view.transfer.device)
