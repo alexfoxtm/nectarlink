@@ -5,8 +5,10 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.net.wifi.WifiManager
 import android.os.Build
@@ -20,10 +22,12 @@ import app.nectarlink.android.NectarlinkApplication
 import app.nectarlink.android.R
 import app.nectarlink.android.banking.BankingPause
 import app.nectarlink.android.banking.PauseDecider
+import app.nectarlink.android.banking.awaitScreenWake
 import app.nectarlink.android.clipboard.SendActivity
 import app.nectarlink.android.core.CoreState
 import app.nectarlink.android.ui.MainActivity
 import app.nectarlink.android.ui.Preferences
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -37,6 +41,12 @@ import kotlinx.coroutines.launch
  */
 class ConnectionService : LifecycleService() {
     private var multicastLock: WifiManager.MulticastLock? = null
+    private var screenReceiver: BroadcastReceiver? = null
+    /** False when [registerScreenWake] did not stick. The poll must not idle for 15s with no wake. */
+    @Volatile private var screenWakeRegistered = false
+    @Volatile private var bankingFollow: BankingPause.Foreground? = null
+    /** One pending screen return is enough. A burst must not queue a spin. */
+    private val screenWake = Channel<Unit>(Channel.CONFLATED)
 
     override fun onCreate() {
         super.onCreate()
@@ -55,6 +65,7 @@ class ConnectionService : LifecycleService() {
         multicastLock = getSystemService(WifiManager::class.java)
             ?.createMulticastLock("nectarlink-discovery")
             ?.apply { setReferenceCounted(false); acquire() }
+        registerScreenWake()
 
         lifecycleScope.launch {
             core.state.map { Status.of(it) to (it.status is app.nectarlink.android.core.CoreStatus.Ready) }
@@ -78,23 +89,38 @@ class ConnectionService : LifecycleService() {
             }
         }
         // Pause for banking apps: follow the app in front while it's set up.
+        // Screen off waits on the idle cadence when the screen-on receiver registered.
+        // If it did not, the wait stays on the short poll: nothing could interrupt
+        // 15s, and the app in front would go unchecked. Screen on and user-present
+        // end the idle wait so the next pass can pause before debugging turns back on.
         lifecycleScope.launch(kotlinx.coroutines.Dispatchers.Default) {
             val context = applicationContext
-            val decider = PauseDecider()
-            var foreground: BankingPause.Foreground? = null
+            var decider = PauseDecider()
+            var follow: BankingPause.Foreground? = null
             while (true) {
                 if (!BankingPause.isReady(context)) {
-                    foreground = null
+                    follow = null
+                    bankingFollow = null
+                    decider = PauseDecider()
                     delay(BANKING_IDLE_MS)
                     continue
                 }
-                val follow = foreground ?: BankingPause.Foreground(context).also { foreground = it }
-                when (decider.decide(follow.poll(), BankingPause.apps(context), BankingPause.isPaused(context), System.currentTimeMillis())) {
+                val current = follow ?: BankingPause.Foreground(context, BANKING_POLL_MS, BANKING_IDLE_MS).also {
+                    follow = it
+                    bankingFollow = it
+                }
+                val pkg = current.poll()
+                // Null is not a completed check, and a screen return is not one either.
+                // Drop any resume countdown so it cannot finish across that gap and
+                // turn debugging back on before this poll's package has been in front.
+                if (pkg == null || current.consumeScreenReturn()) decider = PauseDecider()
+                when (decider.decide(pkg, BankingPause.apps(context), BankingPause.isPaused(context), System.currentTimeMillis())) {
                     PauseDecider.Action.PAUSE -> BankingPause.pause(context)
                     PauseDecider.Action.RESUME -> BankingPause.resume(context)
                     null -> {}
                 }
-                delay(BANKING_POLL_MS)
+                val wait = current.millisUntilNextPoll(screenWakeRegistered)
+                awaitScreenWake(wait, screenWake)
             }
         }
         lifecycleScope.launch {
@@ -121,9 +147,48 @@ class ConnectionService : LifecycleService() {
     }
 
     override fun onDestroy() {
+        unregisterScreenWake()
+        bankingFollow = null
         multicastLock?.runCatching { release() }
         getSystemService(NotificationManager::class.java)?.cancel(ONGOING_ID)
         super.onDestroy()
+    }
+
+    /**
+     * Screen on and user present are system broadcasts. Registered only while
+     * this service is alive, so a restart cannot leave a receiver behind, and
+     * the receiver does not start the service.
+     */
+    private fun registerScreenWake() {
+        if (screenReceiver != null) return
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                val action = intent.action
+                if (action != Intent.ACTION_SCREEN_ON && action != Intent.ACTION_USER_PRESENT) return
+                bankingFollow?.noteScreenReturned()
+                screenWake.trySend(Unit)
+            }
+        }
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_USER_PRESENT)
+        }
+        val registered = runCatching {
+            ContextCompat.registerReceiver(this, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        }.onFailure {
+            Log.w(TAG, "screen wake receiver failed", it)
+        }.isSuccess
+        if (!registered) return
+        screenReceiver = receiver
+        screenWakeRegistered = true
+    }
+
+    private fun unregisterScreenWake() {
+        // Drop the flag first so a poll still in the loop cannot idle with the receiver already gone.
+        screenWakeRegistered = false
+        val receiver = screenReceiver ?: return
+        screenReceiver = null
+        runCatching { unregisterReceiver(receiver) }
     }
 
     private fun startInForeground(state: CoreState): Boolean = runCatching {
@@ -206,8 +271,9 @@ class ConnectionService : LifecycleService() {
     companion object {
         private const val TAG = "Nectarlink"
         private const val UPDATE_WAKE_MS = 6L * 3600 * 1000
-        /** How often to look at the app in front when Pause for banking apps is set up, and when it isn't. */
+        /** How often to look at the app in front while the screen is on and Pause for banking apps is set up. */
         private const val BANKING_POLL_MS = 800L
+        /** Screen off, or Pause for banking apps is not set up. */
         private const val BANKING_IDLE_MS = 15_000L
         private const val ONGOING_ID = 1
         private const val RINGING_ID = 2
