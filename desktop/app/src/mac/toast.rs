@@ -31,6 +31,11 @@ pub fn register_copy_code_action(device: &str, key: &str, code: &str) -> Option<
     user_notifications::register_copy_code_action(device, key, code)
 }
 
+/// Reuses only an unconsumed same-code action during silent snapshot replacement.
+pub fn existing_copy_code_action(device: &str, key: &str, code: &str) -> Option<String> {
+    user_notifications::existing_copy_code_action(device, key, code)
+}
+
 /// Invalidates local OTP actions as soon as a notification revision is replaced.
 pub fn invalidate_copy_code_actions(device: &str, key: &str) {
     user_notifications::invalidate_copy_code_actions(device, key);
@@ -571,6 +576,15 @@ mod tests {
         assert!(!banner.identifier.contains("osascript"));
         assert!(!banner.identifier.contains("display notification"));
         assert!(!banner.quiet);
+        let refreshed = banner_text(&Toast {
+            actions: vec![("latest:0".into(), "Action".into())],
+            reply: Some(("latest:1".into(), "Reply".into())),
+            silent: true,
+            ..toast.clone()
+        });
+        assert!(refreshed.quiet);
+        assert_eq!(refreshed.actions, vec![("latest:0".into(), "Action".into())]);
+        assert_eq!(refreshed.reply, Some(("latest:1".into(), "Reply".into())));
         let silent = Toast { silent: true, actions: Vec::new(), ..toast.clone() };
         assert!(banner_text(&silent).quiet);
         assert!(!banner_text(&Toast { call: true, ..silent.clone() }).quiet);

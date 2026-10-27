@@ -86,6 +86,13 @@ pub(super) fn register_copy_code_action(device: &str, key: &str, code: &str) -> 
     Some(action)
 }
 
+/// The same unconsumed token may be used by a silent replacement, never reminted.
+pub(super) fn existing_copy_code_action(device: &str, key: &str, code: &str) -> Option<String> {
+    copy_code_actions().iter().find_map(|((saved_device, saved_key, action), saved_code)| {
+        (saved_device == device && saved_key == key && saved_code == code).then(|| action.clone())
+    })
+}
+
 pub(super) fn invalidate_copy_code_actions(device: &str, key: &str) {
     copy_code_actions().retain(|(saved_device, saved_key, _), _| saved_device != device || saved_key != key);
 }

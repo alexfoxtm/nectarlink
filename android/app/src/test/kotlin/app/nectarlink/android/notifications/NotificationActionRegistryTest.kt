@@ -32,6 +32,10 @@ class NotificationActionRegistryTest {
         assertFalse(registry.useAction("wrong-key", "${current.id}:0") { _, _ -> dispatches++ })
         assertFalse(registry.useAction("key", "${current.id}:-1") { _, _ -> dispatches++ })
         assertFalse(registry.useAction("key", "${current.id}:1") { _, _ -> dispatches++ })
+        // The reader offers at most the five actions Core keeps on the wire.
+        val offered = (0 until 6).take(NotificationReader.MAX_ACTIONS).toSet()
+        assertTrue(registry.offer(current, offered))
+        assertFalse(registry.useAction("key", "${current.id}:5") { _, _ -> dispatches++ })
         registry.remove("key")
         assertFalse(registry.useAction("key", "${current.id}:0") { _, _ -> dispatches++ })
         val refreshed = registry.posted("key", "after-remove")

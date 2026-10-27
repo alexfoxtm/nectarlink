@@ -188,7 +188,7 @@ internal class NotificationReader(private val context: Context) {
                 title = title,
                 reply = action.remoteInputs.orEmpty().any { it.allowFreeFormInput },
             )
-        }
+        }.take(MAX_ACTIONS)
 
     /**
      * The picture a notification shows, as a small JPEG: a big picture, or
@@ -381,6 +381,8 @@ internal class NotificationReader(private val context: Context) {
     }.getOrNull()
 
     internal companion object {
+        /** Match core notify_limits::ACTIONS after skipping ineligible Android actions. */
+        const val MAX_ACTIONS = 5
         const val ICON_PX = 96
         const val MAX_ICON_BYTES = 64 * 1024
         const val AVATAR_PX = 96
