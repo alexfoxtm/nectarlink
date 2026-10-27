@@ -85,6 +85,7 @@ internal class PhonePlatform(
     private val onWebcam: (String, WebcamRequest) -> Boolean,
     /** Apps in windows of their own on PCs (Elevated). */
     private val appWindows: AppWindows,
+    private val legacyAppWindows: app.nectarlink.android.mirror.LegacyAppWindows,
     /** Resolves a paired PC's display name by ID. */
     private val nameOf: (String) -> String = { "" },
     /** Notifies when a PC starts or stops typing on this phone without mirroring. */
@@ -162,9 +163,21 @@ internal class PhonePlatform(
             }
         }
 
+    override fun mirrorAppRequestedLegacy(pcId: String, options: MirrorOptions, connection: ULong): Boolean =
+        options.app != null && options.session != SCREEN && legacyAppWindows.open(pcId, options, connection)
+
+    override fun mirrorAppStopRequestedLegacy(pcId: String, session: UInt, connection: ULong) {
+        if (session != SCREEN) legacyAppWindows.close(pcId, session, connection)
+    }
+
+    override fun mirrorAppInputLegacy(pcId: String, session: UInt, input: MirrorInputEvent, connection: ULong, generation: ULong) {
+        if (session != SCREEN) legacyAppWindows.input(pcId, session, input, connection, generation)
+    }
+
     override fun mirrorPowerRequested(pcId: String, stayAwake: Boolean, screenOff: Boolean) {
         MirrorService.setPower(pcId, stayAwake, screenOff)
         appWindows.setPower(pcId, stayAwake, screenOff)
+        legacyAppWindows.setPower(pcId, stayAwake, screenOff)
     }
 
     override fun mirrorStopRequested(pcId: String, session: UInt) {
@@ -186,11 +199,15 @@ internal class PhonePlatform(
         MirrorService.stop(pcId, request, connection)
     }
 
-    override fun mirrorKeyframeRequested(pcId: String, session: UInt) =
-        if (session == SCREEN) MirrorService.keyframe(pcId) else appWindows.keyframe(pcId, session)
+    override fun mirrorKeyframeRequested(pcId: String, session: UInt) {
+        if (session == SCREEN) MirrorService.keyframe(pcId) else {
+            appWindows.keyframe(pcId, session)
+            legacyAppWindows.keyframe(pcId, session)
+        }
+    }
 
     override fun mirrorResizeRequested(pcId: String, session: UInt, width: UInt, height: UInt) {
-        // App resize requires the accepted receiver-local capture context below.
+        if (session != SCREEN) legacyAppWindows.resize(pcId, session, width.toInt(), height.toInt())
     }
 
     override fun mirrorResizeRequestedOwned(pcId: String, width: UInt, height: UInt, context: app.nectarlink.core.PhoneControlContext) {
@@ -199,7 +216,7 @@ internal class PhonePlatform(
 
     // The screen's input comes through mirrorScreenInput, with its typing generation.
     override fun mirrorInput(pcId: String, session: UInt, input: MirrorInputEvent) {
-        // Nonzero app input requires mirrorControlInput and its owner context.
+        // Legacy app input has its own connection/epoch callback above.
         if (session != SCREEN) return
     }
 

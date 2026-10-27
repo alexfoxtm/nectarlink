@@ -351,6 +351,7 @@ class AppWindows(
     class CloseReceiver : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             instance?.closeAll()
+            LegacyAppWindows.closeCurrent()
         }
     }
 

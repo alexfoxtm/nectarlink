@@ -35,7 +35,7 @@ use crate::{
     identity,
     notifications::{self, Feed},
     pairing::{self, PairingState},
-    session::{self, CLOSE_DUPLICATE, CLOSE_NORMAL, REQUEST_TIMEOUT, Session},
+    session::{self, CLOSE_DUPLICATE, CLOSE_NORMAL, REQUEST_TIMEOUT, Session, TryEnqueue},
     store::Store,
     transfer,
 };
@@ -164,6 +164,8 @@ pub(crate) struct Shared {
     /// Request tokens this device accepted in `mirror.start`, by peer and
     /// session: `mirror.stop` for an older token takes no action.
     pub(crate) mirror_incoming: Mutex<HashMap<(DeviceId, u32), crate::mirror::IncomingMirror>>,
+    /// Unnegotiated upstream app sessions, bound only to their original connection.
+    pub(crate) mirror_legacy_apps: Mutex<HashMap<(DeviceId, u32), u64>>,
     /// Close handles of live outgoing mirror streams (phone side), by peer:
     /// revoking per-peer mirroring finishes them even when the peer keeps
     /// reading. Mic and webcam streams never register here (see
@@ -242,6 +244,19 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 }
 
 impl Shared {
+    pub(crate) fn admit_legacy_app(&self, session: &Arc<Session>, mirroring: u32, epoch: u64) -> bool {
+        let sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
+        let epochs = self.mirror_revoke_epoch.lock().unwrap_or_else(|e| e.into_inner());
+        if mirroring == crate::MIRROR_SCREEN || !crate::mirror::is_local_phone(self) || !self.legacy_app_peer(&session.peer)
+            || !sessions.get(&session.peer).is_some_and(|live| Arc::ptr_eq(live, session))
+            || epochs.get(&session.peer).copied().unwrap_or(0) != epoch
+            || !self.toggle_on(&session.peer, crate::mirror::TOGGLE) || self.cancel.is_cancelled()
+        { return false; }
+        self.mirror_legacy_apps.lock().unwrap_or_else(|e| e.into_inner())
+            .insert((session.peer, mirroring), session.mirror_control_id);
+        true
+    }
+
     /// App start admission shares the existing peer-lifetime epoch with
     /// invalidation, while connection replacement holds the sessions lock.
     pub(crate) fn admit_mirror_app(
@@ -1761,6 +1776,7 @@ impl Node {
             mirror_stops: Mutex::new(HashMap::new()),
             mirror_outgoing: Mutex::new(HashMap::new()),
             mirror_incoming: Mutex::new(HashMap::new()),
+            mirror_legacy_apps: Mutex::new(HashMap::new()),
             mirror_live_out: Mutex::new(HashMap::new()),
             mirror_revoke_epoch: Mutex::new(HashMap::new()),
             pc_mirror_sessions: Mutex::new(std::collections::HashSet::new()),
@@ -2839,6 +2855,19 @@ impl Node {
     pub async fn mirror_start(&self, peer: DeviceId, options: crate::MirrorStart) -> Result<()> {
         let session = self.connected(&peer)?;
         crate::mirror::start(&self.shared, &session, options).await
+    }
+
+    /// Legacy app capture only; never mints an owned request or input context.
+    pub fn mirror_legacy_app_current(&self, peer: DeviceId, mirroring: u32, connection: u64) -> bool {
+        self.shared.legacy_app_current(&peer, mirroring, connection)
+    }
+
+    pub fn mirror_legacy_app_input_current(
+        &self, peer: DeviceId, mirroring: u32, connection: u64, generation: u64,
+    ) -> bool {
+        self.shared.legacy_app_current(&peer, mirroring, connection)
+            && self.shared.phone_control_granted(&peer)
+            && self.shared.mirror_typing_current(&peer, generation)
     }
 
     /// Negotiated app-capture ownership. Older peers retain the legacy viewer path.

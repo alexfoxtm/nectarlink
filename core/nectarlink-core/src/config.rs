@@ -299,6 +299,26 @@ pub trait Platform: Send + Sync + 'static {
     /// The PC stopped watching: stop sharing the screen or app window.
     fn mirror_stop_requested(&self, _peer: &nectarlink_protocol::DeviceId, _session: u32) {}
 
+    /// Upstream app-window route for peers that never negotiated ownership.
+    fn mirror_app_requested_legacy(
+        &self, peer: &nectarlink_protocol::DeviceId, options: &crate::MirrorStart, _connection: u64,
+    ) -> Result<(), String> {
+        self.mirror_requested(peer, options)
+    }
+
+    fn mirror_app_stop_requested_legacy(
+        &self, peer: &nectarlink_protocol::DeviceId, session: u32, _connection: u64,
+    ) {
+        self.mirror_stop_requested(peer, session);
+    }
+
+    fn mirror_app_input_legacy(
+        &self, peer: &nectarlink_protocol::DeviceId, session: u32, input: crate::MirrorInput,
+        _connection: u64, _generation: u64,
+    ) {
+        self.mirror_input(peer, session, input);
+    }
+
     /// The remote viewer stopped this exact request. Async platform work must
     /// retain request ownership through the actual capture teardown.
     fn mirror_stop_requested_owned(

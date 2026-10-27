@@ -26,6 +26,7 @@ import app.nectarlink.android.companion.PcCompanion
 import app.nectarlink.android.contacts.PhoneContacts
 import app.nectarlink.android.elevated.Elevated
 import app.nectarlink.android.mirror.AppWindows
+import app.nectarlink.android.mirror.LegacyAppWindows
 import app.nectarlink.android.mirror.InputService
 import app.nectarlink.android.mirror.MirrorRequests
 import app.nectarlink.android.photos.RecentPhotos
@@ -160,6 +161,12 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
                     receivingNode to accepted
                 } else null
             },
+            currentNode = { original -> node === original },
+            nameOf = { pc -> _state.value.nameOf(pc).orEmpty() },
+        ),
+        legacyAppWindows = LegacyAppWindows(
+            this.context, scope,
+            owner = { pc, connection -> node?.takeIf { it.mirrorConnectionCurrent(pc, connection) } },
             currentNode = { original -> node === original },
             nameOf = { pc -> _state.value.nameOf(pc).orEmpty() },
         ),

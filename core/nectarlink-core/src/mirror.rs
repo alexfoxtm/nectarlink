@@ -933,6 +933,36 @@ pub(crate) async fn receive_audio(
     sink.audio_ended();
 }
 
+// Ownership-aware peers cannot enter the separate upstream legacy app path.
+fn legacy_app_protocol(correlated: bool, input_request: bool, owned_apps: bool) -> bool {
+    !correlated && !input_request && !owned_apps
+}
+
+impl Shared {
+    pub(crate) fn legacy_app_peer(&self, peer: &DeviceId) -> bool {
+        legacy_app_protocol(
+            self.mirror_correlated(peer), self.peer_supports(peer, mirror::INPUT_REQUEST),
+            self.peer_supports(peer, mirror::APP_WINDOWS_OWNED_V1),
+        )
+    }
+
+    pub(crate) fn legacy_app_current(&self, peer: &DeviceId, mirroring: u32, connection: u64) -> bool {
+        mirroring != mirror::SCREEN && connection != 0 && !self.cancel.is_cancelled()
+            && is_local_phone(self) && self.legacy_app_peer(peer) && self.toggle_on(peer, TOGGLE)
+            && self.we_offer(mirror::VIRTUAL_DISPLAY)
+            && self.session(peer).is_some_and(|live| live.mirror_control_id == connection)
+            && self.mirror_legacy_apps.lock().unwrap_or_else(|e| e.into_inner())
+                .get(&(*peer, mirroring)) == Some(&connection)
+    }
+
+    fn take_legacy_app(&self, peer: &DeviceId, mirroring: u32, connection: u64) -> bool {
+        let mut legacy = self.mirror_legacy_apps.lock().unwrap_or_else(|e| e.into_inner());
+        if legacy.get(&(*peer, mirroring)) != Some(&connection) { return false; }
+        legacy.remove(&(*peer, mirroring));
+        true
+    }
+}
+
 // ---- The phone ----
 
 /// Handles `mirror.*` on a session. Returns false for other types.
@@ -947,6 +977,7 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
             }
             let options: MirrorStart = env.body()?;
             let desktop = is_local_desktop(shared);
+            let legacy_app = options.app.is_some() && is_local_phone(shared) && shared.legacy_app_peer(&peer);
             let needs = if options.app.is_some() {
                 mirror::VIRTUAL_DISPLAY
             } else if desktop && options.watch.is_some() {
@@ -963,7 +994,7 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
             };
             let reply = if !options.is_valid() {
                 Envelope::error(ErrorCode::BadMessage, "invalid mirroring options")
-            } else if (shared.mirror_correlated(&peer) || options.app.is_some()) && options.request.is_none()
+            } else if (shared.mirror_correlated(&peer) || (options.app.is_some() && !legacy_app)) && options.request.is_none()
             {
                 Envelope::error(ErrorCode::BadMessage, "missing mirror request generation")
             } else if !allowed {
@@ -977,7 +1008,9 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
                 // Copied out: the consent call below moves `options`.
                 let accepted_session = options.session;
                 let accepted_request = options.request;
-                let registered = match accepted_request {
+                let registered = if legacy_app {
+                    shared.admit_legacy_app(session, accepted_session, admission_epoch).then_some(0)
+                } else { match accepted_request {
                     Some(request) if options.app.is_some() => {
                         shared.admit_mirror_app(session, accepted_session, request, admission_epoch)
                     }
@@ -988,11 +1021,15 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
                         session.mirror_control_id,
                     ),
                     None => Some(0),
-                };
+                } };
                 if let Some(capture) = registered {
                     let connection = session.mirror_control_id;
                     match tokio::task::spawn_blocking(move || {
-                        platform.mirror_requested_owned(&peer, &options, connection, capture)
+                        if legacy_app {
+                            platform.mirror_app_requested_legacy(&peer, &options, connection)
+                        } else {
+                            platform.mirror_requested_owned(&peer, &options, connection, capture)
+                        }
                     })
                     .await
                     .unwrap_or_else(|e| Err(e.to_string()))
@@ -1008,7 +1045,8 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
                             }
                         }
                         Err(reason) => {
-                            if let Some(request) = accepted_request {
+                            if legacy_app { shared.take_legacy_app(&peer, accepted_session, connection); }
+                            if let Some(request) = accepted_request.filter(|_| !legacy_app) {
                                 shared.take_mirror_incoming_request(
                                     &peer,
                                     accepted_session,
@@ -1048,6 +1086,14 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
                 session.send(Envelope::empty(types::OK).reply_to(env.id)).await?;
                 return Ok(true);
             }
+            if mirroring != mirror::SCREEN && shared.legacy_app_peer(&peer)
+                && shared.take_legacy_app(&peer, mirroring, session.mirror_control_id)
+            {
+                let connection = session.mirror_control_id;
+                tokio::task::spawn_blocking(move || platform.mirror_app_stop_requested_legacy(&peer, mirroring, connection));
+                session.send(Envelope::empty(types::OK).reply_to(env.id)).await?;
+                return Ok(true);
+            }
             if is_local_phone(shared)
                 && (mirroring != mirror::SCREEN
                     || (shared.local_capabilities().iter().any(|cap| cap == mirror::INPUT_REQUEST)
@@ -1081,17 +1127,27 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
         }
         types::MIRROR_KEYFRAME => {
             let MirrorSession { session: mirroring, .. } = env.body()?;
-            tokio::task::spawn_blocking(move || platform.mirror_keyframe_requested(&peer, mirroring));
+            let original = session.clone();
+            let shared = shared.clone();
+            tokio::task::spawn_blocking(move || {
+                if mirroring == mirror::SCREEN || !shared.legacy_app_peer(&peer)
+                    || shared.legacy_app_current(&peer, mirroring, original.mirror_control_id)
+                { platform.mirror_keyframe_requested(&peer, mirroring); }
+            });
         }
         types::MIRROR_RESIZE => {
             let resize: MirrorResize = env.body()?;
             let allowed = shared.toggle_on(&peer, TOGGLE)
                 && shared.local_capabilities().iter().any(|c| c == mirror::VIRTUAL_DISPLAY);
             if allowed && resize.is_valid()
-                && !shared.local_capabilities().iter().any(|cap| cap == mirror::INPUT_REQUEST)
+                && shared.legacy_app_current(&peer, resize.session, session.mirror_control_id)
             {
+                let connection = session.mirror_control_id;
+                let shared = shared.clone();
                 tokio::task::spawn_blocking(move || {
-                    platform.mirror_resize_requested(&peer, resize.session, resize.width, resize.height);
+                    if shared.legacy_app_current(&peer, resize.session, connection) {
+                        platform.mirror_resize_requested(&peer, resize.session, resize.width, resize.height);
+                    }
                 });
                 return Ok(true);
             }
@@ -1124,6 +1180,16 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
         types::MIRROR_INPUT => {
             let input: MirrorInput = env.body()?;
             let MirrorSession { session: mirroring, .. } = env.body()?;
+            if mirroring != mirror::SCREEN && shared.legacy_app_peer(&peer) {
+                let requires_owner_grant = shared.local_capabilities().iter().any(|cap| cap == mirror::INPUT_REQUEST);
+                if input.is_valid() && shared.legacy_app_current(&peer, mirroring, session.mirror_control_id)
+                    && (!requires_owner_grant || shared.phone_control_granted(&peer))
+                    && let Some(generation) = shared.mirror_typing_admit(&peer)
+                {
+                    platform.mirror_app_input_legacy(&peer, mirroring, input, session.mirror_control_id, generation);
+                }
+                return Ok(true);
+            }
             if !is_local_desktop(shared)
                 && shared.local_capabilities().iter().any(|cap| cap == mirror::INPUT_REQUEST)
             {
@@ -1975,6 +2041,22 @@ impl Shared {
             stream.stop.notify_one();
         }
         self.stop_showing_all(peer);
+        let legacy = {
+            let mut captures = self.mirror_legacy_apps.lock().unwrap_or_else(|e| e.into_inner());
+            let legacy: Vec<_> = captures.iter().filter(|((p, _), _)| p == peer)
+                .map(|((_, mirroring), connection)| (*mirroring, *connection)).collect();
+            captures.retain(|(p, _), _| p != peer);
+            legacy
+        };
+        if !legacy.is_empty() {
+            let platform = self.platform.clone();
+            let peer = *peer;
+            self.runtime.spawn_blocking(move || {
+                for (mirroring, connection) in legacy {
+                    platform.mirror_app_stop_requested_legacy(&peer, mirroring, connection);
+                }
+            });
+        }
         owners.sort_unstable();
         owners
     }

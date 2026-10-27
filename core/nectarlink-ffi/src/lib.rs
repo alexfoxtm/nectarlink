@@ -2724,6 +2724,12 @@ pub trait Platform: Send + Sync {
     /// on a display of its own and stream it with `mirror_open`, its config
     /// packets carrying the session. False if it can't.
     fn mirror_requested(&self, pc_id: String, options: MirrorOptions, connection: u64, capture: u64) -> bool;
+    /// Explicit unnegotiated app route; no owned context is created.
+    fn mirror_app_requested_legacy(&self, pc_id: String, options: MirrorOptions, connection: u64) -> bool;
+    fn mirror_app_stop_requested_legacy(&self, pc_id: String, session: u32, connection: u64);
+    fn mirror_app_input_legacy(
+        &self, pc_id: String, session: u32, input: MirrorInputEvent, connection: u64, generation: u64,
+    );
     /// The PC stopped watching the screen (session 0) or an app window.
     fn mirror_stop_requested(&self, pc_id: String, session: u32);
     fn mirror_stop_requested_owned(
@@ -2963,6 +2969,26 @@ impl core::Platform for PlatformAdapter {
         } else {
             Err("the phone couldn't".into())
         }
+    }
+    fn mirror_app_requested_legacy(
+        &self, peer: &DeviceId, options: &core::MirrorStart, connection: u64,
+    ) -> Result<(), String> {
+        let options = MirrorOptions {
+            max_size: options.max_size, fps: options.fps, bitrate: options.bitrate,
+            audio: options.audio, session: options.session, app: options.app.clone(),
+            stay_awake: options.stay_awake, screen_off: options.screen_off, request: options.request,
+        };
+        if self.0.mirror_app_requested_legacy(peer.to_string(), options, connection) {
+            Ok(())
+        } else { Err("the phone couldn't open the legacy app window".into()) }
+    }
+    fn mirror_app_stop_requested_legacy(&self, peer: &DeviceId, session: u32, connection: u64) {
+        self.0.mirror_app_stop_requested_legacy(peer.to_string(), session, connection);
+    }
+    fn mirror_app_input_legacy(
+        &self, peer: &DeviceId, session: u32, input: core::MirrorInput, connection: u64, generation: u64,
+    ) {
+        self.0.mirror_app_input_legacy(peer.to_string(), session, input.into(), connection, generation);
     }
     fn mirror_stop_requested(&self, peer: &DeviceId, session: u32) {
         self.0.mirror_stop_requested(peer.to_string(), session);
@@ -4146,6 +4172,17 @@ impl NectarlinkNode {
 
     pub fn mirror_connection_current(&self, pc_id: String, connection: u64) -> bool {
         parse_id(&pc_id).is_ok_and(|id| self.node.mirror_connection_current(id, connection))
+    }
+
+    /// Original unnegotiated app capture only; no owned request/input grant.
+    pub fn mirror_legacy_app_current(&self, pc_id: String, session: u32, connection: u64) -> bool {
+        parse_id(&pc_id).is_ok_and(|id| self.node.mirror_legacy_app_current(id, session, connection))
+    }
+
+    pub fn mirror_legacy_app_input_current(
+        &self, pc_id: String, session: u32, connection: u64, generation: u64,
+    ) -> bool {
+        parse_id(&pc_id).is_ok_and(|id| self.node.mirror_legacy_app_input_current(id, session, connection, generation))
     }
 
     /// Capture identity for this accepted incoming view request, independent of input consent.
