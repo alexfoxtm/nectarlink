@@ -16,31 +16,9 @@ import android.os.VibratorManager
 import android.util.Log
 
 /**
- * "Find my phone": plays the alarm sound on the alarm stream and
- * vibrates, until stopped or for a minute.
- *
- * The alarm-stream volume is temporarily raised to full for the ring
- * and the user's original volume is restored exactly once on every
- * exit path (stop, the one-minute timeout, overlap handling, and
- * player failure). The saved volume is synchronously committed to
- * preferences before the volume is raised, so if the process dies
- * mid-ring the next launch restores it instead of leaving the user's
- * alarm volume raised forever; if it can't be committed, the volume
- * is not raised at all. No user setting is permanently changed.
- *
- * Do Not Disturb: alarm-category audio (`USAGE_ALARM`) passes the ALL
- * and ALARMS interruption filters. Under PRIORITY it is heard only if
- * the user's DND policy allows alarms (the usual default, but
- * user-configurable). Total silence (`INTERRUPTION_FILTER_NONE`)
- * suppresses alarms at the system level and cannot be bypassed by any
- * audio attribute; this class deliberately does not call
- * `setInterruptionFilter` (whose semantics for third-party callers
- * are restricted on current target SDKs) and never grants itself
- * policy access. When DND blocks alarms the ring degrades to vibration
- * plus the raised volume, and total silence is logged — a real bypass
- * would need the user to grant notification-policy access and, on
- * Android 15+/targetSdk 37 Zen modes, to allow this app's rule in
- * system settings.
+ * Rings and vibrates for up to a minute, temporarily raising the alarm volume.
+ * Restores the original volume once on stop, timeout or failure, or next launch
+ * after a crash. Android's Do Not Disturb policy stays in charge.
  */
 class Ringer(context: Context) {
     private val context = context.applicationContext
@@ -116,15 +94,12 @@ class Ringer(context: Context) {
         restoreOverride()
     }
 
-    /**
-     * Raises the alarm volume to full, capturing the user's volume
-     * first (once — an overlapping ring keeps the first capture), and
-     * reports the one DND mode volume cannot fix. A still-persisted
-     * volume from an unfinished restore is the user's real original,
-     * so it wins over the current (possibly still raised) volume.
-     */
+    /** Saves the original volume before raising it, including any unfinished restore. */
     private fun beginOverride() {
-        logZenLimits()
+        val filter = runCatching { notifications?.currentInterruptionFilter }.getOrNull()
+        if (filter == NotificationManager.INTERRUPTION_FILTER_NONE) {
+            Log.w(TAG, "Do Not Disturb total silence suppresses alarm audio; ringing by vibration only")
+        }
         val am = audio ?: return
         val current = runCatching { am.getStreamVolume(AudioManager.STREAM_ALARM) }.getOrNull() ?: return
         val original = readPersisted() ?: current
@@ -135,22 +110,8 @@ class Ringer(context: Context) {
         }
         val max = runCatching { am.getStreamMaxVolume(AudioManager.STREAM_ALARM) }.getOrDefault(current)
         runCatching {
-            am.setStreamVolume(AudioManager.STREAM_ALARM, RingPolicy.raisedAlarmVolume(current, max), 0)
+            am.setStreamVolume(AudioManager.STREAM_ALARM, if (max > 0) max else current.coerceAtLeast(0), 0)
         }.onFailure { Log.w(TAG, "can't raise the alarm volume", it) }
-    }
-
-    private fun logZenLimits() {
-        val filter = when (runCatching { notifications?.currentInterruptionFilter }.getOrNull()) {
-            NotificationManager.INTERRUPTION_FILTER_NONE -> RingPolicy.ZenFilter.NONE
-            NotificationManager.INTERRUPTION_FILTER_PRIORITY -> RingPolicy.ZenFilter.PRIORITY
-            NotificationManager.INTERRUPTION_FILTER_ALARMS -> RingPolicy.ZenFilter.ALARMS
-            NotificationManager.INTERRUPTION_FILTER_ALL -> RingPolicy.ZenFilter.ALL
-            else -> RingPolicy.ZenFilter.UNKNOWN
-        }
-        if (!RingPolicy.alarmReachesUser(filter)) {
-            // Truthful degraded state: no self-grant, no filter change.
-            Log.w(TAG, "Do Not Disturb total silence suppresses alarm audio; ringing by vibration only")
-        }
     }
 
     /** Restores the captured alarm volume, exactly once. */

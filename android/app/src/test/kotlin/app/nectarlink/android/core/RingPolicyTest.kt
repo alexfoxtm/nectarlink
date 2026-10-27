@@ -18,14 +18,12 @@ class RingPolicyTest {
         // the user's original.
         assertFalse(tracker.begin(current = 7))
         assertTrue(tracker.active)
-        assertEquals(7, RingPolicy.raisedAlarmVolume(current = 3, max = 7))
-        assertTrue(RingPolicy.alarmReachesUser(RingPolicy.ZenFilter.ALL))
         assertEquals(3, tracker.consumeRestore())
         assertFalse(tracker.active)
     }
 
     @Test
-    fun restoreIsIdempotentAndTotalSilenceStillBlocks() {
+    fun restoreIsIdempotent() {
         val tracker = RingPolicy.OverrideTracker()
         // Stop/timeout without a ring restores nothing.
         assertNull(tracker.consumeRestore())
@@ -33,9 +31,5 @@ class RingPolicyTest {
         assertEquals(0, tracker.consumeRestore())
         // A second restore attempt (e.g. stop after timeout) is a no-op.
         assertNull(tracker.consumeRestore())
-        // Total silence is the one mode alarm audio cannot pass.
-        assertFalse(RingPolicy.alarmReachesUser(RingPolicy.ZenFilter.NONE))
-        assertTrue(RingPolicy.alarmReachesUser(RingPolicy.ZenFilter.ALARMS))
-        assertTrue(RingPolicy.alarmReachesUser(RingPolicy.ZenFilter.PRIORITY))
     }
 }

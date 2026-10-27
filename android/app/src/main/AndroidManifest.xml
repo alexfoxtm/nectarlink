@@ -50,8 +50,6 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <!-- Find my phone. -->
     <uses-permission android:name="android.permission.VIBRATE" />
-    <!-- Find my phone temporarily raises and restores the alarm stream. -->
-    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <!-- Asking to run unrestricted in the background: phones such as Samsung's
          otherwise freeze the app, and PCs can't reach it. -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
