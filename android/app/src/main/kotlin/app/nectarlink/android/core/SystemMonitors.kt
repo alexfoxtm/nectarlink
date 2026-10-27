@@ -512,6 +512,33 @@ internal fun networkTypeLabel(networkType: Int, overrideNetworkType: Int = 0): S
 }
 
 /**
+ * Wi-Fi bars per connected Wi-Fi network. Two can overlap while Android
+ * switches networks, and the old one's loss may arrive after the new one is
+ * up, so a loss removes only that network's bars.
+ */
+internal class WifiBarsByNetwork<N : Any> {
+    private val bars = HashMap<N, UByte>()
+
+    /** Records [network]'s bars (`null`: no longer Wi-Fi) and returns the best left. */
+    @Synchronized
+    fun update(network: N, value: UByte?): UByte? {
+        if (value != null) bars[network] = value else bars.remove(network)
+        return best()
+    }
+
+    @Synchronized
+    fun lost(network: N): UByte? {
+        bars.remove(network)
+        return best()
+    }
+
+    @Synchronized
+    fun clear() = bars.clear()
+
+    private fun best(): UByte? = bars.values.maxOrNull()
+}
+
+/**
  * Event-driven cellular and Wi-Fi signal monitor. Uses Android system callbacks
  * without polling and without requiring any new permissions.
  */
@@ -530,20 +557,22 @@ class SignalMonitor(private val context: Context, private val onChange: (SignalS
     private var displayInfoCallback: Any? = null
     private var phoneStateListener: Any? = null
 
+    private val wifiNetworks = WifiBarsByNetwork<Network>()
+
     private val wifiNetworkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
-            val caps = runCatching { connectivity?.getNetworkCapabilities(network) }.getOrNull()
-            wifiBars = extractWifiBars(capabilities = caps)
+            val caps = runCatching { connectivity?.getNetworkCapabilities(network) }.getOrNull() ?: return
+            wifiBars = wifiNetworks.update(network, extractWifiBars(capabilities = caps))
             emitIfChanged()
         }
 
         override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
-            wifiBars = extractWifiBars(capabilities = networkCapabilities)
+            wifiBars = wifiNetworks.update(network, extractWifiBars(capabilities = networkCapabilities))
             emitIfChanged()
         }
 
         override fun onLost(network: Network) {
-            wifiBars = null
+            wifiBars = wifiNetworks.lost(network)
             emitIfChanged()
         }
     }
@@ -641,19 +670,26 @@ class SignalMonitor(private val context: Context, private val onChange: (SignalS
         }
         wifiBars = extractWifiBars()
 
+        wifiNetworks.clear()
         runCatching {
             val request = NetworkRequest.Builder()
                 .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
                 .build()
             connectivity?.registerNetworkCallback(request, wifiNetworkCallback)
         }
-        @Suppress("DEPRECATION")
-        runCatching {
-            val filter = IntentFilter().apply {
-                addAction(WifiManager.RSSI_CHANGED_ACTION)
-                addAction(WifiManager.NETWORK_STATE_CHANGED_ACTION)
+        // On Q and above the Wi-Fi NetworkCallback already reports signal
+        // strength through capabilities, so the legacy RSSI broadcasts would
+        // only wake the process to recompute an unchanged bar bucket.
+        // Pre-Q keeps them: capabilities carry no signal strength there.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            @Suppress("DEPRECATION")
+            runCatching {
+                val filter = IntentFilter().apply {
+                    addAction(WifiManager.RSSI_CHANGED_ACTION)
+                    addAction(WifiManager.NETWORK_STATE_CHANGED_ACTION)
+                }
+                ContextCompat.registerReceiver(context, wifiReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
             }
-            ContextCompat.registerReceiver(context, wifiReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -697,7 +733,10 @@ class SignalMonitor(private val context: Context, private val onChange: (SignalS
         if (!running) return
         running = false
         runCatching { connectivity?.unregisterNetworkCallback(wifiNetworkCallback) }
-        runCatching { context.unregisterReceiver(wifiReceiver) }
+        // Registered only pre-Q (see start()).
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            runCatching { context.unregisterReceiver(wifiReceiver) }
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             (signalCallback as? TelephonyCallback)?.let { cb ->
                 runCatching { telephony?.unregisterTelephonyCallback(cb) }
