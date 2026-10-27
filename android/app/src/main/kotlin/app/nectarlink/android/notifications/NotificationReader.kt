@@ -40,7 +40,7 @@ internal class NotificationReader(private val context: Context) {
     private val images = LruCache<String, ByteArray>(16)
 
     /** `null` when this notification isn't mirrored. */
-    fun read(sbn: StatusBarNotification, ranking: RankingMap?, update: Boolean): Mirrored? {
+    fun read(sbn: StatusBarNotification, ranking: RankingMap?, update: Boolean, actionRevision: String): Mirrored? {
         val n = sbn.notification
         val live = extractLive(n)
         if (!shouldMirror(sbn, live)) return null
@@ -57,7 +57,7 @@ internal class NotificationReader(private val context: Context) {
             text = content.text,
             sub = content.sub,
             `when` = whenMs,
-            actions = actions(n),
+            actions = actions(n, actionRevision),
             silent = silent,
             icon = icon(sbn.packageName),
             image = image(sbn.key, n, content.title, content.text),
@@ -65,6 +65,9 @@ internal class NotificationReader(private val context: Context) {
             conversation = conversation,
         )
     }
+
+    internal fun actionEligible(sbn: StatusBarNotification): Boolean =
+        shouldMirror(sbn, extractLive(sbn.notification))
 
     private fun shouldMirror(sbn: StatusBarNotification, live: NotificationLive?): Boolean {
         val n = sbn.notification
@@ -175,13 +178,13 @@ internal class NotificationReader(private val context: Context) {
 
     private fun android.os.Bundle.text(key: String): String? = getCharSequence(key)?.toString()?.trim()?.ifEmpty { null }
 
-    /** Buttons, with their index as ID; reply actions take free text. */
-    private fun actions(n: Notification): List<MirroredAction> =
+    /** Buttons are bound to this observed notification revision; IDs stay opaque to the PC. */
+    private fun actions(n: Notification, revision: String): List<MirroredAction> =
         n.actions.orEmpty().mapIndexedNotNull { index, action ->
             val title = action.title?.toString()?.trim()
             if (title.isNullOrEmpty() || action.actionIntent == null) return@mapIndexedNotNull null
             MirroredAction(
-                id = index.toString(),
+                id = "$revision:$index",
                 title = title,
                 reply = action.remoteInputs.orEmpty().any { it.allowFreeFormInput },
             )
