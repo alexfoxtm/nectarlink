@@ -1189,7 +1189,7 @@ impl MirrorStream {
 /// request's generation, when the requester tagged it.
 #[uniffi::export]
 pub fn mirror_config(width: u32, height: u32, session: u32, request: Option<u64>) -> Vec<u8> {
-    core::MirrorConfig { codec: "h264".into(), width, height, session, request, request: None }.to_cbor()
+    core::MirrorConfig { codec: "h264".into(), width, height, session, request }.to_cbor()
 }
 
 /// The bytes of a config packet for a stream of `codec` (`"h264"`, `"h265"`, or `"av1"`).
