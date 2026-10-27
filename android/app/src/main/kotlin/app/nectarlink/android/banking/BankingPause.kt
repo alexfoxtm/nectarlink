@@ -184,69 +184,32 @@ object BankingPause {
 
     // ---- The app in front ----
 
-    /**
-     * Follows the app in front from usage events.
-     *
-     * A non-interactive screen returns null without reading usage stats.
-     * That null is not a reason to turn debugging back on: the cached package
-     * stays hidden until a later read, taken while the screen is interactive,
-     * actually observes who is in front.
-     */
-    class Foreground(
-        context: Context,
-        pollMs: Long,
-        idleMs: Long,
-    ) {
+    /** Follows the app in front from usage events. */
+    class Foreground(context: Context) {
         private val usage = context.getSystemService(UsageStatsManager::class.java)
         private val power = context.getSystemService(PowerManager::class.java)
         /** The first read looks back an hour, to know what's in front already. */
-        private val cadence = BankingPollCadence(pollMs, idleMs, System.currentTimeMillis() - 3_600_000)
+        private var lastQueryMs = System.currentTimeMillis() - 3_600_000
+        /** The app last brought to the front, as far as the events say. */
+        var current: String? = null
+            private set
 
-        /** Screen on, or the user unlocked. The next poll is the privacy check. */
-        fun noteScreenReturned() = cadence.onScreenReturned()
-
-        /** True once after [noteScreenReturned], so a resume countdown cannot finish across it. */
-        fun consumeScreenReturn(): Boolean = cadence.consumeScreenReturn()
-
-        /**
-         * Idle cadence while the screen is off and [wakeAvailable] can cut it short.
-         * Zero when a screen return is already pending, so the caller polls before it sleeps.
-         * Without a receiver, the short poll stays in force.
-         */
-        fun millisUntilNextPoll(wakeAvailable: Boolean): Long =
-            cadence.waitMs(power?.isInteractive != false, wakeAvailable)
-
-        /**
-         * Reads the events since the last accepted window. Null means this was not a current check.
-         *
-         * [BankingPollCadence.beginRead] and [BankingPollCadence.finishRead] take the cadence
-         * lock only around the cursor. The usage query sits between them, so [noteScreenReturned]
-         * does not wait on it. A rejected read does not advance the cursor. The screen return
-         * itself rewinds it to the last observed event, and this read does not move it forward again.
-         */
+        /** Reads the events since the last call; returns the app in front (null when the screen is off). */
         fun poll(): String? {
-            val opened = cadence.beginRead()
-            if (power?.isInteractive == false) {
-                return cadence.finishRead(opened.stamp, false, true, null, opened.cursor)
-            }
+            if (power?.isInteractive == false) return null
             val now = System.currentTimeMillis()
-            val events = runCatching { usage?.queryEvents(opened.cursor, now) }.getOrNull()
-            if (events == null) {
-                return cadence.finishRead(opened.stamp, screenInteractive = true, readOk = false, observedPackage = null, windowEnd = now)
+            val events = runCatching { usage?.queryEvents(lastQueryMs, now) }.getOrNull()
+            lastQueryMs = now
+            if (events != null) {
+                val event = UsageEvents.Event()
+                while (events.hasNextEvent()) {
+                    events.getNextEvent(event)
+                    // ACTIVITY_RESUMED (Android 10+) has the same value.
+                    @Suppress("DEPRECATION")
+                    if (event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND) current = event.packageName
+                }
             }
-            // The screen went off during the read. Reject it so the cursor stays and the wake poll can see these events.
-            if (power?.isInteractive == false) {
-                return cadence.finishRead(opened.stamp, screenInteractive = false, readOk = true, observedPackage = null, windowEnd = now)
-            }
-            var observed: String? = null
-            val event = UsageEvents.Event()
-            while (events.hasNextEvent()) {
-                events.getNextEvent(event)
-                // ACTIVITY_RESUMED (Android 10+) has the same value.
-                @Suppress("DEPRECATION")
-                if (event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND) observed = event.packageName
-            }
-            return cadence.finishRead(opened.stamp, true, true, observed, now)
+            return current
         }
     }
 

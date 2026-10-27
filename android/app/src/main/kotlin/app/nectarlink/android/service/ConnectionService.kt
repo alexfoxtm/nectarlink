@@ -12,6 +12,7 @@ import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.net.wifi.WifiManager
 import android.os.Build
+import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
@@ -23,6 +24,7 @@ import app.nectarlink.android.R
 import app.nectarlink.android.banking.BankingPause
 import app.nectarlink.android.banking.PauseDecider
 import app.nectarlink.android.banking.awaitScreenWake
+import app.nectarlink.android.banking.bankingPollWaitMs
 import app.nectarlink.android.clipboard.SendActivity
 import app.nectarlink.android.core.CoreState
 import app.nectarlink.android.ui.MainActivity
@@ -44,7 +46,6 @@ class ConnectionService : LifecycleService() {
     private var screenReceiver: BroadcastReceiver? = null
     /** False when [registerScreenWake] did not stick. The poll must not idle for 15s with no wake. */
     @Volatile private var screenWakeRegistered = false
-    @Volatile private var bankingFollow: BankingPause.Foreground? = null
     /** One pending screen return is enough. A burst must not queue a spin. */
     private val screenWake = Channel<Unit>(Channel.CONFLATED)
 
@@ -89,38 +90,29 @@ class ConnectionService : LifecycleService() {
             }
         }
         // Pause for banking apps: follow the app in front while it's set up.
-        // Screen off waits on the idle cadence when the screen-on receiver registered.
-        // If it did not, the wait stays on the short poll: nothing could interrupt
-        // 15s, and the app in front would go unchecked. Screen on and user-present
-        // end the idle wait so the next pass can pause before debugging turns back on.
+        // Screen returns end the idle wait and start a fresh resume countdown.
         lifecycleScope.launch(kotlinx.coroutines.Dispatchers.Default) {
             val context = applicationContext
+            val power = getSystemService(PowerManager::class.java)
             var decider = PauseDecider()
-            var follow: BankingPause.Foreground? = null
+            var foreground: BankingPause.Foreground? = null
             while (true) {
                 if (!BankingPause.isReady(context)) {
-                    follow = null
-                    bankingFollow = null
+                    foreground = null
                     decider = PauseDecider()
                     delay(BANKING_IDLE_MS)
                     continue
                 }
-                val current = follow ?: BankingPause.Foreground(context, BANKING_POLL_MS, BANKING_IDLE_MS).also {
-                    follow = it
-                    bankingFollow = it
-                }
-                val pkg = current.poll()
-                // Null is not a completed check, and a screen return is not one either.
-                // Drop any resume countdown so it cannot finish across that gap and
-                // turn debugging back on before this poll's package has been in front.
-                if (pkg == null || current.consumeScreenReturn()) decider = PauseDecider()
+                val follow = foreground ?: BankingPause.Foreground(context).also { foreground = it }
+                val pkg = follow.poll()
+                if (screenWake.tryReceive().isSuccess || pkg == null) decider = PauseDecider()
                 when (decider.decide(pkg, BankingPause.apps(context), BankingPause.isPaused(context), System.currentTimeMillis())) {
                     PauseDecider.Action.PAUSE -> BankingPause.pause(context)
                     PauseDecider.Action.RESUME -> BankingPause.resume(context)
                     null -> {}
                 }
-                val wait = current.millisUntilNextPoll(screenWakeRegistered)
-                awaitScreenWake(wait, screenWake)
+                val wait = bankingPollWaitMs(power?.isInteractive != false, screenWakeRegistered, BANKING_POLL_MS, BANKING_IDLE_MS)
+                if (awaitScreenWake(wait, screenWake)) decider = PauseDecider()
             }
         }
         lifecycleScope.launch {
@@ -148,7 +140,6 @@ class ConnectionService : LifecycleService() {
 
     override fun onDestroy() {
         unregisterScreenWake()
-        bankingFollow = null
         multicastLock?.runCatching { release() }
         getSystemService(NotificationManager::class.java)?.cancel(ONGOING_ID)
         super.onDestroy()
@@ -165,7 +156,6 @@ class ConnectionService : LifecycleService() {
             override fun onReceive(context: Context, intent: Intent) {
                 val action = intent.action
                 if (action != Intent.ACTION_SCREEN_ON && action != Intent.ACTION_USER_PRESENT) return
-                bankingFollow?.noteScreenReturned()
                 screenWake.trySend(Unit)
             }
         }
