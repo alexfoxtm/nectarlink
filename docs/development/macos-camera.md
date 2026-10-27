@@ -2,15 +2,18 @@
 # macOS native camera backend draft
 
 This is an opt-in source contribution, not a qualified macOS camera release.
-Default builds do not compile the producer/activation bridge, advertise
-`camera.virtual`, or activate an extension. No helper or driver is downloaded.
+Default builds do not compile the producer/activation bridge or activate an
+extension. **All builds, including signed opt-in builds, refuse native Start,
+legacy incoming streams, producer claim, and `camera.virtual` advertisement.**
+The explicit `vcam::stream_admission_ready()` gate remains false until the owned
+request/session protocol is ported and reviewed. No helper or driver is downloaded.
 The desktop feature flag is `macos-native-camera`.
 
 ## Integration
 
-The existing Android webcam encoder and paired, toggle-checked `webcam/video`
-stream feed the existing desktop decoder and preview. On macOS, an admitted
-sink claims one native producer with a unique `(device, generation)` lease.
+The staged data path connects decoded frames and preview to native output,
+but cannot currently admit a macOS phone stream. After an owned-protocol port,
+a correctly admitted sink will claim one native producer with a unique `(device, generation)` lease.
 Frames pass through the existing BGRX conversion and optional mirror operation
 once, then the CMIO sink. Windows shared textures/mappings and Linux webcam
 behavior remain on their existing paths. macOS advertises H.264 only.
@@ -20,8 +23,8 @@ Native Stop, end/drop, output failure, and app shutdown revoke the producer and
 signal that admitted QUIC stream. Native Stop does not enqueue a deferred
 peer-wide stop for an active output. Late packets, configs, previews, and
 cleanup cannot publish into or release another lease, including one belonging
-to the same phone. Only explicit app/phone actions request phone capture;
-opening a source in a conferencing app never starts a phone or bypasses consent.
+to the same phone. No macOS Start can currently request phone capture. Opening a source in a
+conferencing app never starts a phone or bypasses consent.
 
 The extension publishes one source (720p, 1080p, 3840×2160 at 30 fps) and one
 fixed UHD BGRA sink. The producer aspect-fits portrait/landscape frames. The
@@ -65,6 +68,14 @@ disposable candidate rather than reused as release evidence.
 ## Gates before enabling a release
 
 1. Approve the scope/identifiers and inspect the GPL native-source provenance.
+   Port the donor's additive `camera.webcam.owned.v1` chain across protocol,
+   core, Android/UniFFI and desktop before opening `stream_admission_ready()`:
+   nonzero durable request allocation, retained original Shared/Session/view,
+   request-bound Start/Stop/keyframe/Config and video.owned admission, retired
+   request fencing across Stop/OFF/ON/reconnect, and exact Android consent Entry
+   plus terminal encoder/CameraX cleanup. Preserve upstream HEVC and legacy
+   Windows/Linux paths. Matching only a peer or local Asking state cannot
+   distinguish a delayed old request from a same-phone successor.
 2. Compile/check the default and opt-in desktop, native extension, and existing
    Windows/Linux targets with the supported SDK and toolchains. Run the existing
    core webcam and desktop tests, then exercise Stop/restart, same-phone stream
@@ -84,15 +95,17 @@ disposable candidate rather than reused as release evidence.
 6. Complete the macOS setup/approval/error presentation before exposing the
    feature in a release. The shared upstream settings row still describes the
    Windows add-on/admin setup. This draft deliberately does not redesign that
-   UI. Pending phone requests retain the upstream consent/control protocol;
+   UI. Native pending requests must also use the future owned protocol;
    automatic consumer-triggered phone requests are outside this draft.
 7. Qualify phone consent, Stop, mirror handling, portrait/landscape, 720p/1080p/4K,
    and camera permission behavior with a physical phone and receiving video apps.
    Confirm QUIC closure stops the Android foreground encoder, including idle
    capture, reconnect, and app shutdown. Synthetic checks cannot establish this.
 
-Payload presence alone never enables the backend: it needs the feature build,
-strict signed-payload checks, and live exact-format CMIO publication. A successful
+Payload presence, signatures, activation and live CMIO publication cannot open
+stream admission. The owned-protocol gate currently refuses capture regardless
+of all those conditions. After that protocol is implemented, the feature build,
+strict signed-payload checks and live exact-format publication remain required. A successful
 activation callback does not replace these checks. The command-line Windows
 registration entry points return an error on macOS and invoke no privileged
 helper.

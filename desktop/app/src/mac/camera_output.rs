@@ -48,8 +48,8 @@ static OUTPUT: Mutex<State> = Mutex::new(State { generation: 0, active: None });
 /// A second stream is refused, including from the same phone, until teardown.
 pub fn claim(device: DeviceId, stopped: Arc<tokio::sync::Notify>) -> Result<Lease, String> {
     let mut state = OUTPUT.lock().unwrap_or_else(|e| e.into_inner());
-    if !super::vcam::is_registered() {
-        return Err("The signed camera extension is not ready.".into());
+    if !super::vcam::stream_admission_ready() || !super::vcam::is_registered() {
+        return Err("Owned webcam protocol and the signed camera extension must both be ready.".into());
     }
     if state.active.is_some() {
         return Err("Another phone camera stream owns the output.".into());

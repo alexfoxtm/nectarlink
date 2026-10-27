@@ -4,6 +4,14 @@
 pub const REGISTER_ARG: &str = "--register-vcam";
 pub const UNREGISTER_ARG: &str = "--unregister-vcam";
 
+/// The legacy upstream stream carries no request/session capture authority.
+/// Keep admission closed until owned Start/Stop/Config, original-session
+/// ownership, and Android terminal cleanup are implemented and reviewed.
+/// Signed extension presence or a local Asking peer cannot replace that proof.
+pub const fn stream_admission_ready() -> bool {
+    false
+}
+
 #[cfg(feature = "macos-native-camera")]
 mod native {
     #![allow(unsafe_code)]

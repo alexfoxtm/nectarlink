@@ -178,7 +178,7 @@ pub fn compute_capabilities(
         caps.push(nectarlink_core::INPUT_INJECT.into());
     }
     #[cfg(target_os = "macos")]
-    if crate::win::vcam::is_registered() {
+    if crate::win::vcam::stream_admission_ready() && crate::win::vcam::is_registered() {
         caps.push(nectarlink_core::WEBCAM_VIRTUAL.into());
     }
     if crate::win::vcam::is_registered() {

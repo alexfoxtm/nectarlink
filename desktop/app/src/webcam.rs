@@ -541,6 +541,19 @@ fn reconfigure_active_stream() {
 /// Requests a webcam stream from `device` (or the selected phone).
 pub fn start(device: Option<DeviceId>) {
     #[cfg(target_os = "macos")]
+    if !vcam::stream_admission_ready() {
+        state(|s| {
+            s.phase = Phase::Ended {
+                reason: crate::i18n::tr!(
+                    "Webcam",
+                    "Native camera streaming requires owned webcam protocol support."
+                ),
+            }
+        });
+        core_host::host().hub.changed(Changes::WEBCAM);
+        return;
+    }
+    #[cfg(target_os = "macos")]
     if !vcam::is_registered() {
         state(|s| {
             s.phase = Phase::Ended {
@@ -645,7 +658,7 @@ pub fn on_event(event: &NodeEvent) {
 /// Returns a [`WebcamSink`] for an incoming `"webcam"` stream from `device`.
 pub fn sink(device: &DeviceId) -> Option<Arc<dyn WebcamSink>> {
     #[cfg(target_os = "macos")]
-    if !vcam::is_registered() {
+    if !vcam::stream_admission_ready() || !vcam::is_registered() {
         return None;
     }
     #[cfg(all(target_os = "macos", feature = "macos-native-camera"))]
