@@ -80,10 +80,34 @@ class LegacyAppWindows(
         if (!admitted()) return false
         val maxSize = options.maxSize.toInt().coerceIn(320, 1920)
         val (width, height, dpi) = size(maxSize)
-        val socket = Elevated.openApp(pkg, width, height, dpi, options.bitrate.toInt(), options.fps.toInt(), stillCurrent = admitted) ?: return false
-        val window = Window(pc, options.session, socket, width, height, dpi, maxSize, connection, node, admitted)
+        val key = pc to options.session
+        var registered: Window? = null
+        val starting = { admitted() && (registered?.let { windows[key] === it } ?: true) }
+        val socket = Elevated.openApp(
+            pkg, width, height, dpi, options.bitrate.toInt(), options.fps.toInt(),
+            stillCurrent = starting,
+            register = { socket ->
+                val window = Window(pc, options.session, socket, width, height, dpi, maxSize, connection, node, admitted)
+                val previous = synchronized(windows) {
+                    if (!admitted()) return@openApp false
+                    registered = window
+                    windows.put(key, window)
+                }
+                previous?.let { runCatching { it.socket.close() } }
+                // A concurrent Stop/replacement may have retired this exact socket.
+                current(window)
+            },
+        )
+        if (socket == null) {
+            registered?.let(::close)
+            return false
+        }
+        val window = registered ?: run { socket.close(); return false }
+        if (!current(window)) {
+            close(window)
+            return false
+        }
         power[pc] = options.stayAwake to options.screenOff
-        windows.put(pc to options.session, window)?.let { runCatching { it.socket.close() } }
         changed()
         scope.launch(Dispatchers.IO) {
             if (!current(window)) { close(window); return@launch }
