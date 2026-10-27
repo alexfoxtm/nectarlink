@@ -17,13 +17,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
-import app.nectarlink.android.ui.theme.LinkButton as Button
+import app.nectarlink.android.ui.settings.SettingsButton as Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
-import app.nectarlink.android.ui.theme.LinkOutlinedButton as OutlinedButton
+import app.nectarlink.android.ui.settings.SettingsOutlinedButton as OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import app.nectarlink.android.ui.theme.LinkTextButton as TextButton
+import app.nectarlink.android.ui.settings.SettingsTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,7 +46,7 @@ import app.nectarlink.android.banking.OpenWithPauseActivity
 import app.nectarlink.android.elevated.Elevated
 
 /** An app the user can choose: package, name and a small icon. */
-private data class Choosable(val pkg: String, val label: String, val icon: ImageBitmap?)
+internal data class Choosable(val pkg: String, val label: String, val icon: ImageBitmap?)
 
 /** Settings › Control › Pause for banking apps. */
 @Composable
@@ -64,60 +64,24 @@ internal fun BankingPauseAccess() {
         onPauseOrDispose {}
     }
 
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.weight(1f).padding(end = 12.dp)) {
-                Text(stringResource(R.string.banking_title), style = MaterialTheme.typography.titleSmall)
-                Text(
-                    if (chosen.isEmpty()) {
-                        stringResource(R.string.banking_text)
-                    } else {
-                        pluralStringResource(R.plurals.banking_chosen, chosen.size, chosen.size)
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            OutlinedButton(onClick = { picking = true }) { Text(stringResource(R.string.banking_choose)) }
-        }
-
-        if (chosen.isNotEmpty()) {
-            when {
-                !canChange -> Note(stringResource(R.string.banking_needs_elevated))
-                !usage -> Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    Note(stringResource(R.string.banking_needs_usage), Modifier.weight(1f).padding(end = 12.dp))
-                    Button(onClick = {
-                        // Through Elevated when it's running, else Android's own page.
-                        if (!Elevated.grantUsageAccess()) openUsageAccessSettings(context)
-                        usage = BankingPause.hasUsageAccess(context)
-                    }) { Text(stringResource(R.string.action_allow)) }
-                }
-                paused -> Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    Note(stringResource(R.string.banking_paused_now), Modifier.weight(1f).padding(end = 12.dp))
-                    TextButton(onClick = { BankingPause.resume(context) }) {
-                        Text(stringResource(R.string.banking_turn_back_on))
-                    }
-                }
-            }
-            val canPin = remember { OpenWithPauseActivity.canPin(context) }
-            for (app in remember(chosen) { describe(context, chosen) }) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    AppIcon(app.icon)
-                    Text(
-                        app.label,
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
-                    )
-                    if (canPin) {
-                        TextButton(onClick = { OpenWithPauseActivity.pin(context, app.pkg, app.label) }) {
-                            Text(stringResource(R.string.banking_shortcut))
-                        }
-                    }
-                }
-            }
-            if (canPin) Note(stringResource(R.string.banking_shortcut_hint))
-        }
-    }
+    val canPin = if (chosen.isNotEmpty()) remember { OpenWithPauseActivity.canPin(context) } else false
+    val apps = if (chosen.isNotEmpty()) remember(chosen) { describe(context, chosen) } else emptyList()
+    BankingPauseContent(
+        chosenCount = chosen.size,
+        canChange = canChange,
+        usage = usage,
+        paused = paused,
+        canPin = canPin,
+        apps = apps,
+        onChooseApps = { picking = true },
+        onAllowUsage = {
+            // Through Elevated when it's running, else Android's own page.
+            if (!Elevated.grantUsageAccess()) openUsageAccessSettings(context)
+            usage = BankingPause.hasUsageAccess(context)
+        },
+        onResume = { BankingPause.resume(context) },
+        onPin = { app -> OpenWithPauseActivity.pin(context, app.pkg, app.label) },
+    )
 
     if (picking) {
         AppPicker(
@@ -134,6 +98,66 @@ internal fun BankingPauseAccess() {
             },
             onCancel = { picking = false },
         )
+    }
+}
+
+/** Rendering only: app queries, permissions and banking actions stay in BankingPauseAccess. */
+@Composable
+internal fun BankingPauseContent(
+    chosenCount: Int,
+    canChange: Boolean,
+    usage: Boolean,
+    paused: Boolean,
+    canPin: Boolean,
+    apps: List<Choosable>,
+    onChooseApps: () -> Unit,
+    onAllowUsage: () -> Unit,
+    onResume: () -> Unit,
+    onPin: (Choosable) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+        SettingsControlRow(
+            title = stringResource(R.string.banking_title),
+            supportingText = if (chosenCount == 0) {
+                stringResource(R.string.banking_text)
+            } else {
+                pluralStringResource(R.plurals.banking_chosen, chosenCount, chosenCount)
+            },
+        ) {
+            OutlinedButton(onClick = onChooseApps) { Text(stringResource(R.string.banking_choose)) }
+        }
+
+        if (chosenCount > 0) {
+            when {
+                !canChange -> Note(stringResource(R.string.banking_needs_elevated))
+                !usage -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Note(stringResource(R.string.banking_needs_usage))
+                    Button(onClick = onAllowUsage) { Text(stringResource(R.string.action_allow)) }
+                }
+                paused -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Note(stringResource(R.string.banking_paused_now))
+                    TextButton(onClick = onResume) {
+                        Text(stringResource(R.string.banking_turn_back_on))
+                    }
+                }
+            }
+            for (app in apps) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                    AppIcon(app.icon)
+                    Text(
+                        app.label,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
+                    )
+                    if (canPin) {
+                        TextButton(onClick = { onPin(app) }) {
+                            Text(stringResource(R.string.banking_shortcut))
+                        }
+                    }
+                }
+            }
+            if (canPin) Note(stringResource(R.string.banking_shortcut_hint))
+        }
     }
 }
 

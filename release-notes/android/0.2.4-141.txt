@@ -1,0 +1,8 @@
+Waypair Link for Android — 0.2.4 (141)
+
+- Banking Pause explanations use the full width; compact actions move below titles on narrow screens or with larger text.
+- Notification app/type selection now has a clear button.
+- Theme selection marks sit safely inside the preview cards.
+- Clipboard and message-cache descriptions follow the same readable layout.
+
+Keeps the current colorful icons and neutral theme. Pairing and permission behavior are unchanged.

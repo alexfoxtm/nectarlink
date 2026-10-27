@@ -904,27 +904,10 @@ fun SettingsScreen(
 
                     // 2. Clipboard history
                     val clipboardHistoryTitle = stringResource(R.string.data_clipboard_title)
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                        Column(Modifier.weight(1f).padding(end = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(clipboardHistoryTitle, style = MaterialTheme.typography.titleSmall)
-                            Text(
-                                stringResource(R.string.data_clipboard_subtitle),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            if (state.clipboardHistory.isNotEmpty()) {
-                                Text(
-                                    pluralStringResource(
-                                        R.plurals.data_clipboard_count,
-                                        state.clipboardHistory.size,
-                                        state.clipboardHistory.size,
-                                    ),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.padding(top = 2.dp),
-                                )
-                            }
-                        }
+                    SettingsControlRow(
+                        title = clipboardHistoryTitle,
+                        supportingText = stringResource(R.string.data_clipboard_subtitle),
+                    ) {
                         Switch(
                             checked = state.clipboardHistoryEnabled,
                             onCheckedChange = onSetClipboardHistoryEnabled,
@@ -933,6 +916,16 @@ fun SettingsScreen(
                         )
                     }
                     if (state.clipboardHistory.isNotEmpty()) {
+                        Text(
+                            pluralStringResource(
+                                R.plurals.data_clipboard_count,
+                                state.clipboardHistory.size,
+                                state.clipboardHistory.size,
+                            ),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(top = 2.dp),
+                        )
                         OutlinedButton(onClick = onClearClipboardHistory) {
                             Text(stringResource(R.string.data_action_clear))
                         }
@@ -963,15 +956,10 @@ fun SettingsScreen(
                     SettingRowDivider()
 
                     // 4. Message cache
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                        Column(Modifier.weight(1f).padding(end = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(stringResource(R.string.data_messages_title), style = MaterialTheme.typography.titleSmall)
-                            Text(
-                                stringResource(R.string.data_messages_subtitle),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                    SettingsControlRow(
+                        title = stringResource(R.string.data_messages_title),
+                        supportingText = stringResource(R.string.data_messages_subtitle),
+                    ) {
                         if (state.cachedMmsFiles > 0) {
                             OutlinedButton(onClick = onClearMessageCache) {
                                 Text(stringResource(R.string.data_action_clear))
@@ -1238,31 +1226,13 @@ private fun openDeveloperOptionsSettings(context: Context) {
 @Composable
 private fun NotificationAccess(granted: Boolean, onChooseFilter: () -> Unit) {
     val context = LocalContext.current
-    SettingsControlRow(
-        title = stringResource(R.string.notifications_title),
-        supportingText = stringResource(if (granted) R.string.notifications_on else R.string.notifications_off),
-    ) {
-        val open = { runCatching { context.startActivity(NotificationListener.settingsIntent(context)) }.let {} }
-        if (granted) {
-            OutlinedButton(onClick = open) { Text(stringResource(R.string.action_manage)) }
-        } else {
-            Button(onClick = open) { Text(stringResource(R.string.action_allow)) }
-        }
-    }
-    TextButton(onClick = onChooseFilter, modifier = Modifier.padding(top = 4.dp)) {
-        Text(stringResource(R.string.waypair_extras_filters_action))
-    }
-    if (!granted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-            Text(
-                stringResource(R.string.notifications_restricted),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f),
-            )
-            TextButton(onClick = { openAppInfoSettings(context) }) { Text(stringResource(R.string.action_app_info)) }
-        }
-    }
+    NotificationAccessContent(
+        granted = granted,
+        showRestricted = !granted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU,
+        onOpenSettings = { runCatching { context.startActivity(NotificationListener.settingsIntent(context)) }.let {} },
+        onChooseFilter = onChooseFilter,
+        onOpenAppInfo = { openAppInfoSettings(context) },
+    )
 }
 
 /** Companion Device Manager association for waking when a PC BLE beacon is nearby. */
@@ -1667,16 +1637,20 @@ internal fun AppearanceChoice(
                                 check()
                             }
                         } else {
-                            Box(Modifier.fillMaxWidth()) {
-                                Column(
-                                    Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 12.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                            Column(
+                                Modifier.fillMaxWidth().padding(12.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
                                 ) {
                                     choiceIcon()
-                                    Text(text, style = MaterialTheme.typography.labelLarge, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                                    check()
                                 }
-                                Box(Modifier.align(Alignment.TopEnd).padding(4.dp)) { check() }
+                                Text(text, style = MaterialTheme.typography.labelLarge, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                             }
                         }
                     }

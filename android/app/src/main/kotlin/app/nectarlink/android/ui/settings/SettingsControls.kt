@@ -5,6 +5,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -30,6 +31,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import app.nectarlink.android.R
 import androidx.compose.ui.semantics.Role
@@ -65,20 +67,33 @@ internal fun SettingsControlRow(
     supportingText: String,
     control: @Composable RowScope.() -> Unit,
 ) {
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(
-            Modifier.fillMaxWidth().heightIn(min = 48.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-            control()
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val stacked = maxWidth < 280.dp || LocalDensity.current.fontScale >= 1.3f
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (stacked) {
+                Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.fillMaxWidth())
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    control()
+                }
+            } else {
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                    control()
+                }
+            }
+            Text(
+                supportingText,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
-        Text(
-            supportingText,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 
@@ -264,6 +279,40 @@ internal fun SettingsControlAccessContent(
     }
     if (showRestricted) {
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                stringResource(R.string.notifications_restricted),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            SettingsOutlinedButton(onClick = onOpenAppInfo) { Text(stringResource(R.string.action_app_info)) }
+        }
+    }
+}
+
+/** Rendering only: notification access checks and Android intents stay in NotificationAccess. */
+@Composable
+internal fun NotificationAccessContent(
+    granted: Boolean,
+    showRestricted: Boolean,
+    onOpenSettings: () -> Unit,
+    onChooseFilter: () -> Unit,
+    onOpenAppInfo: () -> Unit,
+) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        SettingsControlRow(
+            title = stringResource(R.string.notifications_title),
+            supportingText = stringResource(if (granted) R.string.notifications_on else R.string.notifications_off),
+        ) {
+            if (granted) {
+                SettingsOutlinedButton(onClick = onOpenSettings) { Text(stringResource(R.string.action_manage)) }
+            } else {
+                SettingsButton(onClick = onOpenSettings) { Text(stringResource(R.string.action_allow)) }
+            }
+        }
+        SettingsFilledTonalButton(onClick = onChooseFilter) {
+            Text(stringResource(R.string.waypair_extras_filters_action))
+        }
+        if (showRestricted) {
             Text(
                 stringResource(R.string.notifications_restricted),
                 style = MaterialTheme.typography.bodyMedium,
