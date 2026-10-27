@@ -138,6 +138,10 @@ impl Decoder {
     /// Takes in new parameter sets, keeping the session if it can go on.
     fn reformat(&mut self) -> Result<(), String> {
         let Some((sps, pps)) = self.sets.sets() else {
+            // A changed SPS clears every PPS. The previous format still
+            // describes that old pair, so a later slice must not use it.
+            self.format = None;
+            self.session = None;
             return Ok(());
         };
         match vt::Format::h264(sps, &pps) {
@@ -297,6 +301,20 @@ mod tests {
         for px in bgrx.as_chunks::<4>().0 {
             assert!(px[0] <= 10 && px[1] <= 10 && px[2] >= 244 && px[3] == 255, "{px:?}");
         }
+
+        // The fixture's SPS with one profile bit flipped, and no PPS. The
+        // open format must be dropped; the following slice must not reach
+        // VideoToolbox on the parameters from the picture above.
+        let mut sets = annexb::ParameterSets::default();
+        annexb::access_unit(include_bytes!("testdata/red-32x32.annexb"), &mut sets).unwrap();
+        let mut changed_sps = sets.sets().unwrap().0.to_vec();
+        changed_sps[1] ^= 1;
+        let mut sps_only = vec![0, 0, 0, 1];
+        sps_only.extend_from_slice(&changed_sps);
+        assert!(decoder.decode(&sps_only, 1).unwrap().is_empty());
+        let error = decoder.decode(&[0, 0, 0, 1, 0x65, 0x88, 0x84], 2).unwrap_err();
+        assert_eq!(error, "an H.264 slice before its SPS and PPS");
+        assert!(!decoder.on_gpu());
     }
 
     #[test]
