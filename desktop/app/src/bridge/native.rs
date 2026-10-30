@@ -20,8 +20,9 @@ pub mod ffi {
         /// The stream ended: its views go blank. Any thread.
         fn video_clear(stream: &str);
 
-        /// Must run before `QGuiApplication` is created.
-        fn prepare_qt();
+        /// Must run before `QGuiApplication` is created. Qt's messages go to
+        /// `qml.log` in `log_dir`, beside the app's own log.
+        fn prepare_qt(log_dir: &str);
         /// Like `prepare_qt`, without the QML log file: for the installer
         /// and uninstaller, which mustn't create the app's data folder.
         fn prepare_qt_without_log();

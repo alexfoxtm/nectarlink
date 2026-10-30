@@ -95,7 +95,6 @@ void register_qml_app_engine(QQmlApplicationEngine &engine)
 
 #include <QtCore/QDateTime>
 #include <QtCore/QFile>
-#include <QtCore/QStandardPaths>
 #include <QtCore/QTextStream>
 
 #include <atomic>
@@ -129,12 +128,21 @@ void uiCheckMessageHandler(QtMsgType type, const QMessageLogContext &ctx, const 
     std::fflush(stderr);
 }
 
+// The app's logs folder (`<data>/logs`), so a test instance with its own
+// data folder doesn't write into the installed app's.
+QString &qmlLogDir()
+{
+    static QString dir;
+    return dir;
+}
+
 void qtLogMessageHandler(QtMsgType type, const QMessageLogContext &ctx, const QString &msg)
 {
     if (type == QtDebugMsg)
         return;
-    const QString dirPath = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)
-        + QStringLiteral("/Nectarlink/logs");
+    const QString &dirPath = qmlLogDir();
+    if (dirPath.isEmpty())
+        return;
     QDir().mkpath(dirPath);
     QFile file(dirPath + QStringLiteral("/qml.log"));
     if (file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
@@ -145,8 +153,9 @@ void qtLogMessageHandler(QtMsgType type, const QMessageLogContext &ctx, const QS
 }
 } // namespace
 
-void prepare_qt()
+void prepare_qt(rust::Str log_dir)
 {
+    qmlLogDir() = QString::fromUtf8(log_dir.data(), static_cast<qsizetype>(log_dir.size()));
     qInstallMessageHandler(qtLogMessageHandler);
     prepare_qt_without_log();
 }

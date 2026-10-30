@@ -13,7 +13,7 @@ class QGuiApplication;
 std::unique_ptr<QGuiApplication> create_qt_app();
 
 // Qt setup that must happen before QGuiApplication is created.
-void prepare_qt();
+void prepare_qt(rust::Str log_dir);
 void prepare_qt_without_log();
 void prepare_qt_for_ui_check();
 int32_t qml_problem_count();

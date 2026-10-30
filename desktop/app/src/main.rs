@@ -653,7 +653,7 @@ fn main() -> ExitCode {
     if options.ui_check {
         bridge::native::ffi::prepare_qt_for_ui_check();
     } else {
-        bridge::native::ffi::prepare_qt();
+        bridge::native::ffi::prepare_qt(&logging::logs_dir(&data_dir).to_string_lossy());
     }
     #[cfg(target_os = "linux")]
     let mut app = bridge::native::ffi::create_qt_app();
