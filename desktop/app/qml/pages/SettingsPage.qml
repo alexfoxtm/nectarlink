@@ -258,6 +258,13 @@ Item {
     }
 
     FolderDialog {
+        id: folderSyncPcPicker
+        title: qsTr("Sync into")
+        // file:///C:/x becomes C:/x on Windows, file:///home/x /home/x on Linux.
+        onAccepted: folderSyncSheet.pcFolder = decodeURIComponent(selectedFolder.toString().replace(/^file:\/\/(\/(?=[A-Za-z]:))?/, ""))
+    }
+
+    FolderDialog {
         id: recordingsFolderPicker
         title: qsTr("Save recordings in")
         onAccepted: Preferences.chooseRecordingsFolder(selectedFolder.toString())
@@ -2316,13 +2323,13 @@ Item {
                                     variant: "tonal"
                                     size: "sm"
                                     iconPath: Icons.plus
-                                    text: qsTr("Add DCIM → Pictures")
+                                    text: qsTr("Add folder")
                                     // For the phone selected in the app: a rule needs one.
                                     readonly property string phoneId: DeviceList.count > 0
                                         ? DeviceList.deviceIdAt(Math.min(Math.max(0, AppController.currentDevice), DeviceList.count - 1)) || ""
                                         : ""
                                     enabled: phoneId.length > 0
-                                    onClicked: Preferences.addFolderSyncRule(phoneId, "DCIM/Camera", Preferences.recordingsFolder.replace(/[\\\/][^\\\/]+[\\\/]?$/, "") + "/Pictures/Phone Camera", false)
+                                    onClicked: folderSyncSheet.openFor(phoneId)
                                 }
                             }
                         }
@@ -3406,6 +3413,141 @@ Item {
         visible: opacity > 0
         opacity: AppController.highlightTarget.startsWith("settings:") ? 1.0 : 0.0
         Behavior on opacity { NumberAnimation { duration: Theme.fadeFast } }
+    }
+
+    // Synced folders: which phone folder, where on this PC, and which way.
+    Sheet {
+        id: folderSyncSheet
+        property string phoneId
+        property string phoneFolder
+        property string pcFolder
+        property bool twoWay: false
+        // The PC folder follows the phone folder until the user picks one.
+        property bool pcChosen: false
+        readonly property var common: ["DCIM/Camera", "Pictures/Screenshots", "Download", "Documents", "Music", "Movies", "Recordings"]
+        readonly property string tidyPhoneFolder: phoneFolder.split(/[\/\\]/).map(p => p.trim()).filter(p => p.length > 0 && p !== ".").join("/")
+        readonly property bool phoneFolderOk: tidyPhoneFolder.length > 0 && tidyPhoneFolder.split("/").indexOf("..") < 0
+        cardWidth: 480
+
+        function openFor(id) {
+            phoneId = id
+            twoWay = false
+            pcChosen = false
+            choosePhoneFolder("DCIM/Camera")
+            open()
+        }
+        function choosePhoneFolder(folder) {
+            phoneFolder = folder
+            if (phoneFolderInput.text !== folder)
+                phoneFolderInput.text = folder
+            if (!pcChosen)
+                pcFolder = Preferences.suggestedSyncFolder(folder)
+        }
+
+        Column {
+            width: parent.width
+            spacing: 12
+            Txt { width: parent.width; text: qsTr("Sync a folder"); role: "headline"; wrapMode: Text.WordWrap }
+            Txt {
+                width: parent.width
+                wrapMode: Text.WordWrap
+                role: "body"
+                muted: true
+                text: qsTr("The phone needs to let NectarLink read this folder: All files access, or this folder under Selected folders, in NectarLink's settings on the phone.")
+            }
+
+            Txt { text: qsTr("Folder on the phone"); role: "label" }
+            Flow {
+                width: parent.width
+                spacing: 6
+                Repeater {
+                    model: folderSyncSheet.common
+                    delegate: Chip {
+                        required property string modelData
+                        text: modelData
+                        interactive: true
+                        selected: folderSyncSheet.tidyPhoneFolder === modelData
+                        onClicked: folderSyncSheet.choosePhoneFolder(modelData)
+                    }
+                }
+            }
+            Rectangle {
+                width: parent.width
+                height: 40
+                radius: Theme.radiusMd
+                color: Theme.surfaceContainerHighest
+                border.width: phoneFolderInput.activeFocus ? 2 : 1
+                border.color: phoneFolderInput.activeFocus ? Theme.primary : Theme.outlineVariant
+                TextInput {
+                    id: phoneFolderInput
+                    anchors.fill: parent
+                    anchors.margins: 10
+                    color: Theme.surfaceContent
+                    font.pixelSize: 14
+                    selectByMouse: true
+                    clip: true
+                    Accessible.role: Accessible.EditableText
+                    Accessible.name: qsTr("Folder on the phone")
+                    onTextEdited: folderSyncSheet.choosePhoneFolder(text)
+                }
+            }
+
+            Txt { text: qsTr("Folder on this PC"); role: "label" }
+            Row {
+                width: parent.width
+                spacing: 8
+                Txt {
+                    width: parent.width - choosePcFolder.width - 8
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: folderSyncSheet.pcFolder
+                    elide: Text.ElideMiddle
+                    role: "body"
+                }
+                Button {
+                    id: choosePcFolder
+                    variant: "text"
+                    size: "sm"
+                    text: qsTr("Choose…")
+                    onClicked: {
+                        folderSyncSheet.pcChosen = true
+                        folderSyncPcPicker.open()
+                    }
+                }
+            }
+
+            Segmented {
+                options: [
+                    { value: "one", label: qsTr("Phone to PC") },
+                    { value: "two", label: qsTr("Both ways") }
+                ]
+                value: folderSyncSheet.twoWay ? "two" : "one"
+                onPicked: (v) => folderSyncSheet.twoWay = v === "two"
+            }
+            Txt {
+                width: parent.width
+                wrapMode: Text.WordWrap
+                role: "body"
+                muted: true
+                text: folderSyncSheet.twoWay
+                    ? qsTr("Changes on either side are copied to the other. When a file changed on both, both versions are kept.")
+                    : qsTr("New and changed files on the phone are copied to the PC. Nothing on the PC goes to the phone.")
+            }
+
+            Row {
+                anchors.right: parent.right
+                spacing: 10
+                Button { variant: "text"; text: qsTr("Cancel"); onClicked: folderSyncSheet.close() }
+                Button {
+                    text: qsTr("Add")
+                    enabled: folderSyncSheet.phoneFolderOk && folderSyncSheet.pcFolder.length > 0
+                    onClicked: {
+                        Preferences.addFolderSyncRule(folderSyncSheet.phoneId, folderSyncSheet.tidyPhoneFolder,
+                                                      folderSyncSheet.pcFolder, folderSyncSheet.twoWay)
+                        folderSyncSheet.close()
+                    }
+                }
+            }
+        }
     }
 
     Sheet {

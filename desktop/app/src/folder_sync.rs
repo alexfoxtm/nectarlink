@@ -52,6 +52,34 @@ type RuleBaselineMap = HashMap<String, HashMap<String, (u64, i64)>>;
 
 static LAST_SYNCED: OnceLock<Mutex<RuleBaselineMap>> = OnceLock::new();
 
+/// A phone folder as typed or picked (`DCIM/Camera`, `/Download/`,
+/// `Documents\Notes`), relative to the phone's storage and tidied; `None`
+/// for an empty path or one that climbs out with `..`.
+pub fn phone_folder_path(raw: &str) -> Option<String> {
+    let parts: Vec<&str> =
+        raw.split(['/', '\\']).map(str::trim).filter(|p| !p.is_empty() && *p != ".").collect();
+    (!parts.is_empty() && !parts.contains(&"..")).then(|| parts.join("/"))
+}
+
+/// Where `phone_folder` could go on this PC: photos and screenshots in
+/// Pictures, music in Music, videos in Videos, anything else in Documents,
+/// each in a "Phone <name>" folder.
+pub fn suggested_pc_folder(phone_folder: &str) -> Option<PathBuf> {
+    let path = phone_folder_path(phone_folder)?;
+    let lower = path.to_ascii_lowercase();
+    let name = path.rsplit('/').next().unwrap_or(&path);
+    let base = if lower.starts_with("dcim") || lower.starts_with("pictures") {
+        dirs::picture_dir()
+    } else if lower.starts_with("music") {
+        dirs::audio_dir()
+    } else if lower.starts_with("movies") {
+        dirs::video_dir()
+    } else {
+        dirs::document_dir()
+    }?;
+    Some(base.join(format!("Phone {name}")))
+}
+
 /// Drops what a removed rule last synced.
 pub fn forget_rule(rule_id: &str) {
     baselines().lock().unwrap_or_else(|e| e.into_inner()).remove(rule_id);
@@ -715,5 +743,30 @@ mod tests {
         assert!(res.is_err());
         assert!(!bad_dest.exists());
         assert!(!temp_part_path(&bad_dest).unwrap().exists());
+    }
+
+    #[test]
+    fn phone_folders_are_tidied_and_kept_inside_storage() {
+        assert_eq!(phone_folder_path("DCIM/Camera").as_deref(), Some("DCIM/Camera"));
+        assert_eq!(phone_folder_path(" /Download/ ").as_deref(), Some("Download"));
+        assert_eq!(phone_folder_path(r"Documents\Notes\.").as_deref(), Some("Documents/Notes"));
+        assert_eq!(
+            phone_folder_path("WhatsApp/Media/ WhatsApp Images ").as_deref(),
+            Some("WhatsApp/Media/WhatsApp Images")
+        );
+        assert_eq!(phone_folder_path(""), None);
+        assert_eq!(phone_folder_path(" / "), None);
+        assert_eq!(phone_folder_path("Download/../../data"), None);
+    }
+
+    #[test]
+    fn suggested_folders_follow_the_kind_of_folder() {
+        let Some(pictures) = dirs::picture_dir() else { return };
+        assert_eq!(suggested_pc_folder("DCIM/Camera"), Some(pictures.join("Phone Camera")));
+        assert_eq!(suggested_pc_folder("Pictures/Screenshots"), Some(pictures.join("Phone Screenshots")));
+        if let Some(documents) = dirs::document_dir() {
+            assert_eq!(suggested_pc_folder("Download"), Some(documents.join("Phone Download")));
+        }
+        assert_eq!(suggested_pc_folder(".."), None);
     }
 }

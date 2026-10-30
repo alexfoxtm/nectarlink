@@ -200,6 +200,11 @@ pub mod qobject {
             pc_folder: &QString,
             two_way: bool,
         );
+        /// Where a phone folder could go on this PC (the user's Pictures,
+        /// Music, Videos or Documents), for the Add folder sheet.
+        #[qinvokable]
+        #[cxx_name = "suggestedSyncFolder"]
+        fn suggested_sync_folder(self: &Preferences, phone_folder: &QString) -> QString;
         /// Removes a folder sync rule by ID.
         #[qinvokable]
         fn remove_folder_sync_rule(self: Pin<&mut Preferences>, rule_id: &QString);
@@ -904,7 +909,9 @@ impl qobject::Preferences {
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| String::from(pc_folder));
         let pc_trimmed = raw_pc.trim();
-        let phone_trimmed = String::from(phone_folder).trim().to_owned();
+        let Some(phone_trimmed) = crate::folder_sync::phone_folder_path(&String::from(phone_folder)) else {
+            return;
+        };
         let phone_id = String::from(device_id).trim().to_owned();
         if pc_trimmed.is_empty() || phone_trimmed.is_empty() || phone_id.is_empty() {
             return;
@@ -930,6 +937,11 @@ impl qobject::Preferences {
         crate::settings::set_folder_sync_rules(rules);
         self.as_mut().set_folder_sync_rules_json(QString::from(&json));
         self.save();
+    }
+
+    pub fn suggested_sync_folder(&self, phone_folder: &QString) -> QString {
+        let path = crate::folder_sync::suggested_pc_folder(&String::from(phone_folder));
+        QString::from(&path.map(|p| p.to_string_lossy().into_owned()).unwrap_or_default())
     }
 
     pub fn remove_folder_sync_rule(mut self: Pin<&mut Self>, rule_id: &QString) {

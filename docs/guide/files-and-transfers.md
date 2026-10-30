@@ -86,7 +86,7 @@ You can browse your phone's internal storage or selected folders directly inside
 To keep a phone folder (such as `DCIM/Camera` or a notes directory) synchronized with a folder on your PC:
 
 1. On your PC, open **Settings › Files & Sync** and scroll to the **Synced folders** card.
-2. Click **Add DCIM to Pictures** (or configure a custom phone folder and PC folder pair) and choose between:
+2. Click **Add folder**, pick the folder on the phone (DCIM/Camera, Screenshots, Download and others are one tap away, or type any path such as `WhatsApp/Media`), choose where it goes on the PC, and choose between:
    - **One-way (phone to PC)**: Mirrors new and updated files from the phone folder (and subfolders up to 3 levels deep) into the PC folder without pushing PC changes back to the phone.
    - **Two-way sync**: Synchronizes additions and updates in both directions. If the same file is modified on both devices between syncs, NectarLink preserves both versions by saving a conflict copy rather than overwriting your work.
 3. Every synced file streams to a temporary `.nectarlink.part` file and verifies its byte length and **BLAKE3** hash before replacing the destination file. Click **Sync now** to run all enabled rules immediately, or toggle individual rules on and off.
