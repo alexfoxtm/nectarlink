@@ -190,6 +190,27 @@ pub(crate) fn now_unix_ms() -> i64 {
         .unwrap_or_default()
 }
 
+/// Adds a made-up paired phone to the store in `data_dir`, so the desktop
+/// app's UI check (`--ui-check`, in a throwaway data folder) also loads the
+/// pages that only show with a phone. It never connects. Not for a real data
+/// folder.
+#[doc(hidden)]
+pub fn add_ui_check_phone(data_dir: &std::path::Path) -> Result<DeviceId> {
+    let id = device_id(&iroh::SecretKey::from_bytes(&[7; 32]).public());
+    let info = DeviceInfo {
+        name: "UI check phone".into(),
+        kind: DeviceKind::Phone,
+        os: "android".into(),
+        os_ver: "16".into(),
+        model: Some("Pixel".into()),
+        accent: None,
+        screen: None,
+        install_id: None,
+    };
+    store::Store::open(data_dir)?.upsert_peer(&id, &info, now_unix())?;
+    Ok(id)
+}
+
 /// On Android: lets the network code read the phone's own DNS servers
 /// (through Java), instead of falling back to public ones that some
 /// networks block. Call once, before any [`Node`] starts.

@@ -518,6 +518,14 @@ fn main() -> ExitCode {
     }
     logging::init(&data_dir);
     install_panic_logging();
+    // Home and the other phone pages only load with a paired phone, and a
+    // page that fails to load must fail the check.
+    if options.ui_check
+        && let Err(e) = nectarlink_core::add_ui_check_phone(&data_dir)
+    {
+        eprintln!("nectarlink: --ui-check: can't add the pretend phone: {e}");
+        return ExitCode::FAILURE;
+    }
     if options.widget_provider {
         return win::widget::run_provider(&data_dir);
     }

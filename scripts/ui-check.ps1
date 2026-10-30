@@ -12,6 +12,11 @@
   component that didn't load. The QML tests can't catch that for the app's
   windows, which need the Rust singletons and NativeWindow.
 
+  It runs twice: once on a fresh folder (the first-run walkthrough), and
+  once with the walkthrough done, so Home opens. Both times the app adds a
+  pretend paired phone to the folder, so the pages that only show with a
+  phone load too.
+
   -Exe defaults to the staged package (scripts\package.ps1), which has its
   Qt libraries next to it; for target\release, pass -Exe and have Qt's bin
   folder on PATH.
@@ -28,19 +33,25 @@ $repo = Split-Path -Parent $PSScriptRoot
 if (-not $Exe) { $Exe = Join-Path $repo 'target\package\Nectarlink\nectarlink-desktop.exe' }
 if (-not (Test-Path $Exe)) { throw "$Exe not found; run scripts\package.ps1 -StageOnly first, or pass -Exe" }
 
-$data = Join-Path $repo 'target\ui-check'
-if (Test-Path $data) { Remove-Item -Recurse -Force $data }
-New-Item -ItemType Directory -Force $data | Out-Null
-$stderr = Join-Path $data 'stderr.txt'
+foreach ($pass in @('walkthrough', 'home')) {
+    Write-Host "UI check: $pass"
+    $data = Join-Path $repo "target\ui-check\$pass"
+    if (Test-Path $data) { Remove-Item -Recurse -Force $data }
+    New-Item -ItemType Directory -Force $data | Out-Null
+    if ($pass -eq 'home') {
+        [System.IO.File]::WriteAllText((Join-Path $data 'desktop-settings.json'), '{ "walkthroughCompleted": true }')
+    }
+    $stderr = Join-Path $data 'stderr.txt'
 
-$env:NECTARLINK_NO_ADB = '1'
-$app = Start-Process $Exe -ArgumentList '--ui-check', '--data-dir', "`"$data`"" `
-    -RedirectStandardError $stderr -PassThru -NoNewWindow
-# Without the handle, ExitCode stays empty after the process exits.
-$null = $app.Handle
-if (-not $app.WaitForExit(120000)) {
-    $app.Kill()
-    throw "the app didn't quit within 2 minutes"
+    $env:NECTARLINK_NO_ADB = '1'
+    $app = Start-Process $Exe -ArgumentList '--ui-check', '--data-dir', "`"$data`"" `
+        -RedirectStandardError $stderr -PassThru -NoNewWindow
+    # Without the handle, ExitCode stays empty after the process exits.
+    $null = $app.Handle
+    if (-not $app.WaitForExit(120000)) {
+        $app.Kill()
+        throw "the app didn't quit within 2 minutes"
+    }
+    Get-Content $stderr | Write-Host
+    if ($app.ExitCode -ne 0) { throw "UI check ($pass) failed (exit code $($app.ExitCode))" }
 }
-Get-Content $stderr | Write-Host
-if ($app.ExitCode -ne 0) { throw "UI check failed (exit code $($app.ExitCode))" }
