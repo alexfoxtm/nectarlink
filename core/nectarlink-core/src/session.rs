@@ -458,7 +458,6 @@ fn is_background_rpc(t: &str) -> bool {
             | types::NOTIFY_ACTION
             | types::PC_POWER
             | types::LINK_OPEN
-            | types::STORAGE_LIST
             | types::PHOTOS_ALBUMS
             | types::PHOTOS_LIST
             | types::PHOTOS_THUMBS
