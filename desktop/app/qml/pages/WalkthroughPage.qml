@@ -310,6 +310,7 @@ FocusScope {
 
                         Accessible.role: Accessible.Button
                         Accessible.name: "Go to step " + (index + 1) + ": " + walkthrough.stepTitles[index]
+                        Accessible.onPressAction: walkthrough.step = index
                         MouseArea {
                             anchors.fill: parent
                             anchors.topMargin: -6
