@@ -8,7 +8,7 @@
 use crate::i18n::tr;
 use std::{
     collections::{HashMap, HashSet},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
         Mutex,
         atomic::{AtomicBool, Ordering},
@@ -16,7 +16,8 @@ use std::{
 };
 
 use nectarlink_core::{
-    CallCommand, CallLogEntry, CallState, Contact, DeviceId, Error, FeatureState, LinkState, NodeEvent,
+    CallCommand, CallLogEntry, CallSims, CallState, Contact, DeviceId, Error, FeatureState, LinkState,
+    NodeEvent,
 };
 use serde_json::{Value, json};
 
@@ -473,6 +474,8 @@ struct PageState {
     contacts_status: Status,
     contacts: Vec<Contact>,
     dialing: bool,
+    /// The phone's SIMs, to pick which one calls (#112).
+    sims: CallSims,
     /// Caller photos saved, by call log entry ID.
     log_photos: HashMap<String, PathBuf>,
     /// Contact photos saved, by contact ID.
@@ -517,6 +520,10 @@ pub struct View {
     pub contacts_status: Status,
     pub contacts: Value,
     pub dialing: bool,
+    /// `[{ id, label }]` when the phone has more than one SIM to call with.
+    pub sims: Value,
+    /// The SIM calls go out on (an id from `sims`), or `""`.
+    pub sim: String,
 }
 
 pub fn view() -> View {
@@ -565,8 +572,92 @@ pub fn view() -> View {
                 s.contacts.iter().map(|c| contact_json(c, s.contact_photos.get(&c.id))).collect(),
             ),
             dialing: s.dialing,
+            sims: if s.sims.sims.len() > 1 {
+                Value::Array(
+                    s.sims.sims.iter().map(|sim| json!({ "id": sim.id, "label": sim.label })).collect(),
+                )
+            } else {
+                Value::Array(Vec::new())
+            },
+            sim: s.device.and_then(|d| sim_from(&s.sims, chosen_sim(d).as_deref())).unwrap_or_default(),
         }
     })
+}
+
+// ---- SIM choice (#112) ----
+
+/// The SIM picked for each phone, kept in `call-sims.json`.
+static CHOSEN_SIMS: Mutex<Option<HashMap<DeviceId, String>>> = Mutex::new(None);
+
+fn sims_file() -> PathBuf {
+    core_host::host().data_dir.join("call-sims.json")
+}
+
+fn load_chosen(path: &Path) -> HashMap<DeviceId, String> {
+    std::fs::read(path)
+        .ok()
+        .and_then(|b| serde_json::from_slice::<HashMap<String, String>>(&b).ok())
+        .map(|m| m.into_iter().filter_map(|(k, v)| Some((k.parse().ok()?, v))).collect())
+        .unwrap_or_default()
+}
+
+fn save_chosen(path: &Path, chosen: &HashMap<DeviceId, String>) -> std::io::Result<()> {
+    let plain: HashMap<String, &String> = chosen.iter().map(|(k, v)| (k.to_string(), v)).collect();
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, serde_json::to_vec(&plain).map_err(std::io::Error::other)?)?;
+    std::fs::rename(&tmp, path)
+}
+
+fn chosen_sim(device: DeviceId) -> Option<String> {
+    let mut guard = CHOSEN_SIMS.lock().unwrap_or_else(|e| e.into_inner());
+    guard.get_or_insert_with(|| load_chosen(&sims_file())).get(&device).cloned()
+}
+
+/// The SIM to call on with `sims`: the one picked if it's still there, else
+/// the phone's own default, else the first when there's a choice to make.
+/// `None` when the phone has one SIM or doesn't list them.
+fn sim_from(sims: &CallSims, chosen: Option<&str>) -> Option<String> {
+    if sims.sims.len() < 2 {
+        return None;
+    }
+    chosen
+        .filter(|c| sims.sims.iter().any(|s| s.id == *c))
+        .or(sims.default.as_deref())
+        .or(sims.sims.first().map(|s| s.id.as_str()))
+        .map(str::to_owned)
+}
+
+/// Calls from this PC to `device` go out on `sim` from now on.
+pub fn choose_sim(device: DeviceId, sim: String) {
+    {
+        let mut guard = CHOSEN_SIMS.lock().unwrap_or_else(|e| e.into_inner());
+        let chosen = guard.get_or_insert_with(|| load_chosen(&sims_file()));
+        chosen.insert(device, sim);
+        if let Err(e) = save_chosen(&sims_file(), chosen) {
+            tracing::warn!(error = %e, "can't save the SIM choice");
+        }
+    }
+    page_changed();
+}
+
+fn load_sims() {
+    let Some((device, generation)) = page_state(|s| s.device.map(|d| (d, s.generation))) else { return };
+    let Some(node) = core_host::node() else { return };
+    core_host::spawn(async move {
+        let sims = match node.call_sims(device).await {
+            Ok(sims) => sims,
+            Err(e) => {
+                tracing::debug!(error = %e, "can't list the phone's SIMs");
+                return;
+            }
+        };
+        page_state(|s| {
+            if s.generation == generation {
+                s.sims = sims;
+            }
+        });
+        page_changed();
+    });
 }
 
 fn log_entry_json(e: &CallLogEntry, name: &str, photo: String) -> Value {
@@ -616,6 +707,7 @@ pub fn open_device(device: DeviceId) {
     }
     load_call_log(None);
     load_contacts();
+    load_sims();
 }
 
 /// Loads `device`'s contacts in the background if not already loaded for it
@@ -639,6 +731,7 @@ pub fn reload() {
     refresh_hfp_cache_async(dev);
     load_call_log(None);
     load_contacts();
+    load_sims();
 }
 
 pub fn load_older() {
@@ -826,11 +919,20 @@ pub fn dial(device: DeviceId, number: String) {
     if number.is_empty() {
         return;
     }
-    page_state(|s| s.dialing = true);
+    // The SIM picked on the Calls page, also for a call started elsewhere
+    // (Messages, the command palette).
+    let sim = page_state(|s| {
+        s.dialing = true;
+        if s.device == Some(device) {
+            sim_from(&s.sims, chosen_sim(device).as_deref())
+        } else {
+            chosen_sim(device)
+        }
+    });
     page_changed();
     let Some(node) = core_host::node() else { return };
     core_host::spawn(async move {
-        let result = node.call_dial(device, number).await;
+        let result = node.call_dial(device, number, sim).await;
         page_state(|s| s.dialing = false);
         page_changed();
         if let Err(e) = result {
@@ -1052,5 +1154,32 @@ mod tests {
 
         assert_eq!(dial_problem(&Error::Denied), "Calls are turned off for this phone.");
         assert_eq!(dial_problem(&Error::Offline), "The phone isn't connected.");
+    }
+
+    #[test]
+    fn the_sim_is_the_picked_one_then_the_phones_default_then_the_first() {
+        use nectarlink_core::CallSim;
+        let sim = |id: &str| CallSim { id: id.into(), label: format!("SIM {id}") };
+        let two = CallSims { sims: vec![sim("1"), sim("2")], default: None };
+        assert_eq!(sim_from(&two, None).as_deref(), Some("1"));
+        assert_eq!(sim_from(&two, Some("2")).as_deref(), Some("2"));
+        // A SIM taken out since: the next best.
+        assert_eq!(sim_from(&two, Some("9")).as_deref(), Some("1"));
+        let with_default = CallSims { default: Some("2".into()), ..two.clone() };
+        assert_eq!(sim_from(&with_default, None).as_deref(), Some("2"));
+        assert_eq!(sim_from(&with_default, Some("1")).as_deref(), Some("1"));
+        // One SIM, or none listed: nothing to pick, the phone decides.
+        assert_eq!(sim_from(&CallSims { sims: vec![sim("1")], default: None }, Some("1")), None);
+        assert_eq!(sim_from(&CallSims::default(), None), None);
+    }
+
+    #[test]
+    fn sim_choices_round_trip_through_their_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("call-sims.json");
+        let phone = DeviceId([3; 32]);
+        save_chosen(&path, &HashMap::from([(phone, "2".to_owned())])).unwrap();
+        assert_eq!(load_chosen(&path).get(&phone).map(String::as_str), Some("2"));
+        assert!(load_chosen(&dir.path().join("missing.json")).is_empty());
     }
 }

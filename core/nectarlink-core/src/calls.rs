@@ -11,7 +11,7 @@ use std::{
 use nectarlink_protocol::{
     Envelope, ErrorCode,
     messages::{
-        CallAction, CallDial, CallLog, CallLogChanged, CallLogEntry, CallLogGet, CallState, calls,
+        CallAction, CallDial, CallLog, CallLogChanged, CallLogEntry, CallLogGet, CallSims, CallState, calls,
         is_dtmf_digit, types,
     },
 };
@@ -210,11 +210,18 @@ pub(crate) async fn log(
     Ok(entries)
 }
 
-pub(crate) async fn dial(shared: &Shared, session: &Session, number: String) -> Result<()> {
+pub(crate) async fn dial(
+    shared: &Shared,
+    session: &Session,
+    number: String,
+    sim: Option<String>,
+) -> Result<()> {
     if !shared.toggle_on(&session.peer, TOGGLE) {
         return Err(Error::Denied);
     }
-    let dial = CallDial { number: number.trim().to_owned() };
+    // A phone from before `call.sims` dials on its own default either way.
+    let sim = sim.filter(|_| peer_offers(shared, session, calls::SIMS));
+    let dial = CallDial { number: number.trim().to_owned(), sim };
     if !dial.is_valid() {
         return Err(if dial.number.len() > calls::MAX_TEXT_BYTES {
             Error::TooLarge
@@ -225,6 +232,30 @@ pub(crate) async fn dial(shared: &Shared, session: &Session, number: String) -> 
     let env = Envelope::new(types::CALL_DIAL, &dial)?;
     session.request(env, crate::session::REQUEST_TIMEOUT).await?.expect(types::OK)?;
     Ok(())
+}
+
+/// Whether the device on `session` said it offers `cap` (in its last hello
+/// or capability update).
+fn peer_offers(shared: &Shared, session: &Session, cap: &str) -> bool {
+    shared.store.get_peer(&session.peer).ok().flatten().is_some_and(|record| record.caps.contains(cap))
+}
+
+/// The phone's SIMs, to pick one for [`dial`]; none from a phone that
+/// doesn't list them.
+pub(crate) async fn sims(shared: &Shared, session: &Session) -> Result<CallSims> {
+    if !shared.toggle_on(&session.peer, TOGGLE) {
+        return Err(Error::Denied);
+    }
+    if !peer_offers(shared, session, calls::SIMS) {
+        return Ok(CallSims::default());
+    }
+    let env = Envelope::new(types::CALL_SIMS, &CallSims::default())?;
+    let sims: CallSims =
+        session.request(env, crate::session::REQUEST_TIMEOUT).await?.expect_body(types::CALL_SIMS)?;
+    if !sims.is_valid() {
+        return Err(Error::Protocol("invalid SIM list".into()));
+    }
+    Ok(sims)
 }
 
 /// Handles `call.*`. Returns false for other types.
@@ -280,7 +311,7 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
             session.send(reply.reply_to(env.id)).await?;
             Ok(true)
         }
-        types::CALL_LOG | types::CALL_DIAL => {
+        types::CALL_LOG | types::CALL_DIAL | types::CALL_SIMS => {
             // Reading the call log or starting a call takes a moment: run off the session's loop,
             // while keeping `call.state` and `call.action` in order on the stream.
             let (shared, session, env) = (shared.clone(), session.clone(), env.clone());
@@ -304,6 +335,21 @@ async fn answer_log_or_dial(shared: &Arc<Shared>, session: &Session, env: &Envel
     let offers = |cap: &str| shared.we_offer(cap);
     let platform = shared.platform.clone();
     let result = match env.t.as_str() {
+        types::CALL_SIMS => {
+            if !offers(calls::SIMS) {
+                return Ok(Envelope::error(ErrorCode::Unsupported, "this phone doesn't list its SIMs"));
+            }
+            tokio::task::spawn_blocking(move || {
+                let mut sims = platform.call_sims()?;
+                sims.sims.truncate(calls::MAX_SIMS);
+                if !sims.is_valid() {
+                    return Err("the phone's SIM list didn't check out".to_owned());
+                }
+                Envelope::new(types::CALL_SIMS, &sims).map_err(|e| e.to_string())
+            })
+            .await
+            .unwrap_or_else(|e| Err(e.to_string()))
+        }
         types::CALL_LOG => {
             if !offers(calls::LOG) {
                 return Ok(Envelope::error(ErrorCode::Unsupported, "this phone doesn't share recent calls"));
@@ -331,8 +377,13 @@ async fn answer_log_or_dial(shared: &Arc<Shared>, session: &Session, env: &Envel
                 return Ok(Envelope::error(ErrorCode::BadMessage, "invalid number"));
             }
             let number = dial.number.trim().to_owned();
+            let sim = dial.sim.filter(|_| offers(calls::SIMS));
             tokio::task::spawn_blocking(move || {
-                platform.call_dial(&number).map(|()| Envelope::empty(types::OK))
+                match sim.as_deref() {
+                    Some(sim) => platform.call_dial_on(&number, sim),
+                    None => platform.call_dial(&number),
+                }
+                .map(|()| Envelope::empty(types::OK))
             })
             .await
             .unwrap_or_else(|e| Err(e.to_string()))

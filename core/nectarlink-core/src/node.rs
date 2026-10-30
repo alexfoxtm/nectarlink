@@ -2991,10 +2991,18 @@ impl Node {
     }
 
     /// Asks a paired phone to place a call to `number` (or open the dialer
-    /// with it filled in).
-    pub async fn call_dial(&self, peer: DeviceId, number: String) -> Result<()> {
+    /// with it filled in), on the SIM `sim` (an id from [`call_sims`](Self::call_sims))
+    /// when given.
+    pub async fn call_dial(&self, peer: DeviceId, number: String, sim: Option<String>) -> Result<()> {
         let session = self.connected(&peer)?;
-        crate::calls::dial(&self.shared, &session, number).await
+        crate::calls::dial(&self.shared, &session, number, sim).await
+    }
+
+    /// A paired phone's SIMs, to choose which one [`call_dial`](Self::call_dial)
+    /// uses; empty for a phone that doesn't list them.
+    pub async fn call_sims(&self, peer: DeviceId) -> Result<crate::CallSims> {
+        let session = self.connected(&peer)?;
+        crate::calls::sims(&self.shared, &session).await
     }
 
     // ---- Contacts (docs/protocol/contacts.md) ----

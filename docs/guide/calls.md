@@ -39,6 +39,7 @@ While a call is active on your phone, the call bar on your PC shows the live cal
 1. Open **Calls** in the left navigation bar on your PC.
 2. You can start a call in three ways:
    - **From the Keypad**: Type or paste a phone number into the dialer keypad (or press number keys on your keyboard) and click **Call**.
+   - **With two SIMs**: Pick the SIM under **Call with** next to the keypad. The PC remembers it for that phone and uses it for every call it starts, so the phone doesn't stop to ask which SIM.
    - **From Contacts**: Search your synced phone contacts (favorites appear at the top) and click the call button next to any number.
    - **From Recent Calls**: Click any entry in your recent call history to call back or open a text conversation with that person.
 3. Your phone places the cellular call immediately.

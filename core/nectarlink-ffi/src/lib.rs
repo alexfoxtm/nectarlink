@@ -1305,6 +1305,18 @@ macro_rules! private_debug {
 }
 private_debug!(SmsThread, SmsMessage, SmsPartData, SmsAttachment, CallLogEntry, ContactNumber, Contact);
 
+/// One SIM (or calling app) this phone places calls with
+/// (docs/protocol/calls.md, `call.sims`).
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct CallSim {
+    /// Stays the same while the SIM is in: what `call_dial_on` gets back.
+    pub id: String,
+    /// What Android shows for it, such as "SIM 1 · Airtel".
+    pub label: String,
+    /// Whether the phone calls with it without asking.
+    pub is_default: bool,
+}
+
 /// One call in this phone's call history (docs/protocol/calls.md).
 #[derive(Clone, PartialEq, Eq, uniffi::Record)]
 pub struct CallLogEntry {
@@ -2672,6 +2684,10 @@ pub trait Platform: Send + Sync {
     /// A PC asked to call `number` (or open the dialer with it filled in).
     /// False if the phone couldn't.
     fn call_dial(&self, number: String) -> bool;
+    /// A PC asked which SIMs this phone calls with.
+    fn call_sims(&self) -> Vec<CallSim>;
+    /// Like `call_dial`, on the SIM `sim` (an id from `call_sims`).
+    fn call_dial_on(&self, number: String, sim: String) -> bool;
     /// A PC asked for contacts matching `query` (or all with phone numbers
     /// when null), favorites first then alphabetical, skipping `offset`.
     fn contacts(&self, query: Option<String>, offset: u32, limit: u32) -> Vec<Contact>;
@@ -3056,6 +3072,21 @@ impl core::Platform for PlatformAdapter {
     }
     fn call_dial(&self, number: &str) -> Result<(), String> {
         if self.0.call_dial(number.to_owned()) { Ok(()) } else { Err("the phone couldn't".into()) }
+    }
+    fn call_sims(&self) -> Result<core::CallSims, String> {
+        let sims = self.0.call_sims();
+        let default = sims.iter().find(|s| s.is_default).map(|s| s.id.clone());
+        Ok(core::CallSims {
+            sims: sims.into_iter().map(|s| core::CallSim { id: s.id, label: s.label }).collect(),
+            default,
+        })
+    }
+    fn call_dial_on(&self, number: &str, sim: &str) -> Result<(), String> {
+        if self.0.call_dial_on(number.to_owned(), sim.to_owned()) {
+            Ok(())
+        } else {
+            Err("the phone couldn't".into())
+        }
     }
     fn contacts(&self, query: Option<&str>, offset: u32, limit: u32) -> Result<Vec<core::Contact>, String> {
         Ok(self

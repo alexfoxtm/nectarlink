@@ -19,7 +19,10 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.CallLog
 import android.provider.ContactsContract
+import android.telecom.PhoneAccount
+import android.telecom.PhoneAccountHandle
 import android.telecom.TelecomManager
+import android.telephony.SubscriptionManager
 import android.telephony.TelephonyManager
 import android.util.Log
 import androidx.core.content.ContextCompat
@@ -29,6 +32,7 @@ import app.nectarlink.core.Call
 import app.nectarlink.core.CallCommand
 import app.nectarlink.core.CallLogEntry
 import app.nectarlink.core.CallPhase
+import app.nectarlink.core.CallSim
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.Executors
 
@@ -413,7 +417,64 @@ internal class PhoneCalls(
      * number pre-filled (`Intent.ACTION_DIAL`).
      */
     @SuppressLint("MissingPermission")
-    fun dial(number: String): Boolean {
+    fun dial(number: String): Boolean = dial(number, null)
+
+    /**
+     * The SIMs (and calling apps) this phone calls with (#112), so a PC can
+     * pick one rather than leave Android asking on the phone. Each is named
+     * by its slot and carrier where Android says ("SIM 1 · Airtel").
+     */
+    @SuppressLint("MissingPermission")
+    fun sims(): List<CallSim> {
+        if (!canListSims(context)) return emptyList()
+        return runCatching {
+            val tm = context.getSystemService(TelecomManager::class.java) ?: return emptyList()
+            val default = tm.getDefaultOutgoingPhoneAccount(PhoneAccount.SCHEME_TEL)
+            tm.callCapablePhoneAccounts.mapNotNull { handle ->
+                val account = tm.getPhoneAccount(handle) ?: return@mapNotNull null
+                CallSim(id = handle.id, label = simLabel(handle, account), isDefault = handle == default)
+            }
+        }.getOrElse {
+            Log.w(TAG, "can't list the SIMs", it)
+            emptyList()
+        }
+    }
+
+    /** Places a call to [number] on the SIM [sim] (an id from [sims]), or on the default when it's gone. */
+    @SuppressLint("MissingPermission")
+    fun dialOn(number: String, sim: String): Boolean {
+        val handle = if (canListSims(context)) {
+            runCatching {
+                context.getSystemService(TelecomManager::class.java)?.callCapablePhoneAccounts?.firstOrNull { it.id == sim }
+            }.getOrNull()
+        } else {
+            null
+        }
+        return dial(number, handle)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun simLabel(handle: PhoneAccountHandle, account: PhoneAccount): String {
+        val carrier = account.label?.toString()?.trim().orEmpty()
+        val slot = runCatching {
+            val subId = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                context.getSystemService(TelephonyManager::class.java)?.getSubscriptionId(handle)
+            } else {
+                handle.id.toIntOrNull()
+            } ?: return@runCatching null
+            context.getSystemService(SubscriptionManager::class.java)
+                ?.getActiveSubscriptionInfo(subId)?.simSlotIndex?.takeIf { it >= 0 }?.plus(1)
+        }.getOrNull()
+        return when {
+            slot != null && carrier.isNotEmpty() -> "SIM $slot · $carrier"
+            slot != null -> "SIM $slot"
+            carrier.isNotEmpty() -> carrier
+            else -> handle.id
+        }.take(MAX_SIM_LABEL)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun dial(number: String, account: PhoneAccountHandle?): Boolean {
         val trimmed = number.trim()
         if (trimmed.isEmpty()) return false
         lastDialed = trimmed to System.currentTimeMillis()
@@ -426,14 +487,18 @@ internal class PhoneCalls(
                 val tm = context.getSystemService(TelecomManager::class.java)
                 if (tm != null) {
                     try {
-                        tm.placeCall(uri, android.os.Bundle.EMPTY)
+                        val extras = android.os.Bundle()
+                        if (account != null) extras.putParcelable(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, account)
+                        tm.placeCall(uri, extras)
                         return@runCatching true
                     } catch (_: SecurityException) {
                         // Fall back to the intents below if Telecom refused.
                     }
                 }
                 try {
-                    context.startActivity(Intent(Intent.ACTION_CALL, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    val call = Intent(Intent.ACTION_CALL, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    if (account != null) call.putExtra(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, account)
+                    context.startActivity(call)
                     return@runCatching true
                 } catch (_: SecurityException) {
                     // Fall back to the dialer below if the OS blocked direct calling.
@@ -497,6 +562,8 @@ internal class PhoneCalls(
         private const val PREFS = "phone_calls"
         private const val MUTED_RINGER = "muted_ringer"
         private const val TAG = "PhoneCalls"
+        /** The protocol's limit for a label (`calls::MAX_TEXT_BYTES`), in characters to be safe. */
+        private const val MAX_SIM_LABEL = 64
 
         @Volatile private var instance: PhoneCalls? = null
 
@@ -541,6 +608,12 @@ internal class PhoneCalls(
         fun canDial(context: Context) =
             context.packageManager.hasSystemFeature(PackageManager.FEATURE_TELEPHONY) &&
                 (granted(context, Manifest.permission.CALL_PHONE) || canFollow(context))
+
+        /** Whether it can list its SIMs and call on the one a PC picks (`call.sims`). */
+        fun canListSims(context: Context) =
+            context.packageManager.hasSystemFeature(PackageManager.FEATURE_TELEPHONY) &&
+                granted(context, Manifest.permission.CALL_PHONE) &&
+                granted(context, Manifest.permission.READ_PHONE_STATE)
 
         /** Whether everything the card asks for is granted. */
         fun hasAll(context: Context) = permissions.all { granted(context, it) }

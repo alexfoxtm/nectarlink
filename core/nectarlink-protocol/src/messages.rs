@@ -60,6 +60,7 @@ pub mod types {
     pub const CALL_LOG: &str = "call.log";
     pub const CALL_LOG_CHANGED: &str = "call.log.changed";
     pub const CALL_DIAL: &str = "call.dial";
+    pub const CALL_SIMS: &str = "call.sims";
     pub const CONTACTS_LIST: &str = "contacts.list";
     pub const CONTACTS_CHANGED: &str = "contacts.changed";
     pub const SMS_THREADS: &str = "sms.threads";
@@ -2221,6 +2222,11 @@ pub mod calls {
     pub const LOG: &str = "call.log";
     /// Offered by phones that place calls (or open the dialer) when a PC asks.
     pub const DIAL: &str = "call.dial";
+    /// Offered by phones that list their SIMs (`call.sims`) and dial on the
+    /// one a PC picks (`call.dial`'s `sim`).
+    pub const SIMS: &str = "call.sims";
+    /// Most SIMs (phone accounts that place calls) in one answer.
+    pub const MAX_SIMS: usize = 8;
     /// A caller's photo: a JPEG of at most this many bytes.
     pub const MAX_PHOTO_BYTES: usize = 64 * 1024;
     /// A contact's photo on a call log entry: a JPEG of at most this many bytes.
@@ -2394,16 +2400,20 @@ pub struct CallLog {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CallLogChanged {}
 
-/// Body of `call.dial`: ask the phone to call `number`.
+/// Body of `call.dial`: ask the phone to call `number`, on the SIM `sim`
+/// (an `id` from `call.sims`) when given. Phones from before `sim` ignore it
+/// and use their own default.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CallDial {
     pub number: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sim: Option<String>,
 }
 
 /// Never prints the number (protocol v0 §11).
 impl std::fmt::Debug for CallDial {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("CallDial").field("bytes", &self.number.len()).finish()
+        f.debug_struct("CallDial").field("bytes", &self.number.len()).field("sim", &self.sim).finish()
     }
 }
 
@@ -2412,6 +2422,40 @@ impl CallDial {
         !self.number.trim().is_empty()
             && self.number.len() <= calls::MAX_TEXT_BYTES
             && !self.number.chars().any(char::is_control)
+            && self.sim.as_deref().is_none_or(is_valid_sim_id)
+    }
+}
+
+fn is_valid_sim_id(id: &str) -> bool {
+    !id.is_empty() && id.len() <= calls::MAX_ID_BYTES && !id.chars().any(char::is_control)
+}
+
+/// One way the phone places calls (`call.sims`): a SIM, or a calling app
+/// such as a SIP account. `label` is what Android shows ("SIM 1 · Airtel").
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CallSim {
+    pub id: String,
+    pub label: String,
+}
+
+/// Answer to `call.sims` (an empty body asks): the phone's SIMs, and the
+/// one it uses without asking, if it has one.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CallSims {
+    pub sims: Vec<CallSim>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default: Option<String>,
+}
+
+impl CallSims {
+    pub fn is_valid(&self) -> bool {
+        self.sims.len() <= calls::MAX_SIMS
+            && self.sims.iter().all(|s| {
+                is_valid_sim_id(&s.id)
+                    && s.label.len() <= calls::MAX_TEXT_BYTES
+                    && !s.label.chars().any(char::is_control)
+            })
+            && self.default.as_deref().is_none_or(|d| self.sims.iter().any(|s| s.id == d))
     }
 }
 
@@ -4328,9 +4372,9 @@ mod tests {
         assert!(PhotoGet { id: String::new(), ids: Vec::new() }.requested_ids().is_empty());
 
         // Dialled numbers: pauses and waits are fine, control characters aren't.
-        assert!(CallDial { number: "+1 555 0100,,23#".into() }.is_valid());
-        assert!(CallDial { number: "555;1".into() }.is_valid());
-        assert!(!CallDial { number: "555\n0100".into() }.is_valid());
+        assert!(CallDial { number: "+1 555 0100,,23#".into(), sim: None }.is_valid());
+        assert!(CallDial { number: "555;1".into(), sim: None }.is_valid());
+        assert!(!CallDial { number: "555\n0100".into(), sim: None }.is_valid());
 
         // `plugged` keeps only the documented values.
         let battery = |plugged: &str| Battery {
@@ -4956,11 +5000,31 @@ mod tests {
 
     #[test]
     fn call_log_dial_and_contacts_round_trip_and_hide_private_fields() {
-        let dial = CallDial { number: "+1 555 0100".into() };
+        let dial = CallDial { number: "+1 555 0100".into(), sim: None };
         assert!(dial.is_valid());
         assert!(!format!("{dial:?}").contains("555"));
-        assert!(!CallDial { number: "   ".into() }.is_valid());
-        assert!(!CallDial { number: "1".repeat(calls::MAX_TEXT_BYTES + 1) }.is_valid());
+        assert!(!CallDial { number: "   ".into(), sim: None }.is_valid());
+        assert!(!CallDial { number: "1".repeat(calls::MAX_TEXT_BYTES + 1), sim: None }.is_valid());
+        // A SIM to dial on: checked, and absent from older phones' messages.
+        assert!(CallDial { number: "555".into(), sim: Some("1".into()) }.is_valid());
+        assert!(!CallDial { number: "555".into(), sim: Some(String::new()) }.is_valid());
+        assert!(!CallDial { number: "555".into(), sim: Some("a\nb".into()) }.is_valid());
+        let old = Envelope::new(types::CALL_DIAL, &CallDial { number: "555".into(), sim: None }).unwrap();
+        assert_eq!(old.body::<CallDial>().unwrap().sim, None);
+        let sims = CallSims {
+            sims: vec![
+                CallSim { id: "1".into(), label: "SIM 1 · Airtel".into() },
+                CallSim { id: "2".into(), label: "SIM 2 · Jio".into() },
+            ],
+            default: Some("2".into()),
+        };
+        assert!(sims.is_valid());
+        let env = Envelope::new(types::CALL_SIMS, &sims).unwrap();
+        assert_eq!(env.body::<CallSims>().unwrap(), sims);
+        assert!(!CallSims { default: Some("3".into()), ..sims.clone() }.is_valid());
+        assert!(
+            !CallSims { sims: vec![sims.sims[0].clone(); calls::MAX_SIMS + 1], default: None }.is_valid()
+        );
 
         let entry = CallLogEntry {
             id: "10".into(),
@@ -5766,6 +5830,7 @@ mod tests {
                     CallAction,
                     CallLog,
                     CallDial,
+                    CallSims,
                     SmsThreads,
                     SmsMessages,
                     SmsSend,

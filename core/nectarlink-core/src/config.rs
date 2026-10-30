@@ -382,6 +382,18 @@ pub trait Platform: Send + Sync + 'static {
         Err("this device doesn't place calls".into())
     }
 
+    /// The SIMs (and calling apps) this phone places calls with, and the one
+    /// it uses without asking (a PC asked; offered as `call.sims`).
+    fn call_sims(&self) -> Result<nectarlink_protocol::messages::CallSims, String> {
+        Ok(Default::default())
+    }
+
+    /// Like [`call_dial`](Self::call_dial), on the SIM `sim` (an id from
+    /// [`call_sims`](Self::call_sims)).
+    fn call_dial_on(&self, number: &str, _sim: &str) -> Result<(), String> {
+        self.call_dial(number)
+    }
+
     /// This phone's contacts matching `query` (or all with phone numbers
     /// when `None`), favorites first then alphabetical, skipping `offset`
     /// (a PC asked).

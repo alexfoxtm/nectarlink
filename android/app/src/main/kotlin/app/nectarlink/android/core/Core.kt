@@ -1886,6 +1886,7 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
             (if (PhoneCalls.canControl(context) && CallCompanion.allowed(context)) listOf("call.incall") else emptyList()) +
             (if (PhoneCalls.canReadLog(context)) listOf("call.log") else emptyList()) +
             (if (PhoneCalls.canDial(context)) listOf("call.dial") else emptyList()) +
+            (if (PhoneCalls.canListSims(context)) listOf("call.sims") else emptyList()) +
             (if (PhoneContacts.canRead(context)) listOf("contacts.read") else emptyList()) +
             (if (PhoneSms.canRead(context)) listOf("sms.read") else emptyList()) +
             (if (PhoneSms.canSend(context)) listOf("sms.send") else emptyList()) +

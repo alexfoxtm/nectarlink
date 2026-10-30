@@ -812,6 +812,27 @@ Item {
                         }
                     }
 
+                    // Which SIM calls go out on, when the phone has more than one
+                    // (otherwise Android asks on the phone, where nobody sees it).
+                    Row {
+                        id: simChoice
+                        readonly property var sims: { try { return JSON.parse(PhoneCall.sims || "[]") } catch (e) { return [] } }
+                        visible: sims.length > 1 && PhoneCall.canDial
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        spacing: 10
+                        Txt {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: qsTr("Call with")
+                            role: "body"
+                            muted: true
+                        }
+                        Segmented {
+                            options: simChoice.sims.map(s => ({ value: s.id, label: s.label }))
+                            value: PhoneCall.sim
+                            onPicked: (v) => PhoneCall.chooseSim(v)
+                        }
+                    }
+
                     LockChip {
                         anchors.horizontalCenter: parent.horizontalCenter
                         visible: !PhoneCall.canDial && label.length > 0

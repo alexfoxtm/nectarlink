@@ -319,6 +319,19 @@ impl Platform for RecordingPlatform {
         self.dialed.lock().unwrap().push(number.to_owned());
         Ok(())
     }
+    fn call_sims(&self) -> Result<nectarlink_core::CallSims, String> {
+        Ok(nectarlink_core::CallSims {
+            sims: vec![
+                nectarlink_core::CallSim { id: "1".into(), label: "SIM 1 · Airtel".into() },
+                nectarlink_core::CallSim { id: "2".into(), label: "SIM 2 · Jio".into() },
+            ],
+            default: None,
+        })
+    }
+    fn call_dial_on(&self, number: &str, sim: &str) -> Result<(), String> {
+        self.dialed.lock().unwrap().push(format!("{number} on {sim}"));
+        Ok(())
+    }
     fn contacts(
         &self,
         query: Option<&str>,
@@ -2461,7 +2474,7 @@ async fn call_log_and_dial_work_and_respect_permissions_and_toggles() {
     .await;
 
     // Without `call.dial` on the phone, dialing from the PC is refused as unsupported.
-    assert!(matches!(pc.node.call_dial(phone_id, "+15550100".into()).await, Err(Error::Unsupported)));
+    assert!(matches!(pc.node.call_dial(phone_id, "+15550100".into(), None).await, Err(Error::Unsupported)));
 
     phone
         .node
@@ -2484,13 +2497,50 @@ async fn call_log_and_dial_work_and_respect_permissions_and_toggles() {
     })
     .await;
 
-    with_timeout("dial", pc.node.call_dial(phone_id, "+15550100".into())).await.unwrap();
+    with_timeout("dial", pc.node.call_dial(phone_id, "+15550100".into(), None)).await.unwrap();
     assert_eq!(*phone.platform.dialed.lock().unwrap(), ["+15550100"]);
+
+    // A phone that doesn't list its SIMs has none to pick, and a SIM the PC
+    // names anyway isn't sent: it dials on its own default.
+    assert_eq!(with_timeout("no sims", pc.node.call_sims(phone_id)).await.unwrap(), Default::default());
+    with_timeout("dial on a sim", pc.node.call_dial(phone_id, "+15550101".into(), Some("2".into())))
+        .await
+        .unwrap();
+    assert_eq!(phone.platform.dialed.lock().unwrap().last().map(String::as_str), Some("+15550101"));
+
+    // With `call.sims`, the PC sees the SIMs and the phone dials on the one picked.
+    phone
+        .node
+        .update_power(
+            PowerLevel::NotApplicable,
+            vec![
+                "media.control".into(),
+                nectarlink_core::CALLS_LOG.into(),
+                nectarlink_core::CALLS_DIAL.into(),
+                nectarlink_core::CALLS_SIMS.into(),
+            ],
+        )
+        .await;
+    let sims = loop {
+        let sims = with_timeout("sims", pc.node.call_sims(phone_id)).await.unwrap();
+        if !sims.sims.is_empty() {
+            break sims;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    };
+    assert_eq!(
+        sims.sims.iter().map(|s| s.label.as_str()).collect::<Vec<_>>(),
+        ["SIM 1 · Airtel", "SIM 2 · Jio"]
+    );
+    with_timeout("dial on sim 2", pc.node.call_dial(phone_id, "+15550102".into(), Some("2".into())))
+        .await
+        .unwrap();
+    assert_eq!(phone.platform.dialed.lock().unwrap().last().map(String::as_str), Some("+15550102 on 2"));
 
     // Turning `calls` off for this PC blocks both call log and dialing.
     phone.node.set_device_toggle(pc_id, "calls", false).unwrap();
     assert!(matches!(pc.node.call_log(phone_id, None, 3).await, Err(Error::Denied)));
-    assert!(matches!(pc.node.call_dial(phone_id, "+15550100".into()).await, Err(Error::Denied)));
+    assert!(matches!(pc.node.call_dial(phone_id, "+15550100".into(), None).await, Err(Error::Denied)));
 }
 
 #[tokio::test(flavor = "multi_thread")]

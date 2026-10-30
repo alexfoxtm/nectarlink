@@ -134,6 +134,10 @@ internal class PhonePlatform(
 
     override fun callDial(number: String): Boolean = calls().dial(number)
 
+    override fun callSims(): List<app.nectarlink.core.CallSim> = calls().sims()
+
+    override fun callDialOn(number: String, sim: String): Boolean = calls().dialOn(number, sim)
+
     override fun contacts(query: String?, offset: UInt, limit: UInt): List<Contact> =
         contacts().list(query, offset.toInt(), limit.toInt())
 

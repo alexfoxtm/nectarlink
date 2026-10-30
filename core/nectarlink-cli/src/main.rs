@@ -3909,7 +3909,7 @@ async fn run(cli: &Cli, node: &Node) -> Result<()> {
             wait_until_online(node, id).await?;
             match number {
                 Some(number) => {
-                    node.call_dial(id, number.clone()).await.context("couldn't start the call")?;
+                    node.call_dial(id, number.clone(), None).await.context("couldn't start the call")?;
                     println!("Calling {number}…");
                 }
                 None => {

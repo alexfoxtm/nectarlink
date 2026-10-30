@@ -19,6 +19,7 @@ carries no sound.
 | `call.incall` | phone | Also mutes, switches to the speaker, holds and presses keys on the call in progress, and reports those `controls` |
 | `call.log` | phone | Lists recent calls (needs the call log permission) |
 | `call.dial` | phone | Places a call (or opens the dialer with the number filled in) when a PC asks |
+| `call.sims` | phone | Lists the SIMs it calls with, and places a call on the one a PC picks |
 | `call.show` | PC | Shows calls, recent calls and the dialer, and wants `call.log.changed` |
 
 A phone reports calls and answers call requests only for PCs that offer
@@ -60,8 +61,11 @@ t = "call.log"          re = n   b = { entries: [ call_entry ] }             // 
 
 t = "call.log.changed"           b = {}                                      // phone → PC
 
-t = "call.dial"         id = n   b = { number: text }
+t = "call.dial"         id = n   b = { number: text, ? sim: text }       // sim: an id from call.sims
 t = "ok"                re = n
+
+t = "call.sims"         id = n   b = {}
+t = "call.sims"         re = n   b = { sims: [ { id: text, label: text } ], ? default: text }
 
 call_entry = {
   id:        text,
@@ -127,16 +131,36 @@ dialer (`Intent.ACTION_DIAL`) with the number filled in. Once the call
 starts, the phone reports it through `call.state`, so the PC's call card
 and in-call controls work as for any call.
 
+With `sim` (an `id` from `call.sims`, 1 to 64 bytes), a phone that offers
+`call.sims` places the call on that SIM, or on its default if the SIM is
+gone; phones from before `sim` ignore it. A PC sends `sim` only to a phone
+that offers `call.sims`.
+
 Errors: `DENIED` when calls are off for the PC, `UNSUPPORTED` when the
 phone doesn't offer `call.dial`, `INTERNAL` when the phone couldn't start
 the call.
+
+### 2.4.1 `call.sims`
+
+`call.sims` asks which SIMs (and calling apps, such as a SIP account) the
+phone places calls with: at most 8, each with an `id` that stays the same
+while the SIM is in and a `label` as Android shows it ("SIM 1 · Airtel"),
+and `default` when the phone calls with one without asking. A phone set to
+ask each time has no `default`, and Android would ask on the phone, where
+nobody at the PC sees it, so the PC picks one: the user's choice for that
+phone, else the first. With one SIM there's nothing to pick.
+
+Errors: `DENIED` when calls are off for the PC, `UNSUPPORTED` when the
+phone doesn't offer `call.sims`.
 
 ### 2.5 On Android
 
 `call.control` needs the phone permission and the permission to answer
 calls. `call.log` needs the call log permission. `call.dial` uses
 `CALL_PHONE` to place the call directly, or opens the dialer when
-`CALL_PHONE` isn't granted. `call.incall` needs Android 12 or later and
+`CALL_PHONE` isn't granted. `call.sims` needs `CALL_PHONE` and
+`READ_PHONE_STATE`: it lists `TelecomManager.getCallCapablePhoneAccounts()`
+and calls with `EXTRA_PHONE_ACCOUNT_HANDLE`. `call.incall` needs Android 12 or later and
 the `MANAGE_ONGOING_CALLS` app-op, which lets Telecom bind NectarLink's
 in-call service as a calling companion without it being the phone app.
 Apps can't grant that app-op to themselves; NectarLink's Elevated mode

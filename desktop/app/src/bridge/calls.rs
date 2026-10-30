@@ -58,6 +58,10 @@ pub mod qobject {
         #[qproperty(bool, can_dial, cxx_name = "canDial")]
         /// A dial request is on its way to the phone.
         #[qproperty(bool, dialing)]
+        /// The phone's SIMs as JSON `[{ id, label }]`, when it has more than one.
+        #[qproperty(QString, sims)]
+        /// The SIM calls go out on (an id from `sims`), or `""`.
+        #[qproperty(QString, sim)]
         /// Whether a paired Bluetooth HFP / audio playback endpoint is available for the phone.
         #[qproperty(bool, hfp_available, cxx_name = "hfpAvailable")]
         /// Whether call audio is currently routed through this PC over Bluetooth.
@@ -89,6 +93,10 @@ pub mod qobject {
         /// Asks the phone to dial `number`.
         #[qinvokable]
         fn dial(self: &PhoneCall, number: &QString);
+        /// Calls go out on the SIM `sim` (an id from `sims`) from now on.
+        #[qinvokable]
+        #[cxx_name = "chooseSim"]
+        fn choose_sim(self: &PhoneCall, sim: &QString);
         /// Puts text on this PC's clipboard (it isn't sent back to the phone).
         #[qinvokable]
         fn copy(self: &PhoneCall, text: &QString);
@@ -146,6 +154,8 @@ pub struct PhoneCallRust {
     contacts: QString,
     can_dial: bool,
     dialing: bool,
+    sims: QString,
+    sim: QString,
     hfp_available: bool,
     hfp_connected: bool,
     hfp_detail: QString,
@@ -161,6 +171,7 @@ impl cxx_qt::Initialize for qobject::PhoneCall {
         self.as_mut().set_call_log(QString::from("[]"));
         self.as_mut().set_contacts_status(QString::from("idle"));
         self.as_mut().set_contacts(QString::from("[]"));
+        self.as_mut().set_sims(QString::from("[]"));
         super::subscribe(self.qt_thread(), Changes::CALLS | Changes::CAPABILITIES, Self::refresh_state);
     }
 }
@@ -198,6 +209,12 @@ impl qobject::PhoneCall {
 
     pub fn load_older(&self) {
         calls::load_older();
+    }
+
+    pub fn choose_sim(&self, sim: &QString) {
+        if let Some(device) = super::parse_device(&self.rust().device) {
+            calls::choose_sim(device, String::from(sim));
+        }
     }
 
     pub fn dial(&self, number: &QString) {
@@ -275,6 +292,10 @@ impl qobject::PhoneCall {
                 self.as_mut().set_contacts(QString::from(&view.contacts.to_string()));
             }
             self.as_mut().set_dialing(view.dialing);
+            if differs(|v| v.sims.to_string()) {
+                self.as_mut().set_sims(QString::from(&view.sims.to_string()));
+            }
+            self.as_mut().set_sim(QString::from(&view.sim));
             self.as_mut().rust_mut().last_view = Some(view);
         }
     }
