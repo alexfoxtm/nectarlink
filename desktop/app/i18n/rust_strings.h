@@ -8,6 +8,7 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("App", "Command palette"), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("App", "Copied to clipboard."), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("App", "Could not copy to the clipboard."), // desktop/app/src/bridge/app.rs
+    QT_TRANSLATE_NOOP("App", "Couldn't check for updates. Try again."), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("App", "Downloading the update · %1 of %2"), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("App", "Downloading the update…"), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("App", "Find my phone"), // desktop/app/src/bridge/app.rs
@@ -32,6 +33,7 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("App", "That file is no longer in its saved location."), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("App", "The photo couldn't be copied to the clipboard."), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("App", "The received file history couldn't be cleared. Try again."), // desktop/app/src/bridge/app.rs
+    QT_TRANSLATE_NOOP("App", "The update couldn't be installed. Try again."), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("App", "Toggle Shelf"), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("App", "Wi-Fi %1/4"), // desktop/app/src/bridge/app.rs
     QT_TRANSLATE_NOOP("App", "Your phone"), // desktop/app/src/bridge/app.rs
@@ -39,9 +41,6 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Battery", "%1 is fully charged"), // desktop/app/src/battery.rs
     QT_TRANSLATE_NOOP("Battery", "You can unplug it."), // desktop/app/src/battery.rs
     QT_TRANSLATE_NOOP("Battery", "Your phone"), // desktop/app/src/battery.rs
-    QT_TRANSLATE_NOOP("BtHfp", "Bluetooth connected (%1)."), // desktop/app/src/win/bt_hfp.rs
-    QT_TRANSLATE_NOOP("BtHfp", "Bluetooth paired with %1 (not currently connected)."), // desktop/app/src/win/bt_hfp.rs
-    QT_TRANSLATE_NOOP("BtHfp", "No paired Bluetooth phone endpoint found in Windows."), // desktop/app/src/win/bt_hfp.rs
     QT_TRANSLATE_NOOP("Calls", "Calling %1"), // desktop/app/src/calls.rs
     QT_TRANSLATE_NOOP("Calls", "Missed call from %1"), // desktop/app/src/calls.rs
     QT_TRANSLATE_NOOP("Calls", "On a call with %1"), // desktop/app/src/calls.rs
@@ -69,6 +68,7 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("CommandPalette", "Connection Doctor"), // desktop/app/src/command_palette.rs
     QT_TRANSLATE_NOOP("CommandPalette", "Continue copied video on phone"), // desktop/app/src/command_palette.rs
     QT_TRANSLATE_NOOP("CommandPalette", "Copied image"), // desktop/app/src/command_palette.rs
+    QT_TRANSLATE_NOOP("CommandPalette", "Copied number"), // desktop/app/src/command_palette.rs
     QT_TRANSLATE_NOOP("CommandPalette", "Copy: %1"), // desktop/app/src/command_palette.rs
     QT_TRANSLATE_NOOP("CommandPalette", "Diagnose and fix firewall, discovery, or network issues"), // desktop/app/src/command_palette.rs
     QT_TRANSLATE_NOOP("CommandPalette", "Features guide"), // desktop/app/src/command_palette.rs
@@ -345,6 +345,7 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Messages", "Attachment is %1 (MMS supports up to 900 KB)"), // desktop/app/src/messages.rs
     QT_TRANSLATE_NOOP("Messages", "Group texts can't be sent from the PC yet."), // desktop/app/src/messages.rs
     QT_TRANSLATE_NOOP("Messages", "Only image or voice-note audio files can be attached."), // desktop/app/src/messages.rs
+    QT_TRANSLATE_NOOP("Messages", "The text wasn't sent: this conversation isn't loaded yet. Try again in a moment."), // desktop/app/src/messages.rs
     QT_TRANSLATE_NOOP("Mirror", "Couldn't start recording."), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Mirror recording"), // desktop/app/src/mirror.rs
     QT_TRANSLATE_NOOP("Mirror", "Mirror screenshot"), // desktop/app/src/mirror.rs
@@ -385,6 +386,10 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("PhoneMic", "Tap Start on %1 to use its microphone."), // desktop/app/src/phone_mic.rs
     QT_TRANSLATE_NOOP("PhoneMic", "The microphone is turned off for this PC on %1."), // desktop/app/src/phone_mic.rs
     QT_TRANSLATE_NOOP("PhoneMic", "Update NectarLink on %1 to use its microphone."), // desktop/app/src/phone_mic.rs
+    QT_TRANSLATE_NOOP("PhoneSound", "%1 couldn't ask to share its sound. Check that NectarLink can show notifications on the phone."), // desktop/app/src/phone_sound.rs
+    QT_TRANSLATE_NOOP("PhoneSound", "Mirroring is turned off for this phone."), // desktop/app/src/phone_sound.rs
+    QT_TRANSLATE_NOOP("PhoneSound", "The phone isn't connected."), // desktop/app/src/phone_sound.rs
+    QT_TRANSLATE_NOOP("PhoneSound", "Update NectarLink on %1 to play its sound here."), // desktop/app/src/phone_sound.rs
     QT_TRANSLATE_NOOP("PhotoBackup", "Can't write to the backup folder."), // desktop/app/src/photo_backup.rs
     QT_TRANSLATE_NOOP("PhotoBackup", "Copying, %1 left"), // desktop/app/src/bridge/photo_backup.rs
     QT_TRANSLATE_NOOP("PhotoBackup", "Looking for new photos…"), // desktop/app/src/bridge/photo_backup.rs
@@ -396,6 +401,7 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("PhotoBackup", "Up to date, %1 backed up"), // desktop/app/src/bridge/photo_backup.rs
     QT_TRANSLATE_NOOP("PhotoBackup", "Update NectarLink on %1 to back up its photos."), // desktop/app/src/photo_backup.rs
     QT_TRANSLATE_NOOP("PhotoBackup", "Waiting for %1"), // desktop/app/src/bridge/photo_backup.rs
+    QT_TRANSLATE_NOOP("Photos", "%1 of %2 couldn't be moved to %3. They're in Downloads\\Nectarlink."), // desktop/app/src/photos.rs
     QT_TRANSLATE_NOOP("Photos", "Copied to clipboard."), // desktop/app/src/photos.rs
     QT_TRANSLATE_NOOP("Photos", "From %1"), // desktop/app/src/photos.rs
     QT_TRANSLATE_NOOP("Photos", "New photo"), // desktop/app/src/photos.rs
@@ -434,6 +440,9 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Setup", "Setup stopped with code %1."), // desktop/app/src/setup.rs
     QT_TRANSLATE_NOOP("Setup", "The uninstaller is missing. Reinstall NectarLink, then uninstall it."), // desktop/app/src/setup.rs
     QT_TRANSLATE_NOOP("Setup", "Uninstall stopped with code %1."), // desktop/app/src/setup.rs
+    QT_TRANSLATE_NOOP("Storage", "%1's files aren't shared with this PC"), // desktop/app/src/storage.rs
+    QT_TRANSLATE_NOOP("Storage", "On the phone, allow All files access for NectarLink."), // desktop/app/src/storage.rs
+    QT_TRANSLATE_NOOP("Storage", "On the phone, turn on Browse this phone's storage in File Explorer in NectarLink."), // desktop/app/src/storage.rs
     QT_TRANSLATE_NOOP("Timeline", "App window #%1"), // desktop/app/src/i18n.rs
     QT_TRANSLATE_NOOP("Timeline", "Clip (removed from clipboard history)"), // desktop/app/src/bridge/timeline.rs
     QT_TRANSLATE_NOOP("Timeline", "Copied image"), // desktop/app/src/bridge/timeline.rs
@@ -481,11 +490,9 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("Updater", "The update couldn't be saved. Check that there's free space and try again."), // desktop/app/src/updater.rs
     QT_TRANSLATE_NOOP("Updater", "The update couldn't be started. Try again."), // desktop/app/src/updater.rs
     QT_TRANSLATE_NOOP("Updater", "The update didn't install"), // desktop/app/src/updater.rs
+    QT_TRANSLATE_NOOP("Updater", "The update is installed. Restart NectarLink to use it."), // desktop/app/src/updater.rs
     QT_TRANSLATE_NOOP("Updater", "Update now, or later from Settings."), // desktop/app/src/updater.rs
     QT_TRANSLATE_NOOP("Updater", "Your phone reconnects on its own."), // desktop/app/src/updater.rs
     QT_TRANSLATE_NOOP("Webcam", "Starting camera on %1…"), // desktop/app/src/bridge/webcam.rs
     QT_TRANSLATE_NOOP("Webcam", "Streaming %1 × %2 · %3 fps from %4"), // desktop/app/src/bridge/webcam.rs
-    QT_TRANSLATE_NOOP("Widget", "No phone connected"), // desktop/app/src/win/widget.rs
-    QT_TRANSLATE_NOOP("Widget", "No recent clipboard items"), // desktop/app/src/win/widget.rs
-    QT_TRANSLATE_NOOP("Widget", "Not available"), // desktop/app/src/win/widget.rs
 };

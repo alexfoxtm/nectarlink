@@ -8,8 +8,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -54,6 +52,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.LifecycleStartEffect
@@ -63,7 +62,6 @@ import app.nectarlink.android.core.Device
 import app.nectarlink.android.ui.detached
 import app.nectarlink.android.webcam.WebcamService
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun WebcamScreen(
     device: Device,
@@ -310,63 +308,74 @@ fun WebcamScreen(
                     modifier = Modifier.fillMaxWidth().padding(20.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    // Primary Start/Stop + Flip camera + Torch (only shown when camera has flash)
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        if (isStreamingHere) {
-                            Button(
-                                onClick = { WebcamService.stop(context) },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.error,
-                                    contentColor = MaterialTheme.colorScheme.onError,
-                                ),
-                            ) {
-                                Text(stringResource(R.string.webcam_stop))
-                            }
-                        } else {
-                            Button(
-                                enabled = device.online,
-                                onClick = {
-                                    if (!hasCameraPermission) {
-                                        startAfterGrant = true
-                                        askCamera.launch(Manifest.permission.CAMERA)
-                                    } else {
-                                        WebcamService.start(
-                                            context = context,
-                                            pcId = device.id,
-                                            height = session.height,
-                                            camera = session.camera,
-                                        )
-                                    }
-                                },
-                            ) {
-                                Text(stringResource(R.string.webcam_start))
-                            }
+                    // Start/Stop across the card, then the camera and torch side by side
+                    // at the same height (the camera alone when there's no flash).
+                    if (isStreamingHere) {
+                        Button(
+                            onClick = { WebcamService.stop(context) },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.error,
+                                contentColor = MaterialTheme.colorScheme.onError,
+                            ),
+                            modifier = Modifier.fillMaxWidth().height(ControlHeight),
+                        ) {
+                            Text(stringResource(R.string.webcam_stop))
                         }
+                    } else {
+                        Button(
+                            enabled = device.online,
+                            onClick = {
+                                if (!hasCameraPermission) {
+                                    startAfterGrant = true
+                                    askCamera.launch(Manifest.permission.CAMERA)
+                                } else {
+                                    WebcamService.start(
+                                        context = context,
+                                        pcId = device.id,
+                                        height = session.height,
+                                        camera = session.camera,
+                                    )
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().height(ControlHeight),
+                        ) {
+                            Text(stringResource(R.string.webcam_start))
+                        }
+                    }
 
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
                         FilledTonalButton(
                             onClick = {
                                 val next = if (session.camera == "front") "back" else "front"
                                 WebcamService.setCamera(next, context)
                             },
+                            modifier = Modifier.weight(1.3f).height(ControlHeight),
                         ) {
-                            val currentLabel = stringResource(
-                                if (session.camera == "front") R.string.webcam_camera_front else R.string.webcam_camera_back,
+                            // Says what tapping does (#68), not which camera is on.
+                            Text(
+                                stringResource(
+                                    if (session.camera == "front") R.string.webcam_switch_to_back else R.string.webcam_switch_to_front,
+                                ),
+                                textAlign = TextAlign.Center,
+                                maxLines = 2,
                             )
-                            Text(stringResource(R.string.webcam_switch_camera_current, currentLabel))
                         }
 
                         if (session.hasFlash) {
                             OutlinedButton(
                                 enabled = isStreamingHere,
                                 onClick = { WebcamService.setTorch(!session.torchOn) },
+                                modifier = Modifier.weight(1f).height(ControlHeight),
                             ) {
                                 Text(
                                     stringResource(
-                                        if (session.torchOn) R.string.webcam_torch_on else R.string.webcam_torch_off,
+                                        if (session.torchOn) R.string.webcam_turn_torch_off else R.string.webcam_turn_torch_on,
                                     ),
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 2,
                                 )
                             }
                         }
@@ -450,3 +459,6 @@ fun WebcamScreen(
         }
     }
 }
+
+/** One height for the webcam's buttons, so they line up. */
+private val ControlHeight = 52.dp

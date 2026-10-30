@@ -30,6 +30,8 @@ import java.net.Socket
 class SoundCapture(
     private val projection: MediaProjection?,
     private val stream: MirrorStream,
+    /** Called once the sound stops (the PC stopped listening, or capture failed). */
+    private val onEnded: () -> Unit = {},
 ) {
     @Volatile private var running = false
     @Volatile private var elevatedSocket: Socket? = null
@@ -80,6 +82,7 @@ class SoundCapture(
 
         Log.w(TAG, "no sound capture available")
         stream.end()
+        onEnded()
     }
 
     private fun runRecord(record: AudioRecord) {
@@ -106,6 +109,7 @@ class SoundCapture(
             runCatching { record.stop() }
             record.release()
             stream.end()
+            onEnded()
         }
     }
 
@@ -114,6 +118,7 @@ class SoundCapture(
         if (sock == null) {
             running = false
             stream.end()
+            onEnded()
             return
         }
         elevatedSocket = sock
@@ -145,6 +150,7 @@ class SoundCapture(
             elevatedSocket = null
             runCatching { sock.close() }
             stream.end()
+            onEnded()
         }
     }
 

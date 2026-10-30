@@ -411,6 +411,19 @@ impl AppState {
                 if self.notifications.len() != notifications {
                     changes |= Changes::NOTIFICATIONS;
                 }
+                // Nothing of an unpaired phone's stays, nor comes back with Undo.
+                let kept = (self.history.len(), self.last_dismissed.len());
+                self.history.retain(|h| h.device != *id);
+                self.last_dismissed.retain(|n| n.device != *id);
+                self.notification_images.retain(|(device, _), _| device != id);
+                self.cleared.retain(|(device, _), _| device != id);
+                if self.history.len() != kept.0 {
+                    // Saved again without them.
+                    changes |= Changes::HISTORY;
+                }
+                if self.last_dismissed.len() != kept.1 {
+                    changes |= Changes::NOTIFICATIONS;
+                }
                 let queue_len = self.send_queue.len();
                 self.send_queue.retain(|q| q.peer != *id);
                 if self.send_queue.len() != queue_len {
@@ -868,6 +881,8 @@ impl AppState {
         if !on {
             self.history.clear();
             self.notification_images.clear();
+            // Notifications still showing lose their pictures too.
+            return Changes::HISTORY | Changes::NOTIFICATIONS;
         }
         Changes::HISTORY
     }
@@ -878,7 +893,8 @@ impl AppState {
         }
         self.history.clear();
         self.notification_images.clear();
-        Changes::HISTORY
+        // Notifications still showing lose their pictures too.
+        Changes::HISTORY | Changes::NOTIFICATIONS
     }
 
     pub fn clear_notification_history(&mut self) -> Changes {

@@ -73,9 +73,10 @@ fn find(source: &str) -> Result<Vec<(usize, String, String)>> {
         if before.is_some_and(|c| c.is_alphanumeric() || c == '_') {
             continue;
         }
-        // Not in a comment (a doc example).
+        // Not in a comment (a doc example). A `//` earlier on the line can be
+        // part of a string ("https://"), so only a line that starts as one counts.
         let line_start = source[..start].rfind('\n').map_or(0, |i| i + 1);
-        if source[line_start..start].contains("//") {
+        if source[line_start..start].trim_start().starts_with("//") {
             continue;
         }
         let line = source[..start].matches('\n').count() + 1;

@@ -428,9 +428,9 @@ fn local_offset_ms(at_ms: i64) -> i64 {
 }
 
 /// Moves `staged` into `folder\<year>\<month>`, under the item's name. A file
-/// of the same name and size already there is taken to be this item (backed
-/// up before the backup's list was lost); any other one keeps its name and
-/// the new file gets a numbered one. Returns the file's size.
+/// already there with the same bytes is this item (backed up before the
+/// backup's list was lost); any other one keeps its name and the new file
+/// gets a numbered one. Returns the file's size.
 fn place(staged: &Path, folder: &Path, item: &Pending) -> std::io::Result<u64> {
     let size = std::fs::metadata(staged)?.len();
     if item.size > 0 && size != item.size {
@@ -441,7 +441,8 @@ fn place(staged: &Path, folder: &Path, item: &Pending) -> std::io::Result<u64> {
     std::fs::create_dir_all(&dir)?;
     let name = crate::photos::sanitize_drag_filename(&item.name, "jpg");
     let same = dir.join(&name);
-    if std::fs::metadata(&same).is_ok_and(|m| m.is_file() && m.len() == size) {
+    // Same name and size isn't enough: another photo can share both.
+    if std::fs::metadata(&same).is_ok_and(|m| m.is_file() && m.len() == size) && same_bytes(&same, staged) {
         let _ = std::fs::remove_file(staged);
         return Ok(size);
     }
@@ -457,6 +458,22 @@ fn place(staged: &Path, folder: &Path, item: &Pending) -> std::io::Result<u64> {
         }
     }
     Ok(size)
+}
+
+/// Whether two files of the same length hold the same bytes.
+fn same_bytes(a: &Path, b: &Path) -> bool {
+    use std::io::Read;
+    let (Ok(mut a), Ok(mut b)) = (std::fs::File::open(a), std::fs::File::open(b)) else { return false };
+    let (mut x, mut y) = (vec![0u8; 64 * 1024], vec![0u8; 64 * 1024]);
+    loop {
+        let Ok(n) = a.read(&mut x) else { return false };
+        if n == 0 {
+            return b.read(&mut y[..1]).is_ok_and(|rest| rest == 0);
+        }
+        if b.read_exact(&mut y[..n]).is_err() || x[..n] != y[..n] {
+            return false;
+        }
+    }
 }
 
 /// Whether the drive holding `dir` has room for `size` more bytes and a margin
@@ -806,6 +823,12 @@ mod tests {
         std::fs::write(&staged, b"first").unwrap();
         place(&staged, &folder, &pending).unwrap();
         assert_eq!(std::fs::read_dir(folder.join("2024").join("03")).unwrap().count(), 1);
+
+        // Same name and size, other bytes: another photo, kept too.
+        std::fs::write(&staged, b"fiRst").unwrap();
+        place(&staged, &folder, &pending).unwrap();
+        assert_eq!(std::fs::read(folder.join("2024").join("03").join("IMG_1 (2).jpg")).unwrap(), b"fiRst");
+        std::fs::remove_file(folder.join("2024").join("03").join("IMG_1 (2).jpg")).unwrap();
 
         // A different file with that name: both kept.
         let other = Pending { id: "2".into(), name: "IMG_1.jpg".into(), size: 6, date };

@@ -1180,6 +1180,8 @@ pub struct MirrorOptions {
     pub stay_awake: bool,
     /// Turn the phone's physical screen off while mirroring (`session == 0`, Elevated).
     pub screen_off: bool,
+    /// Only the sound, no picture: the PC plays it without a window.
+    pub sound_only: bool,
 }
 
 /// An app a PC can open in a window (docs/protocol/mirror.md).
@@ -2882,6 +2884,7 @@ impl core::Platform for PlatformAdapter {
             app: options.app.clone(),
             stay_awake: options.stay_awake,
             screen_off: options.screen_off,
+            sound_only: options.sound_only,
         };
         if self.0.mirror_requested(peer.to_string(), options) {
             Ok(())
@@ -3261,7 +3264,9 @@ impl NectarlinkNode {
         config.downloads_dir = Some(PathBuf::from(options.downloads_dir));
         config.usb_port = options.usb_port;
         config.key_protector = Some(Arc::new(KeyProtectorAdapter(key_protector)));
-        config.capabilities.push(core::MIRROR_VIEW.into());
+        if !config.capabilities.iter().any(|c| c == core::MIRROR_VIEW) {
+            config.capabilities.push(core::MIRROR_VIEW.into());
+        }
         let node =
             runtime.block_on(Node::start(config, Arc::new(PlatformAdapter(platform, listener.clone()))))?;
 
@@ -3277,30 +3282,28 @@ impl NectarlinkNode {
                     }
                     Err(RecvError::Lagged(missed)) => {
                         tracing::warn!(missed, "event listener fell behind; resynchronizing state");
-                        if let Ok(devices) = node_for_events.paired_devices() {
-                            for d in devices {
-                                listener.on_event(Event::LinkChanged {
+                        let devices = node_for_events.paired_devices().unwrap_or_else(|e| {
+                            tracing::warn!(error = %e, "can't read paired devices to resynchronize");
+                            Vec::new()
+                        });
+                        for d in devices {
+                            listener
+                                .on_event(Event::LinkChanged { id: d.id.to_string(), link: d.link.into() });
+                            listener.on_event(Event::WakeInfoChanged {
+                                id: d.id.to_string(),
+                                can_wake: d.can_wake,
+                            });
+                            listener
+                                .on_event(Event::ReconnectChanged { id: d.id.to_string(), on: d.reconnect });
+                            listener.on_event(Event::PeerInfoChanged {
+                                id: d.id.to_string(),
+                                info: d.info.into(),
+                            });
+                            if let Ok(matrix) = node_for_events.capabilities(d.id) {
+                                listener.on_event(Event::Capabilities {
                                     id: d.id.to_string(),
-                                    link: d.link.into(),
+                                    features: features(&matrix),
                                 });
-                                listener.on_event(Event::WakeInfoChanged {
-                                    id: d.id.to_string(),
-                                    can_wake: d.can_wake,
-                                });
-                                listener.on_event(Event::ReconnectChanged {
-                                    id: d.id.to_string(),
-                                    on: d.reconnect,
-                                });
-                                listener.on_event(Event::PeerInfoChanged {
-                                    id: d.id.to_string(),
-                                    info: d.info.into(),
-                                });
-                                if let Ok(matrix) = node_for_events.capabilities(d.id) {
-                                    listener.on_event(Event::Capabilities {
-                                        id: d.id.to_string(),
-                                        features: features(&matrix),
-                                    });
-                                }
                             }
                         }
                         listener.on_event(Event::QueueChanged);
@@ -3373,6 +3376,20 @@ impl NectarlinkNode {
         let id = parse_id(&id)?;
         let node = self.node.clone();
         self.run(async move { Ok(node.unpair(id).await?) }).await
+    }
+
+    /// Asks a PC this phone is plugged into over USB to start this phone's
+    /// Elevated helper (`docs/protocol/elevated-usb.md`); returns its port.
+    pub async fn elevated_usb_start(
+        &self,
+        pc_id: String,
+        apk: String,
+        token: String,
+        grants: Vec<String>,
+    ) -> Result<u16> {
+        let id = parse_id(&pc_id)?;
+        let node = self.node.clone();
+        self.run(async move { Ok(node.elevated_usb_start(id, apk, token, grants).await?) }).await
     }
 
     pub async fn ring(&self, id: String, on: bool) -> Result<()> {
@@ -4035,6 +4052,7 @@ impl NectarlinkNode {
             stay_awake: false,
             screen_off: false,
             watch,
+            sound_only: false,
         };
         self.run(async move { Ok(node.mirror_start(id, options).await?) }).await
     }
@@ -4061,6 +4079,11 @@ impl NectarlinkNode {
     /// Preferred webcam codecs accepted by the connected PC, with H.264 as fallback.
     pub fn webcam_codecs(&self, pc_id: String) -> Result<Vec<String>> {
         Ok(self.node.webcam_codecs(parse_id(&pc_id)?)?)
+    }
+
+    /// Screen codecs accepted by the connected receiver, with H.264 fallback.
+    pub fn mirror_codecs(&self, pc_id: String) -> Result<Vec<String>> {
+        Ok(self.node.mirror_codecs(parse_id(&pc_id)?)?)
     }
 
     /// Opens this phone's camera stream to a paired PC (`docs/protocol/webcam.md`).
@@ -4206,8 +4229,11 @@ impl NectarlinkNode {
     ) -> Result<()> {
         let peer = parse_id(&pc_id)?;
         let mode = match mode.as_str() {
+            "photo" => core::CameraCaptureMode::Photo,
             "scan" => core::CameraCaptureMode::Scan,
-            _ => core::CameraCaptureMode::Photo,
+            other => {
+                return Err(NectarlinkError::Internal { reason: format!("unknown capture mode {other:?}") });
+            }
         };
         let meta = core::CameraCaptureResultMeta {
             request_id,
@@ -4243,8 +4269,11 @@ impl NectarlinkNode {
     ) -> Result<()> {
         let peer = parse_id(&peer_id)?;
         let mode = match mode.as_str() {
+            "photo" => core::CameraCaptureMode::Photo,
             "scan" => core::CameraCaptureMode::Scan,
-            _ => core::CameraCaptureMode::Photo,
+            other => {
+                return Err(NectarlinkError::Internal { reason: format!("unknown capture mode {other:?}") });
+            }
         };
         let node = self.node.clone();
         self.run(async move { Ok(node.request_camera_capture(peer, request_id, mode).await?) }).await
@@ -4310,13 +4339,14 @@ impl NectarlinkNode {
         };
         let node = self.node.clone();
         self.block_on_rt(async move {
-            use std::io::Write;
+            use tokio::io::AsyncWriteExt;
+            // tokio's file I/O keeps the runtime's two worker threads free.
             if let Some(parent) = std::path::Path::new(&local_dest).parent()
                 && !parent.as_os_str().is_empty()
             {
-                let _ = std::fs::create_dir_all(parent);
+                let _ = tokio::fs::create_dir_all(parent).await;
             }
-            let Ok(mut f) = std::fs::File::create(&local_dest) else {
+            let Ok(mut f) = tokio::fs::File::create(&local_dest).await else {
                 return false;
             };
             let mut offset = 0u64;
@@ -4330,7 +4360,7 @@ impl NectarlinkNode {
                 if chunk.is_empty() {
                     break;
                 }
-                if f.write_all(&chunk).is_err() {
+                if f.write_all(&chunk).await.is_err() {
                     return false;
                 }
                 offset += chunk.len() as u64;
@@ -4338,7 +4368,7 @@ impl NectarlinkNode {
                     break;
                 }
             }
-            true
+            f.flush().await.is_ok()
         })
     }
 
@@ -4664,22 +4694,26 @@ pub extern "system" fn Java_app_nectarlink_android_core_AndroidContext_nativeIns
     _class: jni_sys::jclass,
     context: jni_sys::jobject,
 ) {
-    static INSTALLED: std::sync::Once = std::sync::Once::new();
-    INSTALLED.call_once(|| {
-        // SAFETY: `env` is the calling thread's JNI environment, valid for
-        // this call; the global reference keeps `context` alive for good,
-        // and the JavaVM lives as long as the process.
-        unsafe {
-            let functions = &**env;
-            let mut vm: *mut jni_sys::JavaVM = std::ptr::null_mut();
-            if (functions.v1_1.GetJavaVM)(env, &mut vm) != jni_sys::JNI_OK || vm.is_null() {
-                return;
-            }
-            let global = (functions.v1_1.NewGlobalRef)(env, context);
-            if global.is_null() {
-                return;
-            }
-            nectarlink_core::install_android_context(vm.cast(), global.cast());
+    // Set only once it worked, so a failed call can be tried again.
+    static INSTALLED: std::sync::Mutex<bool> = std::sync::Mutex::new(false);
+    let mut installed = INSTALLED.lock().unwrap_or_else(|e| e.into_inner());
+    if *installed || env.is_null() || context.is_null() {
+        return;
+    }
+    // SAFETY: `env` is the calling thread's JNI environment (checked
+    // non-null), valid for this call; the global reference keeps `context`
+    // alive for good, and the JavaVM lives as long as the process.
+    unsafe {
+        let functions = &**env;
+        let mut vm: *mut jni_sys::JavaVM = std::ptr::null_mut();
+        if (functions.v1_1.GetJavaVM)(env, &mut vm) != jni_sys::JNI_OK || vm.is_null() {
+            return;
         }
-    });
+        let global = (functions.v1_1.NewGlobalRef)(env, context);
+        if global.is_null() {
+            return;
+        }
+        nectarlink_core::install_android_context(vm.cast(), global.cast());
+    }
+    *installed = true;
 }

@@ -14,11 +14,12 @@ object AndroidContext {
 
     fun install(context: Context) {
         if (installed) return
-        installed = true
+        // Marked only once it worked, so a failed load is tried again.
         runCatching {
             // The core's library, as JNA loads it for everything else: the same copy.
             System.loadLibrary("nectarlink_ffi")
             nativeInstall(context.applicationContext)
+            installed = true
         }.onFailure { Log.w(TAG, "the core can't read the phone's DNS servers", it) }
     }
 

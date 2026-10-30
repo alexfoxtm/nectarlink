@@ -544,7 +544,7 @@ private fun ContinuityCameraScreen(
                     },
                     enabled = !busy,
                 ) {
-                    Text(if (flashOn) stringResource(R.string.webcam_torch_on) else stringResource(R.string.webcam_torch_off))
+                    Text(stringResource(if (flashOn) R.string.webcam_turn_torch_off else R.string.webcam_turn_torch_on))
                 }
 
                 // Shutter button

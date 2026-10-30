@@ -134,19 +134,27 @@ object BankingPause {
         val saved = prefs(context)
         if (!saved.getBoolean(PAUSED, false)) return
         val resolver = context.contentResolver
-        runCatching {
-            if (saved.getBoolean(WAS_DEVELOPER, false)) Settings.Global.putInt(resolver, DEVELOPER, 1)
-            if (saved.getBoolean(WAS_USB_DEBUGGING, false)) Settings.Global.putInt(resolver, USB_DEBUGGING, 1)
-            if (saved.getBoolean(WAS_WIRELESS_DEBUGGING, false)) Settings.Global.putInt(resolver, WIRELESS_DEBUGGING, 1)
-            if (saved.getBoolean(WAS_ACCESSIBILITY, false)) setAccessibility(context, true)
-        }.onFailure { Log.w(TAG, "couldn't turn everything back on", it) }
+        // Each one on its own, and remembered until it's back on: forgetting a
+        // setting that couldn't be restored would leave it off for good.
+        val restores: List<Pair<String, () -> Boolean>> = listOf(
+            WAS_DEVELOPER to { Settings.Global.putInt(resolver, DEVELOPER, 1) },
+            WAS_USB_DEBUGGING to { Settings.Global.putInt(resolver, USB_DEBUGGING, 1) },
+            WAS_WIRELESS_DEBUGGING to { Settings.Global.putInt(resolver, WIRELESS_DEBUGGING, 1) },
+            WAS_ACCESSIBILITY to {
+                setAccessibility(context, true)
+                true
+            },
+        )
+        val notBack = restores.filter { (key, restore) ->
+            val back = !saved.getBoolean(key, false) || runCatching { restore() }.getOrDefault(false)
+            if (!back) Log.w(TAG, "couldn't turn $key back on")
+            !back
+        }.map { it.first }
         saved.edit(commit = true) {
-            remove(PAUSED)
-            remove(WAS_DEVELOPER)
-            remove(WAS_USB_DEBUGGING)
-            remove(WAS_WIRELESS_DEBUGGING)
-            remove(WAS_ACCESSIBILITY)
+            restores.map { it.first }.filterNot { it in notBack }.forEach { remove(it) }
         }
+        if (notBack.isNotEmpty()) return
+        saved.edit(commit = true) { remove(PAUSED) }
         _paused.value = false
         Log.i(TAG, "turned back on after a banking app")
         context.getSystemService(NotificationManager::class.java)?.cancel(NOTIFICATION_ID)

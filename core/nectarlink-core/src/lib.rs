@@ -15,6 +15,7 @@ mod config;
 mod contacts;
 pub mod continuity_camera;
 pub mod deck;
+pub(crate) mod elevated_usb;
 mod error;
 mod events;
 pub mod features;
@@ -108,9 +109,10 @@ pub use nectarlink_protocol::{
         mic::{LISTEN as MIC_LISTEN, STREAM as MIC_STREAM},
         mirror::{
             AUDIO as MIRROR_AUDIO, AUDIO_PLAYBACK as MIRROR_AUDIO_PLAYBACK, AV1 as MIRROR_AV1,
-            CAPTURE as MIRROR_CAPTURE, H264 as MIRROR_H264, H265 as MIRROR_H265, INPUT as MIRROR_INPUT,
-            LISTEN as MIRROR_LISTEN, MAX_TEXT_BYTES as MIRROR_MAX_TEXT_BYTES, PCM as MIRROR_PCM,
-            SCREEN as MIRROR_SCREEN, VIEW as MIRROR_VIEW, VIRTUAL_DISPLAY as MIRROR_VIRTUAL_DISPLAY,
+            CAPTURE as MIRROR_CAPTURE, H264 as MIRROR_H264, H265 as MIRROR_H265, HEVC as MIRROR_HEVC,
+            INPUT as MIRROR_INPUT, LISTEN as MIRROR_LISTEN, MAX_TEXT_BYTES as MIRROR_MAX_TEXT_BYTES,
+            PCM as MIRROR_PCM, SCREEN as MIRROR_SCREEN, SOUND as MIRROR_SOUND, VIEW as MIRROR_VIEW,
+            VIRTUAL_DISPLAY as MIRROR_VIRTUAL_DISPLAY,
         },
         mirror_keys, notify_limits, parse_mac,
         photos::{
@@ -161,7 +163,7 @@ pub use timeline::{
 };
 pub use transfer::{
     Direction, FileSource, OutgoingFile, RECORDER, RecordingMarker, Transfer, TransferFailure, TransferState,
-    outgoing_paths, safe_file_name,
+    outgoing_paths, safe_file_name, storable_name,
 };
 pub use usb::{DEFAULT_ADB_ADDR, DEFAULT_USB_PORT, USB_PORT_COUNT};
 pub use webcam::{TOGGLE as WEBCAM_TOGGLE, WebcamSink};

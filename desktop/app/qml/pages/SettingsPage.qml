@@ -2291,7 +2291,12 @@ Item {
                                     size: "sm"
                                     iconPath: Icons.plus
                                     text: qsTr("Add DCIM → Pictures")
-                                    onClicked: Preferences.addFolderSyncRule("", "DCIM/Camera", Preferences.recordingsFolder.replace(/[\\\/][^\\\/]+[\\\/]?$/, "") + "/Pictures/Phone Camera", false)
+                                    // For the phone selected in the app: a rule needs one.
+                                    readonly property string phoneId: DeviceList.count > 0
+                                        ? DeviceList.deviceIdAt(Math.min(Math.max(0, AppController.currentDevice), DeviceList.count - 1)) || ""
+                                        : ""
+                                    enabled: phoneId.length > 0
+                                    onClicked: Preferences.addFolderSyncRule(phoneId, "DCIM/Camera", Preferences.recordingsFolder.replace(/[\\\/][^\\\/]+[\\\/]?$/, "") + "/Pictures/Phone Camera", false)
                                 }
                             }
                         }
@@ -2860,10 +2865,13 @@ Item {
                                         variant: "text"
                                         size: "sm"
                                         text: qsTr("Clear")
-                                        onClicked: {
-                                            AppController.clearClipboardHistory()
-                                            AppController.refreshDataRetention()
-                                        }
+                                        onClicked: clearOneSheet.ask(
+                                            qsTr("Clear clipboard history?"),
+                                            qsTr("Deletes the clips kept on this PC. What's on the clipboard now stays."),
+                                            () => {
+                                                AppController.clearClipboardHistory()
+                                                AppController.refreshDataRetention()
+                                            })
                                     }
                                     Toggle {
                                         anchors.verticalCenter: parent.verticalCenter
@@ -2915,7 +2923,10 @@ Item {
                                         variant: "text"
                                         size: "sm"
                                         text: qsTr("Clear")
-                                        onClicked: AppController.clearNotificationHistory()
+                                        onClicked: clearOneSheet.ask(
+                                            qsTr("Clear notification history?"),
+                                            qsTr("Deletes the notifications kept after they went away. Ones still showing stay."),
+                                            () => AppController.clearNotificationHistory())
                                     }
                                     Toggle {
                                         anchors.verticalCenter: parent.verticalCenter
@@ -2951,10 +2962,13 @@ Item {
                                     variant: "text"
                                     size: "sm"
                                     text: qsTr("Clear")
-                                    onClicked: {
-                                        TimelineModel.clearAll()
-                                        AppController.refreshDataRetention()
-                                    }
+                                    onClicked: clearOneSheet.ask(
+                                        qsTr("Clear the Timeline?"),
+                                        qsTr("Deletes the Timeline's entries on this PC. Files stay where they were saved."),
+                                        () => {
+                                            TimelineModel.clearAll()
+                                            AppController.refreshDataRetention()
+                                        })
                                 }
                                 Button {
                                     anchors.verticalCenter: parent.verticalCenter
@@ -3076,7 +3090,10 @@ Item {
                                     size: "sm"
                                     visible: Number(page.retentionSummary.receivedFileRecords || 0) > 0
                                     text: qsTr("Clear")
-                                    onClicked: AppController.clearReceivedFileHistory()
+                                    onClicked: clearOneSheet.ask(
+                                        qsTr("Clear transfer history?"),
+                                        qsTr("Deletes the list of past transfers. The files stay where they were saved."),
+                                        () => AppController.clearReceivedFileHistory())
                                 }
                             }
                         }
@@ -3511,6 +3528,52 @@ Item {
                     onClicked: {
                         AppController.unpair(unpairSheet.deviceId)
                         unpairSheet.close()
+                    }
+                }
+            }
+        }
+    }
+
+    // Asks before clearing one kind of history: it can't be brought back.
+    Sheet {
+        id: clearOneSheet
+        cardWidth: 420
+        property string title: ""
+        property string detail: ""
+        property var action: null
+        function ask(title, detail, action) {
+            clearOneSheet.title = title
+            clearOneSheet.detail = detail
+            clearOneSheet.action = action
+            open()
+        }
+        Column {
+            width: parent.width
+            spacing: 16
+            Txt {
+                width: parent.width
+                text: clearOneSheet.title
+                role: "headline"
+                wrapMode: Text.WordWrap
+            }
+            Txt {
+                width: parent.width
+                wrapMode: Text.WordWrap
+                role: "body"
+                muted: true
+                text: clearOneSheet.detail
+            }
+            Row {
+                anchors.right: parent.right
+                spacing: 10
+                Button { variant: "text"; text: qsTr("Cancel"); onClicked: clearOneSheet.close() }
+                Button {
+                    iconPath: Icons.trash
+                    text: qsTr("Clear")
+                    onClicked: {
+                        if (clearOneSheet.action)
+                            clearOneSheet.action()
+                        clearOneSheet.close()
                     }
                 }
             }

@@ -530,18 +530,23 @@ pub fn install_update_in_background() {
         let qt = object.qt_thread();
         std::thread::spawn(move || {
             let progress_qt = qt.clone();
-            let result = crate::updater::install(move |done, total| {
-                let fraction = if total > 0 { (done as f64 / total as f64).clamp(0.0, 1.0) } else { -1.0 };
-                let text = if total > 0 {
-                    tr!("App", "Downloading the update · %1 of %2", megabytes(done), megabytes(total))
-                } else {
-                    tr!("App", "Downloading the update…")
-                };
-                let _ = progress_qt.queue(move |mut object| {
-                    object.as_mut().set_update_progress(fraction);
-                    object.as_mut().set_update_status(QString::from(&text));
-                });
-            });
+            // A panic would leave the update busy until a restart: it's a failure.
+            let result = std::panic::catch_unwind(move || {
+                crate::updater::install(move |done, total| {
+                    let fraction =
+                        if total > 0 { (done as f64 / total as f64).clamp(0.0, 1.0) } else { -1.0 };
+                    let text = if total > 0 {
+                        tr!("App", "Downloading the update · %1 of %2", megabytes(done), megabytes(total))
+                    } else {
+                        tr!("App", "Downloading the update…")
+                    };
+                    let _ = progress_qt.queue(move |mut object| {
+                        object.as_mut().set_update_progress(fraction);
+                        object.as_mut().set_update_status(QString::from(&text));
+                    });
+                })
+            })
+            .unwrap_or_else(|_| Err(tr!("App", "The update couldn't be installed. Try again.")));
             let _ = qt.queue(move |mut object| match result {
                 Ok(()) => {
                     object.as_mut().set_update_progress(-1.0);
@@ -587,7 +592,8 @@ fn diagnose_in_background(mut object: Pin<&mut qobject::AppController>, fix: Opt
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs() as i64);
-        let checks = crate::doctor::diagnose(&crate::doctor::gather(), now);
+        let checks = std::panic::catch_unwind(|| crate::doctor::diagnose(&crate::doctor::gather(), now))
+            .unwrap_or_default();
         let json = serde_json::to_string(&checks).unwrap_or_else(|_| "[]".into());
         let _ = qt.queue(move |mut object| {
             object.as_mut().set_doctor_checks(QString::from(&json));
@@ -766,7 +772,7 @@ impl cxx_qt::Initialize for qobject::AppController {
         if QUIT_REQUESTED.load(Ordering::Acquire) {
             let _ = qt.queue(|object| object.quit_requested());
         }
-        if let Some(task) = PENDING_JUMP_TASK.lock().unwrap_or_else(|e| e.into_inner()).take() {
+        for task in std::mem::take(&mut *PENDING_JUMP_TASKS.lock().unwrap_or_else(|e| e.into_inner())) {
             dispatch_jump_task(&qt, task);
         }
         super::subscribe(
@@ -846,7 +852,8 @@ impl cxx_qt::Initialize for qobject::AppController {
     }
 }
 
-static PENDING_JUMP_TASK: Mutex<Option<String>> = Mutex::new(None);
+/// Taskbar tasks that came before the window was up, in order.
+static PENDING_JUMP_TASKS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 /// Executes one of the 5 Windows Taskbar Jump List tasks (`--task <action>`).
 pub fn handle_jump_task(action: &str) {
@@ -855,7 +862,7 @@ pub fn handle_jump_task(action: &str) {
         return;
     }
     let Some(qt) = controller() else {
-        *PENDING_JUMP_TASK.lock().unwrap_or_else(|e| e.into_inner()) = Some(action);
+        PENDING_JUMP_TASKS.lock().unwrap_or_else(|e| e.into_inner()).push(action);
         return;
     };
     dispatch_jump_task(&qt, action);
@@ -869,14 +876,14 @@ fn dispatch_jump_task(qt: &CxxQtThread<qobject::AppController>, action: String) 
             object.file_picker_requested();
         }
         "send-clipboard" => {
-            if let (Some(device), _, _) = resolve_shelf_device(object.current_device) {
+            if let Some(device) = selected_device(object.current_device) {
                 crate::clipboard::send_now(device);
             } else {
                 object.toast(QString::from("No paired phone is connected."));
             }
         }
         "find-phone" => {
-            if let (Some(device), _, _) = resolve_shelf_device(object.current_device) {
+            if let Some(device) = selected_device(object.current_device) {
                 ring_device(device, true);
             } else {
                 object.toast(QString::from("No paired phone is connected."));
@@ -1058,7 +1065,10 @@ fn refresh_wallpaper_colors(qt: CxxQtThread<qobject::AppController>) {
             return;
         }
         let _ = qt.queue(move |object| {
-            object.set_wallpaper_colors(QString::from(json.as_deref().unwrap_or_default()));
+            // Checked again here: a newer one may have finished in between.
+            if WALLPAPER_GENERATION.load(Ordering::SeqCst) == generation {
+                object.set_wallpaper_colors(QString::from(json.as_deref().unwrap_or_default()));
+            }
         });
     });
     if let Err(e) = spawned {
@@ -1650,8 +1660,9 @@ impl qobject::AppController {
 
     pub fn set_hotspot_network(&self, device: &QString, network: &QString) {
         if let Some(id) = super::parse_device(device) {
-            let name = String::from(network);
-            crate::hotspot::set_network(id, (!name.trim().is_empty()).then_some(name));
+            // Trimmed: it's matched against the networks Windows sees.
+            let name = String::from(network).trim().to_owned();
+            crate::hotspot::set_network(id, (!name.is_empty()).then_some(name));
         }
     }
 
@@ -1768,7 +1779,8 @@ impl qobject::AppController {
         self.as_mut().set_update_busy(true);
         let qt = self.qt_thread();
         std::thread::spawn(move || {
-            let message = crate::updater::check_now(true);
+            let message = std::panic::catch_unwind(|| crate::updater::check_now(true))
+                .unwrap_or_else(|_| Some(tr!("App", "Couldn't check for updates. Try again.")));
             let _ = qt.queue(move |mut object| {
                 object.as_mut().set_update_busy(false);
                 if let Some(message) = message {
@@ -1956,10 +1968,23 @@ impl qobject::AppController {
             && let Some(node) = core_host::node()
             && let Some((_, bytes)) = node.clipboard_history_image(&s)
         {
-            let tmp = core_host::host().data_dir.join("cache").join("shelf-clip.png");
-            if let Some(parent) = tmp.parent() {
-                let _ = std::fs::create_dir_all(parent);
+            // A file per drag: the app it's dropped on may read it later, after
+            // another drag. Ones from more than an hour ago go.
+            let cache = core_host::host().data_dir.join("cache");
+            let _ = std::fs::create_dir_all(&cache);
+            for old in std::fs::read_dir(&cache).into_iter().flatten().flatten() {
+                let stale = old
+                    .metadata()
+                    .and_then(|m| m.modified())
+                    .is_ok_and(|t| t.elapsed().unwrap_or_default() > std::time::Duration::from_secs(3600));
+                if stale && old.file_name().to_string_lossy().starts_with("shelf-clip") {
+                    let _ = std::fs::remove_file(old.path());
+                }
             }
+            let nanos = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_nanos());
+            let tmp = cache.join(format!("shelf-clip-{nanos}.png"));
             if std::fs::write(&tmp, &bytes).is_ok() {
                 return super::native::ffi::start_external_drag(&tmp.to_string_lossy(), "");
             }
@@ -2161,7 +2186,14 @@ impl qobject::AppController {
     }
 }
 
+/// The guide's Markdown from the repository, in debug builds only, so a
+/// change shows without a rebuild. Releases don't ship these files: any
+/// found beside the app or in the folder it started from could be anyone's,
+/// so they use the built-in text.
 fn find_guide_file_on_disk(file_stem: &str) -> Option<String> {
+    if !cfg!(debug_assertions) {
+        return None;
+    }
     let safe: String = file_stem
         .trim()
         .trim_end_matches(".md")
@@ -2171,40 +2203,10 @@ fn find_guide_file_on_disk(file_stem: &str) -> Option<String> {
     if safe.is_empty() {
         return None;
     }
-    let rel = std::path::PathBuf::from("docs").join("guide").join(format!("{safe}.md"));
-    let mut candidates = Vec::new();
-    if let Ok(cwd) = std::env::current_dir() {
-        candidates.push(cwd.join(&rel));
-        if let Some(parent) = cwd.parent() {
-            candidates.push(parent.join(&rel));
-            if let Some(grand) = parent.parent() {
-                candidates.push(grand.join(&rel));
-            }
-        }
-    }
-    if let Ok(exe) = std::env::current_exe()
-        && let Some(dir) = exe.parent()
-    {
-        candidates.push(dir.join(&rel));
-        if let Some(parent) = dir.parent() {
-            candidates.push(parent.join(&rel));
-            if let Some(grand) = parent.parent() {
-                candidates.push(grand.join(&rel));
-            }
-        }
-    }
-    let manifest_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    if let Some(repo_root) = manifest_root.parent().and_then(|p| p.parent()) {
-        candidates.push(repo_root.join(&rel));
-    }
-    for path in candidates {
-        if let Ok(text) = std::fs::read_to_string(&path)
-            && !text.trim().is_empty()
-        {
-            return Some(text);
-        }
-    }
-    None
+    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent()?.parent()?;
+    let text =
+        std::fs::read_to_string(repo_root.join("docs").join("guide").join(format!("{safe}.md"))).ok()?;
+    (!text.trim().is_empty()).then_some(text)
 }
 
 fn load_guide_doc_content(raw_key: &str) -> (String, String) {
@@ -2667,6 +2669,13 @@ fn load_guide_doc_content(raw_key: &str) -> (String, String) {
     (title, body)
 }
 
+/// The phone selected in the app. A taskbar task shows no name, so it acts
+/// on this one and never on another that happens to be online.
+fn selected_device(current_device_idx: i32) -> Option<DeviceId> {
+    let idx = current_device_idx.max(0) as usize;
+    core_host::host().hub.read(|s| s.devices.get(idx).map(|d| d.id))
+}
+
 fn resolve_shelf_device(current_device_idx: i32) -> (Option<DeviceId>, String, bool) {
     core_host::host().hub.read(|s| {
         let idx = current_device_idx.max(0) as usize;
@@ -2682,6 +2691,13 @@ fn resolve_shelf_device(current_device_idx: i32) -> (Option<DeviceId>, String, b
             None => (None, String::new(), false),
         }
     })
+}
+
+/// A Unix time in milliseconds: the timeline keeps seconds, the phone's
+/// photos and files' modified times milliseconds.
+fn unix_ms(ts: i64) -> i64 {
+    // Seconds stay below this until the year 2286.
+    if ts < 10_000_000_000 { ts.saturating_mul(1000) } else { ts }
 }
 
 fn compute_shelf_items_json(current_device_idx: i32) -> String {
@@ -2718,10 +2734,10 @@ fn compute_shelf_items_json(current_device_idx: i32) -> String {
                     });
                     if d.photo_is_screenshot {
                         latest_screenshot = Some(obj);
-                        latest_screenshot_ts = d.photo_date;
+                        latest_screenshot_ts = unix_ms(d.photo_date);
                     } else {
                         latest_photo = Some(obj);
-                        latest_photo_ts = d.photo_date;
+                        latest_photo_ts = unix_ms(d.photo_date);
                     }
                 }
             }
@@ -2763,13 +2779,14 @@ fn compute_shelf_items_json(current_device_idx: i32) -> String {
                 "thumbUrl": crate::icons::file_url(&path),
                 "localPath": path.to_string_lossy(),
             });
+            let ts = unix_ms(entry.timestamp);
             if is_shot {
-                if entry.timestamp >= latest_screenshot_ts {
-                    latest_screenshot_ts = entry.timestamp;
+                if ts >= latest_screenshot_ts {
+                    latest_screenshot_ts = ts;
                     latest_screenshot = Some(obj);
                 }
-            } else if entry.timestamp >= latest_photo_ts {
-                latest_photo_ts = entry.timestamp;
+            } else if ts >= latest_photo_ts {
+                latest_photo_ts = ts;
                 latest_photo = Some(obj);
             }
         }
@@ -2813,7 +2830,8 @@ fn compute_shelf_items_json(current_device_idx: i32) -> String {
                 "thumbUrl": crate::icons::file_url(p),
                 "localPath": p.to_string_lossy(),
             }));
-        } else if !is_shot && latest_photo.is_none() {
+        } else if !is_shot && *ts > latest_photo_ts {
+            latest_photo_ts = *ts;
             latest_photo = Some(serde_json::json!({
                 "id": p.to_string_lossy(),
                 "name": name,
@@ -3258,9 +3276,7 @@ fn refresh_home_if_needed(device: DeviceId, force_sms: bool, force_calls: bool, 
         let avail = |f: &str| m.and_then(|m| m.state(f)) == Some(FeatureState::Available);
         (online, avail("messages.sms"), avail("calls.log"), avail("files.recent_photos"))
     });
-    if !online {
-        return;
-    }
+    let Some(node) = core_host::node().filter(|_| online) else { return };
     let (do_sms, do_calls, do_photo) = home_store(|s| {
         if s.watched != Some(device) {
             return (false, false, false);
@@ -3280,7 +3296,6 @@ fn refresh_home_if_needed(device: DeviceId, force_sms: bool, force_calls: bool, 
         }
         (do_sms, do_calls, do_photo)
     });
-    let Some(node) = core_host::node() else { return };
     if do_sms {
         let node = node.clone();
         core_host::spawn(async move {
@@ -3348,6 +3363,12 @@ fn feature_state_map(state: Option<FeatureState>) -> QMap<QMapPair_QString_QVari
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shelf_times_compare_in_milliseconds() {
+        assert_eq!(unix_ms(1_761_800_000), 1_761_800_000_000, "the timeline's seconds");
+        assert_eq!(unix_ms(1_761_800_000_123), 1_761_800_000_123, "already milliseconds");
+    }
 
     #[test]
     fn phone_colors_come_from_the_connected_phone_when_an_old_pairing_shares_its_name() {

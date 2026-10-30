@@ -134,6 +134,7 @@ fn shipped_crates(metadata: &Value) -> Result<Vec<Crate>> {
             let dir =
                 Path::new(p["manifest_path"].as_str().unwrap_or_default()).parent().map(Path::to_path_buf);
             let mut files: Vec<(String, String)> = dir
+                .as_ref()
                 .and_then(|d| fs::read_dir(d).ok())
                 .into_iter()
                 .flatten()
@@ -143,6 +144,16 @@ fn shipped_crates(metadata: &Value) -> Result<Vec<Crate>> {
                     Some((e.file_name().to_string_lossy().into_owned(), fs::read_to_string(e.path()).ok()?))
                 })
                 .collect();
+            // A license kept elsewhere in the crate, as its `license-file` says.
+            if let (Some(dir), Some(named)) = (dir.as_ref(), p["license_file"].as_str()) {
+                let path = dir.join(named);
+                let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                if !files.iter().any(|(have, _)| *have == name)
+                    && let Ok(text) = fs::read_to_string(&path)
+                {
+                    files.push((name, text));
+                }
+            }
             files.sort();
             Crate {
                 name: p["name"].as_str().unwrap_or_default().to_owned(),

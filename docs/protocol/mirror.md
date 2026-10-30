@@ -4,7 +4,8 @@
 > allowed until v1. License: CC BY 4.0.
 
 A PC shows a phone's screen. The phone's user agrees each time (Android
-asks); the phone then streams its screen as H.264 on a stream of its own,
+asks); the phone then streams its screen as H.264 or, when both sides support
+it, H.265 on a stream of its own,
 and its sound, when the PC asks, on another (§5). The PC can also use the
 phone with its mouse and keyboard (§4), and open the phone's apps in
 windows of their own (§6).
@@ -15,9 +16,11 @@ windows of their own (§6).
 |---|---|---|
 | `mirror.capture` | phone | Shares its screen when its user agrees |
 | `mirror.view` | PC | Shows a phone's screen |
+| `mirror.decode.hevc` | PC or phone | Decodes H.265 screen-mirroring streams |
 | `mirror.input` | phone | Takes the PC's mouse and keyboard while mirrored (Assist: an accessibility service the user turns on; Elevated: injected input) |
 | `mirror.audio.playback` | phone | Shares the sound of apps that allow it while mirrored (Android 10+) |
 | `mirror.audio` | phone | Shares all its sound while mirrored (planned, Elevated) |
+| `mirror.sound` | phone | Shares its sound on its own, without the screen (`sound_only`, §5) |
 | `mirror.virtual_display` | phone | Runs apps on displays of their own, shown in windows on the PC (Elevated, Android 11+) |
 | `mirror.listen` | PC | Plays a mirrored phone's sound |
 
@@ -31,7 +34,8 @@ On the control stream.
 ```
 t = "mirror.start"     id = n   b = { max_size: uint, fps: uint, bitrate: uint, ? audio: bool,
                                      ? session: uint, ? app: text,
-                                     ? stay_awake: bool, ? screen_off: bool, ? watch: text }
+                                     ? stay_awake: bool, ? screen_off: bool, ? watch: text,
+                                     ? sound_only: bool }
 t = "mirror.stop"      id = n   b = { ? session: uint }
 t = "mirror.power"              b = { ? stay_awake: bool, ? screen_off: bool }
 t = "mirror.keyframe"           b = { ? session: uint }
@@ -55,6 +59,11 @@ means 0, so PCs and phones that predate sessions work as before.
   user agrees, and sound only if the phone can (it may share the screen
   without it). Errors: `DENIED` (mirroring is off for the PC),
   `UNSUPPORTED` (no `mirror.capture`).
+- `sound_only` (PC → phone, `session` 0 with `audio`, never with `app`,
+  `watch`, `stay_awake` or `screen_off`): only the phone's sound, no video
+  stream; the PC plays it without a window. Sent only to a phone that offers
+  `mirror.sound`; one that doesn't answers `UNSUPPORTED`, so an older phone
+  is never asked for its screen instead. `mirror.stop` (session 0) ends it.
 - `watch` (phone → PC, `session` 0 only, never with `app`): Play on phone.
   Show what this PC player plays instead of the PC's screen, after the PC
   offered it with `media.watch` ([media.md](media.md) §4).
@@ -84,13 +93,18 @@ u64 time      // capture time in microseconds, big-endian (only differences mean
     data
 ```
 
-- **config**: the stream's format, CBOR `{ codec: "h264", width: uint,
+- **config**: the stream's format, CBOR `{ codec: "h264" | "h265", width: uint,
   height: uint }`. First, and again whenever it changes (the phone turned).
-- **frame**: one H.264 access unit (Annex B) that depends on earlier ones.
-- **keyframe**: an access unit that starts fresh (an IDR picture), with its
-  SPS and PPS before it.
+- **frame**: one H.264 or H.265 access unit (Annex B) that depends on earlier ones.
+- **keyframe**: an access unit that starts fresh (an IDR/IRAP picture), with
+  the codec's parameter sets before it (SPS/PPS for H.264; VPS/SPS/PPS for H.265).
 
 Packets are at most 8 MiB. Video is BT.709, limited range.
+
+The PC can also send its screen to the phone using the same packet format.
+It uses H.265 when the phone advertises `mirror.decode.hevc` and the PC's
+HEVC encoder starts successfully; otherwise it uses H.264. If the codec changes
+during a stream, the sender sends a new config packet.
 
 ## 4. Input
 
@@ -154,6 +168,8 @@ When the PC asked for it, the phone opens a second stream with the header
 
 A PC that doesn't offer `mirror.listen` resets the stream. The stream ends
 with the video: when either side stops mirroring, or the connection drops.
+With `sound_only` there's no video: the sound stream is all there is, and
+it ends when either side stops or the connection drops.
 
 On Android, the sound is what apps play (media, games, and apps that don't
 say otherwise), captured with the screen share's consent and the

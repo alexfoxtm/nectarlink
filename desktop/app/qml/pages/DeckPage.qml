@@ -610,6 +610,14 @@ Item {
         property string errorText: ""
 
         function selectKind(kind) {
+            // Another kind of action: the last one's value and keys don't carry over.
+            if (kind !== actionKind) {
+                paramValue = ""
+                modCtrl = false
+                modAlt = false
+                modShift = false
+                modWin = false
+            }
             actionKind = kind
             if (!labelCustomized || tileLabel.trim().length === 0) {
                 tileLabel = DeckController.defaultLabelFor(kind)

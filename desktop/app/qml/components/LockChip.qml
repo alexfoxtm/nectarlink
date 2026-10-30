@@ -45,7 +45,7 @@ Rectangle {
         case "assist":
             return qsTr("On your phone, open NectarLink › Settings › Control from your PC and turn on the Accessibility service.")
         case "elevated":
-            return qsTr("Needs Elevated: set up Wireless debugging or connect over USB.")
+            return qsTr("Needs Elevated: set up Wireless debugging in NectarLink › Settings › Control from your PC, or connect the phone over USB with USB debugging allowed.")
         case "role":
             return qsTr("On your phone, set NectarLink as the default SMS/Caller ID app when prompted.")
         case "permission":

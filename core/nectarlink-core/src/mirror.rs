@@ -289,7 +289,8 @@ pub(crate) async fn receive_audio(
     mut send: SendStream,
     mut recv: RecvStream,
 ) {
-    // Sound comes with the screen only.
+    // Sound comes with the screen, or on its own (`MirrorStart::sound_only`);
+    // the app gives a sink for either.
     let listens = shared.we_offer(mirror::LISTEN);
     let sink = listens.then(|| shared.platform.mirror_sink(&peer, mirror::SCREEN)).flatten();
     let Some(sink) = sink.filter(|_| shared.toggle_on(&peer, TOGGLE)) else {
@@ -334,7 +335,9 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
         types::MIRROR_START => {
             let options: MirrorStart = env.body()?;
             let desktop = is_local_desktop(shared);
-            let needs = if options.app.is_some() {
+            let needs = if options.sound_only {
+                mirror::SOUND
+            } else if options.app.is_some() {
                 mirror::VIRTUAL_DISPLAY
             } else if desktop && options.watch.is_some() {
                 nectarlink_protocol::messages::media_watch::STREAM
@@ -345,6 +348,8 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
                 // Play on phone: only what this PC offered that phone.
                 Some(player) if desktop => crate::media::watch_allowed(shared, &peer, player),
                 Some(_) => false,
+                // Sound on its own is the phone's (a PC shares its screen).
+                None if desktop && options.sound_only => false,
                 None if desktop => pc_mirror_allowed(shared, &peer),
                 None => shared.toggle_on(&peer, TOGGLE),
             };
@@ -647,10 +652,15 @@ impl Shared {
     /// stream (`op`) of a mirroring.
     fn new_mirror_stop(&self, peer: &DeviceId, mirroring: u32, op: &'static str) -> Arc<tokio::sync::Notify> {
         let signal = Arc::new(tokio::sync::Notify::new());
-        self.mirror_stops
+        let replaced = self
+            .mirror_stops
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .insert((*peer, mirroring, op), signal.clone());
+        // A stream this one replaces stops: nothing else could reach it now.
+        if let Some(replaced) = replaced {
+            replaced.notify_one();
+        }
         signal
     }
 

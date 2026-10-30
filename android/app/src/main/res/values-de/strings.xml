@@ -118,8 +118,11 @@
     <string name="channel_mirroring">Bildschirmspiegelung</string>
     <string name="channel_mirror_requests">Anfragen zur Bildschirmspiegelung</string>
     <string name="mirror_request_title">%1$s möchte deinen Bildschirm sehen</string>
+    <string name="mirror_request_title_sound">%1$s möchte den Ton deines Telefons abspielen</string>
     <string name="mirror_request_text">Tippe zum Teilen. Du kannst die Übertragung jederzeit beenden.</string>
+    <string name="mirror_request_text_sound">Tippe, um ihn zu teilen. Android fragt nach der Bildschirmfreigabe; nur der Ton geht an den PC.</string>
     <string name="mirror_sharing">Bildschirm wird mit %1$s geteilt</string>
+    <string name="mirror_sharing_sound">Ton deines Telefons wird mit %1$s geteilt</string>
     <string name="action_stop">Beenden</string>
     <plurals name="app_windows_title">
         <item quantity="one">%1$d App ist in einem Fenster auf einem PC geöffnet</item>
@@ -478,9 +481,11 @@
     <string name="webcam_stop">Webcam beenden</string>
     <string name="webcam_camera_back">Hinten</string>
     <string name="webcam_camera_front">Vorne</string>
+    <string name="webcam_switch_to_front">Zur Frontkamera wechseln</string>
+    <string name="webcam_switch_to_back">Zur Rückkamera wechseln</string>
+    <string name="webcam_turn_torch_on">Taschenlampe einschalten</string>
+    <string name="webcam_turn_torch_off">Taschenlampe ausschalten</string>
     <string name="webcam_switch_camera">Kamera wechseln</string>
-    <string name="webcam_torch_on">Taschenlampe ein</string>
-    <string name="webcam_torch_off">Taschenlampe aus</string>
     <string name="webcam_zoom_label">Zoom %1$.1f×</string>
     <string name="webcam_resolution_label">Auflösung</string>
     <string name="webcam_denied_text">Die Webcam ist für dieses Gerät auf %1$s deaktiviert.</string>
@@ -637,7 +642,6 @@
     <string name="webcam_stream_spec">%1$d × %2$d · %3$d fps</string>
     <string name="webcam_stream_camera_spec">%1$d × %2$d · %3$s</string>
     <string name="webcam_status_streaming_camera">Streame %1$d × %2$d an %3$s · %4$s</string>
-    <string name="webcam_switch_camera_current">Kamera wechseln (%1$s)</string>
     <string name="webcam_res_720p">720p</string>
     <string name="webcam_res_1080p">1080p</string>
     <string name="webcam_res_4k">4K</string>
@@ -712,6 +716,7 @@
     <string name="mirror_banner_subtitle_control_on">Tippe, wische und schreibe von deinem PC aus</string>
     <string name="mirror_banner_subtitle_audio">Bildschirm und Audio · jederzeit auf Stopp tippen</string>
     <string name="mirror_banner_subtitle">Live-Bildschirmübertragung · jederzeit auf Stopp tippen</string>
+    <string name="mirror_banner_subtitle_sound">Nur Ton · jederzeit mit Stopp beenden</string>
     <string name="mirror_allow_pc_control">PC-Maussteuerung erlauben</string>
     <string name="action_open_controls">Steuerung</string>
     <string name="remote_input_requested_title">Dein PC hat versucht, dieses Gerät zu steuern</string>

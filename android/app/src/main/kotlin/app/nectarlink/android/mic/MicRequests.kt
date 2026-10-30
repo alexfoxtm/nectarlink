@@ -80,7 +80,10 @@ class MicStartActivity : ComponentActivity() {
     private var pcId: String? = null
 
     private val permission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) pcId?.let { MicService.start(this, it) }
+        pcId?.let { pc ->
+            // Declined: the PC hears the microphone is off instead of waiting it out.
+            if (granted) MicService.start(this, pc) else (application as NectarlinkApplication).core.micStop(pc)
+        }
         finish()
     }
 

@@ -38,6 +38,9 @@ use crate::{
 
 /// Per-device toggle name (off by default on the phone).
 pub const TOGGLE: &str = "storage";
+
+/// Most entries read from one folder (page after page).
+const MAX_LISTED: usize = 100_000;
 /// Per-device toggle name for away-mode / relay file access (off by default).
 pub const REMOTE_FILES_TOGGLE: &str = "remote_files";
 
@@ -99,8 +102,12 @@ impl StorageState {
 
     pub fn record_open_folder(&mut self, peer: DeviceId, path: &str) {
         let set = self.open_folders.entry(peer).or_default();
-        if set.len() >= MAX_OPEN_FOLDERS_PER_PEER && !set.contains(path) {
-            set.clear();
+        // At the cap one folder makes room, rather than every watched one going quiet.
+        if set.len() >= MAX_OPEN_FOLDERS_PER_PEER
+            && !set.contains(path)
+            && let Some(evicted) = set.iter().next().cloned()
+        {
+            set.remove(&evicted);
         }
         set.insert(path.to_owned());
     }
@@ -275,14 +282,21 @@ pub(crate) async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: &E
                             .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
                             .then_with(|| a.name.cmp(&b.name))
                     });
-                    // Ensure the frame fits within MAX_FRAME_LEN.
+                    // From `offset`, as many as fit one frame; the rest are
+                    // another page (`more`).
+                    let mut entries: Vec<StorageEntry> =
+                        entries.into_iter().skip(usize::try_from(req.offset).unwrap_or(usize::MAX)).collect();
+                    let left = entries.len();
                     let reply = loop {
-                        let body = StorageEntries { entries: entries.clone() };
+                        let more = entries.len() < left;
+                        let body = StorageEntries { entries: entries.clone(), more };
                         let candidate = Envelope::new(types::STORAGE_ENTRIES, &body)?.reply_to(env.id);
                         if candidate.to_cbor().len() <= MAX_FRAME_LEN || entries.is_empty() {
                             break candidate;
                         }
-                        let new_len = (entries.len() * 3 / 4).max(entries.len().saturating_sub(1));
+                        // A quarter at a time: one at a time meant thousands of
+                        // 1 MiB encodings for a big folder.
+                        let new_len = (entries.len() * 3 / 4).min(entries.len().saturating_sub(1));
                         entries.truncate(new_len);
                     };
                     session.send(reply).await?;
@@ -696,10 +710,20 @@ pub(crate) async fn list(
     if !pc_allows(shared, &session.peer)? {
         return Err(Error::Denied);
     }
-    let req = Envelope::new(types::STORAGE_LIST, &StorageList { path })?;
-    let reply = session.request(req, REQUEST_TIMEOUT).await?;
-    let body: StorageEntries = reply.expect_body(types::STORAGE_ENTRIES)?;
-    Ok(body.entries.into_iter().filter_map(StorageEntry::sanitized).collect())
+    // Page by page: a folder of thousands of photos doesn't fit one answer.
+    let mut all: Vec<StorageEntry> = Vec::new();
+    loop {
+        let offset = all.len() as u64;
+        let req = Envelope::new(types::STORAGE_LIST, &StorageList { path: path.clone(), offset })?;
+        let reply = session.request(req, REQUEST_TIMEOUT).await?;
+        let body: StorageEntries = reply.expect_body(types::STORAGE_ENTRIES)?;
+        let got = body.entries.len();
+        all.extend(body.entries);
+        if !body.more || got == 0 || all.len() >= MAX_LISTED {
+            break;
+        }
+    }
+    Ok(all.into_iter().filter_map(StorageEntry::sanitized).collect())
 }
 
 pub(crate) async fn mkdir(shared: &Arc<Shared>, session: &Arc<Session>, path: String) -> Result<()> {
@@ -1098,7 +1122,15 @@ impl FolderStorage {
             self.ensure_inside(&canon_root, &canon_parent)?;
         }
         if std::fs::rename(staged, &dest).is_err() {
-            std::fs::copy(staged, &dest).map_err(|e| StorageError::Failed(e.to_string()))?;
+            // Another volume: copy beside the file, then swap it in, so a
+            // failed copy leaves the file that was there untouched.
+            let name = dest.file_name().unwrap_or_default().to_string_lossy();
+            let temp = dest.with_file_name(format!(".{name}.nectarlink-part"));
+            let swapped = std::fs::copy(staged, &temp).and_then(|_| std::fs::rename(&temp, &dest));
+            if let Err(e) = swapped {
+                let _ = std::fs::remove_file(&temp);
+                return Err(StorageError::Failed(e.to_string()));
+            }
         }
         if let Some(ms) = modified.filter(|m| *m >= 0)
             && let Some(st) = UNIX_EPOCH.checked_add(Duration::from_millis(ms as u64))
@@ -1124,6 +1156,12 @@ impl FolderStorage {
     pub fn rename(&self, from: &str, to: &str) -> std::result::Result<(), StorageError> {
         let src = self.resolve_existing(from, false)?;
         let dst = self.resolve_target(to)?;
+        // Renaming never replaces another file (a case-only rename on a
+        // case-insensitive disk finds itself, which is fine).
+        if std::fs::symlink_metadata(&dst).is_ok() && std::fs::canonicalize(&dst).ok().as_ref() != Some(&src)
+        {
+            return Err(StorageError::Failed("a file or folder with that name already exists".into()));
+        }
         if let Some(parent) = dst.parent() {
             std::fs::create_dir_all(parent).map_err(|e| StorageError::Failed(e.to_string()))?;
             let canon_root = self.canonical_root()?;
@@ -1145,7 +1183,8 @@ impl FolderStorage {
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_else(|| "trashed".into());
-            let dest = trash_dir.join(name);
+            // Never over an earlier trashed file of the same name.
+            let dest = crate::transfer::unique_path(trash_dir, &name);
             if std::fs::rename(&target, &dest).is_err() {
                 std::fs::copy(&target, &dest).map_err(|e| StorageError::Failed(e.to_string()))?;
                 std::fs::remove_file(&target).map_err(|e| StorageError::Failed(e.to_string()))?;
@@ -1194,6 +1233,33 @@ fn system_time_ms(t: Option<SystemTime>) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn renames_never_replace_a_file_and_trash_keeps_both() {
+        let root = tempfile::tempdir().unwrap();
+        let trash = tempfile::tempdir().unwrap();
+        let storage = FolderStorage::new(root.path()).with_trash_dir(trash.path());
+        std::fs::write(root.path().join("a.txt"), "a").unwrap();
+        std::fs::write(root.path().join("b.txt"), "b").unwrap();
+
+        assert!(storage.rename("a.txt", "b.txt").is_err());
+        assert_eq!(std::fs::read_to_string(root.path().join("b.txt")).unwrap(), "b");
+        storage.rename("a.txt", "A.txt").unwrap();
+        storage.rename("A.txt", "c.txt").unwrap();
+
+        // Two photos of the same name trashed one after the other: both kept.
+        std::fs::create_dir(root.path().join("x")).unwrap();
+        std::fs::write(root.path().join("photo.jpg"), "1").unwrap();
+        std::fs::write(root.path().join("x/photo.jpg"), "2").unwrap();
+        storage.delete("photo.jpg", false).unwrap();
+        storage.delete("x/photo.jpg", false).unwrap();
+        let mut kept: Vec<String> = std::fs::read_dir(trash.path())
+            .unwrap()
+            .map(|e| std::fs::read_to_string(e.unwrap().path()).unwrap())
+            .collect();
+        kept.sort();
+        assert_eq!(kept, ["1", "2"]);
+    }
 
     #[test]
     fn folder_storage_rejects_traversal_and_symlinks_outside_root() {

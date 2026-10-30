@@ -1143,8 +1143,60 @@ fn build_candidates() -> Vec<PaletteCandidate> {
         }
     }
 
+    let clip = match crate::win::clipboard::read() {
+        crate::win::clipboard::Clip::Text { text, .. } => text,
+        _ => String::new(),
+    };
+    let from_clipboard = clipboard_number_candidates(&out, &clip);
+    out.extend(from_clipboard);
     out
 }
+
+/// "Call" and "Text" for a phone number on the clipboard, at the top of the
+/// list: copy a number anywhere, open the palette with its shortcut, press
+/// Enter (#83). Nothing when the clipboard holds no number or no phone is paired.
+fn clipboard_number_candidates(candidates: &[PaletteCandidate], clip: &str) -> Vec<PaletteCandidate> {
+    let Some(number) = nectarlink_core::classify_clip(clip)
+        .filter(|s| s.kind == nectarlink_core::ClipKind::PhoneNumber)
+        .map(|s| s.target)
+    else {
+        return Vec::new();
+    };
+    let Some(dev_id) = candidates.iter().find_map(|c| {
+        c.id.strip_prefix("action:send_clipboard:")
+            .or_else(|| c.id.strip_prefix("action:ring:"))
+            .map(str::to_owned)
+    }) else {
+        return Vec::new();
+    };
+    vec![
+        PaletteCandidate {
+            id: format!("call_contact:{dev_id}:{number}"),
+            title: tr!("CommandPalette", "Call %1", number),
+            subtitle: tr!("CommandPalette", "Copied number"),
+            category: "Calls".into(),
+            icon: "call".into(),
+            badge: "Dial".into(),
+            shortcut: String::new(),
+            keywords: "clipboard copied".into(),
+            base_boost: CLIPBOARD_BOOST,
+        },
+        PaletteCandidate {
+            id: format!("text_contact:{dev_id}:{number}\t{number}"),
+            title: tr!("CommandPalette", "Text %1", number),
+            subtitle: tr!("CommandPalette", "Copied number"),
+            category: "Messages".into(),
+            icon: "messages".into(),
+            badge: "New".into(),
+            shortcut: String::new(),
+            keywords: "clipboard copied".into(),
+            base_boost: CLIPBOARD_BOOST - 1,
+        },
+    ]
+}
+
+/// Above every other item (the highest otherwise is 100).
+const CLIPBOARD_BOOST: i64 = 150;
 
 /// Filters and ranks `candidates` against `query` using fast fuzzy matching,
 /// synthesizing direct `"Text <query>"` / `"Call <query>"` actions when the
@@ -1512,6 +1564,24 @@ mod tests {
         let call_res = filter_and_rank(&candidates, "Call +1 555 0199");
         assert_eq!(call_res[0].title, "Call +1 555 0199");
         assert!(call_res[0].id.starts_with("call_contact:"));
+    }
+
+    #[test]
+    fn a_copied_number_is_offered_first() {
+        let mut candidates = sample_candidates();
+        let copied = clipboard_number_candidates(&candidates, "+1 (415) 555-0199");
+        assert_eq!(copied.len(), 2);
+        candidates.extend(copied);
+        let first = filter_and_rank(&candidates, "");
+        assert!(
+            first[0].id.starts_with("call_contact:") && first[0].title.contains("4155550199"),
+            "{}",
+            first[0].title
+        );
+        assert!(first[1].id.starts_with("text_contact:"));
+
+        assert!(clipboard_number_candidates(&sample_candidates(), "just some text").is_empty());
+        assert!(clipboard_number_candidates(&[], "+1 (415) 555-0199").is_empty(), "no phone to call from");
     }
 
     #[test]

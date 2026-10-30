@@ -195,19 +195,47 @@ Section "Install"
   nsExec::Exec 'netsh advfirewall firewall add rule name="${FIREWALL_RULE}" dir=in action=allow program="$INSTDIR\${EXE}" enable=yes profile=private,domain description="Lets paired phones connect to NectarLink."'
 
   ; Updates without an administrator prompt: a task that runs this app as
-  ; SYSTEM to install a newer release, which signed-in users may start but
-  ; not change (update-task.ps1, desktop/app/src/updater.rs).
+  ; SYSTEM to install a newer release (desktop/app/src/updater.rs). Only
+  ; SYSTEM and administrators may change it; signed-in users may read and
+  ; start it. Registered with schtasks from a task definition rather than
+  ; PowerShell, which security software can hold up without a word, leaving
+  ; setup stuck at this step.
   !insertmacro Progress "step updates"
   InitPluginsDir
-  File "/oname=$PLUGINSDIR\update-task.ps1" "update-task.ps1"
-  nsExec::Exec 'powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\update-task.ps1" -Exe "$INSTDIR\${EXE}"'
+  FileOpen $0 "$PLUGINSDIR\update-task.xml" w
+  FileWriteUTF16LE /BOM $0 '<?xml version="1.0" encoding="UTF-16"?>$\r$\n'
+  FileWriteUTF16LE $0 '<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">$\r$\n'
+  FileWriteUTF16LE $0 '  <RegistrationInfo>$\r$\n'
+  FileWriteUTF16LE $0 '    <Description>Installs new versions of NectarLink from its GitHub releases.</Description>$\r$\n'
+  FileWriteUTF16LE $0 '    <SecurityDescriptor>D:(A;;FA;;;SY)(A;;FA;;;BA)(A;;GRGX;;;AU)</SecurityDescriptor>$\r$\n'
+  FileWriteUTF16LE $0 '  </RegistrationInfo>$\r$\n'
+  FileWriteUTF16LE $0 '  <Principals>$\r$\n'
+  FileWriteUTF16LE $0 '    <Principal id="Author"><UserId>S-1-5-18</UserId><RunLevel>HighestAvailable</RunLevel></Principal>$\r$\n'
+  FileWriteUTF16LE $0 '  </Principals>$\r$\n'
+  FileWriteUTF16LE $0 '  <Settings>$\r$\n'
+  FileWriteUTF16LE $0 '    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>$\r$\n'
+  FileWriteUTF16LE $0 '    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>$\r$\n'
+  FileWriteUTF16LE $0 '    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>$\r$\n'
+  FileWriteUTF16LE $0 '    <AllowStartOnDemand>true</AllowStartOnDemand>$\r$\n'
+  FileWriteUTF16LE $0 '    <Enabled>true</Enabled>$\r$\n'
+  FileWriteUTF16LE $0 '    <ExecutionTimeLimit>PT30M</ExecutionTimeLimit>$\r$\n'
+  FileWriteUTF16LE $0 '  </Settings>$\r$\n'
+  FileWriteUTF16LE $0 '  <Actions Context="Author">$\r$\n'
+  FileWriteUTF16LE $0 '    <Exec><Command>"$INSTDIR\${EXE}"</Command><Arguments>--update-service</Arguments></Exec>$\r$\n'
+  FileWriteUTF16LE $0 '  </Actions>$\r$\n'
+  FileWriteUTF16LE $0 '</Task>$\r$\n'
+  FileClose $0
+  nsExec::Exec 'schtasks /Create /TN "Nectarlink Update" /XML "$PLUGINSDIR\update-task.xml" /F'
 
   !insertmacro Progress "step shortcuts"
   CreateShortCut "$SMPROGRAMS\${DISPLAY}.lnk" "$INSTDIR\${EXE}" "" "$INSTDIR\${EXE}" 0 "" "" "Your phone, on your PC"
   CreateShortCut "$DESKTOP\${DISPLAY}.lnk" "$INSTDIR\${EXE}" "" "$INSTDIR\${EXE}" 0 "" "" "Your phone, on your PC"
 
-  ; Best-effort Sparse Package registration for the Windows Share sheet target.
-  nsExec::Exec 'powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "try { Add-AppxPackage -Register \"$INSTDIR\AppxManifest.xml\" -ExternalLocation \"$INSTDIR\" -ErrorAction SilentlyContinue } catch {}"'
+  ; The Windows Share sheet needs the app's sparse package registered, which
+  ; Windows allows for an unsigned one only with Developer Mode on. Why it
+  ; didn't register goes to sparse-package.log (#84).
+  Delete "$INSTDIR\sparse-package.log"
+  nsExec::Exec 'powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "try { Add-AppxPackage -Register \"$INSTDIR\AppxManifest.xml\" -ExternalLocation \"$INSTDIR\" -ErrorAction Stop } catch { $$_ | Out-File -Encoding utf8 \"$INSTDIR\sparse-package.log\" }"'
 
   WriteRegStr HKLM "Software\${APP}" "InstallDir" "$INSTDIR"
   WriteRegStr HKLM "${UNINSTALL_KEY}" "DisplayName" "${DISPLAY}"
@@ -260,6 +288,7 @@ Section "Uninstall"
     Delete "$INSTDIR\nectarlink_vcam.dll"
     Delete "$INSTDIR\AppxManifest.xml"
     RMDir /r "$INSTDIR\Assets"
+    Delete "$INSTDIR\sparse-package.log"
     Delete "$INSTDIR\update.log"
     Delete "$INSTDIR\uninstall.exe"
   ${EndIf}

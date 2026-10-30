@@ -26,6 +26,7 @@ import io.github.muntashirakon.adb.AbsAdbConnectionManager
 import io.github.muntashirakon.adb.AdbPairingRequiredException
 import io.github.muntashirakon.adb.AdbStream
 import io.github.muntashirakon.adb.android.AdbMdns
+import kotlin.concurrent.thread
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -171,8 +172,15 @@ object Elevated {
     private var retryJob: Job? = null
     @Volatile private var retryAttempt = 0
 
+    /**
+     * Stopped on purpose (the connection service was turned off): retries and
+     * network changes leave it stopped until something calls [start] again.
+     */
+    @Volatile private var held = false
+
     /** The network changed: try now, and keep trying from a short delay. */
     fun onNetworkChanged() {
+        if (held) return
         retryAttempt = 0
         scope.launch { start() }
     }
@@ -191,7 +199,7 @@ object Elevated {
 
     /** Tries again later, while it can still work: set up, not running, on Wi-Fi (or through root). */
     private fun scheduleRetry() {
-        if (!(paired() || usesRoot()) || running || BankingPause.isPaused(context)) return
+        if (held || !(paired() || usesRoot()) || running || BankingPause.isPaused(context)) return
         if (!usesRoot() && !onWifi()) return
         val wait = RETRY_MS[retryAttempt.coerceAtMost(RETRY_MS.lastIndex)]
         retryAttempt++
@@ -200,7 +208,7 @@ object Elevated {
             delay(wait)
             // So the attempt can schedule the next one without cancelling itself.
             retryJob = null
-            start()
+            if (!held) start()
         }
     }
 
@@ -247,14 +255,22 @@ object Elevated {
     suspend fun pair(code: String): Boolean = withContext(Dispatchers.IO) {
         lock.withLock {
             _state.value = State.Starting
-            val port = discover(AdbMdns.SERVICE_TYPE_TLS_PAIRING)
-            if (port == null) {
+            val paired = if (LoopbackAdb.preferred()) {
+                pairOverLoopback(code.trim())
+            } else {
+                val port = discover(AdbMdns.SERVICE_TYPE_TLS_PAIRING)
+                if (port == null) {
+                    null
+                } else {
+                    runCatching { connection().pair("127.0.0.1", port, code.trim()) }.getOrElse {
+                        Log.w(TAG, "pairing failed", it)
+                        false
+                    }
+                }
+            }
+            if (paired == null) {
                 _state.value = State.Failed(Reason.NoPairingDialog)
                 return@withContext false
-            }
-            val paired = runCatching { connection().pair("127.0.0.1", port, code.trim()) }.getOrElse {
-                Log.w(TAG, "pairing failed", it)
-                false
             }
             if (!paired) {
                 _state.value = State.Failed(Reason.WrongCode)
@@ -263,6 +279,54 @@ object Elevated {
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { putBoolean(PAIRED, true) }
         }
         start()
+    }
+
+    /**
+     * Connects to wireless debugging found on 127.0.0.1 (Android 17 and later,
+     * see [LoopbackAdb]), waiting a moment for it to start listening.
+     */
+    private suspend fun connectOverLoopback(adb: Connection): Boolean {
+        val deadline = System.currentTimeMillis() + CONNECT_MS
+        while (true) {
+            val port = LoopbackAdb.connectPort(LoopbackAdb.openPorts())
+            if (port != null) return adb.connect(LoopbackAdb.HOST, port)
+            if (System.currentTimeMillis() >= deadline) return false
+            delay(LOOPBACK_RETRY_MS)
+        }
+    }
+
+    /**
+     * Pairs through the pairing port found on 127.0.0.1: any listening port
+     * that isn't adbd's connection port. `null` when there is none (the
+     * pairing dialog isn't open).
+     */
+    private suspend fun pairOverLoopback(code: String): Boolean? {
+        val deadline = System.currentTimeMillis() + DISCOVERY_MS
+        while (true) {
+            val open = LoopbackAdb.openPorts()
+            val connectPort = LoopbackAdb.connectPort(open)
+            val candidates = open.filter { it != connectPort }
+            for (port in candidates) {
+                if (pairOnPort(port, code)) return true
+            }
+            if (candidates.isNotEmpty()) return false
+            if (System.currentTimeMillis() >= deadline) return null
+            delay(LOOPBACK_RETRY_MS)
+        }
+    }
+
+    /** One pairing attempt, given up after [PAIR_MS] (a port that isn't adb's may never answer). */
+    private suspend fun pairOnPort(port: Int, code: String): Boolean {
+        val result = CompletableDeferred<Boolean>()
+        thread(isDaemon = true, name = "adb-pair") {
+            result.complete(
+                runCatching { connection().pair(LoopbackAdb.HOST, port, code) }.getOrElse {
+                    Log.i(TAG, "no pairing on port $port", it)
+                    false
+                },
+            )
+        }
+        return withTimeoutOrNull(PAIR_MS) { result.await() } ?: false
     }
 
     /** The port a wireless debugging service is announced on, if it shows up soon. */
@@ -283,7 +347,7 @@ object Elevated {
 
     /** Connects and starts the input helper (when set up; again after it stopped). */
     suspend fun start(): Boolean = withContext(Dispatchers.IO) {
-        if (!paired() && !usesRoot()) return@withContext false
+        held = false
         // Paused for a banking app: debugging stays off until it's over
         // (BankingPause starts Elevated again then).
         if (BankingPause.isPaused(context)) {
@@ -297,6 +361,8 @@ object Elevated {
                 return@withLock true
             }
             if (!paired()) {
+                // No wireless debugging set up: a PC this phone is plugged into can start it.
+                if (startOverUsbLocked()) return@withLock true
                 _state.value = State.NotSetUp
                 return@withLock false
             }
@@ -306,7 +372,7 @@ object Elevated {
             discardConnection()
             val adb = connection()
             val connected = try {
-                adb.connectTls(context, CONNECT_MS)
+                if (LoopbackAdb.preferred()) connectOverLoopback(adb) else adb.connectTls(context, CONNECT_MS)
             } catch (e: AdbPairingRequiredException) {
                 // adbd forgot us (the user revoked the authorizations).
                 context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { putBoolean(PAIRED, false) }
@@ -318,6 +384,7 @@ object Elevated {
             }
             if (!connected) {
                 discardConnection()
+                if (startOverUsbLocked()) return@withLock true
                 _state.value = State.Waiting
                 return@withLock false
             }
@@ -572,8 +639,42 @@ object Elevated {
         return out.toString(Charsets.UTF_8.name())
     }
 
-    /** Stops the helper and disconnects. */
-    suspend fun stop() = withContext(Dispatchers.IO) { lock.withLock { stopLocked() } }
+    /**
+     * Starts through a PC this phone is plugged into with USB debugging allowed
+     * (`docs/protocol/elevated-usb.md`), when Elevated isn't running. Called when
+     * a PC connects, so plugging in is enough.
+     */
+    suspend fun startOverUsb(): Boolean = withContext(Dispatchers.IO) {
+        if (held || running || BankingPause.isPaused(context)) return@withContext running
+        lock.withLock { running || startOverUsbLocked() }
+    }
+
+    /**
+     * Asks the PC this phone is plugged into to run the grants and start the
+     * helper over USB, then connects to it. The helper runs until the cable
+     * comes out (its socket then closes, see [connectSocketLocked]).
+     */
+    private suspend fun startOverUsbLocked(): Boolean {
+        val app = context.applicationContext as? app.nectarlink.android.NectarlinkApplication ?: return false
+        val token = ByteArray(24).also(SecureRandom()::nextBytes).joinToString("") { "%02x".format(it) }
+        val port = app.core.elevatedUsbStart(context.applicationInfo.sourceDir, token, grants()) ?: return false
+        return runCatching {
+            connectSocketLocked(port, token)
+            Log.i(TAG, "started over USB")
+            cancelRetry()
+            true
+        }.getOrElse {
+            Log.w(TAG, "the helper started over USB didn't answer", it)
+            false
+        }
+    }
+
+    /** Stops the helper and disconnects, and keeps it stopped until [start]. */
+    suspend fun stop() = withContext(Dispatchers.IO) {
+        held = true
+        cancelRetry()
+        lock.withLock { stopLocked() }
+    }
 
     private fun stopLocked() {
         screenOffRequested = false
@@ -700,6 +801,18 @@ object Elevated {
         return send(writer, "B ${b64(text)} ${html?.let(b64).orEmpty()}")
     }
 
+    /**
+     * Wakes the screen when it's off, as the power key would (the lock screen
+     * shows if the phone is locked). Mirroring otherwise waits for someone to
+     * turn the screen on by hand (#82).
+     */
+    fun wakeScreen(): Boolean {
+        val writer = input ?: return false
+        val power = context.getSystemService(android.os.PowerManager::class.java)
+        if (power?.isInteractive != false) return true
+        return send(writer, "K ${KeyEvent.KEYCODE_WAKEUP}")
+    }
+
     /** Turns the physical screen panel off or back on while mirroring. */
     fun setScreenOff(off: Boolean): Boolean {
         screenOffRequested = off
@@ -818,6 +931,8 @@ object Elevated {
 
     private const val ADB_WIFI = "adb_wifi_enabled"
     private const val DISCOVERY_MS = 10_000L
+    private const val LOOPBACK_RETRY_MS = 700L
+    private const val PAIR_MS = 4_000L
     private const val CONNECT_MS = 10_000L
     /** How long a `su` command may take; the first one waits for the root manager's prompt. */
     private const val SU_WAIT_S = 30L

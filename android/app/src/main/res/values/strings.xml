@@ -118,8 +118,11 @@
     <string name="channel_mirroring">Screen sharing</string>
     <string name="channel_mirror_requests">Screen sharing requests</string>
     <string name="mirror_request_title">%1$s wants to see your screen</string>
+    <string name="mirror_request_title_sound">%1$s wants to play your phone\'s sound</string>
     <string name="mirror_request_text">Tap to share it. You can stop anytime.</string>
+    <string name="mirror_request_text_sound">Tap to share it. Android asks to share your screen; only the sound goes to the PC.</string>
     <string name="mirror_sharing">Sharing your screen with %1$s</string>
+    <string name="mirror_sharing_sound">Sharing your phone\'s sound with %1$s</string>
     <string name="action_stop">Stop</string>
     <plurals name="app_windows_title">
         <item quantity="one">%1$d app is open in a window on a PC</item>
@@ -478,9 +481,11 @@
     <string name="webcam_stop">Stop webcam</string>
     <string name="webcam_camera_back">Back</string>
     <string name="webcam_camera_front">Front</string>
+    <string name="webcam_switch_to_front">Switch to front camera</string>
+    <string name="webcam_switch_to_back">Switch to back camera</string>
+    <string name="webcam_turn_torch_on">Turn torch on</string>
+    <string name="webcam_turn_torch_off">Turn torch off</string>
     <string name="webcam_switch_camera">Flip camera</string>
-    <string name="webcam_torch_on">Torch on</string>
-    <string name="webcam_torch_off">Torch off</string>
     <string name="webcam_zoom_label">Zoom %1$.1f×</string>
     <string name="webcam_resolution_label">Resolution</string>
     <string name="webcam_denied_text">Webcam is turned off for this phone on %1$s.</string>
@@ -637,7 +642,6 @@
     <string name="webcam_stream_spec">%1$d × %2$d · %3$d fps</string>
     <string name="webcam_stream_camera_spec">%1$d × %2$d · %3$s</string>
     <string name="webcam_status_streaming_camera">Streaming %1$d × %2$d to %3$s · %4$s</string>
-    <string name="webcam_switch_camera_current">Flip camera (%1$s)</string>
     <string name="webcam_res_720p">720p</string>
     <string name="webcam_res_1080p">1080p</string>
     <string name="webcam_res_4k">4K</string>
@@ -711,6 +715,7 @@
     <string name="mirror_banner_subtitle_control_on">Tap, swipe and type from your PC</string>
     <string name="mirror_banner_subtitle_audio">Screen and audio · tap Stop anytime</string>
     <string name="mirror_banner_subtitle">Live screen stream · tap Stop anytime</string>
+    <string name="mirror_banner_subtitle_sound">Sound only · tap Stop anytime</string>
     <string name="mirror_allow_pc_control">Allow PC mouse control</string>
     <string name="action_open_controls">Controls</string>
     <string name="remote_input_requested_title">Your PC tried to control this phone</string>

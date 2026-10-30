@@ -804,7 +804,10 @@ fn load_messages(before: Option<i64>) {
     core_host::spawn(async move {
         let result = node.sms_messages(device, thread.clone(), before, PAGE).await;
         let wanted = state(|s| {
-            s.loading_older = false;
+            // Only the older page's own load ends it: a refresh can finish first.
+            if before.is_some() {
+                s.loading_older = false;
+            }
             if s.generation != generation || s.thread.as_deref() != Some(&thread) {
                 return Vec::new();
             }
@@ -815,11 +818,26 @@ fn load_messages(before: Option<i64>) {
                         // The latest page replaces what was there, keeping
                         // older pages already read.
                         let oldest = page.last().map(|m| m.date).unwrap_or(i64::MAX);
-                        let older: Vec<SmsMessage> =
-                            s.messages.drain(..).filter(|m| m.date < oldest).collect();
+                        // A text that failed to send is on no phone's list:
+                        // it stays, marked, rather than vanish.
+                        let failed: Vec<SmsMessage> = s
+                            .messages
+                            .iter()
+                            .filter(|m| m.id.starts_with("local:") && m.status.as_deref() == Some("failed"))
+                            .cloned()
+                            .collect();
+                        let older: Vec<SmsMessage> = s
+                            .messages
+                            .drain(..)
+                            .filter(|m| m.date < oldest && !m.id.starts_with("local:"))
+                            .collect();
                         let had_older = !older.is_empty();
                         s.messages = page;
                         s.messages.extend(older);
+                        if !failed.is_empty() {
+                            s.messages.extend(failed);
+                            s.messages.sort_by_key(|m| std::cmp::Reverse(m.date));
+                        }
                         s.more = full || had_older && s.more;
                     } else {
                         s.messages.extend(page);
@@ -1022,11 +1040,23 @@ fn stage_attachment_bytes(name: String, mime: String, data: Vec<u8>) -> bool {
 pub fn attach_file(path_or_url: String) -> bool {
     let path = url_to_path(&path_or_url);
     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("attachment").to_owned();
-    let raw = match std::fs::read(&path) {
-        Ok(b) if !b.is_empty() => b,
-        _ => return false,
+    // Images are made smaller to fit, but no picture needs more than this:
+    // a video, say, isn't read into memory to find out.
+    const LARGEST_SOURCE: u64 = 50 * 1024 * 1024;
+    let size = std::fs::metadata(&path).map_or(0, |m| m.len());
+    let converted = if size > LARGEST_SOURCE {
+        Err(tr!(
+            "Messages",
+            "Attachment is %1 (MMS supports up to 900 KB)",
+            format_attachment_size(usize::try_from(size).unwrap_or(usize::MAX))
+        ))
+    } else {
+        match std::fs::read(&path) {
+            Ok(raw) if !raw.is_empty() => detect_or_convert_attachment(&path, raw),
+            _ => return false,
+        }
     };
-    match detect_or_convert_attachment(&path, raw) {
+    match converted {
         Ok((mime, data)) => stage_attachment_bytes(name, mime, data),
         Err(error) => {
             state(|s| {
@@ -1102,7 +1132,11 @@ pub fn send(body: String) {
         Some(_) => {
             crate::bridge::app::show_message(tr!("Messages", "Group texts can't be sent from the PC yet."))
         }
-        None => {}
+        // The box is already cleared: say so rather than lose it quietly.
+        None => crate::bridge::app::show_message(tr!(
+            "Messages",
+            "The text wasn't sent: this conversation isn't loaded yet. Try again in a moment."
+        )),
     }
 }
 
@@ -1137,9 +1171,13 @@ fn send_chat_reply(thread_id: String, body: String) {
         let refreshed_messages = node.chat_messages(device, &thread_id, PAGE);
         state(|s| {
             s.sending = false;
-            s.chat_threads = refreshed_threads;
-            if s.thread.as_deref() == Some(&thread_id) {
-                s.chat_messages = refreshed_messages;
+            // Only for the phone still shown; and a reply that failed stays,
+            // with the message saying so, rather than vanish.
+            if s.device == Some(device) {
+                s.chat_threads = refreshed_threads;
+                if result.is_ok() && s.thread.as_deref() == Some(&thread_id) {
+                    s.chat_messages = refreshed_messages;
+                }
             }
         });
         changed();

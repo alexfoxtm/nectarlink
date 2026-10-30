@@ -272,7 +272,7 @@ impl QueuePayload {
                     files
                         .first()
                         .and_then(|f| f.folder.as_deref())
-                        .and_then(|f| f.split('/').next())
+                        .and_then(|f| f.split('/').find(|s| !s.is_empty()))
                         .unwrap_or("Folder")
                         .to_owned()
                 } else {
@@ -682,14 +682,19 @@ impl Store {
     }
 
     /// Updates the stored description of a device (e.g. after a rename).
+    ///
+    /// Never its install ID: that is recorded only when the user pairs the
+    /// device, so a paired device can't later claim to be another one and
+    /// take over its pairing and history.
     pub fn update_info(&self, id: &DeviceId, info: &DeviceInfo) -> Result<()> {
         let screen = encode_screen(info.screen.as_ref());
+        // The device and its timeline name change together.
         self.with(|c| {
-            c.execute(
+            let tx = c.unchecked_transaction()?;
+            tx.execute(
                 "UPDATE peers SET name = ?2, kind = ?3, os = ?4, os_ver = ?5, model = ?6,
                     accent = COALESCE(?7, accent),
-                    screen = CASE WHEN ?8 = '' THEN screen ELSE ?8 END,
-                    install_id = COALESCE(?9, install_id)
+                    screen = CASE WHEN ?8 = '' THEN screen ELSE ?8 END
                  WHERE id = ?1",
                 params![
                     id.as_bytes().as_slice(),
@@ -700,18 +705,13 @@ impl Store {
                     info.model,
                     info.accent.map(i64::from),
                     screen,
-                    valid_install_id(info)
                 ],
             )?;
-            if valid_install_id(info).is_some() {
-                cleanup_peers(c, Some(id))?;
-                self.toggle_cache().clear();
-            }
-            c.execute(
+            tx.execute(
                 "UPDATE timeline SET device_name = ?2 WHERE device_id = ?1",
                 params![id.as_bytes().as_slice(), info.name],
-            )
-            .map(drop)
+            )?;
+            tx.commit()
         })
     }
 
@@ -798,6 +798,8 @@ impl Store {
     }
 
     /// Removes a device. Returns whether it existed.
+    /// The device alone; the app unpairs with [`Store::remove_peer_with_queue`].
+    #[cfg(test)]
     pub fn remove_peer(&self, id: &DeviceId) -> Result<bool> {
         let peer_str = id.to_string();
         self.with(|c| {
@@ -808,6 +810,39 @@ impl Store {
             self.toggle_cache().remove(id);
             Ok(removed)
         })
+    }
+
+    /// Removes a device and its send queue together, so unpairing never drops
+    /// the queue but keeps the device (or the reverse). Returns whether it
+    /// existed and the queue items that went with it.
+    pub fn remove_peer_with_queue(&self, id: &DeviceId) -> Result<(bool, Vec<(String, QueuePayload)>)> {
+        let peer_str = id.to_string();
+        let (existed, rows) = self.with(|c| {
+            let tx = c.unchecked_transaction()?;
+            let rows: Vec<(String, String)> = {
+                let mut stmt =
+                    tx.prepare_cached("SELECT id, payload_json FROM send_queue WHERE peer_id = ?1")?;
+                stmt.query_map([&peer_str], |r| Ok((r.get(0)?, r.get(1)?)))?
+                    .collect::<rusqlite::Result<Vec<_>>>()?
+            };
+            tx.execute("DELETE FROM send_queue WHERE peer_id = ?1", [&peer_str])?;
+            tx.execute("DELETE FROM chat_messages WHERE peer = ?1", [&peer_str])?;
+            tx.execute("DELETE FROM chat_threads WHERE peer = ?1", [&peer_str])?;
+            let existed = tx.execute("DELETE FROM peers WHERE id = ?1", [id.as_bytes().as_slice()])? > 0;
+            tx.commit()?;
+            Ok((existed, rows))
+        })?;
+        // Its toggles went with it.
+        self.toggle_cache().remove(id);
+        let dropped: Vec<(String, QueuePayload)> = rows
+            .into_iter()
+            .filter_map(|(id, json)| serde_json::from_str::<QueuePayload>(&json).ok().map(|p| (id, p)))
+            .collect();
+        // After the commit: files are only removed once nothing refers to them.
+        for (id, payload) in &dropped {
+            cleanup_staged_payload(self.data_dir.as_deref(), id, Some(payload));
+        }
+        Ok((existed, dropped))
     }
 
     pub fn get_peer(&self, id: &DeviceId) -> Result<Option<PeerRecord>> {
@@ -1134,12 +1169,19 @@ impl Store {
                  ON CONFLICT(peer, thread_id) DO UPDATE SET
                     app = excluded.app,
                     app_name = excluded.app_name,
-                    notification_key = excluded.notification_key,
-                    reply_action_id = excluded.reply_action_id,
-                    title = excluded.title,
+                    notification_key = CASE WHEN excluded.updated_ms >= chat_threads.updated_ms
+                        THEN excluded.notification_key ELSE chat_threads.notification_key END,
+                    reply_action_id = CASE WHEN excluded.updated_ms >= chat_threads.updated_ms
+                        THEN excluded.reply_action_id ELSE chat_threads.reply_action_id END,
+                    title = CASE WHEN excluded.updated_ms >= chat_threads.updated_ms
+                        THEN excluded.title ELSE chat_threads.title END,
                     is_group = excluded.is_group,
-                    snippet = excluded.snippet,
-                    last_sender = excluded.last_sender,
+                    -- An older notification (a replay after reconnecting) doesn't
+                    -- replace what the newest one said.
+                    snippet = CASE WHEN excluded.updated_ms >= chat_threads.updated_ms
+                        THEN excluded.snippet ELSE chat_threads.snippet END,
+                    last_sender = CASE WHEN excluded.updated_ms >= chat_threads.updated_ms
+                        THEN excluded.last_sender ELSE chat_threads.last_sender END,
                     updated_ms = MAX(chat_threads.updated_ms, excluded.updated_ms),
                     unread = CASE
                         WHEN ?15 != 0 THEN CASE
@@ -1346,22 +1388,27 @@ impl Store {
     pub fn delete_chat_thread(&self, peer: &DeviceId, thread_id: &str) -> Result<bool> {
         let peer_str = peer.to_string();
         self.with(|c| {
-            c.execute(
+            let tx = c.unchecked_transaction()?;
+            tx.execute(
                 "DELETE FROM chat_messages WHERE peer = ?1 AND thread_id = ?2",
                 params![peer_str, thread_id],
             )?;
-            c.execute(
+            let removed = tx.execute(
                 "DELETE FROM chat_threads WHERE peer = ?1 AND thread_id = ?2",
                 params![peer_str, thread_id],
-            )
-            .map(|n| n > 0)
+            )? > 0;
+            tx.commit()?;
+            Ok(removed)
         })
     }
 
     pub fn clear_chat_threads(&self) -> Result<usize> {
         self.with(|c| {
-            c.execute("DELETE FROM chat_messages", [])?;
-            c.execute("DELETE FROM chat_threads", [])
+            let tx = c.unchecked_transaction()?;
+            tx.execute("DELETE FROM chat_messages", [])?;
+            let removed = tx.execute("DELETE FROM chat_threads", [])?;
+            tx.commit()?;
+            Ok(removed)
         })
     }
 
@@ -1634,19 +1681,21 @@ impl Store {
     /// with the appropriate per-type expiry message and deletes any staged files.
     /// Returns how many items expired.
     pub fn expire_stale_queue_items(&self, now_ms: i64) -> Result<usize> {
-        let expired: Vec<(String, Option<QueuePayload>)> = self.with(|c| {
+        // Staged files stay, as for a failed item, so Retry still has them;
+        // clearing finished items removes them.
+        let expired: Vec<String> = self.with(|c| {
             let mut stmt = c.prepare_cached(
-                "SELECT id, kind, payload_json FROM send_queue WHERE status = 'waiting' AND expires_at <= ?1",
+                "SELECT id, kind FROM send_queue WHERE status = 'waiting' AND expires_at <= ?1",
             )?;
-            let stale: Vec<(String, String, String)> = stmt
-                .query_map([now_ms], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+            let stale: Vec<(String, String)> = stmt
+                .query_map([now_ms], |r| Ok((r.get(0)?, r.get(1)?)))?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
             if stale.is_empty() {
                 return Ok(Vec::new());
             }
             let tx = c.unchecked_transaction()?;
             let mut out = Vec::with_capacity(stale.len());
-            for (id, kind_str, payload_json) in stale {
+            for (id, kind_str) in stale {
                 let kind = QueueKind::from_str_opt(&kind_str).unwrap_or(QueueKind::Files);
                 let msg = kind.expiry_error_message();
                 let updated = tx.execute(
@@ -1656,16 +1705,12 @@ impl Store {
                     params![id, msg],
                 )?;
                 if updated > 0 {
-                    let payload = serde_json::from_str::<QueuePayload>(&payload_json).ok();
-                    out.push((id, payload));
+                    out.push(id);
                 }
             }
             tx.commit()?;
             Ok(out)
         })?;
-        for (id, payload) in &expired {
-            cleanup_staged_payload(self.data_dir.as_deref(), id, payload.as_ref());
-        }
         Ok(expired.len())
     }
 
@@ -1794,8 +1839,13 @@ impl Store {
     /// Transitions a queue item from `'waiting'` to `'sending'`.
     pub fn mark_queue_sending(&self, id: &str) -> Result<bool> {
         self.with(|c| {
-            c.execute("UPDATE send_queue SET status = 'sending', error_msg = NULL WHERE id = ?1", [id])
-                .map(|n| n > 0)
+            // Only a live item: one that just expired or failed stays that way.
+            c.execute(
+                "UPDATE send_queue SET status = 'sending', error_msg = NULL
+                 WHERE id = ?1 AND status IN ('waiting', 'sending')",
+                [id],
+            )
+            .map(|n| n > 0)
         })
     }
 
@@ -1837,7 +1887,7 @@ impl Store {
             c.execute(
                 "UPDATE send_queue
                  SET status = 'waiting', attempts = ?2, next_retry_ms = ?3, error_msg = ?4
-                 WHERE id = ?1",
+                 WHERE id = ?1 AND status IN ('waiting', 'sending')",
                 params![id, i64::from(attempts), next_retry_ms, last_error],
             )
             .map(|n| n > 0)
@@ -1986,27 +2036,6 @@ impl Store {
         }
         Ok(removed)
     }
-
-    /// Deletes all queue items (`'waiting'`, `'sending'`, `'failed'`, `'expired'`) for `peer`,
-    /// cleans up their staged files, and returns their `(id, payload)` pairs.
-    pub fn drop_all_queue_for_peer(&self, peer: &DeviceId) -> Result<Vec<(String, QueuePayload)>> {
-        let peer_str = peer.to_string();
-        let dropped: Vec<(String, QueuePayload)> = self.with(|c| {
-            let mut stmt = c.prepare_cached("SELECT id, payload_json FROM send_queue WHERE peer_id = ?1")?;
-            let rows: Vec<(String, String)> = stmt
-                .query_map([&peer_str], |r| Ok((r.get(0)?, r.get(1)?)))?
-                .collect::<rusqlite::Result<Vec<_>>>()?;
-            c.execute("DELETE FROM send_queue WHERE peer_id = ?1", [&peer_str])?;
-            Ok(rows
-                .into_iter()
-                .filter_map(|(id, json)| serde_json::from_str::<QueuePayload>(&json).ok().map(|p| (id, p)))
-                .collect())
-        })?;
-        for (id, payload) in &dropped {
-            cleanup_staged_payload(self.data_dir.as_deref(), id, Some(payload));
-        }
-        Ok(dropped)
-    }
 }
 
 const fn bytes_from_len(len: usize) -> u64 {
@@ -2014,18 +2043,20 @@ const fn bytes_from_len(len: usize) -> u64 {
 }
 
 fn cleanup_staged_payload(data_dir: Option<&Path>, id: &str, payload: Option<&QueuePayload>) {
-    if let Some(dir) = data_dir {
-        let _ = std::fs::remove_dir_all(dir.join("queue_staging").join(id));
+    // Staged copies live in `<data_dir>/queue_staging/<id>/` and nowhere else,
+    // so nothing outside it is deleted, whatever a (damaged) row says.
+    let Some(dir) = data_dir else { return };
+    if id.is_empty() || id == "." || id == ".." || id.contains(['/', '\\']) {
+        return;
     }
+    let stage = dir.join("queue_staging").join(id);
+    let _ = std::fs::remove_dir_all(&stage);
     if let Some(p) = payload {
         for spec in p.files_vec() {
-            if spec.staged {
+            let inside = spec.path.starts_with(&stage)
+                && !spec.path.components().any(|c| matches!(c, std::path::Component::ParentDir));
+            if spec.staged && inside {
                 let _ = std::fs::remove_file(&spec.path);
-                if let Some(parent) = spec.path.parent()
-                    && parent.file_name().and_then(|n| n.to_str()) == Some(id)
-                {
-                    let _ = std::fs::remove_dir_all(parent);
-                }
             }
         }
     }
@@ -2102,8 +2133,17 @@ fn lookup_peer_name_conn(c: &Connection, peer: &DeviceId) -> String {
 pub type DecodedQueueRow = (QueueItem, QueuePayload, Option<Vec<u8>>, i64);
 
 fn decode_queue_row(c: &Connection, raw: RawQueueRow, include_blob: bool) -> Option<DecodedQueueRow> {
-    let peer = raw.peer_str.parse::<DeviceId>().ok()?;
-    let payload = serde_json::from_str::<QueuePayload>(&raw.payload_json).ok()?;
+    // A row this version can't read is left out of the queue; say so, so it
+    // doesn't just vanish.
+    let decoded = raw
+        .peer_str
+        .parse::<DeviceId>()
+        .ok()
+        .zip(serde_json::from_str::<QueuePayload>(&raw.payload_json).ok());
+    let Some((peer, payload)) = decoded else {
+        tracing::warn!(id = %raw.id, "can't read a queued send; leaving it out of the queue");
+        return None;
+    };
     let kind = QueueKind::from_str_opt(&raw.kind_str).unwrap_or_else(|| payload.kind());
     let status = match raw.status_str.as_str() {
         "sending" => QueueStatus::Sending,
@@ -2175,6 +2215,10 @@ fn prune_chat_conn(c: &Connection, peer_str: &str, thread_id: &str) -> rusqlite:
         .flatten();
     if let Some(latest_ms) = max_updated {
         let retention_ms = CHAT_RETENTION_SECS * 1000;
+        // Never later than now: one message stamped in the future (a phone
+        // whose clock is wrong) would otherwise age out every other thread.
+        let now_ms = crate::now_unix().saturating_mul(1000);
+        let latest_ms = latest_ms.min(now_ms);
         if latest_ms > retention_ms {
             let cutoff_ms = latest_ms - retention_ms;
             c.execute(
@@ -3312,6 +3356,112 @@ mod tests {
     }
 
     #[test]
+    fn an_older_notification_doesnt_replace_the_newest_snippet() {
+        use nectarlink_protocol::messages::{NotificationChatMessage, NotificationConversation};
+        let store = Store::in_memory().unwrap();
+        let peer = DeviceId([8u8; 32]);
+        let now_ms = crate::now_unix() * 1000;
+        let chat = |text: &str, time: i64| Notification {
+            key: "chat|Maya".into(),
+            app: "com.whatsapp".into(),
+            app_name: "WhatsApp".into(),
+            title: Some("Maya".into()),
+            text: Some(text.into()),
+            sub: None,
+            when: time,
+            actions: Vec::new(),
+            silent: false,
+            icon: None,
+            image: None,
+            live: None,
+            conversation: Some(NotificationConversation {
+                v: 1,
+                title: "Maya".into(),
+                group: false,
+                avatar: None,
+                messages: vec![NotificationChatMessage {
+                    sender: Some("Maya".into()),
+                    text: text.into(),
+                    time,
+                    self_sent: false,
+                    avatar: None,
+                }],
+            }),
+        };
+        store.upsert_chat_notification(&peer, &chat("see you at 6", now_ms), None, false).unwrap();
+        // The same chat's older notification, replayed after a reconnect.
+        store.upsert_chat_notification(&peer, &chat("on my way", now_ms - 60_000), None, false).unwrap();
+        let thread = store.chat_threads(&peer).unwrap().into_iter().next().unwrap();
+        assert_eq!(thread.snippet, "see you at 6");
+    }
+
+    #[test]
+    fn a_chat_stamped_in_the_future_does_not_age_out_the_others() {
+        use nectarlink_protocol::messages::{NotificationChatMessage, NotificationConversation};
+        let store = Store::in_memory().unwrap();
+        let peer = DeviceId([7u8; 32]);
+        let now_ms = crate::now_unix() * 1000;
+        let chat = |title: &str, time: i64| Notification {
+            key: format!("chat|{title}"),
+            app: "com.whatsapp".into(),
+            app_name: "WhatsApp".into(),
+            title: Some(title.into()),
+            text: Some("hi".into()),
+            sub: None,
+            when: time,
+            actions: Vec::new(),
+            silent: false,
+            icon: None,
+            image: None,
+            live: None,
+            conversation: Some(NotificationConversation {
+                v: 1,
+                title: title.into(),
+                group: false,
+                avatar: None,
+                messages: vec![NotificationChatMessage {
+                    sender: Some(title.into()),
+                    text: "hi".into(),
+                    time,
+                    self_sent: false,
+                    avatar: None,
+                }],
+            }),
+        };
+        store.upsert_chat_notification(&peer, &chat("Maya", now_ms - 86_400_000), None, false).unwrap();
+        // A phone with its clock a year ahead.
+        store.upsert_chat_notification(&peer, &chat("Sam", now_ms + 365 * 86_400_000), None, false).unwrap();
+        let titles: Vec<String> = store.chat_threads(&peer).unwrap().into_iter().map(|t| t.title).collect();
+        assert!(titles.contains(&"Maya".to_owned()), "{titles:?}");
+    }
+
+    #[test]
+    fn a_paired_device_cannot_claim_another_ones_install_id_later() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+        let (phone, other) = (DeviceId([0x01; 32]), DeviceId([0x02; 32]));
+        let mut mine = info("My Phone");
+        mine.install_id = Some("0123456789abcdef0123456789abcdef".into());
+        let mut theirs = info("Their Phone");
+        theirs.install_id = Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into());
+        store.upsert_peer(&phone, &mine, 100).unwrap();
+        store.upsert_peer(&other, &theirs, 200).unwrap();
+
+        // On a later connection the other device reports this phone's install ID.
+        let mut claimed = theirs.clone();
+        claimed.install_id = mine.install_id.clone();
+        store.update_info(&other, &claimed).unwrap();
+        // Nor at the next start, when duplicates are merged.
+        drop(store);
+        let store = Store::open(dir.path()).unwrap();
+
+        let mut peers = store.list_peers().unwrap();
+        peers.sort_by_key(|p| p.id.0);
+        assert_eq!(peers.iter().map(|p| p.id).collect::<Vec<_>>(), vec![phone, other], "both stay paired");
+        assert_eq!(peers[1].info.install_id, theirs.install_id, "its own install ID is kept");
+    }
+
+    #[test]
     fn send_queue_fifo_clipboard_replacement_capacity_ttl_recovery_and_reassign() {
         let store = Store::in_memory().unwrap();
         let peer_a = DeviceId([0x11; 32]);
@@ -3613,12 +3763,66 @@ mod tests {
             })
             .unwrap();
         assert_eq!(store.expire_stale_queue_items(now_ms + 200).unwrap(), 1);
+        assert!(
+            dir.path().join("queue_staging").join("q-expire").exists(),
+            "an expired item keeps its staged file, so Retry still works"
+        );
+        store.clear_finished_queue_items(Some(&peer)).unwrap();
         assert!(!dir.path().join("queue_staging").join("q-expire").exists());
 
-        // Terminal path 5: Unpair (drop_all_queue_for_peer)
-        store.drop_all_queue_for_peer(&peer).unwrap();
+        // Terminal path 5: Unpair, which removes the device and its queue together.
+        let (existed, dropped) = store.remove_peer_with_queue(&peer).unwrap();
+        assert!(existed);
+        assert!(dropped.iter().any(|(id, _)| id == "q-unpair"));
         assert!(!dir.path().join("queue_staging").join("q-unpair").exists());
         assert!(store.list_send_queue(Some(&peer)).unwrap().is_empty());
+        assert!(store.get_peer(&peer).unwrap().is_none());
+    }
+
+    #[test]
+    fn staging_cleanup_never_deletes_outside_the_items_staging_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = dir.path().join("precious.txt");
+        std::fs::write(&outside, b"keep").unwrap();
+        let staged = dir.path().join("queue_staging").join("q1").join("a.txt");
+        std::fs::create_dir_all(staged.parent().unwrap()).unwrap();
+        std::fs::write(&staged, b"x").unwrap();
+        let spec = |path: PathBuf| QueuedFileSpec {
+            path,
+            name: "a.txt".into(),
+            folder: None,
+            size: 1,
+            mtime_ms: 0,
+            staged: true,
+        };
+        // A damaged row: a staged file outside staging, and a path escaping it.
+        let payload = QueuePayload::Files {
+            files: vec![
+                spec(outside.clone()),
+                spec(dir.path().join("queue_staging").join("q1").join("..").join("..").join("precious.txt")),
+            ],
+        };
+        cleanup_staged_payload(Some(dir.path()), "q1", Some(&payload));
+        assert!(outside.exists());
+        assert!(!staged.exists(), "the item's own staging folder goes");
+        cleanup_staged_payload(Some(dir.path()), "..", None);
+        assert!(dir.path().join("queue_staging").exists(), "an id can't point at the parent");
+    }
+
+    #[test]
+    fn a_finished_queue_item_isnt_moved_back_to_sending_or_waiting() {
+        let store = Store::in_memory().unwrap();
+        let peer = DeviceId([0x56; 32]);
+        store.upsert_peer(&peer, &info("Pixel 9"), 100).unwrap();
+        let id = "q-guard";
+        let link = QueuePayload::Link { url: "https://example.com".into(), title: None };
+        store.enqueue_send_item(id, &peer, &link, None, 1_000).unwrap();
+        store.mark_queue_failed(id, "Denied").unwrap();
+        assert!(!store.mark_queue_sending(id).unwrap(), "a failed item stays failed");
+        assert!(!store.mark_queue_retry_or_wait(id, 1, 0, None).unwrap());
+        assert!(store.retry_queue_item(id, 2_000).unwrap(), "Retry is the way back");
+        assert!(store.mark_queue_sending(id).unwrap());
+        assert!(store.mark_queue_retry_or_wait(id, 1, 0, None).unwrap());
     }
 
     #[test]

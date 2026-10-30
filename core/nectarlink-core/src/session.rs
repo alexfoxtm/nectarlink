@@ -318,11 +318,20 @@ impl Session {
 
     /// Sends a request and waits for the reply with the matching `re`.
     pub async fn request(&self, env: Envelope, timeout: Duration) -> Result<Envelope> {
+        self.request_tracked(env, timeout).await.0
+    }
+
+    /// Like [`request`](Self::request), and also says whether the request was
+    /// sent. A request that went out may have run on the peer even if no
+    /// reply came back, so only an unsent one is safe to send again.
+    pub async fn request_tracked(&self, env: Envelope, timeout: Duration) -> (Result<Envelope>, bool) {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = oneshot::channel();
         self.pending.lock().unwrap_or_else(|e| e.into_inner()).insert(id, tx);
+        let mut sent = false;
         let result = match tokio::time::timeout(timeout, async {
             self.send(env.with_id(id)).await?;
+            sent = true;
             rx.await.map_err(|_| Error::Offline)
         })
         .await
@@ -331,7 +340,7 @@ impl Session {
             Err(_) => Err(Error::Timeout),
         };
         self.pending.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
-        result
+        (result, sent)
     }
 
     /// Closes the connection with an application code.
@@ -350,6 +359,17 @@ impl Session {
             None => false,
         }
     }
+}
+
+/// Whether `mac` is the Wake-on-LAN address of a PC paired with this device.
+fn is_known_wake_mac(shared: &Shared, mac: &[u8; 6]) -> bool {
+    let mac = nectarlink_protocol::messages::format_mac(mac);
+    shared
+        .store
+        .list_peers()
+        .unwrap_or_default()
+        .iter()
+        .any(|p| p.wake_info.as_ref().is_some_and(|w| w.macs.iter().any(|m| m.eq_ignore_ascii_case(&mac))))
 }
 
 /// The control stream goes out before media streams ([`crate::mirror`]):
@@ -372,6 +392,7 @@ async fn writer(mut send: SendStream, mut outbox: mpsc::Receiver<Envelope>) {
 }
 
 async fn reader(session: &Arc<Session>, mut recv: RecvStream, shared: &Weak<Shared>) {
+    let background = Arc::new(tokio::sync::Semaphore::new(MAX_BACKGROUND_RPCS));
     loop {
         let frame = match read_frame(&mut recv).await {
             Ok(Some(frame)) => {
@@ -401,11 +422,22 @@ async fn reader(session: &Arc<Session>, mut recv: RecvStream, shared: &Weak<Shar
         }
         let Some(shared) = shared.upgrade() else { return };
         if is_background_rpc(&env.t) {
+            // Waiting for a slot would hold up heartbeats behind slow
+            // requests, so past the limit a request is turned away instead.
+            let Ok(permit) = background.clone().try_acquire_owned() else {
+                tracing::warn!(peer = %session.peer.short(), t = %env.t, "too many requests at once");
+                if env.id.is_some() {
+                    let reply = Envelope::error(ErrorCode::Busy, "too many requests at once");
+                    let _ = session.send(reply.reply_to(env.id)).await;
+                }
+                continue;
+            };
             let session = session.clone();
             tokio::spawn(async move {
                 if let Err(e) = handle(&shared, &session, env).await {
                     tracing::warn!(peer = %session.peer.short(), error = %e, "failed to handle message");
                 }
+                drop(permit);
             });
         } else if let Err(e) = handle(&shared, session, env).await {
             tracing::warn!(peer = %session.peer.short(), error = %e, "failed to handle message");
@@ -426,6 +458,7 @@ fn is_background_rpc(t: &str) -> bool {
             | types::NOTIFY_ACTION
             | types::PC_POWER
             | types::LINK_OPEN
+            | types::STORAGE_LIST
             | types::PHOTOS_ALBUMS
             | types::PHOTOS_LIST
             | types::PHOTOS_THUMBS
@@ -517,6 +550,7 @@ async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: Envelope) -> 
         t if t.starts_with("mirror.") && crate::mirror::handle(shared, session, &env).await? => {}
         t if t.starts_with("webcam.") && crate::webcam::handle(shared, session, &env).await? => {}
         t if t.starts_with("mic.") && crate::mic::handle(shared, session, &env).await? => {}
+        t if t.starts_with("elevated.usb") && crate::elevated_usb::handle(shared, session, &env).await? => {}
         t if t.starts_with("camera.capture.")
             && crate::continuity_camera::handle(shared, session, &env).await? => {}
         t if t.starts_with("remote.") && crate::remote::handle(shared, session, &env).await? => {}
@@ -527,16 +561,30 @@ async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: Envelope) -> 
         t if (t == types::FILES_RESUME || t == types::FILES_CANCEL)
             && crate::transfer::handle_control(shared, peer, &env).await? => {}
         types::WAKE_RELAY => {
-            if let Ok(req) = env.body::<WakeRelay>() {
+            let req = env.body::<WakeRelay>().ok();
+            // Only for a PC paired with this device, by an address it gave as its own.
+            let known = req.as_ref().is_some_and(|r| is_known_wake_mac(shared, &r.mac));
+            if let Some(req) = req.filter(|_| known) {
                 let bcast = req.broadcast.as_deref().and_then(|s| s.parse().ok());
                 let _ = wake::send_magic_packet(req.mac, bcast);
+            } else {
+                tracing::debug!(peer = %peer.short(), "refusing to wake an address no paired PC gave");
             }
             if env.id.is_some() {
-                session.send(Envelope::empty(types::OK).reply_to(env.id)).await?;
+                let reply = if known {
+                    Envelope::empty(types::OK)
+                } else {
+                    Envelope::error(ErrorCode::Denied, "not a paired PC's wake address")
+                };
+                session.send(reply.reply_to(env.id)).await?;
             }
         }
         types::AUDIO_PCM => {
-            if let Ok(frame) = env.body::<AudioPcmFrame>() {
+            // A rate or layout out of range would play at the wrong speed: dropped.
+            if let Ok(frame) = env.body::<AudioPcmFrame>()
+                && (8_000..=96_000).contains(&frame.sample_rate)
+                && (1..=2).contains(&frame.channels)
+            {
                 shared.emit(NodeEvent::PcAudioFrame {
                     device: peer,
                     sample_rate: frame.sample_rate,
@@ -555,6 +603,9 @@ async fn handle(shared: &Arc<Shared>, session: &Arc<Session>, env: Envelope) -> 
     }
     Ok(())
 }
+
+/// Background requests one peer may have running at a time.
+const MAX_BACKGROUND_RPCS: usize = 32;
 
 /// Concurrent incoming data streams allowed from one peer at a time.
 const MAX_INCOMING_STREAMS: usize = 32;

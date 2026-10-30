@@ -117,7 +117,7 @@ Even when a capability toggle is enabled, sensitive operations require interacti
 
 ## Automatic Updates and Release Verification
 
-Implemented in `desktop/app/src/updater.rs` (`win/http.rs`), `desktop/installer/update-task.ps1` and `android/app/src/main/kotlin/app/nectarlink/android/update/AppUpdater.kt`.
+Implemented in `desktop/app/src/updater.rs` (`win/http.rs`), `desktop/installer/nectarlink.nsi` (the task's definition) and `android/app/src/main/kotlin/app/nectarlink/android/update/AppUpdater.kt`.
 
 - **Endpoint**: Both apps query `https://api.github.com/repos/thtbee/nectarlink/releases/latest` over HTTPS with the OS TLS stack (`WinHTTP`, `HttpURLConnection`). Only `https://` URLs are fetched, redirects stay on HTTPS, and responses are size-capped while they are read. No device identifiers or telemetry are sent.
 - **What is accepted**: a published release (not a draft or pre-release) whose version is newer than the running one, with an installer named `Nectarlink-*-x64-setup.exe` (Windows, a plain file name) or `*-android.apk`, and a `SHA256SUMS.txt` that lists it. The download is rejected unless its SHA-256 matches. Android additionally refuses an APK not signed with the app's own key.

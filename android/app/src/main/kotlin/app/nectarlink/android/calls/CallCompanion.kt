@@ -4,6 +4,8 @@ package app.nectarlink.android.calls
 import android.app.AppOpsManager
 import android.content.Context
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.Process
 import android.telecom.Call
 import android.telecom.CallAudioState
@@ -109,14 +111,19 @@ class CallCompanion : InCallService() {
         return true
     }
 
+    private val main = Handler(Looper.getMainLooper())
+
     private fun dtmf(digit: Char): Boolean {
         val call = call ?: return false
         call.playDtmfTone(digit)
-        call.stopDtmfTone()
+        // Stopped at once, the tone can be too short for the other end to hear.
+        main.postDelayed({ call.stopDtmfTone() }, DTMF_MS)
         return true
     }
 
     companion object {
+        /** How long a keypad tone plays, like a short press on the phone's own keypad. */
+        private const val DTMF_MS = 150L
         @Volatile private var instance: CallCompanion? = null
 
         /** Whether Telecom has bound it (there's a call, and the phone allows companions). */

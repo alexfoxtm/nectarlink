@@ -53,9 +53,16 @@ pub fn is_otp_clip(text: &str) -> bool {
 }
 
 /// Whether `trimmed` is nothing but a standalone 4-8 digit code, `"G-123456"`,
-/// `"123-456"` or `"1234-5678"`.
+/// `"123-456"`, `"1234-5678"`, or the same groups split by a space.
 pub fn is_bare_code(trimmed: &str) -> bool {
     if (4..=8).contains(&trimmed.len()) && trimmed.bytes().all(|b| b.is_ascii_digit()) {
+        return true;
+    }
+    if let Some((first, second)) = trimmed.split_once(' ')
+        && (first.len() == 3 || first.len() == 4)
+        && second.len() == first.len()
+        && first.bytes().chain(second.bytes()).all(|b| b.is_ascii_digit())
+    {
         return true;
     }
     if let Some((prefix, rest)) = trimmed.split_once('-') {
@@ -686,6 +693,16 @@ fn preceding_clause_words(lower_chars: &[char], pos: usize, max_words: usize) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn grouped_codes_are_bare_codes_with_a_dash_or_a_space() {
+        for code in ["482913", "G-482913", "123-456", "1234-5678", "123 456", "1234 5678"] {
+            assert!(is_bare_code(code), "{code}");
+        }
+        for text in ["123 4567", "12 34", "123  456", "abc 123", "2026-10-10"] {
+            assert!(!is_bare_code(text), "{text}");
+        }
+    }
 
     #[test]
     fn detects_real_world_positive_examples() {

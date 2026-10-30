@@ -67,6 +67,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -77,6 +78,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -466,6 +468,26 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
             refreshDataRetention()
             app.nectarlink.android.clipboard.DirectShareTargets.sync(context, _state.value.devices)
             app.nectarlink.android.widget.PcWidgetProvider.refreshAll(context, _state.value)
+            currentRunScope.launch(Dispatchers.IO) {
+                // A rename in Android's settings reaches the PCs right away,
+                // not at the next start (#87).
+                callbackFlow {
+                    val observer = object : android.database.ContentObserver(null) {
+                        override fun onChange(selfChange: Boolean) {
+                            trySend(Unit)
+                        }
+                    }
+                    context.contentResolver.registerContentObserver(
+                        android.provider.Settings.Global.getUriFor(android.provider.Settings.Global.DEVICE_NAME),
+                        false,
+                        observer,
+                    )
+                    awaitClose { context.contentResolver.unregisterContentObserver(observer) }
+                }.collect {
+                    runCatching { started.updateDeviceInfo(deviceInfo(context, _state.value.activeMediaColor)) }
+                        .onFailure { Log.w(TAG, "can't send the new device name", it) }
+                }
+            }
             currentRunScope.launch(Dispatchers.IO) {
                 _state
                     .map { s ->
@@ -859,6 +881,8 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
                 } else if (event.link is Link.Online) {
                     wakeTimers.remove(event.id)?.cancel()
                     retryWaitingRecordings(event.id)
+                    // Plugged into a PC with USB debugging allowed: it can start Elevated.
+                    if (!Elevated.running) scope.launch(Dispatchers.IO) { Elevated.startOverUsb() }
                     scope.launch(Dispatchers.Default) {
                         accent.syncNow()
                     }
@@ -1066,10 +1090,31 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
         return node.mirrorOpenAudio(pcId)
     }
 
+    /**
+     * Elevated over USB (`docs/protocol/elevated-usb.md`): asks each connected
+     * PC to start this phone's helper; only one it's plugged into with USB
+     * debugging allowed can. Returns the helper's port, or `null`.
+     */
+    suspend fun elevatedUsbStart(apk: String, token: String, grants: List<String>): Int? {
+        startJob?.join()
+        val node = node ?: return null
+        for (pc in _state.value.devices.filter { it.online }) {
+            val port = runCatching { node.elevatedUsbStart(pc.id, apk, token, grants) }.getOrNull()
+            if (port != null) return port.toInt()
+        }
+        return null
+    }
+
     /** Accepted codecs from the connected PC; an unknown receiver gets H.264. */
     suspend fun webcamCodecs(pcId: String): List<String> {
         startJob?.join()
         return runCatching { node?.webcamCodecs(pcId) }.getOrNull() ?: listOf("h264")
+    }
+
+    /** Accepted screen codecs from the connected PC; unknown receivers use H.264. */
+    suspend fun mirrorCodecs(pcId: String): List<String> {
+        startJob?.join()
+        return runCatching { node?.mirrorCodecs(pcId) }.getOrNull() ?: listOf("h264")
     }
 
     /** Opens this phone's camera stream to a PC (`webcam`), or emits a message on failure. */
@@ -1784,7 +1829,7 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
                         _messages.tryEmit(msg)
                     }
                 }
-                TimelineKind.FILE, TimelineKind.PHOTO, TimelineKind.RECORDING -> {
+                TimelineKind.FILE, TimelineKind.PHOTO -> {
                     val target = entry.target
                     when {
                         target.startsWith("content://") -> sendFiles(entry.deviceId, listOf(Uri.parse(target)))
@@ -1852,7 +1897,10 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
             // Apps in windows of their own run on displays the Elevated helper makes.
             (if (Elevated.running && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) listOf("mirror.virtual_display") else emptyList()) +
             // Asked for when a PC wants the sound, or streamed via Elevated helper.
-            (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q || Elevated.running) listOf("mirror.audio.playback") else emptyList())
+            (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q || Elevated.running) listOf("mirror.audio.playback") else emptyList()) +
+            // The same sound on its own, without the screen.
+            (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q || Elevated.running) listOf("mirror.sound") else emptyList()) +
+            (if (app.nectarlink.android.mirror.ScreenEncoder.supportsHevcDecoder()) listOf("mirror.decode.hevc") else emptyList())
 
     /**
      * Triggers an immediate network/presence reconnect (e.g. when woken by
@@ -1939,7 +1987,14 @@ class Core(context: Context, private val scope: CoroutineScope) : EventListener 
                 else PairingState.Failed(PairingFailure.Declined),
             )
         }
-        scope.launch(Dispatchers.IO) { runCatching { node?.pairingConfirm(matches) } }
+        scope.launch(Dispatchers.IO) {
+            // The result comes as an event; with no answer sent there won't be one.
+            val sent = runCatching { node?.pairingConfirm(matches) != null }.getOrDefault(false)
+            if (matches && !sent) {
+                val failed = PairingState.Failed(PairingFailure.Other("the answer didn't reach the core"))
+                _state.update { s -> if (s.pairing is PairingState.Confirmed) s.copy(pairing = failed) else s }
+            }
+        }
     }
 
     /** Keeps local discovery working while the pairing screen is open. */

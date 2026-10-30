@@ -97,17 +97,21 @@ Returns the current PC clipboard text and up to 20 recent clipboard history entr
   "text": "Current clipboard text",
   "history": [
     {
-      "id": "clip-1",
+      "id": "clip_00000022",
+      "kind": "text",
       "preview": "Current clipboard text",
-      "mime": "text/plain",
-      "sourceDevice": "local",
-      "sourceName": "This PC",
-      "timestampMs": 1730000000000,
+      "deviceName": "Pixel 9 Pro",
+      "incoming": true,
+      "timestamp": 1730000000,
       "pinned": false
     }
   ]
 }
 ```
+
+`history` holds the 20 most recent items, newest first. `kind` is `text` or
+`image` (an image's `preview` is empty), `incoming` says whether it came from
+`deviceName` or was sent to it, and `timestamp` is in Unix seconds.
 
 ---
 
@@ -225,20 +229,23 @@ Returns recent cross-device timeline items. Accepts optional query parameters `?
   "ok": true,
   "items": [
     {
-      "id": "tl-1",
-      "kind": "clipboard",
+      "id": 42,
+      "kind": "file",
       "direction": "incoming",
-      "peerId": "a1b2c3...",
-      "peerName": "Pixel 9 Pro",
-      "timestampMs": 1730000000000,
-      "title": "Copied text",
-      "subtitle": "Pixel 9 Pro",
-      "payload": "Hello",
+      "deviceId": "a1b2c3...",
+      "timestamp": 1730000000,
+      "title": "notes.txt",
+      "detail": "File",
+      "target": "C:\\Users\\you\\Downloads\\Nectarlink\\notes.txt",
       "sizeBytes": 5
     }
   ]
 }
 ```
+
+`kind` is one of `file`, `clip`, `link`, `photo`, `recording` or `session`.
+`timestamp` is in Unix seconds, and `target` is the saved path (several are
+separated by newlines) or the link.
 
 ---
 

@@ -23,10 +23,19 @@ Item {
         showNearby = false
         if (running && state_ !== "comparing" && state_ !== "confirmed" && state_ !== "connecting")
             Pairing.start()
+        else if (!running)
+            stopHosting()
     }
     Component.onCompleted: {
         if (running && state_ !== "comparing" && state_ !== "confirmed" && state_ !== "connecting")
             Pairing.start()
+    }
+    Component.onDestruction: stopHosting()
+
+    // Left with its code still showing: the PC stops waiting to be paired.
+    function stopHosting() {
+        if (state_ === "hosting")
+            Pairing.cancel()
     }
 
     // Leave the success message up briefly, then close.

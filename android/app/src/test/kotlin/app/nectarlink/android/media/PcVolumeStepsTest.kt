@@ -21,6 +21,15 @@ class PcVolumeStepsTest {
     }
 
     @Test
+    fun hugeArtworkIsDecodedSmall() {
+        assertEquals(1, PcMedia.artSampleSize(300, 300))
+        assertEquals(1, PcMedia.artSampleSize(1023, 600))
+        assertEquals(2, PcMedia.artSampleSize(1024, 1024))
+        // A tiny file can claim 50,000 x 50,000 pixels: decoded at 1/64, about 780 px.
+        assertEquals(64, PcMedia.artSampleSize(50_000, 50_000))
+    }
+
+    @Test
     fun everyStepMapsBackToItself() {
         for (step in 0..PcMedia.VOLUME_STEPS) {
             assertEquals(step, PcMedia.toSteps(step * 100 / PcMedia.VOLUME_STEPS))

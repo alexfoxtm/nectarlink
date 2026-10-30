@@ -112,8 +112,11 @@
     <string name="channel_mirroring">屏幕共享</string>
     <string name="channel_mirror_requests">屏幕共享请求</string>
     <string name="mirror_request_title">%1$s 想要查看你的屏幕</string>
+    <string name="mirror_request_title_sound">%1$s 想播放你手机的声音</string>
     <string name="mirror_request_text">点按即可共享，随时可以停止。</string>
+    <string name="mirror_request_text_sound">点按即可共享。Android 会请求共享屏幕；只有声音会发送到电脑。</string>
     <string name="mirror_sharing">正在与 %1$s 共享屏幕</string>
+    <string name="mirror_sharing_sound">正在与 %1$s 共享手机声音</string>
     <string name="action_stop">停止</string>
     <plurals name="app_windows_title">
         <item quantity="one">有 %1$d 个应用在电脑上的窗口中打开</item>
@@ -456,9 +459,11 @@
     <string name="webcam_stop">停止摄像头</string>
     <string name="webcam_camera_back">后置</string>
     <string name="webcam_camera_front">前置</string>
+    <string name="webcam_switch_to_front">切换到前置摄像头</string>
+    <string name="webcam_switch_to_back">切换到后置摄像头</string>
+    <string name="webcam_turn_torch_on">打开闪光灯</string>
+    <string name="webcam_turn_torch_off">关闭闪光灯</string>
     <string name="webcam_switch_camera">切换摄像头</string>
-    <string name="webcam_torch_on">开启闪光灯</string>
-    <string name="webcam_torch_off">关闭闪光灯</string>
     <string name="webcam_zoom_label">缩放 %1$.1f×</string>
     <string name="webcam_resolution_label">分辨率</string>
     <string name="webcam_denied_text">%1$s 上已关闭此手机的摄像头。</string>
@@ -595,7 +600,6 @@
     <string name="webcam_stream_spec">%1$d × %2$d · %3$d fps</string>
     <string name="webcam_stream_camera_spec">%1$d × %2$d · %3$s</string>
     <string name="webcam_status_streaming_camera">正在以 %1$d × %2$d 传输到 %3$s · %4$s</string>
-    <string name="webcam_switch_camera_current">切换摄像头（%1$s）</string>
     <string name="webcam_res_720p">720p</string>
     <string name="webcam_res_1080p">1080p</string>
     <string name="webcam_res_4k">4K</string>
@@ -653,6 +657,7 @@
     <string name="mirror_banner_subtitle_control_on">用电脑点按、滑动和输入</string>
     <string name="mirror_banner_subtitle_audio">屏幕和声音 · 随时点按停止</string>
     <string name="mirror_banner_subtitle">实时屏幕串流 · 随时点按停止</string>
+    <string name="mirror_banner_subtitle_sound">仅声音 · 可随时点按停止</string>
     <string name="mirror_allow_pc_control">允许电脑鼠标控制</string>
     <string name="action_open_controls">控制</string>
     <string name="remote_input_requested_title">你的电脑尝试控制此手机</string>

@@ -375,7 +375,13 @@ async fn run_port_worker(
         let mut answered = false;
         if let Ok(host_port) = nectarlink_adb::forward_tcp(adb_addr, &serial, 0, phone_port).await {
             let forwarded = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), host_port);
-            let target = UsbTarget { phone_port, auto_pair: auto_pairs(&serial), profiles: profiles.clone() };
+            let target = UsbTarget {
+                phone_port,
+                auto_pair: auto_pairs(&serial),
+                profiles: profiles.clone(),
+                serial: serial.clone(),
+                adb_addr,
+            };
             answered = run_forwarded_session(&shared, forwarded, &cancel, target).await;
             let _ = nectarlink_adb::kill_forward_tcp(adb_addr, &serial, host_port).await;
         }
@@ -399,6 +405,9 @@ struct UsbTarget {
     phone_port: u16,
     auto_pair: bool,
     profiles: Arc<Mutex<SerialProfiles>>,
+    /// The phone's adb serial, so its Elevated helper can be started over USB.
+    serial: String,
+    adb_addr: SocketAddr,
 }
 
 /// Whether plugging in this device should start pairing on its own. Android
@@ -444,12 +453,22 @@ async fn run_forwarded_session(
 
     let tunnel_cancel = cancel.child_token();
     shared.register_usb_bridge_port(bridge_port);
+    shared
+        .usb_serials
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(phone_id, (target.serial.clone(), target.adb_addr));
     shared.on_usb_tunnel_connected(phone_id, phone_name, bridge_addr, tunnel_cancel.clone(), auto_pair);
 
     let default_target = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), iroh_port);
     relay_tcp_udp(stream, udp, default_target, tunnel_cancel).await;
 
     target.profiles.lock().unwrap_or_else(|e| e.into_inner()).paired.remove(&target.phone_port);
+    shared.usb_serials.lock().unwrap_or_else(|e| e.into_inner()).remove(&phone_id);
+    // The cable is out: a helper started over it has stopped with it.
+    if let Some(helper) = shared.usb_helpers.lock().unwrap_or_else(|e| e.into_inner()).remove(&phone_id) {
+        helper.abort();
+    }
     shared.unregister_usb_bridge_port(bridge_port);
     shared.on_usb_tunnel_disconnected(phone_id, bridge_addr).await;
     true

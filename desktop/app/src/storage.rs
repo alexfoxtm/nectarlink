@@ -78,6 +78,8 @@ mod imp {
     };
 
     #[cfg(windows)]
+    use crate::i18n::tr;
+    #[cfg(windows)]
     use crate::state::{Changes, CoreStatus};
     use crate::{core_host, win};
 
@@ -174,18 +176,22 @@ mod imp {
                 .map(|d| (d.id, d.info.name.clone(), matches!(d.link, LinkState::Online { .. })))
                 .collect::<Vec<_>>()
         });
-        let mut desired: Vec<(DeviceId, String, bool)> = Vec::new();
+        let folders = folder_names(devices.iter().map(|(id, name, _)| (*id, name.as_str())));
+        let mut desired: Vec<(DeviceId, String, String, bool)> = Vec::new();
         let mut disabled: Vec<(DeviceId, String)> = Vec::new();
         for (id, name, online) in devices {
-            let enabled = node
-                .device_toggles(id)
-                .ok()
-                .and_then(|t| t.into_iter().find(|(k, _)| *k == "storage").map(|(_, on)| on))
-                .unwrap_or(false);
+            // A permission that can't be read right now isn't "off": turning a
+            // phone off removes its folder, so try again on the next sync.
+            let Ok(toggles) = node.device_toggles(id) else {
+                tracing::debug!(device = %id.short(), "can't read storage permission; skipping this sync");
+                return;
+            };
+            let enabled = toggles.into_iter().find(|(k, _)| *k == "storage").is_some_and(|(_, on)| on);
+            let folder = folders.get(&id).cloned().unwrap_or_else(|| sanitize_folder_name(&name));
             if enabled {
-                desired.push((id, name, online));
+                desired.push((id, name, folder, online));
             } else {
-                disabled.push((id, name));
+                disabled.push((id, folder));
             }
         }
 
@@ -299,8 +305,28 @@ mod imp {
         if let Some(path) = win::storage::mounted_path_for(&device) {
             return Some(path);
         }
-        let name = core_host::host().hub.read(|s| s.name_of(&device))?;
-        Some(base_sync_dir()?.join(sanitize_folder_name(&name)))
+        let mut folders = core_host::host()
+            .hub
+            .read(|s| folder_names(s.devices.iter().map(|d| (d.id, d.info.name.as_str()))));
+        Some(base_sync_dir()?.join(folders.remove(&device)?))
+    }
+
+    /// Each phone's folder under `Nectarlink`: its name, or its name and
+    /// short ID when another paired phone has the same name, so two phones
+    /// of the same model never share one folder (or remove each other's).
+    pub fn folder_names<'a>(
+        devices: impl Iterator<Item = (DeviceId, &'a str)>,
+    ) -> std::collections::HashMap<DeviceId, String> {
+        let named: Vec<(DeviceId, String)> =
+            devices.map(|(id, name)| (id, sanitize_folder_name(name))).collect();
+        named
+            .iter()
+            .map(|(id, folder)| {
+                let shared = named.iter().any(|(other, f)| other != id && f.eq_ignore_ascii_case(folder));
+                let folder = if shared { format!("{folder} ({})", id.short()) } else { folder.clone() };
+                (*id, folder)
+            })
+            .collect()
     }
 
     /// Opens a paired phone's sync root folder in File Explorer.
@@ -371,17 +397,17 @@ mod imp {
     pub fn relative_path_under_root(root_path: &Path, full_path: &Path) -> Option<String> {
         let root_norm = normalize_win_path(root_path);
         let full_norm = normalize_win_path(full_path);
-        let root_lower = root_norm.to_lowercase();
-        let full_lower = full_norm.to_lowercase();
-        if full_lower == root_lower {
-            return Some(String::new());
-        }
-        let prefix = format!("{root_lower}\\");
-        if !full_lower.starts_with(&prefix) {
+        // Compared name by name, ignoring case. (Cutting the path at the length
+        // of a lowercased copy breaks on letters whose lowercase is longer,
+        // such as the Turkish "İ" in a phone's name.)
+        let root_parts: Vec<&str> = root_norm.split('\\').filter(|s| !s.is_empty()).collect();
+        let full_parts: Vec<&str> = full_norm.split('\\').filter(|s| !s.is_empty()).collect();
+        if full_parts.len() < root_parts.len()
+            || !root_parts.iter().zip(&full_parts).all(|(a, b)| a.to_lowercase() == b.to_lowercase())
+        {
             return None;
         }
-        let rel = &full_norm[prefix.len()..];
-        let parts: Vec<&str> = rel.split('\\').filter(|s| !s.is_empty()).collect();
+        let parts = &full_parts[root_parts.len()..];
         if parts.iter().any(|p| *p == "." || *p == "..") {
             return None;
         }
@@ -396,26 +422,28 @@ mod imp {
     }
 
     #[cfg(windows)]
-    fn reconcile(desired: &[(DeviceId, String, bool)], disabled: &[(DeviceId, String)]) {
+    fn reconcile(desired: &[(DeviceId, String, String, bool)], disabled: &[(DeviceId, String)]) {
         // Unregister any disabled devices that belong to this instance.
-        for (id, name) in disabled {
-            remove_device_root(*id, Some(name));
+        for (id, folder) in disabled {
+            remove_device_root(*id, Some(folder));
         }
 
         // Remove any active roots no longer in `desired`.
         let active_ids: Vec<DeviceId> =
             active_roots().as_ref().map(|m| m.keys().copied().collect()).unwrap_or_default();
         for id in active_ids {
-            if !desired.iter().any(|(d, _, _)| *d == id) {
+            if !desired.iter().any(|(d, _, _, _)| *d == id) {
                 remove_device_root(id, None);
             }
         }
 
         // Register and connect desired roots.
-        for (id, name, online) in desired {
+        for (id, name, folder, online) in desired {
             let already = get_active_root(id);
             if let Some(existing) = already {
-                if existing.name == *name {
+                if existing.name == *name
+                    && existing.root_path.file_name() == Some(std::ffi::OsStr::new(folder))
+                {
                     if *online {
                         let root = existing.clone();
                         core_host::spawn(async move {
@@ -427,18 +455,19 @@ mod imp {
                     }
                     continue;
                 }
-                // Name changed: replace root.
-                remove_device_root(*id, Some(&existing.name));
+                // Name or folder changed: replace root.
+                let old_folder = existing.root_path.file_name().map(|f| f.to_string_lossy().into_owned());
+                remove_device_root(*id, old_folder.as_deref());
             }
 
-            if let Err(e) = register_and_connect(*id, name, *online) {
+            if let Err(e) = register_and_connect(*id, name, folder, *online) {
                 tracing::warn!(device = %id.short(), error = %e, "can't register phone storage sync root");
             }
         }
     }
 
     #[cfg(windows)]
-    fn remove_device_root(device: DeviceId, known_name: Option<&str>) {
+    fn remove_device_root(device: DeviceId, known_folder: Option<&str>) {
         let removed = active_roots().as_mut().and_then(|m| m.remove(&device));
         let mut folder_to_clean: Option<PathBuf> = None;
         if let Some(root) = removed {
@@ -446,10 +475,10 @@ mod imp {
             // SAFETY: connection_key was obtained from CfConnectSyncRoot.
             let _ = unsafe { CfDisconnectSyncRoot(root.connection_key) };
             folder_to_clean = Some(root.root_path.clone());
-        } else if let Some(name) = known_name
+        } else if let Some(folder) = known_folder
             && let Some(base) = base_sync_dir()
         {
-            folder_to_clean = Some(base.join(sanitize_folder_name(name)));
+            folder_to_clean = Some(base.join(folder));
         }
 
         let id = sync_root_id(device);
@@ -463,19 +492,41 @@ mod imp {
         }
     }
 
+    /// Clears the phone's folder: its placeholders go, but a file that never
+    /// reached the phone (copied in, or changed and not uploaded) is the
+    /// user's own and stays where it is.
     #[cfg(windows)]
     fn cleanup_sync_root_dir(path: &Path) {
+        fn clear(dir: &Path) -> usize {
+            let mut kept = 0;
+            for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+                let path = entry.path();
+                if entry.file_type().is_ok_and(|t| t.is_dir()) {
+                    kept += clear(&path);
+                    let _ = std::fs::remove_dir(&path);
+                } else if needs_upload(&path) {
+                    kept += 1;
+                } else {
+                    let _ = std::fs::remove_file(&path);
+                }
+            }
+            kept
+        }
         if !path.exists() {
             return;
         }
-        let _ = std::fs::remove_dir_all(path);
+        let kept = clear(path);
+        if kept > 0 {
+            tracing::info!(kept, "kept files that never reached the phone in its old folder");
+        } else {
+            let _ = std::fs::remove_dir(path);
+        }
     }
 
     #[cfg(windows)]
-    fn register_and_connect(device: DeviceId, name: &str, online: bool) -> Result<(), String> {
+    fn register_and_connect(device: DeviceId, name: &str, folder: &str, online: bool) -> Result<(), String> {
         let base = base_sync_dir().ok_or_else(|| "no user home directory".to_owned())?;
-        let folder_name = sanitize_folder_name(name);
-        let root_path = base.join(&folder_name);
+        let root_path = base.join(folder);
         std::fs::create_dir_all(&root_path).map_err(|e| format!("create sync root dir: {e}"))?;
 
         let exe = std::env::current_exe().map_err(|e| e.to_string())?;
@@ -646,7 +697,12 @@ mod imp {
 
         core_host::spawn(async move {
             let Some(node) = core_host::node() else {
-                ack_placeholders_failed(connection_key, transfer_key, request_key);
+                ack_placeholders_failed(
+                    connection_key,
+                    transfer_key,
+                    request_key,
+                    STATUS_CLOUD_NETWORK_UNAVAILABLE,
+                );
                 return;
             };
             match node.storage_list(root.device, &rel_path).await {
@@ -660,7 +716,8 @@ mod imp {
                         error = %e,
                         "fetch placeholders failed"
                     );
-                    ack_placeholders_failed(connection_key, transfer_key, request_key);
+                    let status = failure_status(root.device, &e);
+                    ack_placeholders_failed(connection_key, transfer_key, request_key, status);
                 }
             }
         });
@@ -715,8 +772,66 @@ mod imp {
         let _ = unsafe { CfExecute(&op_info, &mut op_params) };
     }
 
+    /// What Explorer is told when the phone couldn't list or read something.
+    /// A refusal (storage access off, or no All files access) isn't a network
+    /// problem: it's "access denied", and NectarLink says what to turn on.
     #[cfg(windows)]
-    fn ack_placeholders_failed(connection_key: CF_CONNECTION_KEY, transfer_key: i64, request_key: i64) {
+    fn failure_status(device: DeviceId, error: &nectarlink_core::Error) -> NTSTATUS {
+        match error {
+            nectarlink_core::Error::Denied | nectarlink_core::Error::Unsupported => {
+                explain_refusal(device, matches!(error, nectarlink_core::Error::Unsupported));
+                STATUS_ACCESS_DENIED
+            }
+            _ => STATUS_CLOUD_NETWORK_UNAVAILABLE,
+        }
+    }
+
+    /// Says on this PC why the phone's folder won't open, at most every ten
+    /// minutes per phone (Explorer asks again for every folder it shows).
+    #[cfg(windows)]
+    fn explain_refusal(device: DeviceId, no_all_files_access: bool) {
+        static SHOWN: Mutex<Option<std::collections::HashMap<DeviceId, std::time::Instant>>> =
+            Mutex::new(None);
+        {
+            let mut shown = lock(&SHOWN);
+            let shown = shown.get_or_insert_with(Default::default);
+            if shown.get(&device).is_some_and(|at| at.elapsed() < std::time::Duration::from_secs(600)) {
+                return;
+            }
+            shown.insert(device, std::time::Instant::now());
+        }
+        let name = core_host::host().hub.read(|s| s.name_of(&device)).unwrap_or_else(|| "your phone".into());
+        let body = if no_all_files_access {
+            tr!("Storage", "On the phone, allow All files access for NectarLink.")
+        } else {
+            tr!(
+                "Storage",
+                "On the phone, turn on Browse this phone's storage in File Explorer in NectarLink."
+            )
+        };
+        crate::win::toast::show(crate::win::toast::Toast {
+            device: crate::transfers::TOAST_GROUP.into(),
+            key: format!("storage-refused-{device}"),
+            title: tr!("Storage", "%1's files aren't shared with this PC", name),
+            body,
+            attribution: "NectarLink".into(),
+            icon: None,
+            image: None,
+            actions: Vec::new(),
+            reply: None,
+            silent: false,
+            progress: None,
+            call: false,
+        });
+    }
+
+    #[cfg(windows)]
+    fn ack_placeholders_failed(
+        connection_key: CF_CONNECTION_KEY,
+        transfer_key: i64,
+        request_key: i64,
+        status: NTSTATUS,
+    ) {
         let op_info =
             make_op_info(connection_key, transfer_key, request_key, CF_OPERATION_TYPE_TRANSFER_PLACEHOLDERS);
         let mut op_params = CF_OPERATION_PARAMETERS {
@@ -724,7 +839,7 @@ mod imp {
             Anonymous: CF_OPERATION_PARAMETERS_0 {
                 TransferPlaceholders: windows::Win32::Storage::CloudFilters::CF_OPERATION_PARAMETERS_0_4 {
                     Flags: windows::Win32::Storage::CloudFilters::CF_OPERATION_TRANSFER_PLACEHOLDERS_FLAGS(0),
-                    CompletionStatus: STATUS_CLOUD_NETWORK_UNAVAILABLE,
+                    CompletionStatus: status,
                     PlaceholderTotalCount: 0,
                     PlaceholderArray: std::ptr::null_mut(),
                     PlaceholderCount: 0,
@@ -812,7 +927,7 @@ mod imp {
                         transfer_key,
                         request_key,
                         required_offset as i64,
-                        STATUS_CLOUD_NETWORK_UNAVAILABLE,
+                        failure_status(root.device, &e),
                     );
                     return;
                 }
@@ -881,6 +996,17 @@ mod imp {
                 }
                 current_offset += len;
                 remaining = remaining.saturating_sub(len);
+            }
+            // The phone's stream ended short: Explorer hears it now, instead
+            // of waiting out its own timeout.
+            if remaining > 0 {
+                ack_data_failed(
+                    connection_key,
+                    transfer_key,
+                    request_key,
+                    current_offset as i64,
+                    STATUS_CLOUD_NETWORK_UNAVAILABLE,
+                );
             }
         });
     }
@@ -1005,7 +1131,8 @@ mod imp {
                 Ok(()) => STATUS_SUCCESS,
                 Err(nectarlink_core::Error::Offline) => STATUS_CLOUD_NETWORK_UNAVAILABLE,
                 Err(nectarlink_core::Error::Denied) => STATUS_ACCESS_DENIED,
-                Err(nectarlink_core::Error::Storage(msg)) if msg.contains("not_found") => STATUS_SUCCESS,
+                // Already gone from the phone: deleted, as asked.
+                Err(nectarlink_core::Error::NotFound) => STATUS_SUCCESS,
                 Err(_) => STATUS_CLOUD_UNSUCCESSFUL,
             };
             ack_delete(connection_key, transfer_key, request_key, status);
@@ -1047,6 +1174,11 @@ mod imp {
 
         let mut missing: Vec<StorageEntry> = Vec::new();
         for entry in entries {
+            // Windows can't show a name it can't store (`:`, `CON`, a trailing
+            // dot), and `C:x` would even join to a path outside the folder.
+            if nectarlink_core::storable_name(&entry.name) != entry.name {
+                continue;
+            }
             let child_path = local_dir.join(&entry.name);
             if !child_path.exists() {
                 missing.push(entry);
@@ -1104,10 +1236,11 @@ mod imp {
                     None,
                 )
             };
-            let Ok(dir_handle) = dir_handle else { return };
-            if dir_handle == INVALID_HANDLE_VALUE {
+            // Files dropped in this folder won't go to the phone: say why.
+            let Some(dir_handle) = dir_handle.ok().filter(|h| *h != INVALID_HANDLE_VALUE) else {
+                tracing::warn!("can't watch the phone's folder for files to upload");
                 return;
-            }
+            };
 
             let mut buf = vec![0u64; 4096];
             while !stop.load(Ordering::Relaxed) {
@@ -1288,6 +1421,22 @@ mod imp {
     mod tests {
         use super::*;
 
+        #[cfg(windows)]
+        #[test]
+        fn clearing_a_phone_folder_keeps_files_that_never_reached_the_phone() {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path().join("Pixel");
+            std::fs::create_dir_all(root.join("DCIM").join("empty")).unwrap();
+            std::fs::write(root.join("DCIM").join("mine.txt"), b"not on the phone").unwrap();
+            cleanup_sync_root_dir(&root);
+            assert_eq!(std::fs::read(root.join("DCIM").join("mine.txt")).unwrap(), b"not on the phone");
+            assert!(!root.join("DCIM").join("empty").exists(), "empty folders go");
+
+            std::fs::remove_file(root.join("DCIM").join("mine.txt")).unwrap();
+            cleanup_sync_root_dir(&root);
+            assert!(!root.exists(), "nothing kept: the folder goes");
+        }
+
         #[test]
         fn converts_unix_ms_to_filetime_and_back() {
             let unix_ms = 1_710_000_000_123i64;
@@ -1341,10 +1490,34 @@ mod imp {
                 relative_path_under_root(root, Path::new(r"C:\Users\alice\Nectarlink\Pixel 9 Pro\DCIM")),
                 None
             );
+            // "İ" lowercases to two characters: the path still splits in the right place.
+            let turkish = Path::new(r"C:\Users\alice\Nectarlink\İpek's Phone");
+            assert_eq!(
+                relative_path_under_root(
+                    turkish,
+                    Path::new(r"C:\Users\alice\Nectarlink\İpek's Phone\DCIM\a.jpg")
+                ),
+                Some("DCIM/a.jpg".into())
+            );
+            assert_eq!(
+                relative_path_under_root(root, Path::new(r"c:\users\ALICE\nectarlink\pixel 9\Download")),
+                Some("Download".into())
+            );
 
             assert_eq!(sanitize_folder_name("Pixel 9 (test)"), "Pixel 9 (test)");
             assert_eq!(sanitize_folder_name("My:Phone*1?"), "My Phone 1");
             assert_eq!(sanitize_folder_name("CON"), "CON phone");
+        }
+
+        #[test]
+        fn phones_with_the_same_name_get_their_own_folders() {
+            let (a, b, c) = (DeviceId([1; 32]), DeviceId([2; 32]), DeviceId([3; 32]));
+            let folders = folder_names([(a, "Galaxy A35"), (b, "galaxy a35"), (c, "Pixel 9")].into_iter());
+            assert_eq!(folders[&a], format!("Galaxy A35 ({})", a.short()));
+            assert_eq!(folders[&b], format!("galaxy a35 ({})", b.short()));
+            assert_ne!(folders[&a].to_lowercase(), folders[&b].to_lowercase());
+            // A phone with a name of its own keeps its plain folder.
+            assert_eq!(folders[&c], "Pixel 9");
         }
     }
 }

@@ -64,7 +64,7 @@ Signing. Either plugs in after `package.ps1` builds the installer, before
   seconds after start and daily. With **Install updates automatically** on,
   it waits until nobody has used the PC for 10 minutes and nothing is in
   progress, then starts the **Nectarlink Update** task that the installer
-  registers (`desktop/installer/update-task.ps1`). The task runs as SYSTEM,
+  registers (`desktop/installer/nectarlink.nsi`). The task runs as SYSTEM,
   downloads and checks the installer itself, and runs it silently; a hidden
   relauncher reopens the app afterwards. The task logs to `update.log` in the
   install folder. Details and the security reasoning:

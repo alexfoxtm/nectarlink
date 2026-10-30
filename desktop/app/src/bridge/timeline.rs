@@ -518,16 +518,15 @@ fn resolve_target_device(requested: &QString, fallback: Option<DeviceId>) -> Opt
         return Some(id);
     }
     core_host::host().hub.read(|s| {
-        if let Some(id) = fallback
-            && s.devices.iter().any(|d| d.id == id && matches!(d.link, LinkState::Online { .. }))
-        {
+        // The entry's own device, online or not (it's queued until it's
+        // back): sending it to another phone instead would surprise.
+        if let Some(id) = fallback.filter(|id| s.devices.iter().any(|d| d.id == *id)) {
             return Some(id);
         }
         s.devices
             .iter()
             .find(|d| matches!(d.link, LinkState::Online { .. }))
             .map(|d| d.id)
-            .or_else(|| fallback.filter(|id| s.devices.iter().any(|d| d.id == *id)))
             .or_else(|| s.devices.first().map(|d| d.id))
     })
 }

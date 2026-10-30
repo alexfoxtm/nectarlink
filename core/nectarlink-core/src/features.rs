@@ -937,6 +937,17 @@ pub const FEATURES: &[FeatureDef] = &[
             limit: "mirroring.limit.audio_some_apps",
         }),
     },
+    // The phone's sound on its own, played by the PC without a window.
+    FeatureDef {
+        id: "mirroring.sound",
+        group: FeatureGroup::Mirroring,
+        requires: &[
+            phone("mirror.sound", UPDATE),
+            desktop("mirror.listen", UPDATE),
+            DeviceToggle("mirroring"),
+        ],
+        partial: None,
+    },
     // Media
     FeatureDef {
         id: "media.phone_control",

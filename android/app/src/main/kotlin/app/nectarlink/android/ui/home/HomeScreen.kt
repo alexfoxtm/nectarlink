@@ -368,16 +368,21 @@ fun HomeScreen(
                     ?: stringResource(R.string.your_pc)
                 val controlReady = state.inputAccess || state.elevated
                 val subtitle = when {
+                    mirrorSession.soundOnly -> stringResource(R.string.mirror_banner_subtitle_sound)
                     controlReady -> stringResource(R.string.mirror_banner_subtitle_control_on)
                     mirrorSession.audio -> stringResource(R.string.mirror_banner_subtitle_audio)
                     else -> stringResource(R.string.mirror_banner_subtitle)
                 }
                 LiveStreamingBanner(
-                    title = stringResource(R.string.mirror_sharing, pcName),
+                    title = stringResource(
+                        if (mirrorSession.soundOnly) R.string.mirror_sharing_sound else R.string.mirror_sharing,
+                        pcName,
+                    ),
                     subtitle = subtitle,
                     primaryActionLabel = stringResource(R.string.action_stop),
                     onPrimaryAction = onStopMirror,
-                    secondaryActionLabel = if (!controlReady) {
+                    // Nothing to control without the screen.
+                    secondaryActionLabel = if (!controlReady && !mirrorSession.soundOnly) {
                         stringResource(R.string.mirror_allow_pc_control)
                     } else {
                         null
@@ -1460,19 +1465,23 @@ private fun PcCard(
                         )
                     }
                 }
-            }
-            // Stays paired, and stays disconnected until Reconnect (GitHub #48).
-            if (device.reconnect && device.wakeState != WakeState.Waking) {
-                TextButton(
-                    onClick = { onSetReconnect(device.id, false) },
-                    colors = ButtonDefaults.textButtonColors(contentColor = ink),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 0.dp, vertical = 4.dp),
-                    modifier = Modifier.heightIn(min = 32.dp),
-                ) {
-                    Text(
-                        stringResource(if (device.online) R.string.action_disconnect else R.string.action_stop_reconnecting),
-                        style = MaterialTheme.typography.labelMedium,
-                    )
+                // Stays paired, and stays disconnected until Reconnect (GitHub #48).
+                // At the end of the status line, outlined so it reads as a button.
+                if (device.reconnect && device.wakeState != WakeState.Waking) {
+                    Spacer(Modifier.width(8.dp))
+                    OutlinedButton(
+                        onClick = { onSetReconnect(device.id, false) },
+                        border = BorderStroke(1.dp, ink.copy(alpha = 0.35f)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = ink),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 4.dp),
+                        modifier = Modifier.heightIn(min = 32.dp),
+                    ) {
+                        Text(
+                            stringResource(if (device.online) R.string.action_disconnect else R.string.action_stop_reconnecting),
+                            style = MaterialTheme.typography.labelMedium,
+                            maxLines = 1,
+                        )
+                    }
                 }
             }
             Spacer(Modifier.height(10.dp))

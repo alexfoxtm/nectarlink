@@ -23,6 +23,29 @@ pub const TOGGLE: &str = "photos";
 const RESULT_TIMEOUT: Duration = Duration::from_secs(60);
 const CHUNK_BYTES: usize = 64 * 1024;
 
+/// How long a capture this device asked for may take: the phone's user
+/// takes the photo or scan.
+const CAPTURE_WAIT: Duration = Duration::from_secs(10 * 60);
+
+/// Captures this device asked for and hasn't received: a result is saved
+/// only for one of these, never for a picture a phone sends unasked.
+static ASKED: std::sync::Mutex<Vec<(DeviceId, String, std::time::Instant)>> =
+    std::sync::Mutex::new(Vec::new());
+
+fn asked() -> std::sync::MutexGuard<'static, Vec<(DeviceId, String, std::time::Instant)>> {
+    let mut asked = ASKED.lock().unwrap_or_else(|e| e.into_inner());
+    asked.retain(|(_, _, at)| at.elapsed() < CAPTURE_WAIT);
+    asked
+}
+
+/// Takes the outstanding request `request_id` to `peer`, if there is one.
+fn take_asked(peer: &DeviceId, request_id: &str) -> bool {
+    let mut asked = asked();
+    let before = asked.len();
+    asked.retain(|(p, id, _)| !(p == peer && id == request_id));
+    asked.len() < before
+}
+
 /// Whether a Continuity Camera `request_id` meets the protocol bounds.
 pub fn valid_request_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= continuity_camera::MAX_ID_BYTES && !id.chars().any(char::is_control)
@@ -47,8 +70,13 @@ pub(crate) async fn request_on_session(
     if !shared.toggle_on(&session.peer, TOGGLE) {
         return Err(Error::Denied);
     }
-    let env = Envelope::new(types::CAMERA_CAPTURE_REQUEST, &CameraCaptureRequest { request_id, mode })?;
-    session.send(env).await
+    let env = Envelope::new(
+        types::CAMERA_CAPTURE_REQUEST,
+        &CameraCaptureRequest { request_id: request_id.clone(), mode },
+    )?;
+    session.send(env).await?;
+    asked().push((session.peer, request_id, std::time::Instant::now()));
+    Ok(())
 }
 
 /// Asks a paired phone to open its camera UI and capture a photo or scan a document.
@@ -97,6 +125,7 @@ pub(crate) async fn cancel(
     if !shared.store.is_paired(&peer)? {
         return Err(Error::NotPaired);
     }
+    take_asked(&peer, &request_id);
     let session = shared.session(&peer).ok_or(Error::Offline)?;
     let env = Envelope::new(types::CAMERA_CAPTURE_CANCEL, &CameraCaptureCancel { request_id, reason })?;
     session.send(env).await
@@ -290,6 +319,9 @@ async fn take_result(
     if !shared.toggle_on(&peer, TOGGLE) {
         return Err((ErrorCode::Denied, "photos sharing is turned off"));
     }
+    if !take_asked(&peer, &meta.request_id) {
+        return Err((ErrorCode::Denied, "no capture was asked for"));
+    }
 
     let size = usize::try_from(meta.size).map_err(|_| (ErrorCode::BadMessage, "image too large"))?;
     let mut data = Vec::with_capacity(size.min(CHUNK_BYTES));
@@ -308,13 +340,17 @@ async fn take_result(
         CameraCaptureMode::Scan => format!("Scan.{default_ext}"),
     };
     let raw_name = if meta.file_name.trim().is_empty() { &fallback_name } else { &meta.file_name };
-    let safe_name = crate::transfer::safe_file_name(raw_name);
+    // Safe to save on any system: `C:x.jpg` must not become a path on drive C.
+    let safe_name = crate::transfer::storable_name(&crate::transfer::safe_file_name(raw_name));
 
     let saved_path = match tokio::fs::create_dir_all(&shared.downloads_dir).await {
         Ok(()) => {
             let dest = crate::transfer::unique_path(&shared.downloads_dir, &safe_name);
             match tokio::fs::write(&dest, &data).await {
-                Ok(()) => Some(dest),
+                Ok(()) => {
+                    crate::transfer::mark_from_elsewhere(&dest);
+                    Some(dest)
+                }
                 Err(e) => {
                     tracing::warn!(error = %e, "can't save continuity camera capture");
                     None

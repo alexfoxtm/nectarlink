@@ -138,6 +138,9 @@ Item {
     Component.onCompleted: load()
     onDeviceIdChanged: {
         selectedContact = null
+        // Another phone's contacts: the last search doesn't apply. A typed
+        // number stays, to call it from this phone.
+        search.text = ""
         load()
     }
 
@@ -723,10 +726,13 @@ Item {
                                 scale: padTap.pressed ? Theme.pressScale : 1
                                 Behavior on scale { enabled: !Theme.reduceMotion; SpringAnimation { spring: Theme.springSnappy; damping: Theme.dampingSnappy } }
 
+                                // In a call a digit is a tone for the call (a PIN, say),
+                                // not something to leave in the number box after it.
                                 function tapDigit(ch) {
-                                    dialInput.text = dialInput.text + ch
                                     if (PhoneCall.active && PhoneCall.controls)
                                         PhoneCall.press(ch)
+                                    else
+                                        dialInput.text = dialInput.text + ch
                                 }
 
                                 Keys.onPressed: (event) => {

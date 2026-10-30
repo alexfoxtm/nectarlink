@@ -16,8 +16,7 @@ import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * Plays live PCM-16LE audio frames streamed from a paired PC (`pc.audio.relay`)
- * through the phone's full media DSP pipeline (`PERFORMANCE_MODE_NONE`) so OEM
- * speaker tuning / Dolby Atmos / bass enhancement remain active, while a
+ * on a low-latency output (`PERFORMANCE_MODE_LOW_LATENCY`), while a
  * dedicated `THREAD_PRIORITY_URGENT_AUDIO` worker maintains a tight ~35–45 ms
  * jitter cushion without ever calling `pause()`/`flush()` mid-stream.
  */

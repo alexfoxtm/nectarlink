@@ -183,7 +183,7 @@ async fn answer(shared: &Arc<Shared>, session: &Session, env: &Envelope) -> Resu
             blocking(Box::new(move || {
                 let (mime, data) = platform.sms_part(&id)?;
                 if data.len() > sms::MAX_PART_BYTES {
-                    return Ok(Envelope::error(ErrorCode::Busy, "too large"));
+                    return Ok(Envelope::error(ErrorCode::FrameTooLarge, "too large"));
                 }
                 Envelope::new(types::SMS_PART, &SmsPartData { mime, data }).map_err(|e| e.to_string())
             }))
@@ -201,20 +201,42 @@ pub(crate) fn fit<T: Clone>(
     mut items: Vec<T>,
     wrap: impl Fn(Vec<T>) -> std::result::Result<Envelope, nectarlink_protocol::ProtocolError>,
 ) -> std::result::Result<Envelope, String> {
+    let had_items = !items.is_empty();
     loop {
         let env = wrap(items.clone()).map_err(|e| e.to_string())?;
-        if env.to_cbor().len() + FRAME_MARGIN <= MAX_FRAME_LEN || items.is_empty() {
+        if env.to_cbor().len() + FRAME_MARGIN <= MAX_FRAME_LEN {
             return Ok(env);
         }
-        // Drop the oldest quarter and try again.
+        // Drop the oldest quarter and try again. With nothing left, an
+        // empty list would read as "there's none", so it's an error.
         let keep = items.len() - items.len().div_ceil(4);
         items.truncate(keep);
+        if items.is_empty() && had_items {
+            return Err("the newest item is too large to send".into());
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_item_too_large_for_a_frame_is_an_error_not_an_empty_list() {
+        let message = SmsMessage {
+            id: "1".into(),
+            thread: "1".into(),
+            address: "+1555".into(),
+            body: "x".repeat(MAX_FRAME_LEN),
+            date: 1,
+            outgoing: false,
+            status: None,
+            parts: Vec::new(),
+        };
+        let wrap = |messages| Envelope::new(types::SMS_MESSAGES, &SmsMessages { messages });
+        assert!(fit(vec![message], wrap).is_err());
+        assert!(fit(Vec::<SmsMessage>::new(), wrap).is_ok(), "an empty list is still fine");
+    }
 
     #[test]
     fn long_lists_are_cut_to_fit_a_frame() {

@@ -47,6 +47,9 @@ Window {
     // ---- Track active file transfer ----
     property string activeTransferId: ""
     property string activeTransferTitle: ""
+    // The last one's title, kept for "Transfer complete": its row can go
+    // before the count of active transfers drops.
+    property string finishedTransferTitle: ""
     property real activeTransferProgress: 0
     property real activeTransferRate: 0
     property bool activeTransferIncoming: false
@@ -79,12 +82,17 @@ Window {
         id: transferDoneTimer
         interval: 3200
         repeat: false
-        onTriggered: islandWin.transferJustFinished = false
+        onTriggered: {
+            islandWin.transferJustFinished = false
+            islandWin.finishedTransferTitle = ""
+        }
     }
 
     property int lastActiveTransfers: TransferList.active
     onLastActiveTransfersChanged: {
-        if (lastActiveTransfers === 0 && activeTransferTitle.length > 0) {
+        if (lastActiveTransfers === 0 && activeTransferTitle.length > 0)
+            finishedTransferTitle = activeTransferTitle
+        if (lastActiveTransfers === 0 && finishedTransferTitle.length > 0) {
             transferJustFinished = true
             transferDoneTimer.restart()
         }
@@ -147,6 +155,8 @@ Window {
             activeTransferRate = found.rate || 0
             activeTransferIncoming = found.incoming
         } else if (!transferJustFinished) {
+            if (activeTransferTitle.length > 0)
+                finishedTransferTitle = activeTransferTitle
             activeTransferId = ""
             activeTransferTitle = ""
             activeTransferProgress = 0
@@ -237,7 +247,7 @@ Window {
         }
         if (mode === "transfer") {
             if (transferJustFinished && TransferList.active === 0)
-                return activeTransferTitle
+                return finishedTransferTitle
             const pct = Math.round(activeTransferProgress * 100) + "%"
             const spd = formatRate(activeTransferRate)
             const base = spd.length > 0 ? (pct + " · " + spd) : pct
@@ -295,6 +305,12 @@ Window {
                 onArtistChanged: islandWin.recomputeMedia()
                 onArtChanged: islandWin.recomputeMedia()
                 onDeviceIdChanged: islandWin.recomputeMedia()
+                onPositionChanged: islandWin.recomputeMedia()
+                onDurationChanged: islandWin.recomputeMedia()
+                onCanPlayChanged: islandWin.recomputeMedia()
+                onCanPauseChanged: islandWin.recomputeMedia()
+                onCanNextChanged: islandWin.recomputeMedia()
+                onCanPreviousChanged: islandWin.recomputeMedia()
             }
         }
 

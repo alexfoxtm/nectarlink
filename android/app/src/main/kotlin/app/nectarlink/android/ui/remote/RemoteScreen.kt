@@ -36,19 +36,25 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
@@ -418,6 +424,7 @@ private fun StatusBanner(title: String?, text: String) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TouchpadView(
     pcId: String,
@@ -438,6 +445,7 @@ private fun TouchpadView(
 
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
+    val imeVisible = WindowInsets.isImeVisible
 
     LaunchedEffect(showKeyboard) {
         if (showKeyboard) {
@@ -449,162 +457,168 @@ private fun TouchpadView(
     }
 
     Column(
-        modifier = modifier.fillMaxWidth(),
+        // Above the keyboard while it's open: apps are drawn edge to edge
+        // (Android 15 and later), so the keyboard would cover the typing field.
+        modifier = modifier.fillMaxWidth().imePadding(),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        // Big touchpad surface
-        val primaryColor = MaterialTheme.colorScheme.primary
-        val outlineColor = MaterialTheme.colorScheme.outlineVariant
-        val touchpadDesc = stringResource(R.string.remote_mode_touchpad)
-        Surface(
-            shape = MaterialTheme.shapes.extraLarge,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            border = BorderStroke(
-                width = if (dragging) 2.dp else 1.dp,
-                color = if (dragging) primaryColor else outlineColor,
-            ),
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .semantics { contentDescription = touchpadDesc }
-                .pointerInput(pcId, sensitivity) {
-                    val tapSlop = viewConfiguration.touchSlop
-                    // Movement in reference-density pixels, so the same physical swipe moves
-                    // the PC pointer and scrolls the same amount on every phone's screen.
-                    val toReference = TOUCHPAD_REFERENCE_DENSITY / density
-                    val tapTimeoutMs = 240L
-                    val doubleTapWindowMs = 260L
-                    var lastSingleTapTime = 0L
+        // While typing, the keyboard leaves too little room for the touchpad,
+        // and the field below must keep its full height.
+        if (!imeVisible) {
+            // Big touchpad surface
+            val primaryColor = MaterialTheme.colorScheme.primary
+            val outlineColor = MaterialTheme.colorScheme.outlineVariant
+            val touchpadDesc = stringResource(R.string.remote_mode_touchpad)
+            Surface(
+                shape = MaterialTheme.shapes.extraLarge,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                border = BorderStroke(
+                    width = if (dragging) 2.dp else 1.dp,
+                    color = if (dragging) primaryColor else outlineColor,
+                ),
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .semantics { contentDescription = touchpadDesc }
+                    .pointerInput(pcId, sensitivity) {
+                        val tapSlop = viewConfiguration.touchSlop
+                        // Movement in reference-density pixels, so the same physical swipe moves
+                        // the PC pointer and scrolls the same amount on every phone's screen.
+                        val toReference = TOUCHPAD_REFERENCE_DENSITY / density
+                        val tapTimeoutMs = 240L
+                        val doubleTapWindowMs = 260L
+                        var lastSingleTapTime = 0L
 
-                    awaitEachGesture {
-                        val firstDown = awaitFirstDown(requireUnconsumed = false)
-                        val downTime = System.currentTimeMillis()
-                        var maxPointers = 1
-                        var totalMoved = 0f
-                        var scrollAccumX = 0f
-                        var scrollAccumY = 0f
-                        var isDragHold = (downTime - lastSingleTapTime) <= doubleTapWindowMs
-                        var dragStarted = false
+                        awaitEachGesture {
+                            val firstDown = awaitFirstDown(requireUnconsumed = false)
+                            val downTime = System.currentTimeMillis()
+                            var maxPointers = 1
+                            var totalMoved = 0f
+                            var scrollAccumX = 0f
+                            var scrollAccumY = 0f
+                            var isDragHold = (downTime - lastSingleTapTime) <= doubleTapWindowMs
+                            var dragStarted = false
 
-                        touchPoint = firstDown.position
+                            touchPoint = firstDown.position
 
-                        while (true) {
-                            val event = awaitPointerEvent()
-                            val changes = event.changes
-                            var pressedCount = 0
-                            var firstPressed: androidx.compose.ui.input.pointer.PointerInputChange? = null
-                            for (i in 0 until changes.size) {
-                                val c = changes[i]
-                                if (c.pressed) {
-                                    if (firstPressed == null) firstPressed = c
-                                    pressedCount++
-                                }
-                            }
-                            if (pressedCount == 0 || firstPressed == null) break
-
-                            if (pressedCount > maxPointers) {
-                                maxPointers = pressedCount
-                                if (dragStarted) {
-                                    core.remoteButton(pcId, "left", "up", onStatus)
-                                    dragStarted = false
-                                    dragging = false
-                                }
-                                isDragHold = false
-                            }
-
-                            if (pressedCount == 1 && maxPointers == 1) {
-                                val change = firstPressed
-                                touchPoint = change.position
-                                val delta = change.positionChange()
-                                val dist = hypot(delta.x, delta.y)
-                                totalMoved += dist
-
-                                if (isDragHold && !dragStarted && totalMoved > tapSlop * 0.6f) {
-                                    dragStarted = true
-                                    dragging = true
-                                    core.remoteButton(pcId, "left", "down", onStatus)
-                                }
-
-                                if (dist > 0.2f) {
-                                    val scaledDx = delta.x * toReference * sensitivity
-                                    val scaledDy = delta.y * toReference * sensitivity
-                                    core.remoteMove(pcId, scaledDx, scaledDy)
-                                    change.consume()
-                                }
-                            } else if (pressedCount >= 2) {
-                                touchPoint = firstPressed.position
-                                var avgDx = 0f
-                                var avgDy = 0f
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val changes = event.changes
+                                var pressedCount = 0
+                                var firstPressed: androidx.compose.ui.input.pointer.PointerInputChange? = null
                                 for (i in 0 until changes.size) {
                                     val c = changes[i]
                                     if (c.pressed) {
-                                        val d = c.positionChange()
-                                        avgDx += d.x
-                                        avgDy += d.y
-                                        c.consume()
+                                        if (firstPressed == null) firstPressed = c
+                                        pressedCount++
                                     }
                                 }
-                                avgDx /= pressedCount
-                                avgDy /= pressedCount
-                                totalMoved += hypot(avgDx, avgDy)
+                                if (pressedCount == 0 || firstPressed == null) break
 
-                                scrollAccumX += avgDx * toReference
-                                scrollAccumY += avgDy * toReference
-                                val stepPx = 18f
-                                if (abs(scrollAccumX) >= stepPx || abs(scrollAccumY) >= stepPx) {
-                                    val notchesX = -(scrollAccumX / 48f)
-                                    val notchesY = -(scrollAccumY / 36f)
-                                    scrollAccumX = 0f
-                                    scrollAccumY = 0f
-                                    core.remoteScroll(pcId, notchesX, notchesY, fast = true)
+                                if (pressedCount > maxPointers) {
+                                    maxPointers = pressedCount
+                                    if (dragStarted) {
+                                        core.remoteButton(pcId, "left", "up", onStatus)
+                                        dragStarted = false
+                                        dragging = false
+                                    }
+                                    isDragHold = false
+                                }
+
+                                if (pressedCount == 1 && maxPointers == 1) {
+                                    val change = firstPressed
+                                    touchPoint = change.position
+                                    val delta = change.positionChange()
+                                    val dist = hypot(delta.x, delta.y)
+                                    totalMoved += dist
+
+                                    if (isDragHold && !dragStarted && totalMoved > tapSlop * 0.6f) {
+                                        dragStarted = true
+                                        dragging = true
+                                        core.remoteButton(pcId, "left", "down", onStatus)
+                                    }
+
+                                    if (dist > 0.2f) {
+                                        val scaledDx = delta.x * toReference * sensitivity
+                                        val scaledDy = delta.y * toReference * sensitivity
+                                        core.remoteMove(pcId, scaledDx, scaledDy)
+                                        change.consume()
+                                    }
+                                } else if (pressedCount >= 2) {
+                                    touchPoint = firstPressed.position
+                                    var avgDx = 0f
+                                    var avgDy = 0f
+                                    for (i in 0 until changes.size) {
+                                        val c = changes[i]
+                                        if (c.pressed) {
+                                            val d = c.positionChange()
+                                            avgDx += d.x
+                                            avgDy += d.y
+                                            c.consume()
+                                        }
+                                    }
+                                    avgDx /= pressedCount
+                                    avgDy /= pressedCount
+                                    totalMoved += hypot(avgDx, avgDy)
+
+                                    scrollAccumX += avgDx * toReference
+                                    scrollAccumY += avgDy * toReference
+                                    val stepPx = 18f
+                                    if (abs(scrollAccumX) >= stepPx || abs(scrollAccumY) >= stepPx) {
+                                        val notchesX = -(scrollAccumX / 48f)
+                                        val notchesY = -(scrollAccumY / 36f)
+                                        scrollAccumX = 0f
+                                        scrollAccumY = 0f
+                                        core.remoteScroll(pcId, notchesX, notchesY, fast = true)
+                                    }
                                 }
                             }
-                        }
 
-                        touchPoint = null
-                        val elapsed = System.currentTimeMillis() - downTime
-                        if (dragStarted) {
-                            core.remoteButton(pcId, "left", "up", onStatus)
-                            dragging = false
-                            lastSingleTapTime = 0L
-                        } else if (elapsed <= tapTimeoutMs && totalMoved <= tapSlop * 1.5f) {
-                            if (maxPointers == 1) {
-                                lastSingleTapTime = System.currentTimeMillis()
-                                core.remoteButton(pcId, "left", "click", onStatus)
-                            } else if (maxPointers == 2) {
+                            touchPoint = null
+                            val elapsed = System.currentTimeMillis() - downTime
+                            if (dragStarted) {
+                                core.remoteButton(pcId, "left", "up", onStatus)
+                                dragging = false
                                 lastSingleTapTime = 0L
-                                core.remoteButton(pcId, "right", "click", onStatus)
+                            } else if (elapsed <= tapTimeoutMs && totalMoved <= tapSlop * 1.5f) {
+                                if (maxPointers == 1) {
+                                    lastSingleTapTime = System.currentTimeMillis()
+                                    core.remoteButton(pcId, "left", "click", onStatus)
+                                } else if (maxPointers == 2) {
+                                    lastSingleTapTime = 0L
+                                    core.remoteButton(pcId, "right", "click", onStatus)
+                                }
+                            } else {
+                                lastSingleTapTime = 0L
                             }
-                        } else {
-                            lastSingleTapTime = 0L
+                        }
+                    },
+            ) {
+                Box(Modifier.fillMaxSize()) {
+                    Canvas(Modifier.fillMaxSize()) {
+                        touchPoint?.let { pt ->
+                            drawCircle(
+                                color = primaryColor.copy(alpha = 0.22f),
+                                radius = 28.dp.toPx(),
+                                center = pt,
+                            )
+                            drawCircle(
+                                color = primaryColor.copy(alpha = 0.65f),
+                                radius = 6.dp.toPx(),
+                                center = pt,
+                            )
                         }
                     }
-                },
-        ) {
-            Box(Modifier.fillMaxSize()) {
-                Canvas(Modifier.fillMaxSize()) {
-                    touchPoint?.let { pt ->
-                        drawCircle(
-                            color = primaryColor.copy(alpha = 0.22f),
-                            radius = 28.dp.toPx(),
-                            center = pt,
-                        )
-                        drawCircle(
-                            color = primaryColor.copy(alpha = 0.65f),
-                            radius = 6.dp.toPx(),
-                            center = pt,
-                        )
-                    }
+                    Text(
+                        stringResource(R.string.remote_touchpad_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(horizontal = 20.dp, vertical = 14.dp),
+                    )
                 }
-                Text(
-                    stringResource(R.string.remote_touchpad_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(horizontal = 20.dp, vertical = 14.dp),
-                )
             }
         }
 
@@ -663,28 +677,34 @@ private fun TouchpadView(
             }
         }
 
-        // Voice typing bar (Dictate button: hold to talk, or tap to start/stop)
-        VoiceTypingBar(
-            pcId = pcId,
-            pcName = pcName,
-            core = core,
-            utteranceJoiner = utteranceJoiner,
-            onStatus = onStatus,
-        )
+        // Scroll rather than squeeze the typing field when the keyboard is up.
+        Column(
+            modifier = if (imeVisible) Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()) else Modifier,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            // Voice typing bar (Dictate button: hold to talk, or tap to start/stop)
+            VoiceTypingBar(
+                pcId = pcId,
+                pcName = pcName,
+                core = core,
+                utteranceJoiner = utteranceJoiner,
+                onStatus = onStatus,
+            )
 
-        // Special keys & modifiers bar (always accessible in Touchpad mode)
-        SpecialKeysBar(
-            activeMods = activeMods,
-            showExtraKeys = showKeyboard,
-            onToggleMod = { mod ->
-                if (mod in activeMods) activeMods.remove(mod) else activeMods.add(mod)
-            },
-            onKey = { key, forceMods ->
-                val mods = forceMods ?: activeMods.toList()
-                core.remoteKey(pcId, key, mods, onStatus)
-                if (forceMods == null) activeMods.clear()
-            },
-        )
+            // Special keys & modifiers bar (always accessible in Touchpad mode)
+            SpecialKeysBar(
+                activeMods = activeMods,
+                showExtraKeys = showKeyboard,
+                onToggleMod = { mod ->
+                    if (mod in activeMods) activeMods.remove(mod) else activeMods.add(mod)
+                },
+                onKey = { key, forceMods ->
+                    val mods = forceMods ?: activeMods.toList()
+                    core.remoteKey(pcId, key, mods, onStatus)
+                    if (forceMods == null) activeMods.clear()
+                },
+            )
+        }
 
         // Soft keyboard input row when toggled open
         if (showKeyboard) {

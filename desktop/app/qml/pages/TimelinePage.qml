@@ -37,10 +37,11 @@ Item {
     ]
 
     readonly property string selectedDeviceName: {
-        if (TimelineModel.deviceFilter.length === 0 || DeviceList.count <= 0)
+        if (TimelineModel.deviceFilter.length === 0)
             return qsTr("All devices")
-        const row = DeviceList.rowOf(TimelineModel.deviceFilter)
-        return row >= 0 ? DeviceList.deviceNameAt(row) : qsTr("All devices")
+        // Filtered by a device that's been unpaired since: not "all".
+        const row = DeviceList.count > 0 ? DeviceList.rowOf(TimelineModel.deviceFilter) : -1
+        return row >= 0 ? DeviceList.deviceNameAt(row) : qsTr("A removed device")
     }
 
     Connections {

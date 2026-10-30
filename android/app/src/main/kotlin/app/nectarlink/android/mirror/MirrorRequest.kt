@@ -19,7 +19,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import app.nectarlink.android.R
 
-/** A PC asking for the screen (and its sound), with what it wants. */
+/** A PC asking for the screen (and its sound), or only the sound, with what it wants. */
 data class MirrorRequest(
     val pcId: String,
     val maxSize: Int,
@@ -28,6 +28,8 @@ data class MirrorRequest(
     val audio: Boolean,
     val stayAwake: Boolean = false,
     val screenOff: Boolean = false,
+    /** Only the sound: the PC plays it without a window. */
+    val soundOnly: Boolean = false,
 ) {
     fun toIntent(intent: Intent): Intent = intent
         .putExtra("pc", pcId)
@@ -37,6 +39,7 @@ data class MirrorRequest(
         .putExtra("audio", audio)
         .putExtra("stayAwake", stayAwake)
         .putExtra("screenOff", screenOff)
+        .putExtra("soundOnly", soundOnly)
 
     companion object {
         fun of(intent: Intent): MirrorRequest? = intent.getStringExtra("pc")?.let {
@@ -48,6 +51,7 @@ data class MirrorRequest(
                 intent.getBooleanExtra("audio", false),
                 intent.getBooleanExtra("stayAwake", false),
                 intent.getBooleanExtra("screenOff", false),
+                intent.getBooleanExtra("soundOnly", false),
             )
         }
     }
@@ -84,8 +88,15 @@ object MirrorRequests {
         )
         val notification = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(context.getString(R.string.mirror_request_title, pcName.ifEmpty { context.getString(R.string.your_pc) }))
-            .setContentText(context.getString(R.string.mirror_request_text))
+            .setContentTitle(
+                context.getString(
+                    if (request.soundOnly) R.string.mirror_request_title_sound else R.string.mirror_request_title,
+                    pcName.ifEmpty { context.getString(R.string.your_pc) },
+                ),
+            )
+            .setContentText(
+                context.getString(if (request.soundOnly) R.string.mirror_request_text_sound else R.string.mirror_request_text),
+            )
             .setContentIntent(open)
             .setAutoCancel(true)
             .setTimeoutAfter(REQUEST_TIMEOUT_MS)
@@ -120,7 +131,10 @@ object MirrorRequests {
 class MirrorConsentActivity : ComponentActivity() {
     private var request: MirrorRequest? = null
 
-    private val sound = registerForActivityResult(ActivityResultContracts.RequestPermission()) { askForScreen() }
+    private val sound = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        // Only the sound was asked for, and it can't be captured without this.
+        if (!granted && request?.soundOnly == true) finish() else askForScreen()
+    }
 
     private val prompt = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val data = result.data

@@ -129,6 +129,7 @@ Item {
         target: Messages
         function onComposeToChanged() { page.applyComposeTarget() }
         function onThreadChanged() {
+            page.switchDraft()
             if (Messages.thread.length > 0) {
                 page.composing = false
                 Qt.callLater(() => composer.focusText())
@@ -178,7 +179,25 @@ Item {
         toField.text = ""
         toField.forceActiveFocus()
     }
-    onDeviceIdChanged: { composing = false; load() }
+    onDeviceIdChanged: { composing = false; switchDraft(); load() }
+
+    // What was typed in each conversation, so text written for one is never
+    // sent to another and comes back when you return to it.
+    property var drafts: ({})
+    property string draftKey: ""
+    function switchDraft() {
+        const key = deviceId + "|" + Messages.thread
+        if (key === draftKey)
+            return
+        if (draftKey.length > 0) {
+            if (input.text.length > 0)
+                drafts[draftKey] = input.text
+            else
+                delete drafts[draftKey]
+        }
+        draftKey = key
+        input.text = drafts[key] || ""
+    }
 
     // "14:05", "Yesterday", "Tue", or a date.
     function shortTime(ms) {
@@ -832,11 +851,16 @@ Item {
             function send() {
                 if (!canSend)
                     return
-                if (page.composing)
-                    Messages.sendTo(toField.text, input.text)
+                if (page.composing) {
+                    // A name typed in To is its contact's number, as Return makes it.
+                    if (!/\d/.test(toField.text) && page.recipientMatches.length > 0)
+                        toField.text = page.recipientMatches[0].number
+                    Messages.sendTo(toField.text.trim(), input.text)
+                }
                 else
                     Messages.send(input.text)
                 input.text = ""
+                delete page.drafts[page.draftKey]
                 page.composing = false
                 toField.text = ""
             }
@@ -1146,8 +1170,7 @@ Item {
         readonly property bool newDay: {
             if (!previous)
                 return true
-            if (Math.abs(message.date - previous.date) < 600000)
-                return false
+            // By the calendar alone: 23:55 and 00:02 are two days.
             const d1 = new Date(previous.date)
             const d2 = new Date(message.date)
             return d1.getFullYear() !== d2.getFullYear() || d1.getMonth() !== d2.getMonth() || d1.getDate() !== d2.getDate()

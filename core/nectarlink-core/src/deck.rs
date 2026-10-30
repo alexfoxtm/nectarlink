@@ -458,22 +458,30 @@ impl DeckConfig {
     }
 
     /// Loads `DeckConfig` from `path`, falling back to [`Self::default_deck`]
-    /// when the file does not exist or cannot be parsed/sanitized.
+    /// when the file does not exist or cannot be parsed/sanitized. An
+    /// unreadable file is kept beside it as `deck.json.bad`, since the next
+    /// save would otherwise replace the user's layout with the default.
     pub fn load(path: &Path) -> Self {
-        std::fs::read_to_string(path)
-            .ok()
-            .and_then(|s| serde_json::from_str::<DeckConfig>(&s).ok())
-            .and_then(DeckConfig::sanitized)
-            .unwrap_or_else(Self::default_deck)
+        let Ok(text) = std::fs::read_to_string(path) else { return Self::default_deck() };
+        let loaded = serde_json::from_str::<DeckConfig>(&text).ok().and_then(DeckConfig::sanitized);
+        loaded.unwrap_or_else(|| {
+            tracing::warn!("the Deck layout can't be read; starting from the default");
+            let _ = std::fs::rename(path, path.with_extension("json.bad"));
+            Self::default_deck()
+        })
     }
 
-    /// Writes `self` as pretty-printed JSON to `path`.
+    /// Writes `self` as pretty-printed JSON to `path`, all or nothing.
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
         let json = serde_json::to_string_pretty(self).map_err(std::io::Error::other)?;
-        std::fs::write(path, json)
+        let temp = path.with_extension("json.tmp");
+        std::fs::write(&temp, json)?;
+        std::fs::rename(&temp, path).inspect_err(|_| {
+            let _ = std::fs::remove_file(&temp);
+        })
     }
 }
 
@@ -696,6 +704,14 @@ async fn run_pc_audio_set(shared: &Arc<Shared>, peer: &DeviceId, req: PcAudioSet
     }
     let is_phone_speaker_toggle =
         req.volume.is_some_and(|v| v == PHONE_SPEAKER_OFF || v == PHONE_SPEAKER_ON) && req.muted.is_none();
+    // Playing this PC's sound on a phone shares what the PC plays, so it
+    // needs that phone's media permission. Stopping is always allowed.
+    if is_phone_speaker_toggle
+        && req.volume == Some(PHONE_SPEAKER_ON)
+        && !shared.toggle_on(peer, crate::media::TOGGLE)
+    {
+        return Envelope::error(ErrorCode::Denied, "media is turned off for this device");
+    }
     if !is_phone_speaker_toggle
         && !shared.toggle_on(peer, crate::actions::POWER_TOGGLE)
         && !shared.toggle_on(peer, INPUT_TOGGLE)
@@ -900,8 +916,10 @@ mod tests {
         custom.save(&path).unwrap();
         assert_eq!(DeckConfig::load(&path), custom);
 
-        // Corrupt JSON falls back to default_deck().
+        // Corrupt JSON falls back to default_deck(), keeping the file aside.
         std::fs::write(&path, b"{not valid json").unwrap();
         assert_eq!(DeckConfig::load(&path), DeckConfig::default_deck());
+        assert_eq!(std::fs::read(path.with_extension("json.bad")).unwrap(), b"{not valid json");
+        assert!(!dir.path().join("deck.json.tmp").exists());
     }
 }

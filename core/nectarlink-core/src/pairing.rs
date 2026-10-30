@@ -246,7 +246,7 @@ pub(crate) async fn join_qr(shared: &Arc<Shared>, uri: &PairingUri) -> Result<()
         send_env(&mut send, Envelope::new(types::PAIR_REQUEST, &PairRequest { device, proof })?).await?;
         let accept: PairAccept = recv_env(&mut recv, STEP_TIMEOUT).await?.expect_body(types::PAIR_ACCEPT)?;
         finish_initiator(&conn, send).await?;
-        Ok(accept.device)
+        Ok(accept.device.sanitized())
     }
     .await;
     settle_initiator(shared, &conn, uri.id, result).await
@@ -276,7 +276,7 @@ pub(crate) async fn start_nearby(shared: &Arc<Shared>, peer: DeviceId) -> Result
         let code = proto::sas_code(&n_a, &nonce.n_b, &shared.id, &peer);
         exchange_decisions(shared, peer, code, &mut send, &mut recv, Role::Initiator).await?;
         finish_initiator(&conn, send).await?;
-        Ok(nonce.device)
+        Ok(nonce.device.sanitized())
     }
     .await;
     drop(nearby);
@@ -400,7 +400,7 @@ async fn accept_qr(
     }
     shared.pairing.end_host();
     send_env(send, Envelope::new(types::PAIR_ACCEPT, &PairAccept { device: local_device(shared) })?).await?;
-    Ok(request.device)
+    Ok(request.device.sanitized())
 }
 
 async fn accept_nearby(

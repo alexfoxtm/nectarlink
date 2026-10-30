@@ -134,7 +134,7 @@ class PcMedia(
         val decoded = list.mapNotNull { player ->
             val key = player.artKey ?: return@mapNotNull null
             val bytes = player.art ?: return@mapNotNull null
-            val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@mapNotNull null
+            val bmp = decodeArtwork(bytes) ?: return@mapNotNull null
             "$pc/$key" to (bmp to extractArtworkSeedColor(bmp, "$pc/$key"))
         }
         main.post {
@@ -442,6 +442,28 @@ class PcMedia(
 
         /** A PC volume (`0..=100`) as the nearest step. */
         internal fun toSteps(volume: Int): Int = ((volume.coerceIn(0, 100) * VOLUME_STEPS + 50) / 100)
+
+        /** Artwork is decoded to about this many pixels on its longer side, plenty for a notification. */
+        private const val ART_PX = 512
+
+        /** The power-of-two sample size that brings a `width` x `height` image down to about [ART_PX]. */
+        internal fun artSampleSize(width: Int, height: Int): Int {
+            var sample = 1
+            while (maxOf(width, height) / (sample * 2) >= ART_PX) sample *= 2
+            return sample
+        }
+
+        /**
+         * Decodes the PC's artwork small, whatever size it claims: a small file can
+         * describe a huge image, which decoded in full would run the app out of memory.
+         */
+        private fun decodeArtwork(bytes: ByteArray): Bitmap? {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+            val options = BitmapFactory.Options().apply { inSampleSize = artSampleSize(bounds.outWidth, bounds.outHeight) }
+            return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+        }
 
         private fun isOpaqueHexOrAumid(s: String): Boolean {
             val trimmed = s.trim()

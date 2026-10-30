@@ -47,6 +47,9 @@ use crate::{
 };
 
 const LATEST: &str = "https://api.github.com/repos/thtbee/nectarlink/releases/latest";
+/// Where our release files are. An update is only downloaded from here, so a
+/// changed or spoofed release listing can't point the installer elsewhere.
+const RELEASE_DOWNLOADS: &str = "https://github.com/thtbee/nectarlink/releases/download/";
 const FIRST_CHECK: Duration = Duration::from_secs(30);
 const EVERY: Duration = Duration::from_secs(24 * 3600);
 const MAX_INSTALLER: u64 = 400 * 1024 * 1024;
@@ -218,29 +221,21 @@ fn latest() -> Result<Option<Update>, String> {
 const INSTALLER_SUFFIX: &str =
     if cfg!(target_arch = "aarch64") { "-arm64-setup.exe" } else { "-x64-setup.exe" };
 
+// Each kind of install only takes its own kind of file: a .deb installed
+// under a running AppImage, say, leaves the AppImage as old as it was (and
+// the update is offered again), and a tarball beside a package is a second
+// copy in /opt.
 #[cfg(target_os = "linux")]
-const APPIMAGE_SUFFIXES: &[&str] = if cfg!(target_arch = "aarch64") {
-    &["-aarch64.AppImage", "_arm64.deb", "-linux-aarch64.tar.gz"]
-} else {
-    &["-x86_64.AppImage", "_amd64.deb", "-linux-x86_64.tar.gz"]
-};
+const APPIMAGE_SUFFIXES: &[&str] =
+    if cfg!(target_arch = "aarch64") { &["-aarch64.AppImage"] } else { &["-x86_64.AppImage"] };
 
 #[cfg(target_os = "linux")]
-const DEB_SUFFIXES: &[&str] = if cfg!(target_arch = "aarch64") {
-    &["_arm64.deb", "-aarch64.AppImage", "-linux-aarch64.tar.gz"]
-} else {
-    &["_amd64.deb", "-x86_64.AppImage", "-linux-x86_64.tar.gz"]
-};
+const DEB_SUFFIXES: &[&str] = if cfg!(target_arch = "aarch64") { &["_arm64.deb"] } else { &["_amd64.deb"] };
 
 #[cfg(target_os = "linux")]
-const TARBALL_SUFFIXES: &[&str] = if cfg!(target_arch = "aarch64") {
-    &["-linux-aarch64.tar.gz", "_arm64.deb", "-aarch64.AppImage"]
-} else {
-    &["-linux-x86_64.tar.gz", "_amd64.deb", "-x86_64.AppImage"]
-};
+const TARBALL_SUFFIXES: &[&str] =
+    if cfg!(target_arch = "aarch64") { &["-linux-aarch64.tar.gz"] } else { &["-linux-x86_64.tar.gz"] };
 
-// An RPM install only takes an RPM: a tarball would land in /opt as a
-// second copy beside the package.
 #[cfg(target_os = "linux")]
 const RPM_SUFFIXES: &[&str] =
     if cfg!(target_arch = "aarch64") { &[".aarch64.rpm"] } else { &[".x86_64.rpm"] };
@@ -273,9 +268,7 @@ fn detect_linux_install_kind() -> LinuxInstallKind {
     if rpm_installed() {
         return LinuxInstallKind::Rpm;
     }
-    if Path::new("/var/lib/dpkg/status").is_file() {
-        return LinuxInstallKind::Deb;
-    }
+    // No package owns this copy: it came from the tarball, wherever it was unpacked.
     LinuxInstallKind::Tarball
 }
 
@@ -348,8 +341,12 @@ fn newer_release_for(release: Release, current: &str, suffix: &str) -> Option<Up
                 || a.name.starts_with("nectarlink-"))
             && a.name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '.' | '_'))
             && !a.name.contains("..")
+            && a.browser_download_url.starts_with(RELEASE_DOWNLOADS)
     })?;
-    let sums = release.assets.iter().find(|a| a.name == "SHA256SUMS.txt")?;
+    let sums = release
+        .assets
+        .iter()
+        .find(|a| a.name == "SHA256SUMS.txt" && a.browser_download_url.starts_with(RELEASE_DOWNLOADS))?;
     Some(Update {
         version,
         notes_url: release.html_url,
@@ -774,7 +771,8 @@ pub fn run_service() -> ExitCode {
                 .stderr(std::process::Stdio::null())
                 .spawn()
         } else {
-            std::process::Command::new(&path).arg("/S").spawn()
+            // An AppImage replaces itself from the app; the service can't.
+            Err(std::io::Error::other(format!("{name} isn't installed by the update service")))
         }
     };
     match spawned {
@@ -799,23 +797,27 @@ fn unix_seconds_now() -> String {
 /// can change: Windows' `SystemTemp` (older Windows: the SYSTEM account's
 /// temp folder, whose new subfolders users can't write to). Earlier ones are
 /// removed first (in `SystemTemp` only, where nobody else can create them).
+/// Removes the folders earlier runs downloaded into. Links are left alone;
+/// only SYSTEM (or root) can create entries where these live.
+fn remove_old_service_dirs(parent: &Path) {
+    let Ok(entries) = std::fs::read_dir(parent) else { return };
+    for entry in entries.flatten() {
+        let is_dir = entry.file_type().is_ok_and(|t| t.is_dir() && !t.is_symlink());
+        if is_dir && entry.file_name().to_string_lossy().starts_with("nectarlink-update-") {
+            let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
+}
+
 #[cfg(windows)]
 fn service_dir() -> std::io::Result<PathBuf> {
     let windows =
         std::env::var_os("SystemRoot").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
     let system_temp = windows.join("SystemTemp");
-    let parent = if system_temp.is_dir() {
-        if let Ok(entries) = std::fs::read_dir(&system_temp) {
-            for entry in entries.flatten() {
-                if entry.file_name().to_string_lossy().starts_with("nectarlink-update-") {
-                    let _ = std::fs::remove_dir_all(entry.path());
-                }
-            }
-        }
-        system_temp
-    } else {
-        std::env::temp_dir()
-    };
+    // Older Windows: the SYSTEM account's temp folder, whose subfolders users
+    // can't change either.
+    let parent = if system_temp.is_dir() { system_temp } else { std::env::temp_dir() };
+    remove_old_service_dirs(&parent);
     let mut random = [0u8; 8];
     if !crate::win::secure_random(&mut random) {
         return Err(std::io::Error::other("no secure random source"));
@@ -830,6 +832,7 @@ fn service_dir() -> std::io::Result<PathBuf> {
 fn service_dir() -> std::io::Result<PathBuf> {
     use std::os::unix::fs::DirBuilderExt;
     let parent = PathBuf::from("/var/cache");
+    remove_old_service_dirs(&parent);
     let mut random = [0u8; 8];
     if !crate::win::secure_random(&mut random) {
         return Err(std::io::Error::other("no secure random source"));
@@ -942,6 +945,17 @@ tar -C \"$dir\" -xzf \"$dst\"\n\
 set -- \"$dir\"/Nectarlink-*/install.sh\n\
 [ -x \"$1\" ] && \"$1\"\n";
 
+/// Starts the new version once this one has quit. If that can't be arranged
+/// the app stays open (it would otherwise just disappear) and says the update
+/// is in place.
+#[cfg(target_os = "linux")]
+fn relaunch_after_install(exe: &Path, version: &str) -> Result<(), String> {
+    spawn_relauncher(exe, version, true).map_err(|e| {
+        tracing::warn!(error = e, "installed, but can't start the new version");
+        tr!("Updater", "The update is installed. Restart NectarLink to use it.")
+    })
+}
+
 #[cfg(target_os = "linux")]
 fn install_with_prompt(update: &Update, staged: &Path) -> Result<(), String> {
     use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
@@ -985,7 +999,7 @@ fn install_with_prompt(update: &Update, staged: &Path) -> Result<(), String> {
             return Err(failed(format!("privileged .deb install exited with status {code}")));
         }
         if let Ok(exe) = std::env::current_exe() {
-            let _ = spawn_relauncher(&exe, &update.version, true);
+            relaunch_after_install(&exe, &update.version)?;
         }
         crate::bridge::app::request_quit();
         return Ok(());
@@ -1002,7 +1016,7 @@ fn install_with_prompt(update: &Update, staged: &Path) -> Result<(), String> {
             return Err(failed(format!("privileged .rpm install exited with status {code}")));
         }
         if let Ok(exe) = std::env::current_exe() {
-            let _ = spawn_relauncher(&exe, &update.version, true);
+            relaunch_after_install(&exe, &update.version)?;
         }
         crate::bridge::app::request_quit();
         return Ok(());
@@ -1050,7 +1064,7 @@ fn install_with_prompt(update: &Update, staged: &Path) -> Result<(), String> {
             }
         }
         if let Some(exe) = exe {
-            let _ = spawn_relauncher(&exe, &update.version, true);
+            relaunch_after_install(&exe, &update.version)?;
         }
         crate::bridge::app::request_quit();
         return Ok(());
@@ -1177,25 +1191,34 @@ mod tests {
             assets: vec![
                 Asset {
                     name: "Nectarlink-9.0.0-x64-setup.exe".into(),
-                    browser_download_url: "https://x/setup".into(),
+                    browser_download_url: "https://github.com/thtbee/nectarlink/releases/download/v9/setup"
+                        .into(),
                 },
                 Asset {
                     name: "Nectarlink-9.0.0-arm64-setup.exe".into(),
-                    browser_download_url: "https://x/setup-arm64".into(),
+                    browser_download_url:
+                        "https://github.com/thtbee/nectarlink/releases/download/v9/setup-arm64".into(),
                 },
                 Asset {
                     name: "Nectarlink-9.0.0-x86_64.AppImage".into(),
-                    browser_download_url: "https://x/appimage-x64".into(),
+                    browser_download_url:
+                        "https://github.com/thtbee/nectarlink/releases/download/v9/appimage-x64".into(),
                 },
                 Asset {
                     name: "nectarlink_9.0.0_amd64.deb".into(),
-                    browser_download_url: "https://x/deb-amd64".into(),
+                    browser_download_url:
+                        "https://github.com/thtbee/nectarlink/releases/download/v9/deb-amd64".into(),
                 },
                 Asset {
                     name: "nectarlink-9.0.0-1.x86_64.rpm".into(),
-                    browser_download_url: "https://x/rpm-x86_64".into(),
+                    browser_download_url:
+                        "https://github.com/thtbee/nectarlink/releases/download/v9/rpm-x86_64".into(),
                 },
-                Asset { name: "SHA256SUMS.txt".into(), browser_download_url: "https://x/sums".into() },
+                Asset {
+                    name: "SHA256SUMS.txt".into(),
+                    browser_download_url: "https://github.com/thtbee/nectarlink/releases/download/v9/sums"
+                        .into(),
+                },
             ],
         }
     }
@@ -1253,11 +1276,17 @@ mod tests {
     #[test]
     fn releases_become_updates_when_newer_and_complete() {
         let x64 = newer_release_for(release("v9.0.0"), "0.0.1", "-x64-setup.exe").unwrap();
-        assert_eq!((x64.version.as_str(), x64.installer_url.as_str()), ("9.0.0", "https://x/setup"));
+        assert_eq!(
+            (x64.version.as_str(), x64.installer_url.as_str()),
+            ("9.0.0", "https://github.com/thtbee/nectarlink/releases/download/v9/setup")
+        );
         let arm64 = newer_release_for(release("v9.0.0"), "0.0.1", "-arm64-setup.exe").unwrap();
         assert_eq!(
             (arm64.installer_name.as_str(), arm64.installer_url.as_str()),
-            ("Nectarlink-9.0.0-arm64-setup.exe", "https://x/setup-arm64")
+            (
+                "Nectarlink-9.0.0-arm64-setup.exe",
+                "https://github.com/thtbee/nectarlink/releases/download/v9/setup-arm64"
+            )
         );
         assert!(newer_release(release("v0.0.1"), "0.0.1").is_none());
         let mut draft = release("v9.0.0");
@@ -1266,6 +1295,17 @@ mod tests {
         let mut no_sums = release("v9.0.0");
         no_sums.assets.pop();
         assert!(newer_release(no_sums, "0.0.1").is_none());
+        // Files anywhere but our own releases are never downloaded.
+        for elsewhere in
+            ["https://example.com/setup", "https://github.com/someone/nectarlink/releases/download/v9/setup"]
+        {
+            let mut moved = release("v9.0.0");
+            moved.assets[0].browser_download_url = elsewhere.into();
+            assert!(newer_release_for(moved, "0.0.1", "-x64-setup.exe").is_none(), "{elsewhere}");
+            let mut moved_sums = release("v9.0.0");
+            moved_sums.assets.last_mut().unwrap().browser_download_url = elsewhere.into();
+            assert!(newer_release_for(moved_sums, "0.0.1", "-x64-setup.exe").is_none(), "{elsewhere}");
+        }
     }
 
     #[test]
@@ -1273,12 +1313,18 @@ mod tests {
         let appimage = newer_release_for(release("v9.0.0"), "0.0.1", "-x86_64.AppImage").unwrap();
         assert_eq!(
             (appimage.installer_name.as_str(), appimage.installer_url.as_str()),
-            ("Nectarlink-9.0.0-x86_64.AppImage", "https://x/appimage-x64")
+            (
+                "Nectarlink-9.0.0-x86_64.AppImage",
+                "https://github.com/thtbee/nectarlink/releases/download/v9/appimage-x64"
+            )
         );
         let deb = newer_release_for(release("v9.0.0"), "0.0.1", "_amd64.deb").unwrap();
         assert_eq!(
             (deb.installer_name.as_str(), deb.installer_url.as_str()),
-            ("nectarlink_9.0.0_amd64.deb", "https://x/deb-amd64")
+            (
+                "nectarlink_9.0.0_amd64.deb",
+                "https://github.com/thtbee/nectarlink/releases/download/v9/deb-amd64"
+            )
         );
         #[cfg(target_os = "linux")]
         {
@@ -1297,6 +1343,10 @@ mod tests {
             let mut no_rpm = release("v9.0.0");
             no_rpm.assets.retain(|a| !a.name.ends_with(".rpm"));
             assert!(newer_release_linux_kind(no_rpm, "0.0.1", LinuxInstallKind::Rpm).is_none());
+            // Nor does an AppImage take a .deb: it would stay as old as it was.
+            let mut no_appimage = release("v9.0.0");
+            no_appimage.assets.retain(|a| !a.name.ends_with(".AppImage"));
+            assert!(newer_release_linux_kind(no_appimage, "0.0.1", LinuxInstallKind::AppImage).is_none());
         }
     }
 

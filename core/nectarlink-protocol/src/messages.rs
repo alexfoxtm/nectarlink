@@ -93,6 +93,8 @@ pub mod types {
     pub const STORAGE_RENAME: &str = "storage.rename";
     pub const STORAGE_DELETE: &str = "storage.delete";
     pub const STORAGE_CHANGED: &str = "storage.changed";
+    pub const ELEVATED_USB_START: &str = "elevated.usb.start";
+    pub const ELEVATED_USB_READY: &str = "elevated.usb.ready";
     pub const MIC_START: &str = "mic.start";
     pub const MIC_STOP: &str = "mic.stop";
     pub const WEBCAM_START: &str = "webcam.start";
@@ -344,8 +346,29 @@ pub struct DeviceInfo {
     pub install_id: Option<String>,
 }
 
+/// A device's name or model, at most, in characters.
+pub const MAX_DEVICE_NAME_CHARS: usize = 64;
+/// A device's OS name or version, at most, in characters.
+pub const MAX_DEVICE_OS_CHARS: usize = 32;
+
+/// `text` without control characters or the invisible marks that reorder
+/// text (a name could otherwise show reversed or disguised), cut to
+/// `max_chars` and trimmed.
+fn clean_device_text(text: &str, max_chars: usize) -> String {
+    let is_direction_mark = |c: char| matches!(c, '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}');
+    let clean: String =
+        text.chars().filter(|c| !c.is_control() && !is_direction_mark(*c)).take(max_chars).collect();
+    clean.trim().to_owned()
+}
+
 impl DeviceInfo {
+    /// What another device says about itself, made safe to store and show.
     pub fn sanitized(mut self) -> Self {
+        self.name = clean_device_text(&self.name, MAX_DEVICE_NAME_CHARS);
+        self.os = clean_device_text(&self.os, MAX_DEVICE_OS_CHARS);
+        self.os_ver = clean_device_text(&self.os_ver, MAX_DEVICE_OS_CHARS);
+        self.model =
+            self.model.map(|m| clean_device_text(&m, MAX_DEVICE_NAME_CHARS)).filter(|m| !m.is_empty());
         self.screen = self.screen.and_then(ScreenShape::sanitized);
         self.install_id = self.install_id.filter(|id| is_valid_install_id(id));
         self
@@ -425,6 +448,7 @@ impl Battery {
         self.cell_type =
             clean_text(self.cell_type.map(|s| s.chars().filter(|c| !c.is_control()).collect()), 8);
         self.wifi_bars = self.wifi_bars.map(|b| b.min(4));
+        self.plugged = self.plugged.filter(|p| matches!(p.as_str(), "ac" | "usb" | "wireless"));
         self
     }
 }
@@ -978,8 +1002,8 @@ impl MediaPlayer {
         if self.title.is_none() && self.app.trim().is_empty() {
             return None;
         }
-        self.actions.retain(|a| media_actions::ALL.contains(&a.as_str()));
-        self.actions.dedup();
+        let mut seen = std::collections::HashSet::new();
+        self.actions.retain(|a| media_actions::ALL.contains(&a.as_str()) && seen.insert(a.clone()));
         if let (Some(position), Some(duration)) = (self.position, self.duration) {
             self.position = Some(position.min(duration));
         }
@@ -1039,7 +1063,7 @@ pub struct WatchFile {
 impl WatchFile {
     pub fn is_valid(&self) -> bool {
         (1..=media_limits::TEXT_CHARS).contains(&self.name.chars().count())
-            && !self.name.contains(['/', '\\'])
+            && is_valid_file_name(&self.name)
             && self.size > 0
     }
 }
@@ -1122,7 +1146,8 @@ pub fn parse_mac(s: &str) -> Option<[u8; 6]> {
         }
         *slot = u8::from_str_radix(part, 16).ok()?;
     }
-    if parts.next().is_some() || bytes == [0; 6] || bytes == [0xff; 6] {
+    // A multicast address (first octet's low bit set) is no adapter's own.
+    if parts.next().is_some() || bytes == [0; 6] || bytes[0] & 1 == 1 {
         return None;
     }
     Some(bytes)
@@ -1299,12 +1324,17 @@ pub mod mirror {
     pub const H264: &str = "h264";
     pub const H265: &str = "h265";
     pub const AV1: &str = "av1";
+    /// Offered by a device that can decode HEVC video streams.
+    pub const HEVC: &str = "mirror.decode.hevc";
     /// Offered by phones that stream all their sound while mirrored.
     pub const AUDIO: &str = "mirror.audio";
     /// Offered by phones that stream the sound of apps that allow it.
     pub const AUDIO_PLAYBACK: &str = "mirror.audio.playback";
     /// Offered by PCs that play a mirrored phone's sound.
     pub const LISTEN: &str = "mirror.listen";
+    /// Offered by phones that share their sound on its own, without the
+    /// screen (`MirrorStart::sound_only`).
+    pub const SOUND: &str = "mirror.sound";
     pub const OP_AUDIO: &str = "audio";
     /// 16-bit little-endian PCM, channels interleaved.
     pub const PCM: &str = "pcm_s16le";
@@ -1361,11 +1391,24 @@ pub struct MirrorStart {
     /// that offered it with `media.watch`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub watch: Option<String>,
+    /// Only the phone's sound, no picture (`session == SCREEN`, sent to a
+    /// phone that offers [`mirror::SOUND`]). The PC plays it without a window.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub sound_only: bool,
 }
 
 impl MirrorStart {
     /// The screen without an app, or an app with a session of its own.
     pub fn is_valid(&self) -> bool {
+        if self.sound_only {
+            // The phone's own sound: no app, no player, nothing about the screen.
+            return self.session == mirror::SCREEN
+                && self.audio
+                && self.app.is_none()
+                && self.watch.is_none()
+                && !self.stay_awake
+                && !self.screen_off;
+        }
         let watch_ok = self
             .watch
             .as_ref()
@@ -1555,7 +1598,7 @@ impl MirrorInput {
 /// The format of a mirroring stream (a config packet's data, in CBOR).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MirrorConfig {
-    /// `h264`.
+    /// `h264`, `h265`, or `av1`.
     pub codec: String,
     pub width: u32,
     pub height: u32,
@@ -1619,6 +1662,83 @@ impl MirrorAudioConfig {
 // ---- Phone as webcam (docs/protocol/webcam.md) ----
 
 /// Phone as microphone (`docs/protocol/mic.md`).
+/// Elevated over USB (`docs/protocol/elevated-usb.md`): a phone without
+/// wireless debugging asks the PC it's plugged into to start its Elevated
+/// helper over USB debugging.
+pub mod elevated {
+    /// Offered by PCs that can start a USB-connected phone's helper.
+    pub const USB: &str = "elevated.usb";
+    /// The only package the PC runs anything for.
+    pub const PACKAGE: &str = "app.nectarlink";
+    /// The helper the PC starts, with `app_process`.
+    pub const HELPER_CLASS: &str = "app.nectarlink.android.elevated.InputServer";
+    /// Grants a request may carry, at most.
+    pub const MAX_GRANTS: usize = 8;
+}
+
+/// Body of `elevated.usb.start`: start the helper from `apk` with `token`,
+/// after running `grants` (each one of the phone's own, see [`is_valid_grant`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ElevatedUsbStart {
+    pub apk: String,
+    pub token: String,
+    #[serde(default)]
+    pub grants: Vec<String>,
+}
+
+impl ElevatedUsbStart {
+    pub fn is_valid(&self) -> bool {
+        is_valid_app_apk(&self.apk)
+            && (32..=64).contains(&self.token.len())
+            && self.token.bytes().all(|b| b.is_ascii_hexdigit())
+            && self.grants.len() <= elevated::MAX_GRANTS
+            && self.grants.iter().all(|g| is_valid_grant(g))
+    }
+}
+
+/// Body of `elevated.usb.ready`: the helper listens on this loopback port.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ElevatedUsbReady {
+    pub port: u16,
+}
+
+/// Characters a path or command the PC passes to the phone's shell may use:
+/// nothing the shell would read as more than a word.
+fn is_shell_word(s: &str) -> bool {
+    !s.is_empty() && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"._/=~+-:".contains(&b))
+}
+
+/// The app's own installed APK (`pm path` gives `/data/app/<...>/base.apk`).
+pub fn is_valid_app_apk(apk: &str) -> bool {
+    apk.len() <= 512
+        && apk.starts_with("/data/app/")
+        && apk.ends_with("/base.apk")
+        && !apk.contains("..")
+        && apk.contains(elevated::PACKAGE)
+        && is_shell_word(apk)
+}
+
+/// A grant the phone may ask for itself, and nothing else: a permission or
+/// app op for NectarLink's own package, or its own notification listener.
+pub fn is_valid_grant(grant: &str) -> bool {
+    let words: Vec<&str> = grant.split(' ').collect();
+    if !words.iter().all(|w| is_shell_word(w)) {
+        return false;
+    }
+    let pkg = elevated::PACKAGE;
+    match words.as_slice() {
+        ["pm", "grant", p, perm] => *p == pkg && perm.starts_with("android.permission."),
+        ["appops", "set", p, op, "allow"] => {
+            *p == pkg && op.bytes().all(|b| b.is_ascii_uppercase() || b == b'_')
+        }
+        ["cmd", "notification", "allow_dnd", p] => *p == pkg,
+        ["cmd", "notification", "allow_listener", component] => {
+            component.strip_prefix(pkg).is_some_and(|rest| rest.starts_with('/'))
+        }
+        _ => false,
+    }
+}
+
 pub mod mic {
     /// Offered by phones that stream their microphone.
     pub const STREAM: &str = "mic.stream";
@@ -2275,7 +2395,9 @@ impl std::fmt::Debug for CallDial {
 
 impl CallDial {
     pub fn is_valid(&self) -> bool {
-        !self.number.trim().is_empty() && self.number.len() <= calls::MAX_TEXT_BYTES
+        !self.number.trim().is_empty()
+            && self.number.len() <= calls::MAX_TEXT_BYTES
+            && !self.number.chars().any(char::is_control)
     }
 }
 
@@ -2570,15 +2692,15 @@ pub struct PhotoGet {
 }
 
 impl PhotoGet {
-    /// Requested item IDs in order (`ids` when non-empty, otherwise `[id]`).
+    /// Requested item IDs in order: `id` (when set), then `ids`, each once.
     pub fn requested_ids(&self) -> Vec<String> {
-        if !self.ids.is_empty() {
-            self.ids.clone()
-        } else if !self.id.is_empty() {
-            vec![self.id.clone()]
-        } else {
-            Vec::new()
+        let mut out: Vec<String> = Vec::with_capacity(self.ids.len() + 1);
+        for id in std::iter::once(&self.id).chain(&self.ids) {
+            if !id.is_empty() && !out.contains(id) {
+                out.push(id.clone());
+            }
         }
+        out
     }
 }
 
@@ -3935,6 +4057,15 @@ pub fn is_valid_storage_id(id: &str) -> bool {
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StorageList {
     pub path: String,
+    /// Entries to skip, for the next page of a folder whose entries don't
+    /// fit one answer. Absent (0) from devices before paging, which then get
+    /// the first page only, as before.
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    pub offset: u64,
+}
+
+fn is_zero_u64(n: &u64) -> bool {
+    *n == 0
 }
 
 impl std::fmt::Debug for StorageList {
@@ -3992,6 +4123,9 @@ impl StorageEntry {
 pub struct StorageEntries {
     #[serde(default)]
     pub entries: Vec<StorageEntry>,
+    /// More entries follow: ask again with `offset` past these.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub more: bool,
 }
 
 /// Body of `storage.read` on a `storage/read` stream (`docs/protocol/storage.md` §4.1).
@@ -4144,6 +4278,71 @@ impl StorageChanged {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn sound_only_is_the_phones_sound_and_nothing_else() {
+        let sound = MirrorStart {
+            max_size: 0,
+            fps: 0,
+            bitrate: 0,
+            audio: true,
+            session: mirror::SCREEN,
+            app: None,
+            stay_awake: false,
+            screen_off: false,
+            watch: None,
+            sound_only: true,
+        };
+        assert!(sound.is_valid());
+        assert!(!MirrorStart { audio: false, ..sound.clone() }.is_valid(), "the sound is the point");
+        assert!(!MirrorStart { session: 2, app: Some("com.example.app".into()), ..sound.clone() }.is_valid());
+        assert!(!MirrorStart { watch: Some("Chrome".into()), ..sound.clone() }.is_valid());
+        assert!(!MirrorStart { screen_off: true, ..sound.clone() }.is_valid(), "nothing about the screen");
+        // It survives the trip, and a request without it is the screen, as before.
+        let env = crate::Envelope::new(types::MIRROR_START, &sound).unwrap();
+        assert!(env.body::<MirrorStart>().unwrap().sound_only);
+        let screen =
+            crate::Envelope::new(types::MIRROR_START, &MirrorStart { sound_only: false, ..sound }).unwrap();
+        assert!(!screen.body::<MirrorStart>().unwrap().sound_only);
+    }
+
+    #[test]
+    fn audit_73_validation_rules() {
+        // A photo request with both `id` and `ids` asks for all of them, once.
+        let get = PhotoGet { id: "a".into(), ids: vec!["b".into(), "a".into(), "c".into()] };
+        assert_eq!(get.requested_ids(), ["a", "b", "c"]);
+        assert_eq!(PhotoGet { id: String::new(), ids: vec!["b".into()] }.requested_ids(), ["b"]);
+        assert!(PhotoGet { id: String::new(), ids: Vec::new() }.requested_ids().is_empty());
+
+        // Dialled numbers: pauses and waits are fine, control characters aren't.
+        assert!(CallDial { number: "+1 555 0100,,23#".into() }.is_valid());
+        assert!(CallDial { number: "555;1".into() }.is_valid());
+        assert!(!CallDial { number: "555\n0100".into() }.is_valid());
+
+        // `plugged` keeps only the documented values.
+        let battery = |plugged: &str| Battery {
+            level: 50,
+            charging: true,
+            plugged: Some(plugged.into()),
+            full_in: None,
+            cell_bars: None,
+            cell_type: None,
+            wifi_bars: None,
+        };
+        assert_eq!(battery("usb").sanitized().plugged.as_deref(), Some("usb"));
+        assert_eq!(battery("<b>dock</b>").sanitized().plugged, None);
+
+        // A wake target is a unicast adapter address.
+        assert!(parse_mac("aa:bb:cc:dd:ee:ff").is_some());
+        assert!(parse_mac("01:00:5e:00:00:01").is_none(), "multicast");
+        assert!(parse_mac("ff:ff:ff:ff:ff:ff").is_none(), "broadcast");
+
+        // An offered file's name is a plain file name.
+        let file = |name: &str| WatchFile { name: name.into(), size: 1, position: 0 };
+        assert!(file("Trip: day 1.mp4").is_valid());
+        assert!(!file("..").is_valid());
+        assert!(!file("a\u{7}b.mp4").is_valid());
+    }
+
     use super::*;
     use crate::Envelope;
 
@@ -4158,6 +4357,68 @@ mod tests {
             screen: None,
             install_id: None,
         }
+    }
+
+    #[test]
+    fn elevated_usb_only_runs_the_apps_own_helper_and_grants() {
+        let apk = "/data/app/~~kG3x_Q==/app.nectarlink-Ab1-cD2==/base.apk";
+        let start = ElevatedUsbStart {
+            apk: apk.into(),
+            token: "0123456789abcdef0123456789abcdef0123456789abcdef".into(),
+            grants: vec![
+                "pm grant app.nectarlink android.permission.WRITE_SECURE_SETTINGS".into(),
+                "appops set app.nectarlink RECEIVE_SENSITIVE_NOTIFICATIONS allow".into(),
+                "cmd notification allow_dnd app.nectarlink".into(),
+                "cmd notification allow_listener app.nectarlink/app.nectarlink.android.notifications.NotificationListener"
+                    .into(),
+            ],
+        };
+        assert!(start.is_valid());
+
+        for apk in [
+            "/data/app/other.app-1/base.apk",
+            "/sdcard/app.nectarlink/base.apk",
+            "/data/app/app.nectarlink-1/../../evil/base.apk",
+            "/data/app/app.nectarlink-1/base.apk; reboot",
+            "/data/app/app.nectarlink-1/base.apk$(id)",
+        ] {
+            assert!(!ElevatedUsbStart { apk: apk.into(), ..start.clone() }.is_valid(), "{apk}");
+        }
+        for grant in [
+            "pm grant com.other android.permission.WRITE_SECURE_SETTINGS",
+            "pm grant app.nectarlink android.permission.X; rm -rf /sdcard",
+            "pm grant app.nectarlink android.permission.X && reboot",
+            "appops set app.nectarlink.evil SYSTEM_ALERT_WINDOW allow",
+            "cmd notification allow_listener com.other/x.Listener",
+            "cmd notification allow_dnd com.other",
+            "settings put global adb_enabled 1",
+            "reboot",
+        ] {
+            assert!(!ElevatedUsbStart { grants: vec![grant.into()], ..start.clone() }.is_valid(), "{grant}");
+        }
+        assert!(
+            !ElevatedUsbStart { token: "not-hex-token-not-hex-token-not-hex".into(), ..start.clone() }
+                .is_valid()
+        );
+        assert!(!ElevatedUsbStart { grants: vec![start.grants[0].clone(); 9], ..start }.is_valid());
+    }
+
+    #[test]
+    fn device_names_are_cleaned_and_capped() {
+        assert_eq!(info().sanitized(), info(), "ordinary info is unchanged");
+
+        let mut dev = info();
+        // A right-to-left override would show "Pixel\u{202E}gnp.exe" as "Pixelexe.png".
+        dev.name = " Pixel\u{202E}gnp.exe\u{0007}\n ".into();
+        dev.os_ver = "1".repeat(100);
+        dev.model = Some("\u{2066}\u{2069}".into());
+        let clean = dev.sanitized();
+        assert_eq!(clean.name, "Pixelgnp.exe");
+        assert_eq!(clean.os_ver.chars().count(), MAX_DEVICE_OS_CHARS);
+        assert_eq!(clean.model, None);
+
+        let long = DeviceInfo { name: "é".repeat(200), ..info() }.sanitized();
+        assert_eq!(long.name.chars().count(), MAX_DEVICE_NAME_CHARS);
     }
 
     #[test]
@@ -5092,7 +5353,7 @@ mod tests {
         assert_eq!(dir_entry.size, 0);
         assert_eq!(dir_entry.modified, 0);
 
-        let entries = StorageEntries { entries: vec![entry, dir_entry] };
+        let entries = StorageEntries { entries: vec![entry, dir_entry], more: false };
         let env = Envelope::new(types::STORAGE_ENTRIES, &entries).unwrap();
         let back: StorageEntries = Envelope::from_cbor(&env.to_cbor()).unwrap().body().unwrap();
         assert_eq!(back, entries);
@@ -5152,6 +5413,7 @@ mod tests {
             stay_awake: false,
             screen_off: false,
             watch: Some("Chrome".into()),
+            sound_only: false,
         };
         assert!(screen.is_valid());
         // Watching is of the PC's screen session only, never with an app.

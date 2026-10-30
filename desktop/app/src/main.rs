@@ -41,6 +41,7 @@ mod pc_mirror;
 mod pc_notifications;
 mod pc_storage;
 mod phone_mic;
+mod phone_sound;
 mod photo_backup;
 mod photos;
 mod play_on_phone;

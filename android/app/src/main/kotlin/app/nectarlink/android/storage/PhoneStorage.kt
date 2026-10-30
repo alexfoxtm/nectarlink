@@ -187,6 +187,10 @@ class PhoneStorage(
             if (!isInsideRoot(canonRoot, blocked, canonParent)) {
                 throw StorageFailure.Denied()
             }
+            // Never replace another file (renameTo would); a change of letter case only is fine.
+            if (dst.exists() && !src.absolutePath.equals(dst.absolutePath, ignoreCase = true)) {
+                throw StorageFailure.Failed("a file or folder with that name already exists")
+            }
             if (!src.renameTo(dst)) {
                 throw StorageFailure.Failed("rename failed")
             }

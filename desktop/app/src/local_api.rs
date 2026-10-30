@@ -124,7 +124,7 @@ pub fn write_token_file(data_dir: &Path, port: u16, token: &str) -> std::io::Res
     let tmp = path.with_extension("json.tmp");
     let data = ApiTokenFile { port, token: token.to_owned() };
     {
-        let mut file = fs::File::create(&tmp)?;
+        let mut file = crate::settings::create_private_file(&tmp)?;
         file.write_all(serde_json::to_string_pretty(&data)?.as_bytes())?;
         file.sync_all()?;
     }

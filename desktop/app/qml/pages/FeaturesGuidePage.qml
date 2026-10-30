@@ -47,6 +47,14 @@ Item {
             deviceOnline = false
             return
         }
+        // A phone that was unpaired since isn't the one to show.
+        let stillThere = false
+        for (let i = 0; i < count; i++) {
+            if (DeviceList.deviceIdAt(i) === guide.deviceId)
+                stillThere = true
+        }
+        if (!stillThere)
+            guide.deviceId = ""
         let targetId = guide.deviceId.length > 0 ? guide.deviceId : (DeviceList.deviceIdAt(0) || "")
         if (guide.deviceId.length === 0 && targetId.length > 0) {
             guide.deviceId = targetId
@@ -531,24 +539,30 @@ Item {
                 return { label: qsTr("Off on Home"), tone: "off", visible: true }
         }
         if (item.capKey && item.capKey !== "") {
+            // The names AppController.featureState gives (bridge/app.rs).
             let st = AppController.featureState(guide.deviceId, item.capKey)
             let stateName = st ? (st.state || "") : ""
             let actionName = st ? (st.action || "") : ""
+            let target = st ? (st.target || "") : ""
             if (stateName === "available")
                 return { label: qsTr("Ready"), tone: "available", visible: true }
-            if (stateName === "limited")
+            if (stateName === "partial")
                 return { label: qsTr("Basic mode"), tone: "basic", visible: true }
-            if (stateName === "unavailable") {
-                if (actionName === "enable_toggle")
+            if (stateName === "locked") {
+                if (actionName === "enableToggle")
                     return { label: qsTr("Off on Home"), tone: "off", visible: true }
-                if (actionName === "grant_permission")
-                    return { label: qsTr("Needs phone permission"), tone: "warn", visible: true }
-                if (actionName === "enable_elevated")
+                if (actionName === "raisePower" && target === "elevated")
                     return { label: qsTr("Needs Elevated"), tone: "basic", visible: true }
-                if (actionName === "enable_assist")
+                if (actionName === "raisePower")
                     return { label: qsTr("Needs Assist"), tone: "basic", visible: true }
+                if (actionName === "updateApp")
+                    return { label: qsTr("Needs an update"), tone: "warn", visible: true }
                 return { label: qsTr("Needs phone permission"), tone: "warn", visible: true }
             }
+            if (stateName === "unsupported")
+                return { label: qsTr("Not on this phone"), tone: "off", visible: true }
+            // Not known yet: nothing rather than a guess.
+            return { label: "", tone: "neutral", visible: false }
         }
         return { label: qsTr("Ready"), tone: "available", visible: true }
     }
@@ -996,8 +1010,18 @@ Item {
     // Power levels, Troubleshooting, and FAQ
     Sheet {
         id: readerSheet
-        opened: AppController.guideDocOpen
         cardWidth: 640
+        // Not a binding: dismissing sets `opened`, which would break it, and
+        // the next guide wouldn't open.
+        Connections {
+            target: AppController
+            function onGuideDocOpenChanged() {
+                if (AppController.guideDocOpen)
+                    readerSheet.open()
+                else
+                    readerSheet.close()
+            }
+        }
         onOpenedChanged: {
             if (!opened && AppController.guideDocOpen)
                 AppController.closeGuideDoc()

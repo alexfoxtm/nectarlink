@@ -859,6 +859,53 @@ enum StorageArg {
     },
 }
 
+/// A temporary name of our own: a new file or folder never takes over
+/// something already there (such as a link someone else planted).
+fn temp_name(prefix: &str, n: u32) -> String {
+    let nanos =
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
+    format!("{prefix}-{}-{nanos}-{n}", std::process::id())
+}
+
+fn write_new_temp(prefix: &str, extension: &str, bytes: &[u8]) -> std::io::Result<PathBuf> {
+    use std::io::Write;
+    for n in 0.. {
+        let path = std::env::temp_dir().join(format!("{}.{extension}", temp_name(prefix, n)));
+        match std::fs::OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(mut file) => return file.write_all(bytes).map(|()| path),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && n < 16 => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    unreachable!()
+}
+
+fn new_temp_dir(prefix: &str) -> std::io::Result<PathBuf> {
+    for n in 0.. {
+        let path = std::env::temp_dir().join(temp_name(prefix, n));
+        match std::fs::create_dir(&path) {
+            Ok(()) => return Ok(path),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && n < 16 => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    unreachable!()
+}
+
+/// The capabilities the node started with: `update_power` replaces the
+/// list, so later calls add to these rather than drop them.
+static BASE_CAPS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+
+fn with_base_caps(offers: Vec<String>) -> Vec<String> {
+    let mut caps = BASE_CAPS.get().cloned().unwrap_or_default();
+    for offer in offers {
+        if !caps.contains(&offer) {
+            caps.push(offer);
+        }
+    }
+    caps
+}
+
 /// Where `mirror` saves the video, and what arrived.
 static RECORDING: std::sync::OnceLock<std::sync::Arc<Recording>> = std::sync::OnceLock::new();
 
@@ -889,8 +936,10 @@ impl nectarlink_core::MirrorSink for Recording {
         stats.frames += 1;
         stats.keyframes += u32::from(keyframe);
         stats.bytes += data.len() as u64;
-        if let Some(file) = self.file.lock().unwrap().as_mut() {
-            let _ = file.write_all(&data);
+        let mut file = self.file.lock().unwrap();
+        if let Some(Err(e)) = file.as_mut().map(|f| f.write_all(&data)) {
+            eprintln!("Can't write the recording ({e}); it stops here.");
+            *file = None;
         }
     }
     fn ended(&self) {
@@ -965,6 +1014,10 @@ fn stream_sound(sound: &nectarlink_core::MirrorStream, rate: u32, channels: u8, 
         return;
     }
     let packet = (rate / 100) as usize * config.frame_bytes();
+    if packet == 0 || samples.len() < packet {
+        eprintln!("The sound is too short or its rate too low to stream.");
+        return;
+    }
     let started = std::time::Instant::now();
     for (sent, chunk) in (0u64..).zip(samples.chunks_exact(packet).cycle()) {
         let due = std::time::Duration::from_millis(sent * 10);
@@ -1656,8 +1709,7 @@ fn sample_photos(total_count: usize) {
         ),
     ];
 
-    let temp_dir = std::env::temp_dir().join("nectarlink-demo-photos");
-    let _ = std::fs::create_dir_all(&temp_dir);
+    let temp_dir = new_temp_dir("nectarlink-demo-photos").expect("a folder for the demo photos");
     let mut base_items = Vec::with_capacity(specs.len());
     for (id, name, date, w, h, duration, album, top, bottom, sun) in specs {
         let thumb_jpeg = sample_jpeg(240, 180, top, bottom, sun);
@@ -1923,12 +1975,13 @@ impl Platform for TerminalPlatform {
         let mut threads: Vec<nectarlink_core::SmsThread> = Vec::new();
         for (thread, number, name, incoming, body, date) in texts.iter() {
             match threads.iter_mut().find(|t| t.id == thread.to_string()) {
-                Some(t) if *date > t.date => {
-                    t.date = *date;
-                    t.snippet = body.clone();
-                    t.unread = u32::from(*incoming);
+                Some(t) => {
+                    t.unread += u32::from(*incoming);
+                    if *date > t.date {
+                        t.date = *date;
+                        t.snippet = body.clone();
+                    }
                 }
-                Some(_) => {}
                 None => threads.push(nectarlink_core::SmsThread {
                     id: thread.to_string(),
                     addresses: vec![number.clone()],
@@ -2205,8 +2258,7 @@ impl Platform for TerminalPlatform {
     }
     fn set_clipboard_image(&self, mime: &str, bytes: &[u8]) -> Result<(), String> {
         let extension = if mime == "image/jpeg" { "jpg" } else { "png" };
-        let path = std::env::temp_dir().join(format!("nectarlink-clipboard.{extension}"));
-        std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
+        let path = write_new_temp("nectarlink-clipboard", extension, bytes).map_err(|e| e.to_string())?;
         println!("Clipboard image from a paired device ({} bytes): {}", bytes.len(), path.display());
         Ok(())
     }
@@ -2570,6 +2622,7 @@ async fn start_node(cli: &Cli) -> Result<Node> {
         config.capabilities.push(nectarlink_core::WEBCAM_ADDON_VCAM.into());
     }
     let extra_caps = config.capabilities.clone();
+    let _ = BASE_CAPS.set(extra_caps.clone());
     let node = Node::start(config, Arc::new(TerminalPlatform)).await.context("failed to start")?;
     if cli.localsend {
         node.set_localsend_enabled(true).context("failed to enable LocalSend")?;
@@ -2813,13 +2866,13 @@ async fn run(cli: &Cli, node: &Node) -> Result<()> {
         Command::Photos { device: None, .. } => {
             let mut offers = cli.offers.clone();
             offers.push(nectarlink_core::PHOTOS_SHOW.into());
-            node.update_power(node_power(cli), offers).await;
+            node.update_power(node_power(cli), with_base_caps(offers)).await;
             watch(node, true).await?;
         }
         Command::Photos { device: Some(device), action } => {
             let mut offers = cli.offers.clone();
             offers.push(nectarlink_core::PHOTOS_SHOW.into());
-            node.update_power(node_power(cli), offers).await;
+            node.update_power(node_power(cli), with_base_caps(offers)).await;
             let id = resolve(node, device)?;
             wait_until_online(node, id).await?;
             match action.as_ref().unwrap_or(&PhotosArg::List { album: None, before: None, limit: 30 }) {
@@ -2896,7 +2949,7 @@ async fn run(cli: &Cli, node: &Node) -> Result<()> {
             use nectarlink_core::{MirrorInput, TouchAction};
             let mut offers = cli.offers.clone();
             offers.push(nectarlink_core::MIRROR_VIEW.into());
-            node.update_power(node_power(cli), offers).await;
+            node.update_power(node_power(cli), with_base_caps(offers)).await;
             let id = resolve(node, device)?;
             wait_until_online(node, id).await?;
             let touch = |action, x, y| MirrorInput::Touch { action, x, y };
@@ -3173,7 +3226,7 @@ async fn run(cli: &Cli, node: &Node) -> Result<()> {
             if sound.is_some() {
                 offers.push(nectarlink_core::MIRROR_LISTEN.into());
             }
-            node.update_power(node_power(cli), offers).await;
+            node.update_power(node_power(cli), with_base_caps(offers)).await;
             let id = resolve(node, device)?;
             if !at.is_empty() {
                 node.add_known_addrs(id, at);
@@ -3191,6 +3244,7 @@ async fn run(cli: &Cli, node: &Node) -> Result<()> {
                 stay_awake: false,
                 screen_off: false,
                 watch: None,
+                sound_only: false,
             };
             node.mirror_start(id, options).await.context("the phone didn't ask its user")?;
             println!(
@@ -3267,19 +3321,22 @@ async fn run(cli: &Cli, node: &Node) -> Result<()> {
             if !cli.as_phone {
                 bail!("phones lend their microphone: add --as-phone");
             }
+            // The WAV's samples, or silence made 10 ms at a time.
             let samples = match wav {
                 Some(path) => {
                     let bytes = std::fs::read(path).context("can't read the WAV")?;
-                    // The samples after a canonical 44-byte header.
-                    bytes.get(44..).context("not a WAV")?.to_vec()
+                    match read_wav(&bytes) {
+                        Some((48_000, 1, samples)) => Some(samples.to_vec()),
+                        _ => bail!("the WAV must be 16-bit mono at 48 kHz"),
+                    }
                 }
-                None => vec![0u8; 48_000 * 2 * *seconds as usize],
+                None => None,
             };
             let (asked, mut asks) = tokio::sync::mpsc::unbounded_channel();
             let _ = MIC_ASKS.set(asked);
             let mut caps = cli.offers.clone();
             caps.push(nectarlink_core::MIC_STREAM.into());
-            node.update_power(node_power(cli), caps).await;
+            node.update_power(node_power(cli), with_base_caps(caps)).await;
             let id = resolve(node, device)?;
             wait_until_online(node, id).await?;
             println!("Waiting for the PC to ask for the microphone.");
@@ -3304,7 +3361,12 @@ async fn run(cli: &Cli, node: &Node) -> Result<()> {
                 let started = std::time::Instant::now();
                 let mut sent = 0usize;
                 // 10 ms at a time, in real time.
-                for (i, chunk) in samples.chunks(960).take(seconds * 100).enumerate() {
+                let silence = [0u8; 960];
+                let chunks: Box<dyn Iterator<Item = &[u8]>> = match &samples {
+                    Some(samples) => Box::new(samples.chunks(960)),
+                    None => Box::new(std::iter::repeat(&silence[..])),
+                };
+                for (i, chunk) in chunks.take(seconds.saturating_mul(100)).enumerate() {
                     let due = std::time::Duration::from_millis(i as u64 * 10);
                     if let Some(wait) = due.checked_sub(started.elapsed()) {
                         std::thread::sleep(wait);
@@ -3337,7 +3399,7 @@ async fn run(cli: &Cli, node: &Node) -> Result<()> {
             let mut caps = cli.offers.clone();
             caps.push(nectarlink_core::MEDIA_WATCH.into());
             caps.push(nectarlink_core::MIRROR_VIEW.into());
-            node.update_power(node_power(cli), caps).await;
+            node.update_power(node_power(cli), with_base_caps(caps)).await;
             let id = resolve(node, device)?;
             wait_until_online(node, id).await?;
             println!("Waiting for the PC to offer something to watch (Play on phone on its media card).");
@@ -3365,7 +3427,7 @@ async fn run(cli: &Cli, node: &Node) -> Result<()> {
                         .watch_file_read(id, offset, nectarlink_core::MEDIA_WATCH_MAX_READ)
                         .await
                         .context("the PC didn't send the file")?;
-                    if bytes.is_empty() || size != file.size {
+                    if bytes.is_empty() || size != file.size || offset + bytes.len() as u64 > file.size {
                         bail!("the PC sent {} bytes at {offset} of {size}", bytes.len());
                     }
                     saved.write_all(&bytes)?;
@@ -3391,6 +3453,7 @@ async fn run(cli: &Cli, node: &Node) -> Result<()> {
                 stay_awake: false,
                 screen_off: false,
                 watch: Some(player.clone()),
+                sound_only: false,
             };
             node.mirror_start(id, options).await.context("the PC didn't stream it")?;
             println!("Watching {player}; recording for {seconds} s after the first frame.");
@@ -3467,7 +3530,7 @@ async fn run(cli: &Cli, node: &Node) -> Result<()> {
                 offers.push(nectarlink_core::MIRROR_VIRTUAL_DISPLAY.into());
                 offers.push("notify.mirror".into());
             }
-            node.update_power(node_power(cli), offers).await;
+            node.update_power(node_power(cli), with_base_caps(offers)).await;
             if *apps {
                 if let Ok(paired) = node.paired_devices()
                     && let Some(first) = paired.first()
@@ -3553,7 +3616,7 @@ async fn run(cli: &Cli, node: &Node) -> Result<()> {
             let _ = WEBCAM_ASKS.set(asks.clone());
             let mut offers = cli.offers.clone();
             offers.push(nectarlink_core::WEBCAM_STREAM.into());
-            node.update_power(node_power(cli), offers).await;
+            node.update_power(node_power(cli), with_base_caps(offers)).await;
             println!("Sharing a {width}x{height} webcam ({} frames) with PCs.", units.len());
             if let Some(target) = to {
                 let pc = resolve(node, target)?;
@@ -3615,7 +3678,7 @@ async fn run(cli: &Cli, node: &Node) -> Result<()> {
                 ]
                 .map(str::to_owned),
             );
-            node.update_power(node_power(cli), offers).await;
+            node.update_power(node_power(cli), with_base_caps(offers)).await;
             for n in sample_chat_notifications() {
                 node.notification_posted(n).await;
             }
@@ -3634,7 +3697,7 @@ async fn run(cli: &Cli, node: &Node) -> Result<()> {
             if !*basic {
                 offers.push(nectarlink_core::CALLS_IN_CALL.to_owned());
             }
-            node.update_power(node_power(cli), offers).await;
+            node.update_power(node_power(cli), with_base_caps(offers)).await;
             let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_millis() as i64;
             let call = nectarlink_core::CallState {
                 id: now.to_string(),
@@ -3708,7 +3771,7 @@ async fn run(cli: &Cli, node: &Node) -> Result<()> {
                     .map(str::to_owned),
                 );
             }
-            node.update_power(node_power(cli), offers).await;
+            node.update_power(node_power(cli), with_base_caps(offers)).await;
             let _ = node.toggles_changed(sample_toggles()).await;
             let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_millis() as i64;
             let samples = [
@@ -3774,7 +3837,7 @@ async fn run(cli: &Cli, node: &Node) -> Result<()> {
         Command::Sms { device, action } => {
             let mut offers = cli.offers.clone();
             offers.push(nectarlink_core::SMS_SHOW.into());
-            node.update_power(node_power(cli), offers).await;
+            node.update_power(node_power(cli), with_base_caps(offers)).await;
             let id = resolve(node, device)?;
             wait_until_online(node, id).await?;
             match action {
@@ -3841,7 +3904,7 @@ async fn run(cli: &Cli, node: &Node) -> Result<()> {
         Command::Call { device, number, limit } => {
             let mut offers = cli.offers.clone();
             offers.push(nectarlink_core::CALLS_SHOW.into());
-            node.update_power(node_power(cli), offers).await;
+            node.update_power(node_power(cli), with_base_caps(offers)).await;
             let id = resolve(node, device)?;
             wait_until_online(node, id).await?;
             match number {
@@ -3879,7 +3942,7 @@ async fn run(cli: &Cli, node: &Node) -> Result<()> {
         Command::Contacts { device, query, offset, limit } => {
             let mut offers = cli.offers.clone();
             offers.push(nectarlink_core::CONTACTS_SHOW.into());
-            node.update_power(node_power(cli), offers).await;
+            node.update_power(node_power(cli), with_base_caps(offers)).await;
             let id = resolve(node, device)?;
             wait_until_online(node, id).await?;
             for c in node.contacts(id, query.clone(), *offset, *limit).await.context("can't list contacts")? {
@@ -3903,7 +3966,7 @@ async fn run(cli: &Cli, node: &Node) -> Result<()> {
         Command::Calls { auto, script } => {
             let mut offers = cli.offers.clone();
             offers.push(nectarlink_core::CALLS_SHOW.into());
-            node.update_power(node_power(cli), offers).await;
+            node.update_power(node_power(cli), with_base_caps(offers)).await;
             let command = auto.map(|a| match a {
                 CallArg::Answer => nectarlink_core::CallCommand::Answer,
                 CallArg::Decline => nectarlink_core::CallCommand::Decline,
@@ -4035,7 +4098,7 @@ async fn run(cli: &Cli, node: &Node) -> Result<()> {
         Command::Play { title, artist, app, length, art } => {
             let mut offers = cli.offers.clone();
             offers.push("media.control".into());
-            node.update_power(node_power(cli), offers).await;
+            node.update_power(node_power(cli), with_base_caps(offers)).await;
             play(node, title, artist, app, *length, art.as_deref()).await?;
         }
         Command::Photo { path, preview } => {
@@ -4048,7 +4111,7 @@ async fn run(cli: &Cli, node: &Node) -> Result<()> {
             let _ = PHOTO.set(path.clone());
             let mut offers = cli.offers.clone();
             offers.push(nectarlink_core::PHOTOS_READ.into());
-            node.update_power(node_power(cli), offers).await;
+            node.update_power(node_power(cli), with_base_caps(offers)).await;
             // Only connected PCs hear of it.
             let first = node.paired_devices()?.first().map(|d| d.id).context("pair with a PC first")?;
             wait_until_online(node, first).await?;
@@ -4104,7 +4167,7 @@ async fn run(cli: &Cli, node: &Node) -> Result<()> {
                 updates.iter().map(|s| parse_update_step(s)).collect::<Result<_>>()?;
             let mut offers = cli.offers.clone();
             offers.extend(["notify.mirror".to_owned(), "notify.reply".to_owned(), "notify.live".to_owned()]);
-            node.update_power(node_power(cli), offers).await;
+            node.update_power(node_power(cli), with_base_caps(offers)).await;
             let now_ms =
                 std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_millis() as i64;
             let when = match countdown {
@@ -4184,7 +4247,8 @@ async fn run(cli: &Cli, node: &Node) -> Result<()> {
                 tokio::spawn(async move {
                     let mut prev_ms = 0u64;
                     for (delay_ms, prog) in update_steps {
-                        let wait_ms = if delay_ms > prev_ms { delay_ms - prev_ms } else { delay_ms };
+                        // Each delay counts from the start, so one no later than the last is due now.
+                        let wait_ms = delay_ms.saturating_sub(prev_ms);
                         prev_ms = delay_ms;
                         tokio::time::sleep(Duration::from_millis(wait_ms)).await;
                         let mut next_note = base_note.clone();
@@ -4319,8 +4383,8 @@ async fn send_recording(
     let (name, path, cleanup) = match file {
         Some(p) => (nectarlink_core::safe_file_name(&p.to_string_lossy()), p.to_path_buf(), false),
         None => {
-            let tmp = std::env::temp_dir().join(format!("nectarlink-recording-{}.m4a", std::process::id()));
-            std::fs::write(&tmp, sample_m4a(duration_secs)).context("can't write temporary M4A recording")?;
+            let tmp = write_new_temp("nectarlink-recording", "m4a", &sample_m4a(duration_secs))
+                .context("can't write temporary M4A recording")?;
             ("Recording.m4a".to_owned(), tmp, true)
         }
     };
@@ -5161,7 +5225,9 @@ async fn resolve_send_target(node: &Node, query: &str, default_port: u16) -> Res
     {
         return Ok((id, false));
     }
-    if let Some((host, port_str)) = query.rsplit_once(':')
+    // A bare IPv6 address has colons too: it isn't `host:port`.
+    if query.parse::<std::net::IpAddr>().is_err()
+        && let Some((host, port_str)) = query.rsplit_once(':')
         && !host.is_empty()
         && let Ok(port) = port_str.parse::<u16>()
     {

@@ -4,6 +4,35 @@
 //! 32-bit float stereo samples to 16-bit signed little-endian PCM, and streams
 //! them to connected phones over NectarLink's low-latency audio stream.
 
+/// Where the PC's sound goes: only to the phone that asked for it, waiting
+/// while it's away (never to another phone, which may be someone else's), or
+/// to the first online phone when the PC itself turned the speaker on.
+#[cfg_attr(not(any(windows, target_os = "linux")), allow(dead_code))]
+fn pick_target(
+    wanted: Option<nectarlink_core::DeviceId>,
+    online: &[nectarlink_core::DeviceId],
+) -> Option<nectarlink_core::DeviceId> {
+    match wanted {
+        Some(phone) => online.contains(&phone).then_some(phone),
+        None => online.first().copied(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::pick_target;
+    use nectarlink_core::DeviceId;
+
+    #[test]
+    fn sound_never_moves_to_a_phone_that_did_not_ask() {
+        let (a, b) = (DeviceId([1; 32]), DeviceId([2; 32]));
+        assert_eq!(pick_target(Some(a), &[b, a]), Some(a));
+        assert_eq!(pick_target(Some(a), &[b]), None);
+        assert_eq!(pick_target(None, &[b, a]), Some(b));
+        assert_eq!(pick_target(None, &[]), None);
+    }
+}
+
 #[cfg(any(windows, target_os = "linux"))]
 mod imp {
 
@@ -31,8 +60,8 @@ mod imp {
 
     static ENABLED: AtomicBool = AtomicBool::new(false);
     static WORKER_RUNNING: AtomicBool = AtomicBool::new(false);
-    /// The phone that last turned "Phone speaker" on. Audio goes there while it's online;
-    /// when the PC turned it on (or that phone is away), to the first phone that is.
+    /// The phone that last turned "Phone speaker" on. Audio goes only there; when
+    /// the PC turned it on, to the first phone that is online.
     static TARGET: std::sync::Mutex<Option<nectarlink_core::DeviceId>> = std::sync::Mutex::new(None);
 
     /// The phone the sound goes to first, if one asked.
@@ -297,7 +326,7 @@ mod imp {
             .map(|d| d.id)
             .collect();
         let wanted = *TARGET.lock().unwrap_or_else(|e| e.into_inner());
-        let Some(&peer) = wanted.as_ref().filter(|w| peers.contains(w)).or_else(|| peers.first()) else {
+        let Some(peer) = super::pick_target(wanted, &peers) else {
             std::thread::sleep(Duration::from_millis(500));
             return Ok(());
         };
@@ -412,7 +441,7 @@ mod imp {
             .map(|d| d.id)
             .collect();
         let wanted = *TARGET.lock().unwrap_or_else(|e| e.into_inner());
-        let Some(&peer) = wanted.as_ref().filter(|w| peers.contains(w)).or_else(|| peers.first()) else {
+        let Some(peer) = super::pick_target(wanted, &peers) else {
             std::thread::sleep(Duration::from_millis(500));
             return Ok(());
         };

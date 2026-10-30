@@ -85,6 +85,8 @@ pub(crate) struct LocalState {
     pub power: PowerLevel,
     pub extra_capabilities: Vec<String>,
     pub battery: Option<Battery>,
+    /// Watching adb for USB phones: can start a phone's Elevated helper over USB.
+    pub adb: bool,
 }
 
 impl LocalState {
@@ -98,6 +100,9 @@ impl LocalState {
                 caps.push(cap.clone());
             }
         }
+        if self.adb {
+            caps.push(nectarlink_protocol::messages::elevated::USB.to_owned());
+        }
         caps
     }
 
@@ -107,6 +112,7 @@ impl LocalState {
             || (cap == nectarlink_protocol::messages::continuity_camera::RECEIVE
                 && !matches!(self.device.kind, DeviceKind::Phone | DeviceKind::Tablet))
             || self.extra_capabilities.iter().any(|c| c == cap)
+            || (self.adb && cap == nectarlink_protocol::messages::elevated::USB)
     }
 }
 
@@ -119,6 +125,11 @@ struct Supervisor {
 pub(crate) type MirrorStop = (DeviceId, u32, &'static str);
 
 /// State shared by the node, its sessions and background tasks.
+/// Notifications kept for listing and search as they arrive, at most: the
+/// oldest goes first. (A full snapshot is what the phone shows, which Android
+/// itself limits.)
+const NOTIFICATION_HISTORY_MAX: usize = 1000;
+
 pub(crate) struct Shared {
     pub id: DeviceId,
     pub endpoint: Endpoint,
@@ -182,6 +193,10 @@ pub(crate) struct Shared {
     pub(crate) usb_bridge_ports: Arc<Mutex<std::collections::HashSet<u16>>>,
     /// Active USB tunnel peers mapped to their local UDP bridge address and cancellation token.
     pub(crate) usb_peers: Arc<Mutex<HashMap<DeviceId, (SocketAddr, CancellationToken)>>>,
+    /// The adb serial (and adb server) each USB-tunnelled phone is on.
+    pub(crate) usb_serials: Mutex<HashMap<DeviceId, (String, SocketAddr)>>,
+    /// Elevated helpers started over USB, by phone: they run until dropped.
+    pub(crate) usb_helpers: Mutex<HashMap<DeviceId, tokio::task::JoinHandle<()>>>,
     /// Peers whose USB tunnel this device accepted (a phone plugged into that PC).
     pub(crate) usb_inbound: Mutex<std::collections::HashSet<DeviceId>>,
     /// USB peers that are only paired by hand (Android emulators).
@@ -419,7 +434,8 @@ impl Shared {
 
     pub(crate) fn cancel_queue_or_transfer(self: &Arc<Self>, id: &str) -> Result<bool> {
         self.localsend.resolve_transfer_approval(id, false);
-        let removed_queue = self.store.remove_queue_item(id)?;
+        // The live transfer is cancelled first, so a database error can't
+        // leave it running.
         let target = {
             let mut map = lock(&self.transfers);
             if let Some(ctrl) = map.get_mut(id) {
@@ -433,6 +449,15 @@ impl Shared {
                 }
                 Some((peer, direction, paused, running))
             } else {
+                None
+            }
+        };
+        let removed_queue = match self.store.remove_queue_item(id) {
+            Ok(removed) => removed,
+            // Only an error when there was nothing live to cancel either.
+            Err(e) if target.is_none() => return Err(e),
+            Err(e) => {
+                tracing::warn!(error = %e, %id, "can't remove a cancelled send from the queue");
                 None
             }
         };
@@ -599,25 +624,27 @@ impl Shared {
         if self.away_mode() || self.is_usb_connection(conn) {
             return true;
         }
-        let paths = conn.paths();
-        let selected = paths.iter().find(|p| p.is_selected()).or_else(|| paths.iter().next());
-        match selected {
-            Some(p) if p.is_relay() => false,
-            Some(p) => match p.remote_addr() {
-                iroh::TransportAddr::Ip(addr) => self.is_usb_addr(addr) || self.is_allowed_peer_ip(addr.ip()),
-                _ => false,
-            },
-            None => false,
-        }
+        // Any direct LAN (or USB) path will do: a connection often reports its
+        // relay path first while the direct one comes up.
+        conn.paths().iter().any(|p| {
+            !p.is_relay()
+                && match p.remote_addr() {
+                    iroh::TransportAddr::Ip(addr) => {
+                        self.is_usb_addr(addr) || self.is_allowed_peer_ip(addr.ip())
+                    }
+                    _ => false,
+                }
+        })
     }
 
     pub(crate) async fn wait_connection_allowed(&self, conn: &Connection) -> bool {
         if self.away_mode() || self.is_usb_connection(conn) {
             return true;
         }
+        // Up to 200 ms for a direct path, not just for the first path of any kind.
         for _ in 0..20 {
-            if !conn.paths().is_empty() {
-                return self.is_connection_allowed(conn);
+            if self.is_connection_allowed(conn) {
+                return true;
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
@@ -924,24 +951,33 @@ impl Shared {
         // The same physical device paired again (after a reinstall it has a new identity):
         // move its history and queue to the new pairing and forget the old one. Only the
         // install ID decides; same-name devices (two family phones) stay separate.
-        if let Some(install_id) = info.install_id.as_deref()
-            && let Ok(existing_peers) = self.store.list_peers()
-        {
-            for old in existing_peers {
-                if old.id != peer
-                    && self.session(&old.id).is_none()
-                    && old.info.kind == info.kind
-                    && old.info.install_id.as_deref() == Some(install_id)
-                {
-                    let _ = self.store.reassign_timeline(&old.id, &peer);
-                    if self.store.reassign_send_queue_peer(&old.id, &peer).unwrap_or(0) > 0 {
-                        reassigned_queue = true;
-                    }
-                    let _ = self.forget_peer(&old.id).await;
-                }
-            }
-        }
+        let replaced: Vec<DeviceId> = match info.install_id.as_deref() {
+            Some(install_id) => self
+                .store
+                .list_peers()
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|old| {
+                    old.id != peer
+                        && self.session(&old.id).is_none()
+                        && old.info.kind == info.kind
+                        && old.info.install_id.as_deref() == Some(install_id)
+                })
+                .map(|old| old.id)
+                .collect(),
+            None => Vec::new(),
+        };
+        // Store the new pairing first: if that fails, the old one is untouched.
+        // Storing it also moves the old entry's history and queue over.
         self.store.upsert_peer(&peer, &info, paired_at)?;
+        for old in replaced {
+            let _ = self.store.reassign_timeline(&old, &peer);
+            let _ = self.store.reassign_send_queue_peer(&old, &peer);
+            reassigned_queue = true;
+            let _ = self.forget_peer(&old).await;
+            // Its row is already gone, so forget_peer doesn't announce it.
+            self.emit(NodeEvent::DeviceRemoved(old));
+        }
         tracing::info!(peer = %peer.short(), "paired");
         let device = PairedDevice {
             id: peer,
@@ -991,12 +1027,11 @@ impl Shared {
         for id in active_transfer_ids {
             lock(&self.transfers).remove(&id);
         }
-        let dropped_queue = self.store.drop_all_queue_for_peer(peer).unwrap_or_default();
+        // One transaction: an error leaves both the device and its queue.
+        let (existed, dropped_queue) = self.store.remove_peer_with_queue(peer)?;
         for (id, _) in &dropped_queue {
             transfer::cleanup_staging_id(self, id);
         }
-
-        let existed = self.store.remove_peer(peer)?;
         if let Some(sup) = lock(&self.supervisors).remove(peer) {
             sup.cancel.cancel();
         }
@@ -1012,6 +1047,12 @@ impl Shared {
         self.toggles.remove_peer(peer);
         self.deck.remove_peer(peer);
         self.stop_webcam(peer);
+        // The session was removed above, so `on_session_end` won't clear these:
+        // a one-time "show my screen" must not outlive the pairing.
+        lock(&self.pc_mirror_sessions).remove(peer);
+        lock(&self.watch_offers).remove(peer);
+        self.stop_mic(peer);
+        self.stop_showing_all(peer);
         if !dropped_queue.is_empty() {
             self.emit(NodeEvent::QueueChanged);
             if dropped_count > 0 {
@@ -1043,6 +1084,12 @@ impl Shared {
             conn.close(VarInt::from_u32(CLOSE_NORMAL), b"away mode disabled");
             return None;
         }
+        // Unpaired while the handshake ran (both sides check before it).
+        if !self.store.is_paired(&peer).unwrap_or(false) {
+            tracing::debug!(peer = %peer.short(), "refusing session: no longer paired");
+            conn.close(VarInt::from_u32(ErrorCode::Unpaired.close_code()), b"unpaired");
+            return None;
+        }
         // Either side may have dialed: while the user has reconnecting off,
         // this device stays disconnected from that one.
         if !self.reconnects(&peer) {
@@ -1065,8 +1112,8 @@ impl Shared {
         if let Err(e) = self.store.update_info(&peer, &remote_device) {
             tracing::warn!(error = %e, "failed to update peer info");
         }
-        let effective_device =
-            self.store.get_peer(&peer).ok().flatten().map(|p| p.info).unwrap_or(remote_device);
+        // What the apps show is what's stored, so the event carries that.
+        let effective_device = self.store.get_peer(&peer).ok().flatten().map(|p| p.info);
         let caps = features::sanitize_capabilities(remote.caps);
         if let Err(e) = self.store.update_capabilities(&peer, Some(&caps), Some(remote.power.effective())) {
             tracing::warn!(error = %e, "failed to update peer capabilities");
@@ -1113,7 +1160,9 @@ impl Shared {
             tracing::warn!(error = %e, "failed to record peer addresses");
         }
         self.remember_addrs(&peer, &persisted_addrs);
-        self.emit(NodeEvent::PeerInfoChanged { device: peer, info: effective_device });
+        if let Some(info) = effective_device {
+            self.emit(NodeEvent::PeerInfoChanged { device: peer, info });
+        }
         self.emit(NodeEvent::PeerPowerChanged { device: peer, power: remote.power.effective() });
         self.refresh_capabilities(&peer);
         self.publish_online(&session);
@@ -1275,6 +1324,10 @@ async fn maintain(shared: Weak<Shared>, peer: DeviceId, wake: Arc<Notify>, cance
             backoff = BACKOFF_MIN;
             waited_for_usb = false;
             continue;
+        }
+        // Unplugged before the PC dialled: the next plug-in gets its grace again.
+        if !node.usb_tunnel_inbound(&peer) {
+            waited_for_usb = false;
         }
         if node.session(&peer).is_none() && node.usb_tunnel_inbound(&peer) && !waited_for_usb {
             // Plugged in: the PC dials through the cable. Dial only if it hasn't by then.
@@ -1503,6 +1556,7 @@ impl Node {
                 power: config.power,
                 extra_capabilities: config.capabilities.clone(),
                 battery: None,
+                adb: config.adb_server.is_some(),
             }),
             pairing: PairingState::default(),
             cancel: CancellationToken::new(),
@@ -1537,6 +1591,8 @@ impl Node {
             usb_listener_port: std::sync::atomic::AtomicU16::new(0),
             usb_bridge_ports: Arc::new(Mutex::new(std::collections::HashSet::new())),
             usb_peers: Arc::new(Mutex::new(HashMap::new())),
+            usb_serials: Mutex::new(HashMap::new()),
+            usb_helpers: Mutex::new(HashMap::new()),
             usb_inbound: Mutex::new(std::collections::HashSet::new()),
             usb_manual_pair: Mutex::new(std::collections::HashSet::new()),
             usb_poke: Notify::new(),
@@ -1572,22 +1628,9 @@ impl Node {
         tokio::task::spawn_blocking(move || transfer::clean_incoming(&incoming));
 
         for peer in shared.store.list_peers()? {
-            if !config.away_mode {
-                let lan_only: Vec<SocketAddr> = peer
-                    .last_addrs
-                    .iter()
-                    .copied()
-                    .filter(|a| !a.ip().to_canonical().is_loopback() && crate::session::is_lan_ip(a.ip()))
-                    .collect();
-                if lan_only.len() != peer.last_addrs.len()
-                    && let Some(seen) = peer.last_seen
-                {
-                    let _ = shared.store.record_seen(&peer.id, seen, &lan_only);
-                }
-                shared.remember_addrs(&peer.id, &lan_only);
-            } else {
-                shared.remember_addrs(&peer.id, &peer.last_addrs);
-            }
+            // remember_addrs keeps only LAN addresses while away mode is off.
+            // The stored list keeps the rest, for when it's turned on again.
+            shared.remember_addrs(&peer.id, &peer.last_addrs);
             shared.start_supervisor(peer.id);
         }
         run_queue_coordinator(Arc::downgrade(&shared), shared.cancel.child_token());
@@ -1610,20 +1653,11 @@ impl Node {
                     session.close(CLOSE_NORMAL, b"away mode disabled");
                 }
             }
+            // Only what's dialled changes (remember_addrs keeps LAN addresses
+            // now); the stored list keeps the others for turning it back on.
             if let Ok(peers) = self.shared.store.list_peers() {
                 for peer in peers {
-                    let lan_only: Vec<SocketAddr> = peer
-                        .last_addrs
-                        .iter()
-                        .copied()
-                        .filter(|a| !a.ip().to_canonical().is_loopback() && crate::session::is_lan_ip(a.ip()))
-                        .collect();
-                    if lan_only.len() != peer.last_addrs.len()
-                        && let Some(seen) = peer.last_seen
-                    {
-                        let _ = self.shared.store.record_seen(&peer.id, seen, &lan_only);
-                    }
-                    self.shared.remember_addrs(&peer.id, &lan_only);
+                    self.shared.remember_addrs(&peer.id, &peer.last_addrs);
                 }
             }
         } else {
@@ -1640,6 +1674,7 @@ impl Node {
     /// Stops all sessions and networking.
     pub async fn shutdown(&self) {
         self.shared.cancel.cancel();
+        crate::elevated_usb::stop_all(&self.shared);
         self.shared.localsend.stop(&self.shared);
         let sessions: Vec<_> = lock(&self.shared.sessions).drain().map(|(_, s)| s).collect();
         for session in sessions {
@@ -1817,12 +1852,15 @@ impl Node {
     /// on the new one, so requests must be idempotent.
     async fn request(&self, peer: DeviceId, env: Envelope) -> Result<Envelope> {
         let first = self.connected(&peer)?;
-        match first.request(env.clone(), REQUEST_TIMEOUT).await {
-            Err(Error::Offline) => match self.shared.session(&peer) {
+        match first.request_tracked(env.clone(), REQUEST_TIMEOUT).await {
+            // The connection was replaced before the request went out: send it
+            // on the new one. Once it went out it may have run (a reply to a
+            // chat, a notification's action), so it isn't sent twice.
+            (Err(Error::Offline), false) => match self.shared.session(&peer) {
                 Some(next) if !Arc::ptr_eq(&next, &first) => next.request(env, REQUEST_TIMEOUT).await,
                 _ => Err(Error::Offline),
             },
-            other => other,
+            (other, _) => other,
         }
     }
 
@@ -2642,6 +2680,19 @@ impl Node {
         Ok(codecs)
     }
 
+    /// Screen codecs accepted by the connected receiver, in preference order.
+    /// Older receivers do not advertise HEVC and continue to use H.264.
+    pub fn mirror_codecs(&self, peer: DeviceId) -> Result<Vec<String>> {
+        let _ = self.connected(&peer)?;
+        let record = self.shared.store.get_peer(&peer)?.ok_or(Error::NotPaired)?;
+        let mut codecs = Vec::new();
+        if record.caps.contains(crate::MIRROR_HEVC) {
+            codecs.push(crate::MIRROR_H265.into());
+        }
+        codecs.push(crate::MIRROR_H264.into());
+        Ok(codecs)
+    }
+
     /// Asks a paired phone to start streaming its camera as a webcam.
     /// Video then arrives through [`Platform::webcam_sink`](crate::Platform::webcam_sink).
     pub async fn webcam_start(&self, peer: DeviceId, options: crate::WebcamStart) -> Result<()> {
@@ -2674,6 +2725,24 @@ impl Node {
 
     /// Asks a paired phone to stream its microphone; the phone asks its
     /// user. Sound then arrives through [`Platform::mic_sink`](crate::Platform::mic_sink).
+    /// Asks `pc`, which this phone is plugged into over USB, to start this
+    /// phone's Elevated helper from `apk` with `token` after running `grants`
+    /// (`docs/protocol/elevated-usb.md`). Returns the helper's loopback port.
+    pub async fn elevated_usb_start(
+        &self,
+        pc: DeviceId,
+        apk: String,
+        token: String,
+        grants: Vec<String>,
+    ) -> Result<u16> {
+        let session = self.connected(&pc)?;
+        crate::elevated_usb::start(
+            &session,
+            nectarlink_protocol::messages::ElevatedUsbStart { apk, token, grants },
+        )
+        .await
+    }
+
     pub async fn mic_start(&self, peer: DeviceId) -> Result<()> {
         let session = self.connected(&peer)?;
         crate::mic::start(&self.shared, &session).await
@@ -3118,6 +3187,12 @@ impl Node {
             let mut hist = lock(&self.shared.notification_history);
             hist.retain(|n| n.key != clean.key);
             hist.push(clean);
+            // Kept in memory with icons and pictures: drop the oldest past the cap.
+            if hist.len() > NOTIFICATION_HISTORY_MAX
+                && let Some(oldest) = hist.iter().enumerate().min_by_key(|(_, n)| n.when).map(|(i, _)| i)
+            {
+                hist.remove(oldest);
+            }
         }
         self.shared.notification_posted(notification).await;
     }

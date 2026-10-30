@@ -41,8 +41,8 @@ phone's shared storage root:
 ## 3. Control-stream messages
 
 ```
-t = "storage.list"      id = n   b = { path: text }
-t = "storage.entries"   re = n   b = { entries: [ StorageEntry, ... ] }
+t = "storage.list"      id = n   b = { path: text, offset?: uint }
+t = "storage.entries"   re = n   b = { entries: [ StorageEntry, ... ], more?: bool }
 t = "storage.mkdir"     id = n   b = { path: text }
 t = "storage.rename"    id = n   b = { from: text, to: text }
 t = "storage.delete"    id = n   b = { path: text, confirmed?: bool }
@@ -61,8 +61,15 @@ StorageEntry = {
 ### 3.1 `storage.list`
 
 Lists the immediate children of `path` (`""` for the root). Symlinks pointing
-outside the shared root and unreadable/private entries are omitted. If the list
-would exceed `MAX_FRAME_LEN`, entries are trimmed to fit.
+outside the shared root and unreadable/private entries are omitted. Entries come
+directories first, then by name, ignoring case.
+
+A folder whose entries don't fit one frame (`MAX_FRAME_LEN`) comes in pages:
+an answer holds as many as fit, from `offset` (default 0), with `more: true`
+when entries follow. The requester asks again with `offset` past the ones it
+has, until `more` is absent or false. A device from before paging ignores
+`offset` and never sends `more`, so it answers with the first page only, as
+it always did; a requester from before paging reads the first page.
 
 Errors: `NOT_FOUND` if `path` does not exist or is not a directory; `DENIED` if
 `storage` is off or permission is not granted; `INVALID` if `path` is malformed.

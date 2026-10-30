@@ -52,6 +52,11 @@ type RuleBaselineMap = HashMap<String, HashMap<String, (u64, i64)>>;
 
 static LAST_SYNCED: OnceLock<Mutex<RuleBaselineMap>> = OnceLock::new();
 
+/// Drops what a removed rule last synced.
+pub fn forget_rule(rule_id: &str) {
+    baselines().lock().unwrap_or_else(|e| e.into_inner()).remove(rule_id);
+}
+
 fn baselines() -> &'static Mutex<RuleBaselineMap> {
     LAST_SYNCED.get_or_init(|| Mutex::new(HashMap::new()))
 }
@@ -269,6 +274,13 @@ fn join_phone_path(folder: &str, rel_path: &str) -> String {
     }
 }
 
+/// Whether a phone file can be saved here under the same name. Windows
+/// refuses `:`, reserved names such as `CON`, and trailing dots or spaces, and
+/// `C:x` would even resolve to a path on drive C outside the sync folder.
+fn storable_here(name: &str) -> bool {
+    !cfg!(windows) || nectarlink_core::storable_name(name) == name
+}
+
 async fn list_phone_entries(node: &Node, peer: DeviceId, base_folder: &str) -> Option<Vec<SyncEntry>> {
     let mut out = Vec::new();
     let mut queue = std::collections::VecDeque::new();
@@ -285,6 +297,7 @@ async fn list_phone_entries(node: &Node, peer: DeviceId, base_folder: &str) -> O
             if entry.name.starts_with('.')
                 || entry.name.ends_with(".nectarlink.part")
                 || entry.name.contains(" (conflict-")
+                || !storable_here(&entry.name)
             {
                 continue;
             }
@@ -594,6 +607,18 @@ pub fn start_poller() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[cfg(windows)]
+    fn phone_names_windows_cannot_store_are_skipped() {
+        assert!(storable_here("IMG_001.jpg"));
+        assert!(storable_here("Trip 2026"));
+        assert!(!storable_here("C:evil.txt"));
+        assert!(!storable_here("notes.txt:stream"));
+        assert!(!storable_here("CON"));
+        assert!(!storable_here("aux.txt"));
+        assert!(!storable_here("trailing."));
+    }
 
     #[test]
     fn conflict_file_name_inserts_suffix_before_extension() {

@@ -209,7 +209,8 @@ pub fn format_clip_display(raw_text: &str) -> (String, Option<String>) {
         .unwrap_or(first_line)
         .trim();
 
-    let lower_prefix = unquoted.get(..8).map(str::to_ascii_lowercase).unwrap_or_default();
+    // Up to 8 characters: `geo:0,0` is shorter than that.
+    let lower_prefix: String = unquoted.chars().take(8).collect::<String>().to_ascii_lowercase();
     if (lower_prefix.starts_with("http://")
         || lower_prefix.starts_with("https://")
         || lower_prefix.starts_with("geo:"))
@@ -359,6 +360,8 @@ mod tests {
         assert_eq!(t2, "Link · example.com");
         assert_eq!(d2.as_deref(), Some("https://example.com/posts/12345"));
 
+        let (geo_title, geo_raw) = format_clip_display("geo:0,0");
+        assert_eq!(geo_raw.as_deref(), Some("geo:0,0"), "a short map link is still a link: {geo_title}");
         let (t3, d3) = format_clip_display("Short note");
         assert_eq!(t3, "Short note");
         assert_eq!(d3, None);

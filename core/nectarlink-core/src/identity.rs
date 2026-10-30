@@ -102,12 +102,17 @@ fn decode(bytes: &[u8], protector: &dyn KeyProtector) -> Result<SecretKey> {
 fn write_atomically(path: &Path, data: &[u8]) -> io::Result<()> {
     let tmp = path.with_extension("tmp");
     {
-        let mut file = fs::File::create(&tmp)?;
+        // A fresh file, private from the start: a leftover (or a link) at
+        // the temporary path is removed rather than written through.
+        let _ = fs::remove_file(&tmp);
+        let mut options = fs::OpenOptions::new();
+        options.write(true).create_new(true);
         #[cfg(unix)]
         {
-            use std::os::unix::fs::PermissionsExt;
-            file.set_permissions(fs::Permissions::from_mode(0o600))?;
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
         }
+        let mut file = options.open(&tmp)?;
         file.write_all(data)?;
         file.sync_all()?;
     }

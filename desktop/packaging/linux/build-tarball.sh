@@ -41,6 +41,9 @@ BUNDLE_DIR="${STAGE_DIR}/${BUNDLE_NAME}"
 mkdir -p "${BUNDLE_DIR}/share/applications" "${BUNDLE_DIR}/share/metainfo" "${BUNDLE_DIR}/share/icons" "${BUNDLE_DIR}/share/nectarlink"
 
 install -m 0755 "${BIN_PATH}" "${BUNDLE_DIR}/nectarlink-desktop"
+for adapter in "$(dirname "${BIN_PATH}")"/libnectarlink-video-ffmpeg*.so; do
+    [[ ! -f "${adapter}" ]] || install -m 0755 "${adapter}" "${BUNDLE_DIR}/"
+done
 printf '%s\n' "${VERSION}" > "${BUNDLE_DIR}/VERSION"
 for qm in "$(dirname "${BIN_PATH}")"/nectarlink_*.qm; do
     if [[ -f "${qm}" ]]; then
@@ -160,6 +163,9 @@ fi
 
 mkdir -p "${PREFIX}" "$(dirname "${BIN_LINK}")" "${APPS_DIR}" "${META_DIR}" "${ICON_DIR}" "${PNG_ICON_DIR}"
 install -m 0755 "${SELF_DIR}/nectarlink-desktop" "${PREFIX}/nectarlink-desktop"
+for adapter in "${SELF_DIR}"/libnectarlink-video-ffmpeg*.so; do
+    [[ ! -f "${adapter}" ]] || install -m 0755 "${adapter}" "${PREFIX}/"
+done
 [[ -f "${SELF_DIR}/VERSION" ]] && install -m 0644 "${SELF_DIR}/VERSION" "${PREFIX}/VERSION"
 [[ -f "${SELF_DIR}/qt.conf" ]] && install -m 0644 "${SELF_DIR}/qt.conf" "${PREFIX}/qt.conf"
 for dir in lib plugins qml; do
@@ -172,6 +178,9 @@ for qm in "${SELF_DIR}"/nectarlink_*.qm; do
     [[ -f "${qm}" ]] && install -m 0644 "${qm}" "${PREFIX}/$(basename "${qm}")"
 done
 if [[ -d "${PREFIX}/lib" ]]; then
+    # An earlier install may have left a symlink here; writing through it
+    # would overwrite the real binary with this wrapper.
+    rm -f "${BIN_LINK}"
     cat > "${BIN_LINK}" <<WRAPEOF
 #!/usr/bin/env sh
 export LD_LIBRARY_PATH="${PREFIX}/lib\${LD_LIBRARY_PATH:+:\${LD_LIBRARY_PATH}}"

@@ -268,6 +268,15 @@ docs/                    Guide, technical docs, protocol, design system    (CC B
 | macOS app | macOS 14+, Xcode Command Line Tools, [Qt 6.12](https://www.qt.io/download-open-source) (or Homebrew Qt 6) |
 | Android app | Android SDK (platform 37, NDK 30.0.16248370), JDK 17 or newer, `cargo-ndk` (see [android/README.md](android/README.md)) |
 
+For Linux hardware video encoding and decoding, install `libavcodec-dev` and
+`libavutil-dev` before building. The backend loads the matching FFmpeg runtime
+libraries when needed and tries available GPU drivers. Release packages support
+FFmpeg 6 through 9: the Ubuntu 24.04 release build includes an FFmpeg 6 backend,
+and separate adapters support versions 7, 8 and 9. Source builds use the
+matching runtime for their headers. Without matching libraries or a working
+hardware backend, the existing software H.264 path remains available. HEVC
+encoding requires hardware; if unavailable, screen sharing falls back to H.264.
+
 ```sh
 cargo test -p nectarlink-protocol -p nectarlink-core -p nectarlink-ffi   # core and tests
 cargo run -p nectarlink-cli -- --help                                     # command-line client

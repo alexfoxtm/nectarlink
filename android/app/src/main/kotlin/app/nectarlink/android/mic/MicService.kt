@@ -215,9 +215,9 @@ class MicService : Service() {
         /** The per-device toggle that lets a PC ask for the microphone (docs/protocol/mic.md). */
         const val TOGGLE_NAME = "mic"
 
-        /** The PC stopped listening. */
-        fun stop(context: Context) {
-            if (_streaming.value == null) return
+        /** [pcId] stopped listening; another PC's stream carries on. */
+        fun stop(context: Context, pcId: String) {
+            if (_streaming.value != pcId) return
             context.startService(Intent(context, MicService::class.java).setAction(ACTION_STOP))
         }
 

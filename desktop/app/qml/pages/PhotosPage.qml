@@ -55,7 +55,8 @@ Item {
     }
 
     function sameDay(a, b) {
-        if (!a || !b || Math.abs(a - b) >= 86400000) return false
+        // By the calendar alone: a daylight-saving day has 25 hours.
+        if (!a || !b) return false
         const da = new Date(a)
         const db = new Date(b)
         return da.getDate() === db.getDate()
@@ -220,10 +221,12 @@ Item {
             (page.viewerIndex >= 0 && page.viewedItem !== null && !page.viewedItem.isVideo)
             || (page.selectedCount === 1 && !page.singleSelectedIsVideo)
         )
+        // The same pick as `enabled`: a video in the viewer isn't copied over
+        // the one image selected.
         onActivated: {
-            if (page.viewerIndex >= 0 && page.viewedItem)
+            if (page.viewerIndex >= 0 && page.viewedItem && !page.viewedItem.isVideo)
                 Photos.copyItem(page.viewedItem.id)
-            else if (page.selectedCount === 1)
+            else if (page.selectedCount === 1 && !page.singleSelectedIsVideo)
                 Photos.copyItem(page.selectedIds[0])
         }
     }
@@ -506,7 +509,8 @@ Item {
                     visible: !gridPane.compactBar || page.selectedCount === 0
                     variant: "text"
                     size: "sm"
-                    text: qsTr("Select all")
+                    // Selection stops at 500 (selectAllLoaded): say so past that.
+                    text: Photos.count > 500 ? qsTr("Select first 500") : qsTr("Select all")
                     onClicked: page.selectAllLoaded()
                 }
             }

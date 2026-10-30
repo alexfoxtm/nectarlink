@@ -236,6 +236,11 @@ impl Drop for WindowCapture {
 pub(crate) fn scale_bgra(src: &[u8], w: u32, h: u32, dst_w: u32, dst_h: u32, out: &mut Vec<u8>) {
     let (w, h, dw, dh) = (w as usize, h as usize, dst_w as usize, dst_h as usize);
     out.resize(dw * dh * 4, 0);
+    // Nothing to scale from (or to): black, rather than a panic.
+    if w == 0 || h == 0 || dw == 0 || dh == 0 || src.len() < w * h * 4 {
+        out.fill(0);
+        return;
+    }
     if (w, h) == (dw, dh) {
         out.copy_from_slice(&src[..w * h * 4]);
         return;
@@ -295,6 +300,16 @@ mod tests {
         let flat = vec![77u8; 10 * 6 * 4];
         scale_bgra(&flat, 10, 6, 7, 3, &mut out);
         assert!(out.iter().all(|&v| v == 77));
+    }
+    #[test]
+    fn scaling_nothing_gives_black_not_a_panic() {
+        let mut out = Vec::new();
+        scale_bgra(&[], 0, 0, 4, 2, &mut out);
+        assert_eq!(out, vec![0; 32]);
+        scale_bgra(&[1; 8], 4, 2, 4, 2, &mut out);
+        assert_eq!(out, vec![0; 32], "a short buffer");
+        scale_bgra(&[1; 32], 4, 2, 0, 0, &mut out);
+        assert!(out.is_empty());
     }
 
     /// With a Chromium browser showing a page whose title has

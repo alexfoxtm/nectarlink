@@ -623,7 +623,22 @@ impl Settings {
     /// A corrupt file is set aside (not deleted) so it can be inspected.
     pub fn load(dir: &Path) -> Settings {
         let path = Self::path(dir);
-        let text = match fs::read_to_string(&path) {
+        // Security software can hold the file for a moment. Defaults now would
+        // be saved over the user's settings, so it's tried again first.
+        let mut read = fs::read_to_string(&path);
+        for _ in 0..10 {
+            match &read {
+                Err(e)
+                    if e.kind() != std::io::ErrorKind::NotFound
+                        && e.kind() != std::io::ErrorKind::InvalidData =>
+                {
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                    read = fs::read_to_string(&path);
+                }
+                _ => break,
+            }
+        }
+        let text = match read {
             Ok(text) => text,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Settings::default(),
             Err(e) => {
@@ -648,7 +663,7 @@ impl Settings {
         let path = Self::path(dir);
         let tmp = path.with_extension("json.tmp");
         {
-            let mut file = fs::File::create(&tmp)?;
+            let mut file = create_private_file(&tmp)?;
             file.write_all(serde_json::to_string_pretty(self)?.as_bytes())?;
             file.sync_all()?;
         }
@@ -656,9 +671,46 @@ impl Settings {
     }
 }
 
+/// Creates (or truncates) a file only this user can read: settings hold the
+/// OBS password and the local API token file grants control of the app. On
+/// Windows the per-user AppData folder already keeps others out.
+pub(crate) fn create_private_file(path: &Path) -> std::io::Result<fs::File> {
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let file = options.open(path)?;
+    // The mode above only applies to a new file; an older one keeps its own.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(fs::Permissions::from_mode(0o600))?;
+    }
+    Ok(file)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn settings_and_token_files_are_private() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        // A leftover file from before keeps its mode unless it's reset.
+        let leftover = dir.path().join("settings.json.tmp");
+        fs::write(&leftover, "{}").unwrap();
+        fs::set_permissions(&leftover, fs::Permissions::from_mode(0o644)).unwrap();
+        Settings::default().save(dir.path()).unwrap();
+        let mode = fs::metadata(Settings::path(dir.path())).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+        let token = crate::local_api::write_token_file(dir.path(), 1234, &"a".repeat(64)).unwrap();
+        assert_eq!(fs::metadata(token).unwrap().permissions().mode() & 0o777, 0o600);
+    }
 
     #[test]
     fn round_trips_and_defaults() {

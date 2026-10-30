@@ -31,9 +31,12 @@ class KeystoreKeyProtector : KeyProtector {
         cipher.doFinal(ciphertext, IV_LENGTH, ciphertext.size - IV_LENGTH)
     }
 
-    private fun key(): SecretKey {
+    // One at a time, across instances (each core start makes one): two first
+    // calls would each make a key under the same alias, and what the first
+    // one sealed could never be opened again.
+    private fun key(): SecretKey = synchronized(KeystoreKeyProtector::class.java) {
         val store = KeyStore.getInstance(KEYSTORE).apply { load(null) }
-        (store.getKey(ALIAS, null) as? SecretKey)?.let { return it }
+        (store.getKey(ALIAS, null) as? SecretKey)?.let { return@synchronized it }
         val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE)
         generator.init(
             KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
@@ -42,7 +45,7 @@ class KeystoreKeyProtector : KeyProtector {
                 .setKeySize(256)
                 .build(),
         )
-        return generator.generateKey()
+        generator.generateKey()
     }
 
     /** Reports Keystore failures to the core as errors instead of crashing. */

@@ -14,11 +14,18 @@ use tokio_util::sync::CancellationToken;
 /// Default local ADB server address (`127.0.0.1:5037`).
 pub const DEFAULT_ADB_ADDR: SocketAddr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 5037));
 
-/// Returns `true` if `serial` is non-empty and permitted by the optional
-/// `NECTARLINK_ADB_ONLY_SERIAL` filter.
+/// Returns `true` if `serial` is non-empty, made only of the characters
+/// serials use, and permitted by the optional `NECTARLINK_ADB_ONLY_SERIAL`
+/// filter. A USB device names its own serial, and it goes into adb commands
+/// as text, so anything else (`;`, spaces, control characters) is refused.
 pub fn is_serial_allowed(serial: &str) -> bool {
     let trimmed = serial.trim();
-    if trimmed.is_empty() {
+    if trimmed.is_empty()
+        || trimmed.len() > 128
+        || !trimmed
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-' | b':' | b'[' | b']'))
+    {
         return false;
     }
     if let Ok(only) = std::env::var("NECTARLINK_ADB_ONLY_SERIAL") {
@@ -188,6 +195,19 @@ fn is_bind_failure(reason: &str) -> bool {
     reason.contains("cannot bind") || reason.contains("already in use")
 }
 
+/// Runs `command` in a shell on `serial` (`adb -s <serial> shell <command>`)
+/// and returns the connection carrying its output. The command runs as long
+/// as the connection stays open; dropping it ends the command.
+pub async fn shell(server: SocketAddr, serial: &str, command: &str) -> Result<TcpStream, AdbError> {
+    if !is_serial_allowed(serial) {
+        return Err(AdbError::BlockedSerial(serial.to_owned()));
+    }
+    let mut stream = TcpStream::connect(server).await?;
+    send_command(&mut stream, &format!("host:transport:{serial}")).await?;
+    send_command(&mut stream, &format!("shell:{command}")).await?;
+    Ok(stream)
+}
+
 /// Removes a TCP port forward (`adb -s <serial> forward --remove tcp:<local>`).
 pub async fn kill_forward_tcp(server: SocketAddr, serial: &str, local_port: u16) -> Result<(), AdbError> {
     if !is_serial_allowed(serial) {
@@ -226,6 +246,30 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_serials_made_of_serial_characters_are_allowed() {
+        for serial in [
+            "emulator-5554",
+            "R5CT20ABCDE",
+            "192.168.1.20:5555",
+            "adb-R5CT20-abc._adb-tls-connect._tcp",
+            "[fe80::1]:5555",
+        ] {
+            assert!(is_serial_allowed(serial), "{serial}");
+        }
+        for serial in [
+            "",
+            "a;b",
+            "x:forward:tcp:1;tcp:2",
+            "a b",
+            "a
+b",
+            &"a".repeat(129),
+        ] {
+            assert!(!is_serial_allowed(serial), "{serial:?}");
+        }
+    }
     use std::sync::{Arc, Mutex};
 
     #[test]
@@ -340,6 +384,30 @@ emulator-5554          device product:sdk_gphone64_x86_64 model:Pixel_9 device:e
         let (addr, commands) = forward_server(vec![Some("cannot bind listener")]).await;
         assert!(forward_tcp(addr, "emulator-5554", 5000, 53319).await.is_err());
         assert_eq!(commands.lock().unwrap().len(), 1, "a port the caller chose is not swapped");
+    }
+
+    #[tokio::test]
+    async fn shell_picks_the_device_then_streams_the_commands_output() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let transport = read_payload(&mut socket).await.unwrap();
+            socket.write_all(b"OKAY").await.unwrap();
+            let shell = read_payload(&mut socket).await.unwrap();
+            socket.write_all(b"OKAY").await.unwrap();
+            socket.write_all(b"ready 41234\n").await.unwrap();
+            (transport, shell)
+        });
+        let mut stream = shell(addr, "R5CT1234", "echo hi").await.unwrap();
+        let mut line = String::new();
+        tokio::io::AsyncBufReadExt::read_line(&mut tokio::io::BufReader::new(&mut stream), &mut line)
+            .await
+            .unwrap();
+        assert_eq!(line, "ready 41234\n");
+        let (transport, shell_cmd) = server.await.unwrap();
+        assert_eq!(transport, "host:transport:R5CT1234");
+        assert_eq!(shell_cmd, "shell:echo hi");
     }
 
     #[tokio::test]

@@ -8,6 +8,36 @@ change things that need a step from you, and its notes say so.
 
 ### New
 
+- **Turkish.** The Android and PC apps speak Turkish (Türkçe): pick it in
+  Settings, or they follow the system's language. Thanks to
+  [@sedatdagg](https://github.com/sedatdagg).
+- **Your phone's sound on the PC, without mirroring.** **Phone sound on this
+  PC** on Home plays what the phone plays through the PC's speakers or
+  headphones, with no mirror window. With Elevated it starts right away;
+  otherwise the phone asks once, as for mirroring. The phone's own speaker
+  keeps playing for now
+  ([#94](https://github.com/thtbee/nectarlink/issues/94)).
+- **Sharing your PC's screen with the phone uses H.265** when both sides
+  can, and H.264 otherwise. Thanks to [@AS8148](https://github.com/AS8148)
+  ([#66](https://github.com/thtbee/nectarlink/pull/66)).
+- **Hardware video for screen sharing on Linux.** With FFmpeg 6 to 9
+  installed, sharing the PC's screen and showing a shared screen use the
+  GPU (VAAPI, NVIDIA or Intel QSV) and fall back to software H.264 when it
+  can't. Thanks to [@AS8148](https://github.com/AS8148)
+  ([#67](https://github.com/thtbee/nectarlink/pull/67)).
+- **Elevated over USB.** Plug the phone into the PC with USB debugging
+  allowed and Elevated starts by itself, without setting up Wireless
+  debugging. It runs while the cable is in. The PC only starts NectarLink's
+  own helper, on the phone that asked
+  ([#70](https://github.com/thtbee/nectarlink/issues/70)).
+- **Mirroring wakes the phone's screen.** With Elevated, starting mirroring
+  from the PC turns the phone's screen on if it's off, so the phone can stay
+  in a pocket; a locked phone shows its lock screen in the window
+  ([#82](https://github.com/thtbee/nectarlink/issues/82)).
+- **Call or text a copied number from the command palette.** Copy a phone
+  number anywhere, open the palette with its shortcut, and Call and Text
+  for that number are at the top
+  ([#83](https://github.com/thtbee/nectarlink/issues/83)).
 - **The PC app on Linux**, for Ubuntu 24.04 or newer, Debian 13, Fedora 40
   or newer and other distributions from 2024 on, as a `.deb`, an `.rpm`,
   an AppImage or a tarball. It does what the Windows app does: notifications with
@@ -113,6 +143,9 @@ has a Stop button. Choosing another
 
 ### Changed
 
+- **Files received on Windows are marked as from another device,** the way
+  a browser marks a download, so Windows checks a program with SmartScreen
+  before it runs and Office opens documents in Protected View.
 - **Pause for banking apps uses less battery.** While the screen is off,
   the phone checks the app in front every 15 seconds instead of several
   times a second, and checks again as soon as the screen turns on. By
@@ -141,6 +174,35 @@ has a Stop button. Choosing another
 
 ### Fixed
 
+- **A big phone folder showed only part of its files** in File Explorer (a
+  camera folder of thousands of photos, say). Folders now come in pages, so
+  every file shows, and listing one no longer holds up the connection.
+- **A transfer too big for the receiving drive started anyway** and failed
+  partway. The receiver now checks the space first and the sender says
+  there isn't enough.
+- **The phone's keyboard didn't open after typing from the PC.** With
+  Elevated, the PC's keys reach the phone through a virtual keyboard that
+  stayed connected, so Android hid the on-screen keyboard in every app. It
+  now goes away 10 seconds after the last key from the PC
+  ([#93](https://github.com/thtbee/nectarlink/issues/93)).
+- **Renaming the phone reached the PC only after the app restarted.** It
+  now shows on the PC right away ([#87](https://github.com/thtbee/nectarlink/issues/87)).
+- **The phone's folder in File Explorer said the network was unavailable**
+  when the phone had turned it away. It now says access is denied, and a
+  notification on the PC says what to turn on ([#88](https://github.com/thtbee/nectarlink/issues/88)).
+- **The phone rang twice during a call** while Phone as speaker was on:
+  the PC's ringtone was played on the phone as well.
+- **NectarLink never appeared in the Windows Share sheet,** even with
+  Developer Mode on, because its package didn't register. It does now,
+  and if Windows refuses it, `sparse-package.log` in the install folder
+  says why ([#84](https://github.com/thtbee/nectarlink/issues/84)).
+- **The Calls page showed "PC call audio connected"** on Windows, sometimes
+  with a headset's name. Windows doesn't let apps carry a phone call's
+  audio, so the panel is gone there; call audio stays on the phone
+  ([#86](https://github.com/thtbee/nectarlink/issues/86)).
+- **A Phone Status widget was listed for the Widgets board** but never
+  showed anything. It's removed until a working one is built
+  ([#85](https://github.com/thtbee/nectarlink/issues/85)).
 - **Find my phone could ring too quietly to hear** when the alarm volume
   was low. It now rings at full alarm volume and puts your volume back
   afterwards, even if the app is closed mid-ring. Do Not Disturb still
@@ -213,6 +275,45 @@ has a Stop button. Choosing another
 - The "sharing your screen" bar had no background.
 - The PC's log filled with network adapter warnings and kept only a few
   hours.
+- From an audit by [@kunal4060](https://github.com/kunal4060)
+  ([#72](https://github.com/thtbee/nectarlink/pull/72) to
+  [#79](https://github.com/thtbee/nectarlink/pull/79)):
+  - **Text typed in one conversation could be sent in another**: the
+    message box kept it when you switched. Each conversation now keeps its
+    own draft.
+  - LocalSend uploads now have to be the size you accepted, and a peer's
+    certificate has to match its fingerprint.
+  - On Windows, a phone file named like `C:notes.txt` could be saved
+    outside its folder by folder sync or Continuity Camera.
+  - Phone as speaker now needs the phone's Media permission, and the PC's
+    sound waits for the phone that asked instead of moving to another one.
+  - A paired device can no longer take over another device's pairing by
+    reporting its install ID.
+  - Deleting a folder sync or automation rule could delete another rule
+    too.
+  - Two phones with the same name shared one folder in File Explorer;
+    turning one off deleted the other's. A phone's name with letters like
+    "İ" could crash the app there.
+  - Renaming a file on the phone or PC from the other device no longer
+    replaces a file that already has that name, and the trash keeps both
+    files of the same name.
+  - Silencing a call from the PC could leave the phone's ringer muted if
+    the app was stopped mid-call. Keypad tones sent from the PC were too
+    short to register.
+  - Elevated could start again after the background connection was
+    turned off.
+  - Reinstalling from the Linux tarball could overwrite the app with its
+    launcher script, and Linux updates now only use the same kind of
+    package as the one installed.
+  - Updates are only downloaded from this project's GitHub releases.
+  - Settings and the local API token are readable only by you on Linux and
+    macOS.
+  - Smaller fixes: device names are cleaned and capped, SVGs are no longer
+    opened on arrival, notification history and phone artwork are capped,
+    chat history isn't cleared by a message stamped in the future, a busy
+    database no longer cancels a queued send, the Shelf says when a send
+    is only queued, and Find my phone on the PC shows ringing for the
+    whole minute.
 
 ## 0.1.4 (2026-10-17)
 

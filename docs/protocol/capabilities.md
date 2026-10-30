@@ -55,11 +55,14 @@ capability is missing.
 | `clip.share` | Sends the clipboard when the user taps "Send" | app update |
 | `clip.read.auto` | Sends clipboard changes automatically, in the background | Elevated |
 | `photos.read` | Announces new photos and screenshots, lists albums and items, serves thumbnails, and sends files on request ([photos](photos.md)) | photos permission |
+| `elevated.usb` | Starts a USB-connected phone's Elevated helper over adb ([Elevated over USB](elevated-usb.md)) | adb on the PC |
 | `mirror.capture` | Streams its screen (with the system's capture prompt at Basic; [mirroring](mirror.md)) | app update |
+| `mirror.decode.hevc` | Decodes H.265 screen-mirroring streams | app update |
 | `mirror.input` | Accepts touch, key and scroll input while mirrored | Assist |
 | `mirror.virtual_display` | Runs apps on displays of their own, shown in windows on the PC ([mirroring](mirror.md)) | Elevated, Android 11+ |
 | `mirror.audio` | Streams all audio while mirrored | Elevated |
 | `mirror.audio.playback` | Streams audio from apps that allow playback capture | app update |
+| `mirror.sound` | Streams its sound on its own, without the screen ([mirroring](mirror.md) §5) | app update |
 | `toggles.read` | Shares quick settings state ([toggles](toggles.md)) | app update |
 | `toggles.ringer` | Changes the ringer mode between `ring` and `vibrate` ([toggles](toggles.md)) | app update |
 | `toggles.volume` | Changes the media volume ([toggles](toggles.md)) | app update |

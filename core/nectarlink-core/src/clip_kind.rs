@@ -498,6 +498,7 @@ fn detect_phone_number(s: &str) -> Option<String> {
 }
 
 /// Street/road designator words across English, French, German, Spanish, Italian, and Indian addresses.
+/// Sorted: looked up with `binary_search`.
 const STREET_DESIGNATORS: &[&str] = &[
     "allee",
     "allée",
@@ -515,8 +516,8 @@ const STREET_DESIGNATORS: &[&str] = &[
     "close",
     "colony",
     "corso",
-    "court",
     "cours",
+    "court",
     "cres",
     "crescent",
     "ct",
@@ -826,6 +827,11 @@ fn has_postal_code(s: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn street_designators_are_sorted_for_binary_search() {
+        assert!(STREET_DESIGNATORS.windows(2).all(|w| w[0] < w[1]));
+    }
 
     #[test]
     fn web_links_vs_file_paths_and_text() {

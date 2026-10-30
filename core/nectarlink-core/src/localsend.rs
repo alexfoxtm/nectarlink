@@ -77,6 +77,10 @@ const PROGRESS_EVERY: Duration = Duration::from_millis(150);
 const UPLOAD_CHUNK: usize = 64 * 1024;
 const MAX_HEADER_BYTES: usize = 64 * 1024;
 const MAX_JSON_BODY_BYTES: usize = 4 * 1024 * 1024;
+/// An accepted upload session with no upload for this long is dropped.
+const SESSION_IDLE: Duration = Duration::from_secs(30 * 60);
+/// Connections served at once; more wait in the OS backlog.
+const MAX_CONNECTIONS: usize = 64;
 
 /// A LocalSend device discovered on the local network.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -224,8 +228,12 @@ struct IncomingFileSpec {
     safe_name: String,
     folder: Option<String>,
     size: u64,
+    /// The sender's SHA-256 of the file, when it gave a well-formed one.
+    sha256: Option<String>,
     part_path: PathBuf,
     uploaded: bool,
+    /// An upload of this file is under way (a second one is refused).
+    uploading: bool,
 }
 
 struct UploadSession {
@@ -237,6 +245,10 @@ struct UploadSession {
     saved_items: Vec<PathBuf>,
     cancel: CancellationToken,
     last_progress: Instant,
+    /// The last upload request or progress, for expiring idle sessions.
+    last_activity: Instant,
+    /// The sender's address; only it may cancel the session.
+    peer_ip: std::net::IpAddr,
 }
 
 struct RunningState {
@@ -289,7 +301,11 @@ impl LocalSendState {
                 let id = generate_self_signed_identity()?;
                 stored.cert_der_hex = data_encoding::HEXLOWER.encode(&id.cert_der);
                 stored.key_pkcs8_hex = data_encoding::HEXLOWER.encode(&id.key_pkcs8);
-                let _ = save_stored_state(data_dir, &*protector, &stored);
+                if let Err(e) = save_stored_state(data_dir, &*protector, &stored) {
+                    // Runs anyway; the next start makes a new identity, which
+                    // LocalSend peers see as a new device.
+                    tracing::warn!(error = %e, "can't save the LocalSend identity");
+                }
                 id
             }
         };
@@ -331,13 +347,14 @@ impl LocalSendState {
     }
 
     pub fn set_enabled(&self, shared: &Arc<Shared>, enabled: bool) -> Result<()> {
-        let prev = self.enabled.swap(enabled, Ordering::SeqCst);
         let stored = StoredLocalSendState {
             enabled,
             cert_der_hex: data_encoding::HEXLOWER.encode(&self.identity.cert_der),
             key_pkcs8_hex: data_encoding::HEXLOWER.encode(&self.identity.key_pkcs8),
         };
+        // Saved first, so memory never disagrees with disk.
         save_stored_state(&self.data_dir, &*self.protector, &stored)?;
+        let prev = self.enabled.swap(enabled, Ordering::SeqCst);
 
         if enabled && !prev {
             self.start(shared);
@@ -375,6 +392,9 @@ impl LocalSendState {
         }
         let changed = {
             let mut map = self.peers.lock().unwrap_or_else(|e| e.into_inner());
+            if downgrades(map.get(&peer.id), &peer) {
+                return false;
+            }
             map.insert(peer.id, peer.clone()).as_ref() != Some(&peer)
         };
         if changed {
@@ -457,7 +477,15 @@ impl LocalSendState {
             let tcp_cancel = cancel.child_token();
             tokio::spawn(async move {
                 let Ok(listener) = TcpListener::from_std(std_listener) else { return };
+                let slots = Arc::new(tokio::sync::Semaphore::new(MAX_CONNECTIONS));
                 loop {
+                    let slot = tokio::select! {
+                        _ = tcp_cancel.cancelled() => return,
+                        slot = slots.clone().acquire_owned() => match slot {
+                            Ok(slot) => slot,
+                            Err(_) => return,
+                        },
+                    };
                     let accepted = tokio::select! {
                         _ = tcp_cancel.cancelled() => return,
                         res = listener.accept() => res,
@@ -467,6 +495,7 @@ impl LocalSendState {
                     let conn_cancel = tcp_cancel.child_token();
                     tokio::spawn(async move {
                         handle_incoming_connection(shared, stream, remote_addr, conn_cancel).await;
+                        drop(slot);
                     });
                 }
             });
@@ -549,12 +578,75 @@ impl LocalSendState {
         for (_, tx) in self.pending_approvals.lock().unwrap_or_else(|e| e.into_inner()).drain() {
             let _ = tx.send(false);
         }
-        for (_, session) in self.sessions.lock().unwrap_or_else(|e| e.into_inner()).drain() {
-            let s = session.lock().unwrap_or_else(|e| e.into_inner());
-            s.cancel.cancel();
+        let sessions: Vec<_> = self.sessions.lock().unwrap_or_else(|e| e.into_inner()).drain().collect();
+        for (_, session) in sessions {
+            end_session(shared, &session, TransferState::Cancelled);
         }
         shared.emit(NodeEvent::LocalSendChanged);
     }
+
+    /// Ends sessions that have had no upload for [`SESSION_IDLE`].
+    fn sweep_idle_sessions(&self, shared: &Shared) {
+        let idle: Vec<_> = {
+            let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
+            let ids: Vec<String> = sessions
+                .iter()
+                .filter(|(_, s)| {
+                    s.lock().unwrap_or_else(|e| e.into_inner()).last_activity.elapsed() >= SESSION_IDLE
+                })
+                .map(|(id, _)| id.clone())
+                .collect();
+            ids.into_iter().filter_map(|id| sessions.remove(&id)).collect()
+        };
+        for session in idle {
+            end_session(shared, &session, TransferState::Cancelled);
+        }
+    }
+}
+
+/// Whether `update` would move a peer known to speak HTTPS to plain HTTP. An
+/// unauthenticated announce claiming its fingerprint mustn't do that.
+fn downgrades(known: Option<&LocalSendPeer>, update: &LocalSendPeer) -> bool {
+    update.protocol == "http" && known.is_some_and(|known| known.protocol == "https")
+}
+
+/// Ends an upload session that's already out of the session map: stops it,
+/// removes its staged parts and reports it as `state`. Files it already saved
+/// stay, with a timeline entry saying so.
+fn end_session(shared: &Shared, session: &Arc<Mutex<UploadSession>>, state: TransferState) {
+    let (transfer, staging_dir) = {
+        let mut guard = session.lock().unwrap_or_else(|e| e.into_inner());
+        guard.cancel.cancel();
+        guard.transfer.state = state;
+        record_partial_delivery(shared, &guard);
+        (guard.transfer.clone(), guard.staging_dir.clone())
+    };
+    shared.unregister_transfer(&transfer.id);
+    let _ = fs::remove_dir_all(&staging_dir);
+    shared.emit(NodeEvent::Transfer(transfer));
+}
+
+/// A timeline entry for the files a session saved before it ended early.
+fn record_partial_delivery(shared: &Shared, session: &UploadSession) {
+    let saved_files = session.files.iter().filter(|f| f.uploaded).count();
+    if saved_files == 0 {
+        return;
+    }
+    let target =
+        session.saved_items.iter().map(|p| p.to_string_lossy().into_owned()).collect::<Vec<_>>().join("\n");
+    let _ = shared.record_timeline(NewTimelineEntry {
+        kind: TimelineKind::File,
+        device_id: session.transfer.device,
+        device_name: session.peer_name.clone(),
+        incoming: true,
+        timestamp: crate::now_unix(),
+        title: transfer_timeline_title(&session.transfer.names),
+        detail: format!("Partly received · {saved_files} of {} files (LocalSend)", session.files.len()),
+        target,
+        size_bytes: session.files.iter().filter(|f| f.uploaded).map(|f| f.size).sum(),
+        duration_secs: 0,
+        ref_id: Some(session.transfer.id.clone()),
+    });
 }
 
 fn build_our_multicast_dto(shared: &Shared, port: u16, announce: bool) -> MulticastDto {
@@ -623,22 +715,29 @@ async fn handle_udp_packet(shared: &Arc<Shared>, data: &[u8], src: SocketAddr) {
         port,
         protocol: protocol.clone(),
     };
+    let fingerprint = peer.fingerprint.clone();
     shared.localsend.upsert_peer(shared, peer);
 
     let is_announce = dto.announce.or(dto.announcement).unwrap_or(false);
     if is_announce && shared.localsend.receiving() {
         let shared = shared.clone();
         tokio::spawn(async move {
-            let _ = send_register_callback(&shared, &ip, port, &protocol).await;
+            let _ = send_register_callback(&shared, &ip, port, &protocol, &fingerprint).await;
         });
     }
 }
 
-async fn send_register_callback(shared: &Arc<Shared>, ip: &str, port: u16, protocol: &str) -> Result<()> {
+async fn send_register_callback(
+    shared: &Arc<Shared>,
+    ip: &str,
+    port: u16,
+    protocol: &str,
+    fingerprint: &str,
+) -> Result<()> {
     let our_port = shared.localsend.bound_port();
     let dto = build_our_multicast_dto(shared, our_port, false);
     let body = serde_json::to_vec(&dto).map_err(|e| Error::Internal(e.to_string()))?;
-    let mut stream = connect_peer_stream(shared, ip, port, protocol == "https").await?;
+    let mut stream = connect_peer_stream(shared, ip, port, protocol == "https", Some(fingerprint)).await?;
     write_http_request(
         &mut stream,
         "POST",
@@ -652,6 +751,7 @@ async fn send_register_callback(shared: &Arc<Shared>, ip: &str, port: u16, proto
     if (200..300).contains(&resp.status)
         && let Ok(info) = serde_json::from_slice::<InfoDto>(&resp.body)
         && info.fingerprint != shared.localsend.identity.fingerprint
+        && info.fingerprint.eq_ignore_ascii_case(fingerprint)
         && !info.alias.trim().is_empty()
     {
         let peer_port = info.port.unwrap_or(port);
@@ -681,9 +781,11 @@ async fn send_register_callback(shared: &Arc<Shared>, ip: &str, port: u16, proto
 pub(crate) async fn probe_peer(shared: &Arc<Shared>, host: &str, port: u16) -> Result<LocalSendPeer> {
     for use_tls in [true, false] {
         let protocol = if use_tls { "https" } else { "http" };
-        let Ok(mut stream) = connect_peer_stream(shared, host, port, use_tls).await else {
+        let Ok(mut stream) = connect_peer_stream(shared, host, port, use_tls, None).await else {
             continue;
         };
+        // From here on it has answered over TLS: whatever fails next, it isn't
+        // tried again in cleartext.
         let req_res = if shared.localsend.receiving() {
             let dto = build_our_multicast_dto(shared, shared.localsend.bound_port(), false);
             let body = serde_json::to_vec(&dto).unwrap_or_default();
@@ -708,19 +810,24 @@ pub(crate) async fn probe_peer(shared: &Arc<Shared>, host: &str, port: u16) -> R
             .await
         };
         if req_res.is_err() {
-            continue;
+            if use_tls { return Err(Error::Offline) } else { continue }
         }
         let Ok(resp) = read_http_response(&mut stream).await else {
-            continue;
+            if use_tls { return Err(Error::Offline) } else { continue }
         };
         if !(200..300).contains(&resp.status) {
-            continue;
+            if use_tls { return Err(Error::Offline) } else { continue }
         }
         let Ok(info) = serde_json::from_slice::<InfoDto>(&resp.body) else {
-            continue;
+            if use_tls { return Err(Error::Offline) } else { continue }
         };
         if info.fingerprint == shared.localsend.identity.fingerprint || info.alias.trim().is_empty() {
             return Err(Error::NotFound);
+        }
+        // Over HTTPS the fingerprint it claims must be its certificate's.
+        if use_tls && !stream.has_fingerprint(&info.fingerprint) {
+            tracing::warn!(%host, port, "LocalSend peer's certificate doesn't match its fingerprint");
+            if use_tls { return Err(Error::Offline) } else { continue }
         }
         let peer_port = info.port.unwrap_or(port);
         let peer_proto = info
@@ -866,7 +973,7 @@ async fn handle_incoming_connection(
             handle_upload(&shared, &mut stream, &head, query).await;
         }
         ("POST", "/api/localsend/v2/cancel" | "/api/localsend/v1/cancel") => {
-            handle_cancel(&shared, &mut stream, query).await;
+            handle_cancel(&shared, &mut stream, query, remote_addr).await;
         }
         _ => {
             let _ = write_http_response(&mut stream, 404, "Not Found", None, &[]).await;
@@ -890,6 +997,13 @@ async fn handle_prepare_upload(
         let _ = write_http_response(stream, 400, "Bad Request", None, &[]).await;
         return;
     }
+    // Each file is uploaded by its id, so two with one id could never both arrive.
+    let mut ids = std::collections::HashSet::with_capacity(req.files.len());
+    if !req.files.values().all(|f| ids.insert(f.id.as_str())) {
+        let _ = write_http_response(stream, 400, "Bad Request", None, &[]).await;
+        return;
+    }
+    shared.localsend.sweep_idle_sessions(shared);
 
     let ip = remote_addr.ip().to_string();
     let port = req.info.port.unwrap_or(LOCALSEND_DEFAULT_PORT);
@@ -949,8 +1063,13 @@ async fn handle_prepare_upload(
             safe_name,
             folder,
             size: dto.size,
+            sha256: dto
+                .sha256
+                .filter(|h| h.len() == 64 && h.bytes().all(|b| b.is_ascii_hexdigit()))
+                .map(|h| h.to_ascii_lowercase()),
             part_path: staging_dir.join(format!("{idx}.part")),
             uploaded: false,
+            uploading: false,
         });
     }
 
@@ -1012,6 +1131,8 @@ async fn handle_prepare_upload(
         saved_items: Vec::new(),
         cancel: cancel.clone(),
         last_progress: Instant::now() - PROGRESS_EVERY,
+        last_activity: Instant::now(),
+        peer_ip: remote_addr.ip(),
     }));
     shared.localsend.sessions.lock().unwrap_or_else(|e| e.into_inner()).insert(session_id.clone(), session);
 
@@ -1029,6 +1150,7 @@ async fn handle_upload(shared: &Arc<Shared>, stream: &mut ServerStream, head: &H
         return;
     };
 
+    shared.localsend.sweep_idle_sessions(shared);
     let Some(session_arc) =
         shared.localsend.sessions.lock().unwrap_or_else(|e| e.into_inner()).get(&session_id).cloned()
     else {
@@ -1039,25 +1161,35 @@ async fn handle_upload(shared: &Arc<Shared>, stream: &mut ServerStream, head: &H
     enum UploadLookup {
         NotFound,
         Forbidden,
-        Found(usize, PathBuf, u64, CancellationToken, String),
+        Found(usize, PathBuf, u64, Option<String>, CancellationToken, String),
     }
 
     let lookup = {
-        let guard = session_arc.lock().unwrap_or_else(|e| e.into_inner());
-        match guard.files.iter().enumerate().find(|(_, f)| f.file_id == file_id) {
+        let mut guard = session_arc.lock().unwrap_or_else(|e| e.into_inner());
+        guard.last_activity = Instant::now();
+        let cancel = guard.cancel.clone();
+        let transfer_id = guard.transfer.id.clone();
+        match guard.files.iter_mut().enumerate().find(|(_, f)| f.file_id == file_id) {
             None => UploadLookup::NotFound,
-            Some((_, spec)) if spec.token != token || spec.uploaded => UploadLookup::Forbidden,
-            Some((idx, spec)) => UploadLookup::Found(
-                idx,
-                spec.part_path.clone(),
-                spec.size,
-                guard.cancel.clone(),
-                guard.transfer.id.clone(),
-            ),
+            // Two uploads of one file at once would write the same part file.
+            Some((_, spec)) if spec.token != token || spec.uploaded || spec.uploading => {
+                UploadLookup::Forbidden
+            }
+            Some((idx, spec)) => {
+                spec.uploading = true;
+                UploadLookup::Found(
+                    idx,
+                    spec.part_path.clone(),
+                    spec.size,
+                    spec.sha256.clone(),
+                    cancel,
+                    transfer_id,
+                )
+            }
         }
     };
 
-    let (spec_idx, part_path, expected_size, cancel, transfer_id) = match lookup {
+    let (spec_idx, part_path, expected_size, expected_sha256, cancel, transfer_id) = match lookup {
         UploadLookup::NotFound => {
             let _ = write_http_response(stream, 404, "Not Found", None, &[]).await;
             return;
@@ -1066,7 +1198,7 @@ async fn handle_upload(shared: &Arc<Shared>, stream: &mut ServerStream, head: &H
             let _ = write_http_response(stream, 403, "Forbidden", None, &[]).await;
             return;
         }
-        UploadLookup::Found(idx, p, sz, c, tid) => (idx, p, sz, c, tid),
+        UploadLookup::Found(idx, p, sz, sha, c, tid) => (idx, p, sz, sha, c, tid),
     };
 
     let Ok(mut out) = tokio::fs::File::create(&part_path).await else {
@@ -1076,6 +1208,7 @@ async fn handle_upload(shared: &Arc<Shared>, stream: &mut ServerStream, head: &H
 
     let stream_res = stream_body_to_file(stream, head, &mut out, expected_size, &cancel, |delta| {
         let mut guard = session_arc.lock().unwrap_or_else(|e| e.into_inner());
+        guard.last_activity = Instant::now();
         guard.transfer.done = guard.transfer.done.saturating_add(delta);
         if guard.last_progress.elapsed() >= PROGRESS_EVERY {
             guard.last_progress = Instant::now();
@@ -1087,16 +1220,23 @@ async fn handle_upload(shared: &Arc<Shared>, stream: &mut ServerStream, head: &H
     let _ = out.flush().await;
     drop(out);
 
+    let stream_res = match (stream_res, expected_sha256) {
+        (Ok(()), Some(expected)) => {
+            let path = part_path.clone();
+            let actual = tokio::task::spawn_blocking(move || sha256_file_hex(&path)).await;
+            if matches!(actual, Ok(Ok(ref h)) if *h == expected) {
+                Ok(())
+            } else {
+                Err(TransferState::Failed(TransferFailure::Integrity))
+            }
+        }
+        (res, _) => res,
+    };
+
     if let Err(err_state) = stream_res {
         shared.localsend.sessions.lock().unwrap_or_else(|e| e.into_inner()).remove(&session_id);
-        shared.unregister_transfer(&transfer_id);
-        let staging_dir = {
-            let mut guard = session_arc.lock().unwrap_or_else(|e| e.into_inner());
-            guard.transfer.state = err_state;
-            shared.emit(NodeEvent::Transfer(guard.transfer.clone()));
-            guard.staging_dir.clone()
-        };
-        let _ = tokio::fs::remove_dir_all(&staging_dir).await;
+        let (shared_ref, session) = (shared.clone(), session_arc.clone());
+        let _ = tokio::task::spawn_blocking(move || end_session(&shared_ref, &session, err_state)).await;
         let _ = write_http_response(stream, 500, "Upload Interrupted", None, &[]).await;
         return;
     }
@@ -1104,6 +1244,8 @@ async fn handle_upload(shared: &Arc<Shared>, stream: &mut ServerStream, head: &H
     // Move completed part file into downloads_dir.
     let finalize_res = finalize_uploaded_file(shared, &session_arc, spec_idx).await;
     if finalize_res.is_err() {
+        // The part file is still there: the sender may try this file again.
+        session_arc.lock().unwrap_or_else(|e| e.into_inner()).files[spec_idx].uploading = false;
         let _ = write_http_response(stream, 500, "Internal Server Error", None, &[]).await;
         return;
     }
@@ -1171,6 +1313,9 @@ async fn finalize_uploaded_file(
     let downloads_dir = shared.downloads_dir.clone();
     let session_arc = session_arc.clone();
     tokio::task::spawn_blocking(move || {
+        // Sessions finishing at once could pick the same free name.
+        static FINALIZE: Mutex<()> = Mutex::new(());
+        let _one_at_a_time = FINALIZE.lock().unwrap_or_else(|e| e.into_inner());
         fs::create_dir_all(&downloads_dir)?;
         let mut guard = session_arc.lock().unwrap_or_else(|e| e.into_inner());
         let folder = guard.files[spec_idx].folder.clone();
@@ -1203,31 +1348,40 @@ async fn finalize_uploaded_file(
             fs::copy(&part_path, &dest)?;
             let _ = fs::remove_file(&part_path);
         }
+        crate::transfer::mark_from_elsewhere(&dest);
         if folder.is_none() {
             guard.saved_items.push(dest);
         }
         guard.files[spec_idx].uploaded = true;
+        guard.files[spec_idx].uploading = false;
         Ok(())
     })
     .await
     .map_err(std::io::Error::other)?
 }
 
-async fn handle_cancel(shared: &Arc<Shared>, stream: &mut ServerStream, query: &str) {
+async fn handle_cancel(
+    shared: &Arc<Shared>,
+    stream: &mut ServerStream,
+    query: &str,
+    remote_addr: SocketAddr,
+) {
     let params = parse_query(query);
     let removed = params.get("sessionId").and_then(|session_id| {
-        shared.localsend.sessions.lock().unwrap_or_else(|e| e.into_inner()).remove(session_id)
+        let mut sessions = shared.localsend.sessions.lock().unwrap_or_else(|e| e.into_inner());
+        // Only the sender cancels its session. Anyone else gets the same
+        // answer, so it doesn't learn which sessions exist.
+        let from_sender = sessions
+            .get(session_id)
+            .is_some_and(|s| s.lock().unwrap_or_else(|e| e.into_inner()).peer_ip == remote_addr.ip());
+        if from_sender { sessions.remove(session_id) } else { None }
     });
     if let Some(session_arc) = removed {
-        let (transfer_id, staging_dir, mut transfer) = {
-            let guard = session_arc.lock().unwrap_or_else(|e| e.into_inner());
-            guard.cancel.cancel();
-            (guard.transfer.id.clone(), guard.staging_dir.clone(), guard.transfer.clone())
-        };
-        shared.unregister_transfer(&transfer_id);
-        let _ = tokio::fs::remove_dir_all(&staging_dir).await;
-        transfer.state = TransferState::Cancelled;
-        shared.emit(NodeEvent::Transfer(transfer));
+        let shared_ref = shared.clone();
+        let _ = tokio::task::spawn_blocking(move || {
+            end_session(&shared_ref, &session_arc, TransferState::Cancelled)
+        })
+        .await;
     }
     let _ = write_http_response(stream, 200, "OK", None, &[]).await;
 }
@@ -1385,7 +1539,7 @@ async fn run_outgoing_transfer(
 
     let mut prep_stream = tokio::select! {
         _ = cancel.cancelled() => return Err(TransferState::Cancelled),
-        res = connect_peer_stream(shared, &peer.ip, peer.port, use_tls) => {
+        res = connect_peer_stream(shared, &peer.ip, peer.port, use_tls, Some(&peer.fingerprint)) => {
             res.map_err(|_| TransferState::Failed(TransferFailure::Unreachable))?
         }
     };
@@ -1447,7 +1601,7 @@ async fn run_outgoing_transfer(
                 let _ = send_cancel_request(shared, peer, use_tls, &prep.session_id).await;
                 return Err(TransferState::Cancelled);
             }
-            res = connect_peer_stream(shared, &peer.ip, peer.port, use_tls) => {
+            res = connect_peer_stream(shared, &peer.ip, peer.port, use_tls, Some(&peer.fingerprint)) => {
                 res.map_err(|_| TransferState::Failed(TransferFailure::Unreachable))?
             }
         };
@@ -1524,7 +1678,9 @@ async fn run_outgoing_transfer(
 }
 
 async fn send_cancel_request(shared: &Arc<Shared>, peer: &LocalSendPeer, use_tls: bool, session_id: &str) {
-    let Ok(mut stream) = connect_peer_stream(shared, &peer.ip, peer.port, use_tls).await else {
+    let Ok(mut stream) =
+        connect_peer_stream(shared, &peer.ip, peer.port, use_tls, Some(&peer.fingerprint)).await
+    else {
         return;
     };
     let path = format!("/api/localsend/v2/cancel?sessionId={}", crate::percent_encode(session_id));
@@ -1535,6 +1691,28 @@ async fn send_cancel_request(shared: &Arc<Shared>, peer: &LocalSendPeer, use_tls
 enum ClientStream {
     Plain(TcpStream),
     Tls(Box<tokio_rustls::client::TlsStream<TcpStream>>),
+}
+
+impl ClientStream {
+    /// Whether the peer's TLS certificate has this LocalSend fingerprint.
+    fn has_fingerprint(&self, expected: &str) -> bool {
+        self.peer_fingerprint().is_some_and(|fp| fp.eq_ignore_ascii_case(expected.trim()))
+    }
+
+    /// The hex SHA-256 of the peer's TLS certificate (its LocalSend fingerprint).
+    fn peer_fingerprint(&self) -> Option<String> {
+        match self {
+            ClientStream::Plain(_) => None,
+            ClientStream::Tls(s) => {
+                s.get_ref().1.peer_certificates()?.first().map(|cert| cert_fingerprint(cert.as_ref()))
+            }
+        }
+    }
+}
+
+/// A LocalSend fingerprint: the lowercase hex SHA-256 of a certificate's DER bytes.
+fn cert_fingerprint(der: &[u8]) -> String {
+    data_encoding::HEXLOWER.encode(&Sha256::digest(der))
 }
 
 impl AsyncRead for ClientStream {
@@ -1583,7 +1761,16 @@ impl AsyncWrite for ClientStream {
     }
 }
 
-async fn connect_peer_stream(shared: &Shared, host: &str, port: u16, use_tls: bool) -> Result<ClientStream> {
+/// Connects to a LocalSend peer. Over HTTPS, with `expected_fingerprint`, the
+/// peer's certificate must have that fingerprint: anyone on the network can
+/// announce a known device's fingerprint with their own address.
+async fn connect_peer_stream(
+    shared: &Shared,
+    host: &str,
+    port: u16,
+    use_tls: bool,
+    expected_fingerprint: Option<&str>,
+) -> Result<ClientStream> {
     let addr = format!("{host}:{port}");
     let tcp = tokio::time::timeout(CONNECT_TIMEOUT, TcpStream::connect(&addr))
         .await
@@ -1598,7 +1785,14 @@ async fn connect_peer_stream(shared: &Shared, host: &str, port: u16, use_tls: bo
             .await
             .map_err(|_| Error::Offline)?
             .map_err(|_| Error::Offline)?;
-        Ok(ClientStream::Tls(Box::new(tls)))
+        let stream = ClientStream::Tls(Box::new(tls));
+        if let Some(expected) = expected_fingerprint
+            && !stream.has_fingerprint(expected)
+        {
+            tracing::warn!(%host, port, "LocalSend peer's certificate doesn't match its fingerprint");
+            return Err(Error::Offline);
+        }
+        Ok(stream)
     } else {
         Ok(ClientStream::Plain(tcp))
     }
@@ -1737,6 +1931,26 @@ async fn read_chunked_vec<S: AsyncRead + Unpin>(
     Ok(out)
 }
 
+fn upload_failed(reason: &str) -> TransferState {
+    TransferState::Failed(TransferFailure::Other(reason.into()))
+}
+
+/// The lowercase hex SHA-256 of a file.
+fn sha256_file_hex(path: &Path) -> std::io::Result<String> {
+    use std::io::Read;
+    let mut file = std::fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buf = vec![0u8; 256 * 1024];
+    loop {
+        let n = file.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(data_encoding::HEXLOWER.encode(&hasher.finalize()))
+}
+
 async fn stream_body_to_file<S, F>(
     stream: &mut S,
     head: &HttpHead,
@@ -1749,8 +1963,11 @@ where
     S: AsyncRead + Unpin,
     F: FnMut(u64),
 {
+    // The body must be exactly the size the sender offered and the user
+    // accepted: more could fill the disk, less is a broken file.
     if head.chunked {
         let mut buf = head.prefetched_body.clone();
+        let mut written: u64 = 0;
         loop {
             while find_crlf(&buf).is_none() {
                 let mut tmp = [0u8; 8192];
@@ -1764,12 +1981,12 @@ where
                     }
                 };
                 if n == 0 {
-                    return Ok(());
+                    return Err(upload_failed("upload stream ended early"));
                 }
                 buf.extend_from_slice(&tmp[..n]);
             }
             let Some(line_end) = find_crlf(&buf) else {
-                return Ok(());
+                return Err(upload_failed("upload stream ended early"));
             };
             let size_line = String::from_utf8_lossy(&buf[..line_end]).into_owned();
             let hex_part = size_line.split(';').next().unwrap_or("").trim();
@@ -1778,8 +1995,16 @@ where
             };
             buf.drain(..line_end + 2);
             if chunk_size == 0 {
-                return Ok(());
+                return if written == expected_size {
+                    Ok(())
+                } else {
+                    Err(upload_failed("upload is shorter than offered"))
+                };
             }
+            if written.saturating_add(chunk_size as u64) > expected_size {
+                return Err(upload_failed("upload is larger than offered"));
+            }
+            written += chunk_size as u64;
             let mut left_in_chunk = chunk_size;
             while left_in_chunk > 0 {
                 if !buf.is_empty() {
@@ -1826,8 +2051,10 @@ where
             buf.drain(..drain_crlf);
         }
     } else {
-        let total = head.content_length.unwrap_or(expected_size);
-        let mut remaining = total;
+        if head.content_length.is_some_and(|len| len != expected_size) {
+            return Err(upload_failed("upload size doesn't match the offer"));
+        }
+        let mut remaining = expected_size;
         if !head.prefetched_body.is_empty() {
             let take = (head.prefetched_body.len() as u64).min(remaining) as usize;
             out.write_all(&head.prefetched_body[..take])
@@ -1931,7 +2158,13 @@ fn split_localsend_file_name(raw: &str) -> (Option<String>, String) {
         [] => (None, "file".into()),
         [single] => (None, safe_file_name(single)),
         [folders @ .., last] => {
-            let folder = folders.iter().map(|s| storable_name(s)).collect::<Vec<_>>().join("/");
+            // As deep and as long as the protocol allows (files::MAX_FOLDER_DEPTH).
+            let folder = folders
+                .iter()
+                .take(files::MAX_FOLDER_DEPTH)
+                .map(|s| storable_name(&safe_file_name(s)))
+                .collect::<Vec<_>>()
+                .join("/");
             (Some(folder), safe_file_name(last))
         }
     }
@@ -2003,7 +2236,7 @@ fn decode_stored_identity(stored: &StoredLocalSendState) -> Option<LocalSendIden
     if cert_der.is_empty() || key_pkcs8.is_empty() {
         return None;
     }
-    let fingerprint = data_encoding::HEXLOWER.encode(&Sha256::digest(&cert_der));
+    let fingerprint = cert_fingerprint(&cert_der);
     let id = LocalSendIdentity { cert_der, key_pkcs8, fingerprint };
     // Verify the stored key/cert builds a valid rustls ServerConfig.
     build_server_tls_config(&id).ok()?;
@@ -2063,7 +2296,7 @@ pub(crate) fn generate_self_signed_identity() -> Result<LocalSendIdentity> {
     let signature =
         key_pair.sign(&rng, &tbs).map_err(|_| Error::Internal("can't sign LocalSend certificate".into()))?;
     let cert_der = der_seq(&[tbs, sig_alg, der_bit_string(signature.as_ref())]);
-    let fingerprint = data_encoding::HEXLOWER.encode(&Sha256::digest(&cert_der));
+    let fingerprint = cert_fingerprint(&cert_der);
 
     Ok(LocalSendIdentity { cert_der, key_pkcs8, fingerprint })
 }
@@ -2196,10 +2429,13 @@ mod tests {
         let tcp = TcpStream::connect(addr).await.unwrap();
         let connector = TlsConnector::from(client_cfg);
         let domain = ServerName::try_from("localsend.org").unwrap();
-        let mut client_tls = connector.connect(domain, tcp).await.unwrap();
-        let peer_certs = client_tls.get_ref().1.peer_certificates().unwrap();
-        let peer_fp = data_encoding::HEXLOWER.encode(&Sha256::digest(peer_certs[0].as_ref()));
-        assert_eq!(peer_fp, id.fingerprint);
+        let client_tls = connector.connect(domain, tcp).await.unwrap();
+        let mut client_tls = ClientStream::Tls(Box::new(client_tls));
+        assert_eq!(client_tls.peer_fingerprint().as_deref(), Some(id.fingerprint.as_str()));
+        assert!(client_tls.has_fingerprint(&id.fingerprint.to_ascii_uppercase()));
+        // Another device's fingerprint, announced from this address, doesn't match.
+        assert!(!client_tls.has_fingerprint(&"ab".repeat(32)));
+        assert!(!client_tls.has_fingerprint(""));
 
         client_tls.write_all(b"ping").await.unwrap();
         let mut reply = [0u8; 4];
@@ -2299,5 +2535,112 @@ mod tests {
             let _ = guess_mime(&file_name);
             let _ = peer_device_id(&s, "192.168.1.42", 53317);
         }
+    }
+
+    fn upload_head(content_length: Option<u64>, chunked: bool) -> HttpHead {
+        HttpHead {
+            method: "POST".into(),
+            target: "/api/localsend/v2/upload".into(),
+            content_length,
+            chunked,
+            prefetched_body: Vec::new(),
+        }
+    }
+
+    /// Streams `body` for an offer of `offered` bytes; returns the result and what was saved.
+    async fn stream_upload(
+        head: HttpHead,
+        body: &[u8],
+        offered: u64,
+    ) -> (Result<(), TransferState>, Vec<u8>) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("0.part");
+        let mut out = tokio::fs::File::create(&path).await.unwrap();
+        let mut stream = body;
+        let res =
+            stream_body_to_file(&mut stream, &head, &mut out, offered, &CancellationToken::new(), |_| {})
+                .await;
+        out.flush().await.unwrap();
+        drop(out);
+        (res, std::fs::read(&path).unwrap())
+    }
+
+    #[tokio::test]
+    async fn upload_must_match_the_offered_size() {
+        let (res, saved) = stream_upload(upload_head(Some(5), false), b"hello", 5).await;
+        assert!(res.is_ok());
+        assert_eq!(saved, b"hello");
+
+        // A Content-Length above (or below) what the user accepted is refused before anything is written.
+        let (res, saved) = stream_upload(upload_head(Some(1 << 30), false), b"hello", 5).await;
+        assert!(res.is_err());
+        assert!(saved.is_empty());
+        let (res, _) = stream_upload(upload_head(Some(3), false), b"hel", 5).await;
+        assert!(res.is_err());
+
+        // A body that ends early fails.
+        let (res, _) = stream_upload(upload_head(None, false), b"hel", 5).await;
+        assert!(res.is_err());
+    }
+
+    #[tokio::test]
+    async fn chunked_upload_must_match_the_offered_size() {
+        let (res, saved) =
+            stream_upload(upload_head(None, true), b"3\r\nhel\r\n2\r\nlo\r\n0\r\n\r\n", 5).await;
+        assert!(res.is_ok());
+        assert_eq!(saved, b"hello");
+
+        // More than offered: refused at the chunk that goes over, before writing it.
+        let (res, saved) =
+            stream_upload(upload_head(None, true), b"5\r\nhello\r\n4\r\nmore\r\n0\r\n\r\n", 5).await;
+        assert!(res.is_err());
+        assert_eq!(saved, b"hello");
+
+        // Less than offered, or no final chunk: a broken file, not a finished one.
+        let (res, _) = stream_upload(upload_head(None, true), b"3\r\nhel\r\n0\r\n\r\n", 5).await;
+        assert!(res.is_err());
+        let (res, _) = stream_upload(upload_head(None, true), b"3\r\nhel\r\n", 5).await;
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn incoming_folders_are_capped_in_depth_and_name_length() {
+        let deep = (0..50).map(|i| format!("d{i}")).collect::<Vec<_>>().join("/") + "/f.txt";
+        let (folder, name) = split_localsend_file_name(&deep);
+        assert_eq!(folder.unwrap().split('/').count(), files::MAX_FOLDER_DEPTH);
+        assert_eq!(name, "f.txt");
+
+        let long = format!("{}/f.txt", "x".repeat(400));
+        let (folder, _) = split_localsend_file_name(&long);
+        assert_eq!(folder.unwrap().len(), files::MAX_NAME_BYTES);
+    }
+
+    #[test]
+    fn a_known_https_peer_isnt_moved_to_http() {
+        let peer = |protocol: &str| LocalSendPeer {
+            id: DeviceId([7; 32]),
+            alias: "Laptop".into(),
+            device_model: None,
+            device_type: "desktop".into(),
+            fingerprint: "fp".into(),
+            ip: "192.168.1.5".into(),
+            port: 53317,
+            protocol: protocol.into(),
+        };
+        assert!(downgrades(Some(&peer("https")), &peer("http")));
+        assert!(!downgrades(Some(&peer("http")), &peer("https")));
+        assert!(!downgrades(Some(&peer("https")), &peer("https")));
+        assert!(!downgrades(None, &peer("http")), "a new HTTP-only peer is fine");
+    }
+
+    #[test]
+    fn sha256_file_hex_matches_a_known_digest() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("f");
+        std::fs::write(&path, b"abc").unwrap();
+        assert_eq!(
+            sha256_file_hex(&path).unwrap(),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
     }
 }

@@ -352,6 +352,8 @@ fn deliver(transfer_id: &str, intent: Intent, saved: &[PathBuf]) {
         }
         Intent::GallerySave { ids, folder } => {
             let mut final_paths = Vec::with_capacity(saved.len());
+            // Ones that couldn't be moved to the chosen folder stay in Downloads.
+            let mut not_moved = 0usize;
             let dest_label = match &folder {
                 Some(dir) => {
                     let _ = std::fs::create_dir_all(dir);
@@ -361,6 +363,7 @@ fn deliver(transfer_id: &str, intent: Intent, saved: &[PathBuf]) {
                         if dst == *src || move_or_copy(src, &dst).is_ok() {
                             final_paths.push(dst);
                         } else {
+                            not_moved += 1;
                             final_paths.push(src.clone());
                         }
                     }
@@ -403,6 +406,13 @@ fn deliver(transfer_id: &str, intent: Intent, saved: &[PathBuf]) {
             });
             gallery_changed();
             match final_paths.as_slice() {
+                _ if not_moved > 0 => show_message(tr!(
+                    "Photos",
+                    "%1 of %2 couldn't be moved to %3. They're in Downloads\\Nectarlink.",
+                    not_moved,
+                    final_paths.len(),
+                    dest_label
+                )),
                 [one] => {
                     let name = one.file_name().and_then(|n| n.to_str()).unwrap_or("Photo");
                     show_message(tr!("Photos", "Saved %1 to %2.", name, dest_label));
@@ -445,7 +455,13 @@ pub(crate) fn free_path(dir: &Path, name: &str) -> PathBuf {
             return candidate;
         }
     }
-    first
+    // Never the existing file: the caller writes over what it gets.
+    let nanos =
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
+    match ext {
+        Some(ext) => dir.join(format!("{stem} ({nanos}).{ext}")),
+        None => dir.join(format!("{stem} ({nanos})")),
+    }
 }
 
 fn copy_file_to_clipboard(path: &Path, remove_after: bool, notify_ui: bool) {
@@ -1424,7 +1440,8 @@ fn stage_for_drag_in(id: &str, drag_dir: &Path) -> Option<PathBuf> {
         }
     }
 
-    if source.is_none() {
+    let preview = source.is_none();
+    if preview {
         source = gallery_state(|s| {
             s.thumbs.get(id).filter(|p| p.exists()).cloned().or_else(|| {
                 let dev = s.device.or(device)?;
@@ -1439,7 +1456,15 @@ fn stage_for_drag_in(id: &str, drag_dir: &Path) -> Option<PathBuf> {
         return None;
     }
     let fallback_ext = src.extension().and_then(|e| e.to_str()).unwrap_or("jpg");
-    let file_name = sanitize_drag_filename(&name, fallback_ext);
+    let mut file_name = sanitize_drag_filename(&name, fallback_ext);
+    // The thumbnail, when the photo itself didn't come in time: named so,
+    // not as if it were the full photo.
+    if preview {
+        file_name = match file_name.rsplit_once('.') {
+            Some((stem, ext)) => format!("{stem} (preview).{ext}"),
+            None => format!("{file_name} (preview)"),
+        };
+    }
     std::fs::create_dir_all(drag_dir).ok()?;
     let dst = drag_dir.join(file_name);
     if dst != src {
@@ -1581,7 +1606,7 @@ mod tests {
         assert_eq!(std::fs::read(&staged_full).unwrap(), b"full-res-bytes");
 
         let staged_thumb = stage_for_drag_in("media:11", &drag_dir).expect("staged thumb fallback");
-        assert_eq!(staged_thumb.file_name().unwrap().to_str().unwrap(), "IMG_20261009_1423.jpg");
+        assert_eq!(staged_thumb.file_name().unwrap().to_str().unwrap(), "IMG_20261009_1423 (preview).jpg");
         assert_eq!(std::fs::read(&staged_thumb).unwrap(), b"thumb-bytes");
 
         gallery_state(|s| *s = GalleryState::default());

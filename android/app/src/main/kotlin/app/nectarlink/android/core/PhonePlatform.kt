@@ -141,14 +141,17 @@ internal class PhonePlatform(
         if (options.app != null) {
             appWindows.open(pcId, options)
         } else {
+            // Kept within what the encoder can take: a zero or huge value from
+            // the PC would only make this mirroring fail to start.
             val request = MirrorRequest(
                 pcId,
-                options.maxSize.toInt(),
-                options.fps.toInt(),
-                options.bitrate.toInt(),
+                options.maxSize.coerceIn(320u, 4096u).toInt(),
+                options.fps.coerceIn(1u, 120u).toInt(),
+                options.bitrate.coerceIn(500_000u, 50_000_000u).toInt(),
                 options.audio,
                 options.stayAwake,
                 options.screenOff,
+                options.soundOnly,
             )
             if (Elevated.running && MirrorService.startElevated(context, request)) {
                 true
@@ -214,7 +217,7 @@ internal class PhonePlatform(
 
     override fun micStopRequested(pcId: String) {
         onMicStop(pcId)
-        app.nectarlink.android.mic.MicService.stop(context)
+        app.nectarlink.android.mic.MicService.stop(context, pcId)
     }
 
     override fun webcamStopRequested(pcId: String) {

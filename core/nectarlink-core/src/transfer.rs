@@ -223,8 +223,9 @@ fn items(entries: &[FileEntry]) -> Vec<String> {
 }
 
 /// A name Windows can store: no reserved device names (`CON`, `COM1`…),
-/// characters it rejects, or trailing dots and spaces.
-pub(crate) fn storable_name(name: &str) -> String {
+/// characters it rejects (including `:`, which would make the name a drive
+/// prefix or an alternate data stream), or trailing dots and spaces.
+pub fn storable_name(name: &str) -> String {
     let mut clean: String = name
         .chars()
         .map(|c| if matches!(c, '<' | '>' | ':' | '"' | '|' | '?' | '*') { '_' } else { c })
@@ -844,6 +845,7 @@ pub(crate) async fn deliver_queued_files(
     let mut attempts = item.attempts;
     const RETRY_BACKOFF_MS: [i64; 5] = [1_000, 2_000, 4_000, 8_000, 15_000];
 
+    let mut store_errors = 0u32;
     let state = loop {
         if cancel.is_cancelled() {
             break TransferState::Cancelled;
@@ -851,9 +853,24 @@ pub(crate) async fn deliver_queued_files(
         if shutdown.is_cancelled() {
             break TransferState::Failed(TransferFailure::Interrupted);
         }
-        let Ok(Some((current, _, _, _))) = shared.store.get_queue_item(&item.id) else {
-            break TransferState::Cancelled;
+        let current = match shared.store.get_queue_item(&item.id) {
+            Ok(Some((current, _, _, _))) => current,
+            // Removed from the queue: the user cancelled it.
+            Ok(None) => break TransferState::Cancelled,
+            // The database was busy for a moment; that's not a cancel.
+            Err(e) if store_errors < 20 => {
+                store_errors += 1;
+                tracing::debug!(error = %e, "can't read the queue item yet");
+                tokio::time::sleep(Duration::from_millis(250)).await;
+                continue;
+            }
+            Err(e) => {
+                break TransferState::Failed(TransferFailure::Other(format!(
+                    "can't read the send queue: {e}"
+                )));
+            }
         };
+        store_errors = 0;
         if let crate::QueueStatus::Failed { error } | crate::QueueStatus::Expired { error } = current.status {
             break TransferState::Failed(TransferFailure::Other(error));
         }
@@ -1183,6 +1200,7 @@ async fn send_until_done(
                 _ = tokio::time::sleep(Duration::from_secs(1)) => continue,
             }
         };
+        let sent_before = reporter.transfer.done;
         match attempt(reporter, &session, &mut files, cancel, pause_rx).await {
             Attempt::Done => return TransferState::Done { saved: Vec::new() },
             Attempt::Cancelled => return TransferState::Cancelled,
@@ -1195,8 +1213,14 @@ async fn send_until_done(
             }
             Attempt::Fatal(failure) => return TransferState::Failed(failure),
             Attempt::Retry => {
-                // Made it this far: give the device a fresh window to come back.
-                give_up_at = Instant::now() + RETRY_FOR;
+                // Got further: give the device a fresh window to come back. A
+                // device that keeps reconnecting without taking any bytes
+                // doesn't keep the transfer going forever.
+                if reporter.transfer.done > sent_before {
+                    give_up_at = Instant::now() + RETRY_FOR;
+                } else if Instant::now() >= give_up_at {
+                    return TransferState::Failed(TransferFailure::Unreachable);
+                }
                 tracing::debug!(id = %reporter.transfer.id, "transfer interrupted; will resume");
                 reporter.set(TransferState::Waiting);
                 tokio::select! {
@@ -1611,6 +1635,15 @@ async fn receive(shared: Arc<Shared>, peer: DeviceId, mut send: SendStream, mut 
         };
         have.push(valid_len);
     }
+    // What's still to come has to fit where it's received and where it's
+    // saved; a transfer that runs out of room partway helps nobody. The
+    // sender reads Busy as "not enough space" (TransferFailure::NoSpace).
+    let to_come = offer.total_size().saturating_sub(have.iter().sum());
+    let fits = |at: &Path| free_space(at).is_none_or(|free| free >= to_come.saturating_add(SPACE_MARGIN));
+    if !fits(&dir) || !fits(&shared.downloads_dir) {
+        tracing::warn!(bytes = to_come, "not enough space for incoming files");
+        return refuse(&mut send, ErrorCode::Busy, "not enough space").await;
+    }
     let Ok(accept) = Envelope::new(files::ACCEPT, &FilesAccept { have: have.clone() }) else { return };
     if write_frame(&mut send, &accept.to_cbor()).await.is_err() {
         return;
@@ -1778,7 +1811,10 @@ async fn receive_bytes(
             })?;
         // A part file longer than `have` (it changed or failed a prior check) starts from `have`.
         if *have < out.metadata().await.map(|m| m.len()).unwrap_or(0) {
-            out.set_len(*have).await.ok();
+            // Appending after leftover bytes would put this file's data in the wrong place.
+            out.set_len(*have).await.map_err(|e| {
+                TransferState::Failed(TransferFailure::Other(format!("can't truncate: {}", e.kind())))
+            })?;
         }
         let mut hasher = if file.blake3.is_some() {
             let have_bytes = *have;
@@ -1901,21 +1937,43 @@ async fn store(
     let parts: Vec<PathBuf> = (0..entries.len()).map(part).collect();
     let dir = dir.to_owned();
     tokio::task::spawn_blocking(move || {
-        std::fs::create_dir_all(&target)?;
-        // A sent folder lands under a name of its own: `Trip`, or
-        // `Trip (2)` when there already is one.
-        let mut folders: HashMap<String, PathBuf> = HashMap::new();
-        let mut saved = Vec::with_capacity(entries.len());
+        let saved = save_files(&target, &entries, parts)?;
+        let _ = std::fs::remove_dir_all(&dir);
+        if let Some(parent) = dir.parent() {
+            let _ = std::fs::remove_dir(parent);
+        }
+        Ok(saved)
+    })
+    .await
+    .map_err(std::io::Error::other)?
+}
+
+/// Moves the received part files into `target`, under their own names.
+/// When one can't be saved, the ones already moved go back to their part
+/// files: the sender hears it failed, and a retry resumes instead of leaving
+/// a second copy of each.
+fn save_files(target: &Path, entries: &[FileEntry], parts: Vec<PathBuf>) -> std::io::Result<Vec<PathBuf>> {
+    // One at a time: two transfers saving `photo.jpg` together would both
+    // find the same free name, and the second would replace the first.
+    static SAVING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _saving = SAVING.lock().unwrap_or_else(|e| e.into_inner());
+    std::fs::create_dir_all(target)?;
+    // A sent folder lands under a name of its own: `Trip`, or
+    // `Trip (2)` when there already is one.
+    let mut folders: HashMap<String, PathBuf> = HashMap::new();
+    let mut saved = Vec::with_capacity(entries.len());
+    let mut moved: Vec<(PathBuf, PathBuf)> = Vec::new();
+    let result = (|| {
         for (entry, part) in entries.iter().zip(parts) {
             let at = match entry.folder.as_deref() {
-                None => target.clone(),
+                None => target.to_path_buf(),
                 Some(folder) => {
                     let mut names = folder.split('/').map(storable_name);
                     let top = names.next().unwrap_or_else(|| "Folder".into());
                     let mut at = match folders.get(&top) {
                         Some(at) => at.clone(),
                         None => {
-                            let at = unique_path(&target, &top);
+                            let at = unique_path(target, &top);
                             std::fs::create_dir(&at)?;
                             folders.insert(top, at.clone());
                             saved.push(at.clone());
@@ -1928,23 +1986,94 @@ async fn store(
                 }
             };
             let to = unique_path(&at, &storable_name(&entry.name));
-            if std::fs::rename(&part, &to).is_err() {
-                // Another volume: copy, then drop the part file.
-                std::fs::copy(&part, &to)?;
-                std::fs::remove_file(&part)?;
-            }
+            move_file(&part, &to)?;
+            mark_from_elsewhere(&to);
+            moved.push((to.clone(), part));
             if entry.folder.is_none() {
                 saved.push(to);
             }
         }
-        let _ = std::fs::remove_dir_all(&dir);
-        if let Some(parent) = dir.parent() {
-            let _ = std::fs::remove_dir(parent);
+        Ok(())
+    })();
+    if let Err(e) = result {
+        for (to, part) in moved.iter().rev() {
+            if let Err(e) = move_file(to, part) {
+                tracing::warn!(error = %e, "can't put a received file back");
+            }
         }
-        Ok(saved)
-    })
-    .await
-    .map_err(std::io::Error::other)?
+        // Folders made here hold nothing of anyone else's.
+        for folder in folders.values() {
+            let _ = std::fs::remove_dir_all(folder);
+        }
+        return Err(e);
+    }
+    Ok(saved)
+}
+
+/// Marks a received file as coming from another device, the way a browser
+/// marks a download: on Windows that's the Internet zone (Mark of the Web),
+/// so SmartScreen checks a program before it runs and Office opens a
+/// document in Protected View. Best effort: a drive without alternate data
+/// streams (FAT32, say) takes no mark.
+pub(crate) fn mark_from_elsewhere(path: &Path) {
+    #[cfg(windows)]
+    {
+        let mut stream = path.as_os_str().to_owned();
+        stream.push(":Zone.Identifier");
+        if let Err(e) = std::fs::write(&stream, "[ZoneTransfer]\r\nZoneId=3\r\n") {
+            tracing::debug!(error = %e, "can't mark a received file as from elsewhere");
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = path;
+}
+
+/// Room kept free beyond an incoming transfer's size.
+const SPACE_MARGIN: u64 = 64 * 1024 * 1024;
+
+/// Bytes free for this user on the drive holding `path` (`None` when it
+/// can't tell, which never blocks a transfer).
+#[allow(unsafe_code)]
+pub(crate) fn free_space(path: &Path) -> Option<u64> {
+    #[cfg(windows)]
+    {
+        use windows::{Win32::Storage::FileSystem::GetDiskFreeSpaceExW, core::HSTRING};
+        let mut free = 0u64;
+        // SAFETY: a valid path string and an out pointer to a local.
+        unsafe { GetDiskFreeSpaceExW(&HSTRING::from(path.as_os_str()), Some(&mut free), None, None) }
+            .ok()
+            .map(|()| free)
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let c_path = std::ffi::CString::new(path.as_os_str().as_bytes()).ok()?;
+        // SAFETY: statvfs is plain data; zeroed is a valid value for it.
+        let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
+        // SAFETY: `c_path` is NUL-terminated and `stat` is writable.
+        if unsafe { libc::statvfs(c_path.as_ptr(), &mut stat) } != 0 {
+            return None;
+        }
+        let block = if stat.f_frsize > 0 { stat.f_frsize as u64 } else { stat.f_bsize as u64 };
+        Some((stat.f_bavail as u64).saturating_mul(block))
+    }
+    #[cfg(not(any(windows, unix)))]
+    {
+        let _ = path;
+        None
+    }
+}
+
+/// Moves `from` to `to`, copying when they're on different volumes.
+fn move_file(from: &Path, to: &Path) -> std::io::Result<()> {
+    if std::fs::rename(from, to).is_err() {
+        if let Err(e) = std::fs::copy(from, to) {
+            let _ = std::fs::remove_file(to);
+            return Err(e);
+        }
+        std::fs::remove_file(from)?;
+    }
+    Ok(())
 }
 
 /// Deletes partly received files nobody resumed in time.
@@ -1958,6 +2087,20 @@ pub(crate) fn clean_incoming(dir: &Path) {
     let Ok(peers) = std::fs::read_dir(dir) else { return };
     for peer in peers.flatten() {
         let path = peer.path();
+        // Writes to the phone's storage from a PC: `incoming/storage/<peer>/<id>.part`,
+        // each resumable on its own (the folder's own age says nothing about them).
+        if peer.file_name() == "storage" {
+            for peer in std::fs::read_dir(&path).into_iter().flatten().flatten() {
+                for part in std::fs::read_dir(peer.path()).into_iter().flatten().flatten() {
+                    if is_stale(&part) {
+                        let _ = std::fs::remove_file(part.path());
+                    }
+                }
+                let _ = std::fs::remove_dir(peer.path());
+            }
+            let _ = std::fs::remove_dir(&path);
+            continue;
+        }
         // Transfers from before they were kept per peer: `incoming/<offer>`.
         if peer.file_name().to_str().and_then(|n| n.parse::<DeviceId>().ok()).is_none() {
             if is_stale(&peer) {
@@ -1979,6 +2122,74 @@ pub(crate) fn clean_incoming(dir: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn received_files_are_marked_as_from_the_internet_zone() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("setup.exe");
+        std::fs::write(&file, b"MZ").unwrap();
+        mark_from_elsewhere(&file);
+        let mut stream = file.into_os_string();
+        stream.push(":Zone.Identifier");
+        assert_eq!(std::fs::read_to_string(stream).unwrap(), "[ZoneTransfer]\r\nZoneId=3\r\n");
+    }
+
+    #[test]
+    fn free_space_is_read_for_a_real_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(free_space(dir.path()).is_some_and(|free| free > 0));
+        assert_eq!(free_space(&dir.path().join("not-there")), None, "unknown never blocks");
+    }
+
+    #[test]
+    fn files_go_back_to_their_part_files_when_one_cant_be_saved() {
+        let dir = tempfile::tempdir().unwrap();
+        let (incoming, target) = (dir.path().join("incoming"), dir.path().join("Downloads"));
+        std::fs::create_dir_all(&incoming).unwrap();
+        let entry = |name: &str, folder: Option<&str>| FileEntry {
+            name: name.into(),
+            size: 1,
+            folder: folder.map(Into::into),
+            blake3: None,
+        };
+        let entries = [entry("a.txt", None), entry("b.txt", Some("Trip")), entry("c.txt", None)];
+        let parts: Vec<PathBuf> = (0..3).map(|i| incoming.join(format!("{i}.part"))).collect();
+        std::fs::write(&parts[0], b"a").unwrap();
+        std::fs::write(&parts[1], b"b").unwrap();
+        // The third never arrived, so saving fails on it.
+
+        assert!(save_files(&target, &entries, parts.clone()).is_err());
+        assert_eq!(std::fs::read(&parts[0]).unwrap(), b"a", "back where a retry resumes");
+        assert_eq!(std::fs::read(&parts[1]).unwrap(), b"b");
+        assert_eq!(std::fs::read_dir(&target).unwrap().count(), 0, "nothing half-delivered");
+
+        std::fs::write(&parts[2], b"c").unwrap();
+        let saved = save_files(&target, &entries, parts).unwrap();
+        assert_eq!(saved, [target.join("a.txt"), target.join("Trip"), target.join("c.txt")]);
+        assert_eq!(std::fs::read(target.join("Trip").join("b.txt")).unwrap(), b"b");
+    }
+
+    #[test]
+    fn storage_writes_are_swept_one_part_file_at_a_time() {
+        let dir = tempfile::tempdir().unwrap();
+        let peer = dir.path().join("storage").join("peer");
+        std::fs::create_dir_all(&peer).unwrap();
+        let fresh = peer.join("fresh.part");
+        let stale = peer.join("stale.part");
+        std::fs::write(&fresh, b"resume me").unwrap();
+        std::fs::write(&stale, b"old").unwrap();
+        let old = std::time::SystemTime::now() - KEEP_PARTIAL - Duration::from_secs(60);
+        std::fs::File::options().write(true).open(&stale).unwrap().set_modified(old).unwrap();
+
+        clean_incoming(dir.path());
+        assert!(fresh.exists(), "a recent write stays resumable");
+        assert!(!stale.exists());
+
+        std::fs::remove_file(&fresh).unwrap();
+        clean_incoming(dir.path());
+        assert!(!dir.path().join("storage").exists(), "emptied folders go");
+    }
 
     #[test]
     fn names_are_made_safe() {

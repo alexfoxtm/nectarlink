@@ -69,7 +69,8 @@ fn note_call_ended(device: DeviceId) {
 /// Call log entries read at a time, and contacts per page.
 const LOG_PAGE: u32 = 50;
 const CONTACTS_PAGE: u32 = 200;
-const MAX_CONTACT_PAGES: u32 = 3;
+/// Up to 5,000 contacts: plenty of people have more than a few hundred.
+const MAX_CONTACT_PAGES: u32 = 25;
 
 /// The toast "device" for calls; their key is `<device ID> <call ID>`.
 pub const TOAST_GROUP: &str = "calls";
@@ -317,7 +318,9 @@ fn show_ringing(device: DeviceId, call: &CallState, silenced: bool) {
         image: None,
         actions,
         reply: None,
-        silent: silenced,
+        // With Phone as speaker on, this PC's sound goes to the phone, so a
+        // ring here would only play again on a phone that's ringing already.
+        silent: silenced || crate::pc_audio_stream::is_enabled(),
         progress: None,
         call: true,
     });
@@ -670,7 +673,10 @@ fn load_call_log(before: Option<i64>) {
             Err(_) => HashMap::new(),
         };
         page_state(|s| {
-            s.loading_older = false;
+            // Only the older page's own load ends it: a refresh can finish first.
+            if before.is_some() {
+                s.loading_older = false;
+            }
             if s.generation != generation {
                 return;
             }
@@ -727,8 +733,11 @@ fn load_contacts() {
                     }
                 }
                 Err(e) => {
+                    // Past the first page, the ones that came are shown.
                     if page == 0 {
                         err = Some(e);
+                    } else {
+                        tracing::debug!(error = %e, page, "can't list the rest of the contacts");
                     }
                     break;
                 }

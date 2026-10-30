@@ -14,9 +14,11 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.RemoteInput
 import androidx.core.content.ContextCompat
 import app.nectarlink.android.R
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -29,6 +31,8 @@ object PairingNotification {
     private const val CHANNEL = "elevated"
     private const val ID = 7
     private const val KEY_CODE = "code"
+    /** How long the receiver waits for pairing before letting Android move on. */
+    private const val RECEIVER_MS = 8_000L
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /** Asks for the code; false if notifications are off for the app. */
@@ -71,6 +75,15 @@ object PairingNotification {
             }
             show(app, app.getString(R.string.elevated_pairing))
             val pending = goAsync()
+            // Android stops a receiver after about ten seconds (an "isn't
+            // responding" error), and finding the pairing dialog alone can take
+            // that long: let it go in time; the pairing carries on.
+            val released = AtomicBoolean(false)
+            val release = { if (released.compareAndSet(false, true)) pending.finish() }
+            scope.launch {
+                delay(RECEIVER_MS)
+                release()
+            }
             scope.launch {
                 try {
                     if (Elevated.pair(code)) {
@@ -84,7 +97,7 @@ object PairingNotification {
                         show(app, app.getString(why))
                     }
                 } finally {
-                    pending.finish()
+                    release()
                 }
             }
         }

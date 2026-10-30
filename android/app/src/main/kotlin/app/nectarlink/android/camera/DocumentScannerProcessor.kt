@@ -66,6 +66,8 @@ data class QuadCorners(
  */
 object DocumentScannerProcessor {
     private const val MAX_WORK_SIDE = 180
+    /** The detector works at [MAX_WORK_SIDE]; a bigger copy than this adds nothing. */
+    private const val DETECT_MAX_EDGE = 720
     private const val MIN_QUAD_AREA_FRACTION = 0.15f
     private const val MIN_INTERIOR_ANGLE_DEG = 45f
     private const val MAX_INTERIOR_ANGLE_DEG = 135f
@@ -549,11 +551,26 @@ object DocumentScannerProcessor {
 
     /** Detects a document quad directly from an Android [Bitmap]. */
     fun detectDocumentQuad(bitmap: Bitmap): QuadCorners {
-        val w = bitmap.width
-        val h = bitmap.height
-        if (w < 16 || h < 16) return DEFAULT_QUAD
+        if (bitmap.width < 16 || bitmap.height < 16) return DEFAULT_QUAD
+        // The corners come back as fractions of the picture, so a smaller copy
+        // finds the same ones without a full-size photo's worth of arrays.
+        val longest = max(bitmap.width, bitmap.height)
+        val source = if (longest > DETECT_MAX_EDGE) {
+            val scale = DETECT_MAX_EDGE.toFloat() / longest
+            Bitmap.createScaledBitmap(
+                bitmap,
+                (bitmap.width * scale).roundToInt().coerceAtLeast(16),
+                (bitmap.height * scale).roundToInt().coerceAtLeast(16),
+                true,
+            )
+        } else {
+            bitmap
+        }
+        val w = source.width
+        val h = source.height
         val pixels = IntArray(w * h)
-        bitmap.getPixels(pixels, 0, w, 0, 0, w, h)
+        source.getPixels(pixels, 0, w, 0, 0, w, h)
+        if (source !== bitmap) source.recycle()
         val luma = ByteArray(w * h) { i ->
             val c = pixels[i]
             val r = c ushr 16 and 0xFF

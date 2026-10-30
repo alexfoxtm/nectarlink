@@ -472,7 +472,8 @@ fn tone_weight(tone: f64) -> f64 {
 /// Extracts the most representative perceptual seed color from a 2D pixel grid,
 /// returning `None` when the image is empty or monochrome/greyscale.
 pub fn seed_from_grid(pixels: &[Rgb], width: u32, height: u32) -> Option<Rgb> {
-    if pixels.is_empty() {
+    // Fewer pixels than the size says would index past the end below.
+    if pixels.is_empty() || pixels.len() < width as usize * height as usize {
         return None;
     }
     // Single-pixel / very small input fast path (e.g., solid desktop background).

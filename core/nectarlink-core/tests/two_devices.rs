@@ -135,7 +135,8 @@ impl Platform for RecordingPlatform {
         let sound = if options.audio { " with sound" } else { "" };
         let app = options.app.as_deref().map(|a| format!(" {a} as {}", options.session)).unwrap_or_default();
         let watch = options.watch.as_deref().map(|p| format!(" watching {p}")).unwrap_or_default();
-        self.mirror_asks.lock().unwrap().push(format!("start {}{sound}{app}{watch}", options.max_size));
+        let only = if options.sound_only { ", sound only" } else { "" };
+        self.mirror_asks.lock().unwrap().push(format!("start {}{sound}{only}{app}{watch}", options.max_size));
         Ok(())
     }
     fn watch_offered(
@@ -1785,6 +1786,104 @@ async fn folders_arrive_with_their_layout() {
     );
 }
 
+/// The phone's sound on its own (#94): the PC asks for the sound alone, the
+/// phone gets that request, and its sound stream plays without any video. A
+/// phone that doesn't offer it is never asked to share its screen instead.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_phone_sound_plays_on_the_pc_without_its_screen() {
+    use nectarlink_core::{MirrorSend, PacketKind};
+    let sound_only = nectarlink_core::MirrorStart {
+        max_size: 0,
+        fps: 0,
+        bitrate: 0,
+        audio: true,
+        session: 0,
+        app: None,
+        stay_awake: false,
+        screen_off: false,
+        watch: None,
+        sound_only: true,
+    };
+
+    // An older phone: no mirror.sound, so the request is refused, not
+    // turned into screen sharing.
+    let mut pc = device_with("Desktop", DeviceKind::Desktop, &[nectarlink_core::MIRROR_LISTEN]).await;
+    let mut old_phone = device_with(
+        "Old phone",
+        DeviceKind::Phone,
+        &[nectarlink_core::MIRROR_CAPTURE, nectarlink_core::MIRROR_AUDIO_PLAYBACK],
+    )
+    .await;
+    pair_qr(&mut pc, &mut old_phone).await;
+    let refused = with_timeout(
+        "start on an old phone",
+        pc.node.mirror_start(old_phone.node.device_id(), sound_only.clone()),
+    )
+    .await;
+    assert!(matches!(refused, Err(Error::Unsupported)), "{refused:?}");
+    assert!(old_phone.platform.mirror_asks.lock().unwrap().is_empty(), "the old phone was never asked");
+
+    let mut phone = device_with(
+        "Pixel",
+        DeviceKind::Phone,
+        &[
+            nectarlink_core::MIRROR_CAPTURE,
+            nectarlink_core::MIRROR_AUDIO_PLAYBACK,
+            nectarlink_core::MIRROR_SOUND,
+        ],
+    )
+    .await;
+    pair_qr(&mut pc, &mut phone).await;
+    let (pc_id, phone_id) = (pc.node.device_id(), phone.node.device_id());
+    with_timeout("start", pc.node.mirror_start(phone_id, sound_only)).await.unwrap();
+    assert_eq!(*phone.platform.mirror_asks.lock().unwrap(), ["start 0 with sound, sound only"]);
+
+    // The phone sends only its sound.
+    let sound = Arc::new(with_timeout("open sound", phone.node.mirror_open_audio(pc_id)).await.unwrap());
+    let format = nectarlink_core::MirrorAudioConfig {
+        codec: nectarlink_core::MIRROR_PCM.into(),
+        rate: 48_000,
+        channels: 2,
+    };
+    let sender = sound.clone();
+    let sent = tokio::task::spawn_blocking(move || {
+        [
+            sender.send(PacketKind::Config, 0, format.to_cbor()),
+            sender.send(PacketKind::Frame, 10_000, vec![0; 1_920]),
+        ]
+    })
+    .await
+    .unwrap();
+    assert!(sent.iter().all(|s| *s == MirrorSend::Queued), "{sent:?}");
+    let screen = pc.platform.screen.clone();
+    let deadline = tokio::time::Instant::now() + WAIT;
+    while screen.got.lock().unwrap().len() < 2 && tokio::time::Instant::now() < deadline {
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert_eq!(
+        *screen.got.lock().unwrap(),
+        ["sound 48000 Hz x2", "sound 10000 1920"],
+        "sound, and no picture"
+    );
+
+    // Turning it off: the phone hears it, and the sound stream ends.
+    pc.node.mirror_stop(phone_id, 0).await;
+    let deadline = tokio::time::Instant::now() + WAIT;
+    while !phone.platform.mirror_asks.lock().unwrap().iter().any(|a| a == "stop 0")
+        && tokio::time::Instant::now() < deadline
+    {
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert!(phone.platform.mirror_asks.lock().unwrap().iter().any(|a| a == "stop 0"));
+    let deadline = tokio::time::Instant::now() + WAIT;
+    while !screen.got.lock().unwrap().iter().any(|g| g == "sound ended")
+        && tokio::time::Instant::now() < deadline
+    {
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert!(screen.got.lock().unwrap().iter().any(|g| g == "sound ended"));
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn the_phone_screen_streams_to_the_pc() {
     use nectarlink_core::{MirrorSend, PacketKind};
@@ -1817,6 +1916,7 @@ async fn the_phone_screen_streams_to_the_pc() {
         stay_awake: false,
         screen_off: false,
         watch: None,
+        sound_only: false,
     };
     with_timeout("start", pc.node.mirror_start(phone_id, options)).await.unwrap();
     assert_eq!(*phone.platform.mirror_asks.lock().unwrap(), ["start 1920 with sound"]);
@@ -1937,6 +2037,7 @@ async fn phone_apps_open_in_windows_of_their_own() {
         stay_awake: false,
         screen_off: false,
         watch: None,
+        sound_only: false,
     };
 
     // Not Elevated yet: no apps, no app windows.
@@ -2964,6 +3065,44 @@ async fn phone_toggles_arrive_on_connect_change_and_respect_capabilities_and_tog
     ));
 }
 
+/// A device relays Wake-on-LAN only for an address one of its paired PCs
+/// gave as its own (#74 audit), never for any MAC another device names.
+#[tokio::test(flavor = "multi_thread")]
+async fn wake_relay_is_only_for_a_paired_pcs_own_address() {
+    use nectarlink_core::{PC_WAKE, PcWakeInfo};
+    let mut pc = device_with("Desktop", DeviceKind::Desktop, &[PC_WAKE]).await;
+    let mut phone = device("Pixel", DeviceKind::Phone).await;
+    pc.node
+        .set_wake_info(PcWakeInfo {
+            macs: vec!["00:00:5E:00:53:01".into()],
+            broadcasts: vec!["127.255.255.255".into()],
+        })
+        .await;
+    pair_qr(&mut pc, &mut phone).await;
+    let (pc_id, phone_id) = (pc.node.device_id(), phone.node.device_id());
+    wait_for(&mut phone, "wake info", |e| match e {
+        NodeEvent::WakeInfoChanged { device, can_wake: true } if *device == pc_id => Some(()),
+        _ => None,
+    })
+    .await;
+    let loopback = Some(std::net::Ipv4Addr::new(127, 255, 255, 255));
+
+    // The PC's own address: the phone relays it.
+    with_timeout(
+        "relay own",
+        pc.node.wake_via_relay(&phone_id, [0x00, 0x00, 0x5e, 0x00, 0x53, 0x01], loopback),
+    )
+    .await
+    .expect("a paired PC's own address is relayed");
+    // Any other address: refused.
+    let other = with_timeout(
+        "relay other",
+        pc.node.wake_via_relay(&phone_id, [0x02, 0x11, 0x22, 0x33, 0x44, 0x55], loopback),
+    )
+    .await;
+    assert!(matches!(other, Err(Error::Denied)), "{other:?}");
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn wake_info_syncs_persists_respects_toggle_and_sends_magic_packet() {
     use nectarlink_core::{PC_WAKE, PcWakeInfo, magic_packet};
@@ -3201,6 +3340,33 @@ async fn a_phone_browses_a_pcs_shared_folders() {
     assert!(phone.node.storage_list(pc_id, "").await.is_err());
 }
 
+/// A folder whose entries don't fit one answer comes back whole, page by
+/// page (a camera folder of thousands of photos, say).
+#[tokio::test(flavor = "multi_thread")]
+async fn a_folder_too_big_for_one_answer_is_listed_whole() {
+    use nectarlink_core::{FolderStorage, STORAGE_MOUNT, STORAGE_READ};
+
+    let mut pc = device_with("Desktop", DeviceKind::Desktop, &[STORAGE_MOUNT, STORAGE_READ]).await;
+    let mut phone = device_with("Pixel", DeviceKind::Phone, &[STORAGE_READ]).await;
+    let shared = tempfile::tempdir().unwrap();
+    let camera = shared.path().join("Camera");
+    std::fs::create_dir_all(&camera).unwrap();
+    // Long names, so a few thousand entries pass one frame (1 MiB).
+    let count = 8_000;
+    for i in 0..count {
+        std::fs::write(camera.join(format!("{i:05}-{}.jpg", "x".repeat(140))), b"").unwrap();
+    }
+    *pc.platform.storage.lock().unwrap() = Some(FolderStorage::new(shared.path()));
+    pair_qr(&mut pc, &mut phone).await;
+    let pc_id = pc.node.device_id();
+
+    let listed = with_timeout("list a big folder", phone.node.storage_list(pc_id, "Camera")).await.unwrap();
+    assert_eq!(listed.len(), count, "every entry, across pages");
+    let mut names: Vec<_> = listed.iter().map(|e| e.name.clone()).collect();
+    names.dedup();
+    assert_eq!(names.len(), count, "no entry twice");
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn phone_storage_lists_reads_ranges_writes_resumes_mutates_and_enforces_security() {
     use nectarlink_core::{FolderStorage, STORAGE_MOUNT, STORAGE_READ, STORAGE_WRITE};
@@ -3399,6 +3565,25 @@ async fn the_phone_negotiates_hevc_only_with_an_advertising_receiver() {
     webcam_round_trip(true).await;
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn screen_mirroring_prefers_hevc_only_when_the_receiver_advertises_it() {
+    let mut pc = device_with("Desktop", DeviceKind::Desktop, &[nectarlink_core::MIRROR_HEVC]).await;
+    let mut phone = device_with("Pixel", DeviceKind::Phone, &[]).await;
+    pair_qr(&mut pc, &mut phone).await;
+    let pc_id = pc.node.device_id();
+
+    assert_eq!(phone.node.mirror_codecs(pc_id).unwrap(), ["h265", "h264"]);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn screen_mirroring_uses_h264_for_receivers_without_hevc_support() {
+    let mut pc = device_with("Desktop", DeviceKind::Desktop, &[]).await;
+    let mut phone = device_with("Pixel", DeviceKind::Phone, &[]).await;
+    pair_qr(&mut pc, &mut phone).await;
+
+    assert_eq!(phone.node.mirror_codecs(pc.node.device_id()).unwrap(), ["h264"]);
+}
+
 async fn webcam_round_trip(hevc: bool) {
     use nectarlink_core::{MirrorSend, PacketKind};
     let mut caps = vec![nectarlink_core::WEBCAM_VIRTUAL];
@@ -3555,6 +3740,26 @@ async fn pc_audio_volume_mute_output_devices_and_smart_clipboard_context_chips_f
     with_timeout("set pc audio unmute + 65", phone.node.set_pc_audio(pc_id, Some(65), Some(false)))
         .await
         .unwrap();
+
+    // Phone as speaker needs the phone's `media` permission to start; stopping is always allowed.
+    pc.node.set_device_toggle(phone_id, "media", false).unwrap();
+    assert!(matches!(
+        phone.node.set_pc_audio(pc_id, Some(nectarlink_core::deck::PHONE_SPEAKER_ON), None).await,
+        Err(Error::Denied)
+    ));
+    with_timeout(
+        "phone speaker off while media is off",
+        phone.node.set_pc_audio(pc_id, Some(nectarlink_core::deck::PHONE_SPEAKER_OFF), None),
+    )
+    .await
+    .unwrap();
+    pc.node.set_device_toggle(phone_id, "media", true).unwrap();
+    with_timeout(
+        "phone speaker on",
+        phone.node.set_pc_audio(pc_id, Some(nectarlink_core::deck::PHONE_SPEAKER_ON), None),
+    )
+    .await
+    .unwrap();
 
     // Smart clipboard context chips: phone sends different text clips to PC,
     // and PC classifies each into at most 1 context chip (and None for OTP).
@@ -4180,7 +4385,8 @@ async fn continuity_camera_photo_and_scan_flow() {
     let scan_meta = CameraCaptureResultMeta {
         request_id: "req-scan-2".into(),
         mode: CameraCaptureMode::Scan,
-        file_name: "Scan_20260409.jpg".into(),
+        // A drive-prefixed name must still land in the downloads folder.
+        file_name: "C:Scan_20260409.jpg".into(),
         mime: "image/jpeg".into(),
         size: fake_scan.len() as u64,
         width: 1654,
@@ -4221,11 +4427,14 @@ async fn continuity_camera_photo_and_scan_flow() {
         .await;
     assert_eq!(got_scan_id, "req-scan-2");
     assert_eq!(got_scan_mode, CameraCaptureMode::Scan);
-    assert_eq!(got_scan_name, "Scan_20260409.jpg");
+    assert_eq!(got_scan_name, "C_Scan_20260409.jpg");
     assert_eq!(got_w, 1654);
     assert_eq!(got_h, 2339);
     assert_eq!(got_scan_data, fake_scan);
-    assert!(got_scan_path.unwrap().exists());
+    let got_scan_path = got_scan_path.unwrap();
+    assert!(got_scan_path.exists());
+    assert_eq!(got_scan_path.parent(), path.parent());
+    assert_eq!(got_scan_path.file_name().unwrap(), "C_Scan_20260409.jpg");
 
     pc.node.shutdown().await;
     phone.node.shutdown().await;
@@ -4341,6 +4550,35 @@ async fn continuity_camera_respects_photos_toggle() {
     assert_eq!(from, phone_id);
     assert_eq!(id, "req-denied-phone");
     assert!(reason.unwrap_or_default().contains("photos"));
+
+    pc.node.shutdown().await;
+    phone.node.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_capture_the_pc_never_asked_for_isnt_saved() {
+    use nectarlink_core::{CameraCaptureMode, CameraCaptureResultMeta};
+
+    let mut pc = device_with("pc", DeviceKind::Desktop, &["camera.continuity"]).await;
+    let mut phone = device_with("phone", DeviceKind::Phone, &["camera.capture"]).await;
+    pair_qr(&mut pc, &mut phone).await;
+    let pc_id = pc.node.device_id();
+
+    let picture = vec![0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3, 4, 0xFF, 0xD9];
+    let meta = CameraCaptureResultMeta {
+        request_id: "never-asked".into(),
+        mode: CameraCaptureMode::Photo,
+        file_name: "unasked.jpg".into(),
+        mime: "image/jpeg".into(),
+        size: picture.len() as u64,
+        width: 1,
+        height: 1,
+    };
+    let sent =
+        with_timeout("send an unasked capture", phone.node.send_camera_capture_result(pc_id, meta, picture))
+            .await;
+    assert!(sent.is_err(), "the PC turns it away");
+    assert!(!pc.dir.path().join("received").join("unasked.jpg").exists());
 
     pc.node.shutdown().await;
     phone.node.shutdown().await;
@@ -4653,6 +4891,146 @@ async fn localsend_discovers_peer_requires_accept_and_transfers_files_over_https
     );
 
     sender.node.shutdown().await;
+    receiver.node.shutdown().await;
+}
+
+/// One HTTP/1.1 request over plain TCP to a LocalSend server, as a LocalSend
+/// sender would send it; returns the status and the body.
+async fn localsend_request(port: u16, method: &str, target: &str, body: &[u8]) -> (u16, Vec<u8>) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut tcp = tokio::net::TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+    let head = format!(
+        "{method} {target} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\n\
+         Content-Length: {}\r\nConnection: close\r\n\r\n",
+        body.len()
+    );
+    tcp.write_all(head.as_bytes()).await.unwrap();
+    tcp.write_all(body).await.unwrap();
+    let mut out = Vec::new();
+    let _ = tcp.read_to_end(&mut out).await;
+    let text = String::from_utf8_lossy(&out);
+    let status = text.split(' ').nth(1).and_then(|c| c.parse().ok()).unwrap_or(0);
+    let split = out.windows(4).position(|w| w == b"\r\n\r\n").map_or(out.len(), |i| i + 4);
+    (status, out[split..].to_vec())
+}
+
+fn localsend_offer(files: &[(&str, &str, &str, u64)]) -> Vec<u8> {
+    let files: serde_json::Map<String, serde_json::Value> = files
+        .iter()
+        .map(|(key, id, name, size)| {
+            (
+                (*key).to_owned(),
+                serde_json::json!({ "id": id, "fileName": name, "size": size, "fileType": "text/plain" }),
+            )
+        })
+        .collect();
+    serde_json::to_vec(&serde_json::json!({
+        "info": { "alias": "Raw sender", "version": "2.1", "deviceType": "mobile", "fingerprint": "raw-sender-fp", "port": 1, "protocol": "http" },
+        "files": files,
+    }))
+    .unwrap()
+}
+
+fn part_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut found = Vec::new();
+    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            found.extend(part_files(&path));
+        } else if path.extension().is_some_and(|e| e == "part") {
+            found.push(path);
+        }
+    }
+    found
+}
+
+/// A sender that offers duplicate file ids is refused; one that sends one of
+/// two files and cancels leaves that file, a timeline entry saying it only
+/// partly arrived, no staged parts, and no session (#72 audit).
+#[tokio::test]
+async fn localsend_refuses_duplicate_ids_and_records_a_cancelled_partial_delivery() {
+    let port = free_tcp_port();
+    let mut receiver =
+        start_localsend_in(tempfile::tempdir().unwrap(), "PC Receiver", DeviceKind::Desktop, port).await;
+    receiver.node.set_localsend_enabled(true).unwrap();
+    for _ in 0..40 {
+        if receiver.node.localsend_receiving() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(receiver.node.localsend_receiving());
+
+    let (status, _) = localsend_request(
+        port,
+        "POST",
+        "/api/localsend/v2/prepare-upload",
+        &localsend_offer(&[("a", "same", "a.txt", 5), ("b", "same", "b.txt", 5)]),
+    )
+    .await;
+    assert_eq!(status, 400, "two files with one id could never both arrive");
+
+    let offer = localsend_offer(&[("f1", "f1", "first.txt", 5), ("f2", "f2", "second.txt", 6)]);
+    let prepare = tokio::spawn(async move {
+        localsend_request(port, "POST", "/api/localsend/v2/prepare-upload", &offer).await
+    });
+    let req: Transfer = wait_for(&mut receiver, "offer", |e| match e {
+        NodeEvent::Transfer(t) if t.state == TransferState::Requested => Some(t.clone()),
+        _ => None,
+    })
+    .await;
+    receiver.node.accept_transfer(&req.id);
+    let (status, body) = with_timeout("prepare-upload", prepare).await.unwrap();
+    assert_eq!(status, 200);
+    let answer: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let session = answer["sessionId"].as_str().unwrap().to_owned();
+    let token = answer["files"]["f1"].as_str().unwrap().to_owned();
+
+    let (status, _) = localsend_request(
+        port,
+        "POST",
+        &format!("/api/localsend/v2/upload?sessionId={session}&fileId=f1&token={token}"),
+        b"hello",
+    )
+    .await;
+    assert_eq!(status, 200);
+    let (status, _) = localsend_request(
+        port,
+        "POST",
+        &format!("/api/localsend/v2/upload?sessionId={session}&fileId=f1&token={token}"),
+        b"again",
+    )
+    .await;
+    assert_eq!(status, 403, "a file that arrived isn't uploaded twice");
+
+    let (status, _) =
+        localsend_request(port, "POST", &format!("/api/localsend/v2/cancel?sessionId={session}"), b"").await;
+    assert_eq!(status, 200);
+    wait_for(&mut receiver, "cancelled", |e| match e {
+        NodeEvent::Transfer(t) if t.id == req.id && t.state == TransferState::Cancelled => Some(()),
+        _ => None,
+    })
+    .await;
+
+    let saved = receiver.dir.path().join("received").join("first.txt");
+    assert_eq!(std::fs::read(&saved).unwrap(), b"hello", "what arrived is kept");
+    let entries =
+        receiver.node.timeline_page(&nectarlink_core::timeline::TimelineQuery::default()).unwrap().entries;
+    assert!(
+        entries.iter().any(|e| e.detail.contains("1 of 2 files") && e.target.contains("first.txt")),
+        "{:?}",
+        entries.iter().map(|e| &e.detail).collect::<Vec<_>>()
+    );
+    assert!(part_files(receiver.dir.path()).is_empty(), "no staged parts are left");
+    let (status, _) = localsend_request(
+        port,
+        "POST",
+        &format!("/api/localsend/v2/upload?sessionId={session}&fileId=f2&token=x"),
+        b"second",
+    )
+    .await;
+    assert_eq!(status, 404, "the session is gone");
+
     receiver.node.shutdown().await;
 }
 
@@ -5250,6 +5628,7 @@ async fn usb_transport_carries_features_when_wifi_unavailable() {
         stay_awake: false,
         screen_off: false,
         watch: None,
+        sound_only: false,
     };
     with_timeout("start mirror over USB", pc.node.mirror_start(phone_id, options)).await.unwrap();
     let stream = Arc::new(with_timeout("open mirror over USB", phone.node.mirror_open(pc_id)).await.unwrap());
@@ -5306,6 +5685,7 @@ async fn reverse_mirror_requires_pc_consent_and_remote_input_toggle() {
         stay_awake: false,
         screen_off: false,
         watch: None,
+        sound_only: false,
     };
 
     // (a) A paired phone calling `mirror_start` against a PC is denied by default
@@ -5944,6 +6324,7 @@ async fn play_on_phone_lets_the_phone_watch_only_what_the_pc_offered() {
         stay_awake: false,
         screen_off: false,
         watch: Some(player.into()),
+        sound_only: false,
     };
 
     // Not offered: the phone can't watch, and the PC isn't asked to share its screen.
@@ -6298,6 +6679,144 @@ async fn bench_file_throughput() {
         first_byte.as_secs_f64(),
         mb as f64 / moving.as_secs_f64()
     );
+    pc.node.shutdown().await;
+    phone.node.shutdown().await;
+}
+
+/// A phone whose app reports `install_id` (the same on this phone after a reinstall).
+async fn phone_with_install_id(name: &'static str, install_id: &str) -> TestDevice {
+    init_logging();
+    let dir = tempfile::tempdir().unwrap();
+    let mut phone_info = info(name, DeviceKind::Phone);
+    phone_info.install_id = Some(install_id.into());
+    let mut config = NodeConfig::new(dir.path(), phone_info, "0.0.1-test");
+    config.lan_discovery = false;
+    config.away_mode = false;
+    config.key_protector = Some(Arc::new(PlainKeyProtector));
+    config.capabilities = vec!["media.control".into()];
+    let platform = Arc::new(RecordingPlatform::default());
+    let node = Node::start(config, platform.clone()).await.expect("node starts");
+    let events = node.events();
+    TestDevice { node, events, platform, dir, name }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_reinstalled_phone_replaces_its_old_pairing() {
+    const INSTALL: &str = "0123456789abcdef0123456789abcdef";
+    let mut pc = device("pc", DeviceKind::Desktop).await;
+    let mut old = phone_with_install_id("phone", INSTALL).await;
+    pair_qr(&mut pc, &mut old).await;
+    let old_id = old.node.device_id();
+    old.node.shutdown().await;
+    wait_for(&mut pc, "old phone offline", |e| match e {
+        NodeEvent::LinkChanged { device, link: LinkState::Offline { .. } } if *device == old_id => Some(()),
+        _ => None,
+    })
+    .await;
+
+    // Reinstalled: a new identity, the same install ID. Pairing it replaces the old entry.
+    let mut new = phone_with_install_id("phone", INSTALL).await;
+    let mut pc_events = pc.node.events();
+    pair_qr(&mut pc, &mut new).await;
+    let new_id = new.node.device_id();
+    let mut removed = false;
+    while let Ok(event) = pc_events.try_recv() {
+        removed |= matches!(event, NodeEvent::DeviceRemoved(device) if device == old_id);
+    }
+    assert!(removed, "the old entry is announced as removed");
+    let ids: Vec<nectarlink_core::DeviceId> =
+        pc.node.paired_devices().unwrap().into_iter().map(|d| d.id).collect();
+    assert_eq!(ids, vec![new_id]);
+
+    pc.node.shutdown().await;
+    new.node.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn one_time_screen_consent_ends_with_the_pairing() {
+    use nectarlink_core::{MIRROR_CAPTURE, MIRROR_INPUT, MIRROR_SCREEN, MirrorStart};
+
+    let mut pc = device_with("Desktop", DeviceKind::Desktop, &[MIRROR_CAPTURE, MIRROR_INPUT]).await;
+    let mut phone = device_with("Pixel", DeviceKind::Phone, &[nectarlink_core::MIRROR_VIEW]).await;
+    pair_qr(&mut pc, &mut phone).await;
+    let (pc_id, phone_id) = (pc.node.device_id(), phone.node.device_id());
+    let options = MirrorStart {
+        max_size: 1280,
+        fps: 30,
+        bitrate: 4_000_000,
+        audio: false,
+        session: MIRROR_SCREEN,
+        app: None,
+        stay_awake: false,
+        screen_off: false,
+        watch: None,
+        sound_only: false,
+    };
+
+    // "Allow once" lets the phone view the PC's screen during this connection
+    // (granted here before the phone starts, so nothing else clears it).
+    pc.node.set_pc_mirror_session_allowed(phone_id, true);
+
+    // After unpairing and pairing again, the phone has to be allowed again.
+    with_timeout("unpair", pc.node.unpair(phone_id)).await.unwrap();
+    wait_for(&mut phone, "phone forgets the PC", |e| match e {
+        NodeEvent::DeviceRemoved(device) if *device == pc_id => Some(()),
+        _ => None,
+    })
+    .await;
+    pair_qr(&mut pc, &mut phone).await;
+    let again = phone.node.mirror_start(pc_id, options).await;
+    assert!(matches!(again, Err(Error::Denied)), "expected Denied after re-pairing, got {again:?}");
+
+    pc.node.shutdown().await;
+    phone.node.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn notification_history_keeps_the_newest_thousand() {
+    let phone = device("phone", DeviceKind::Phone).await;
+    for i in 0..1005i64 {
+        phone
+            .node
+            .notification_posted(Notification {
+                key: format!("app|{i:04}"),
+                app: "org.example.chat".into(),
+                app_name: "Chat".into(),
+                title: Some(format!("Message {i}")),
+                text: None,
+                sub: None,
+                when: 1_760_000_000_000 + i * 1000,
+                silent: false,
+                actions: Vec::new(),
+                icon: None,
+                image: None,
+                live: None,
+                conversation: None,
+            })
+            .await;
+    }
+    let history = phone.node.notification_history(None, 5000);
+    assert_eq!(history.len(), 1000);
+    assert!(history.iter().all(|n| n.key.as_str() >= "app|0005"), "the oldest five are gone");
+    phone.node.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn elevated_over_usb_is_refused_without_a_usb_connection() {
+    let mut pc = device("pc", DeviceKind::Desktop).await;
+    let mut phone = device("phone", DeviceKind::Phone).await;
+    pair_qr(&mut pc, &mut phone).await;
+    let pc_id = pc.node.device_id();
+    let apk = "/data/app/~~a==/app.nectarlink-b==/base.apk".to_owned();
+    let token = "0123456789abcdef0123456789abcdef".to_owned();
+
+    // This PC doesn't watch adb, so it can't start anything over USB.
+    let refused = phone.node.elevated_usb_start(pc_id, apk.clone(), token.clone(), Vec::new()).await;
+    assert!(matches!(refused, Err(Error::Unsupported)), "{refused:?}");
+    // A request for anything but the app's own helper never leaves the phone.
+    let bad = phone.node.elevated_usb_start(pc_id, apk, token, vec!["reboot".into()]).await;
+    assert!(matches!(bad, Err(Error::Protocol(_))), "{bad:?}");
+
     pc.node.shutdown().await;
     phone.node.shutdown().await;
 }

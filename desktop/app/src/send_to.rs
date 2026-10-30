@@ -310,9 +310,25 @@ fn task_notify(device: Option<String>, task: nectarlink_core::TaskNotify) {
             Some(q) => {
                 let Ok(devices) = node.paired_devices() else { return };
                 let lower = q.to_lowercase();
-                for d in devices.into_iter().filter(|d| {
-                    d.id.to_string().starts_with(&lower) || d.info.name.to_lowercase().contains(&lower)
-                }) {
+                // The phone it names: its whole name or its id. Part of a
+                // name counts only when it fits one phone, never every
+                // phone whose name holds it.
+                let exact: Vec<_> = devices
+                    .iter()
+                    .filter(|d| d.id.to_string().starts_with(&lower) || d.info.name.to_lowercase() == lower)
+                    .cloned()
+                    .collect();
+                let partial: Vec<_> =
+                    devices.into_iter().filter(|d| d.info.name.to_lowercase().contains(&lower)).collect();
+                let targets = if !exact.is_empty() {
+                    exact
+                } else if partial.len() == 1 {
+                    partial
+                } else {
+                    tracing::warn!(matches = partial.len(), "task.notify names no single phone");
+                    Vec::new()
+                };
+                for d in targets {
                     if let Err(e) = node.task_notify(Some(d.id), task.clone()).await {
                         tracing::debug!(device = %d.id, error = %e, "task.notify wasn't delivered");
                     }

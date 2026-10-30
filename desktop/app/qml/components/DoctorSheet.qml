@@ -136,6 +136,8 @@ Sheet {
                             }
                             Button {
                                 id: fixButton
+                                // A fix this sheet has no words for gets no blank button.
+                                visible: sheet.fixLabel(row.modelData.fix).length > 0
                                 enabled: !AppController.doctorBusy
                                 variant: row.modelData.outcome === "fail" ? "fill" : "tonal"
                                 size: "sm"
