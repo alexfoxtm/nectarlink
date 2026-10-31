@@ -8080,208 +8080,276 @@ What it needs
     <name>Setup</name>
     <message>
         <location filename="rust_strings.h" line="442"/>
+        <source>Choose a folder on a drive inside this PC, not a USB or network drive.</source>
+        <translation>请选择这台电脑内部驱动器上的文件夹，不要选 USB 或网络驱动器。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="443"/>
+        <source>Choose a folder on one of this PC&apos;s drives.</source>
+        <translation>请选择这台电脑某个驱动器上的文件夹。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="444"/>
         <source>Couldn&apos;t start setup: %1</source>
         <translation>无法启动安装程序：%1</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="443"/>
+        <location filename="rust_strings.h" line="445"/>
         <source>Couldn&apos;t uninstall NectarLink: %1</source>
         <translation>无法卸载 NectarLink：%1</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="444"/>
+        <location filename="rust_strings.h" line="446"/>
+        <source>Setup can&apos;t use that folder. Choose another one.</source>
+        <translation>安装程序无法使用该文件夹。请选择其他文件夹。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="447"/>
         <source>Setup is taking too long. Try again after restarting the PC.</source>
         <translation>安装时间过长。请重启电脑后再试。</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="445"/>
+        <location filename="rust_strings.h" line="448"/>
         <source>Setup stopped with code %1.</source>
         <translation>安装已停止，代码 %1。</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="446"/>
+        <location filename="rust_strings.h" line="449"/>
+        <source>That drive can&apos;t keep the app&apos;s files safe (it isn&apos;t NTFS). Choose another drive.</source>
+        <translation>该驱动器无法保护应用的文件（不是 NTFS）。请选择其他驱动器。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="450"/>
+        <source>That folder&apos;s path is too long. Choose one closer to the top of a drive.</source>
+        <translation>该文件夹的路径太长。请选择更靠近驱动器顶层的文件夹。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="451"/>
         <source>The uninstaller is missing. Reinstall NectarLink, then uninstall it.</source>
         <translation>缺少卸载程序。请重新安装 NectarLink，然后再卸载。</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="447"/>
+        <location filename="rust_strings.h" line="452"/>
+        <source>There&apos;s a file named %1 there. Choose another place.</source>
+        <translation>那里已有名为 %1 的文件。请选择其他位置。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="453"/>
+        <source>There&apos;s already a %1 folder there with files in it. Choose another place.</source>
+        <translation>那里已有一个包含文件的 %1 文件夹。请选择其他位置。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="454"/>
         <source>Uninstall stopped with code %1.</source>
         <translation>卸载已停止，代码 %1。</translation>
+    </message>
+    <message>
+        <location filename="rust_strings.h" line="455"/>
+        <source>Updates here will ask for your permission each time.</source>
+        <translation>在这里，每次更新都会请求你的许可。</translation>
     </message>
 </context>
 <context>
     <name>SetupWindow</name>
     <message>
-        <location filename="../qml/setup/SetupWindow.qml" line="50"/>
+        <location filename="../qml/setup/SetupWindow.qml" line="51"/>
         <source>Uninstall NectarLink</source>
         <translation>卸载 NectarLink</translation>
     </message>
     <message>
-        <location filename="../qml/setup/SetupWindow.qml" line="50"/>
+        <location filename="../qml/setup/SetupWindow.qml" line="51"/>
         <source>NectarLink Setup</source>
         <translation>NectarLink 安装程序</translation>
     </message>
     <message>
-        <location filename="../qml/setup/SetupWindow.qml" line="113"/>
-        <location filename="../qml/setup/SetupWindow.qml" line="291"/>
-        <location filename="../qml/setup/SetupWindow.qml" line="473"/>
-        <location filename="../qml/setup/SetupWindow.qml" line="482"/>
+        <location filename="../qml/setup/SetupWindow.qml" line="67"/>
+        <source>Install NectarLink in</source>
+        <translation>将 NectarLink 安装到</translation>
+    </message>
+    <message>
+        <location filename="../qml/setup/SetupWindow.qml" line="120"/>
+        <location filename="../qml/setup/SetupWindow.qml" line="298"/>
+        <location filename="../qml/setup/SetupWindow.qml" line="531"/>
+        <location filename="../qml/setup/SetupWindow.qml" line="540"/>
         <source>Close</source>
         <translation>关闭</translation>
     </message>
     <message>
-        <location filename="../qml/setup/SetupWindow.qml" line="180"/>
+        <location filename="../qml/setup/SetupWindow.qml" line="187"/>
         <source>NectarLink</source>
         <translation>NectarLink</translation>
     </message>
     <message>
-        <location filename="../qml/setup/SetupWindow.qml" line="209"/>
+        <location filename="../qml/setup/SetupWindow.qml" line="216"/>
         <source>Couldn&apos;t uninstall NectarLink</source>
         <translation>无法卸载 NectarLink</translation>
     </message>
     <message>
-        <location filename="../qml/setup/SetupWindow.qml" line="209"/>
+        <location filename="../qml/setup/SetupWindow.qml" line="216"/>
         <source>Setup couldn&apos;t finish</source>
         <translation>安装程序未能完成</translation>
     </message>
     <message>
-        <location filename="../qml/setup/SetupWindow.qml" line="211"/>
+        <location filename="../qml/setup/SetupWindow.qml" line="218"/>
         <source>Uninstalling NectarLink</source>
         <translation>正在卸载 NectarLink</translation>
     </message>
     <message>
-        <location filename="../qml/setup/SetupWindow.qml" line="212"/>
+        <location filename="../qml/setup/SetupWindow.qml" line="219"/>
         <source>Updating NectarLink</source>
         <translation>正在更新 NectarLink</translation>
     </message>
     <message>
-        <location filename="../qml/setup/SetupWindow.qml" line="213"/>
+        <location filename="../qml/setup/SetupWindow.qml" line="220"/>
         <source>Installing NectarLink</source>
         <translation>正在安装 NectarLink</translation>
     </message>
     <message>
-        <location filename="../qml/setup/SetupWindow.qml" line="214"/>
+        <location filename="../qml/setup/SetupWindow.qml" line="221"/>
         <source>Uninstall NectarLink?</source>
         <translation>要卸载 NectarLink 吗？</translation>
     </message>
     <message>
-        <location filename="../qml/setup/SetupWindow.qml" line="229"/>
+        <location filename="../qml/setup/SetupWindow.qml" line="236"/>
         <source>Sorry to see you go. This uninstalls NectarLink and deletes its settings and pairings on this PC. Files you received stay in %1.</source>
         <translation>很遗憾你要离开。这会卸载 NectarLink，并删除这台电脑上的设置和配对。你收到的文件仍保留在 %1。</translation>
     </message>
     <message>
-        <location filename="../qml/setup/SetupWindow.qml" line="231"/>
+        <location filename="../qml/setup/SetupWindow.qml" line="238"/>
         <source>Update from %1 to %2. Your settings and pairings stay as they are.</source>
         <translation>从 %1 更新到 %2。你的设置和配对信息保持不变。</translation>
     </message>
     <message>
-        <location filename="../qml/setup/SetupWindow.qml" line="233"/>
+        <location filename="../qml/setup/SetupWindow.qml" line="240"/>
         <source>Version %1 is already installed. Install it again to repair it.</source>
         <translation>已安装版本 %1。再次安装可修复它。</translation>
     </message>
     <message>
-        <location filename="../qml/setup/SetupWindow.qml" line="235"/>
+        <location filename="../qml/setup/SetupWindow.qml" line="242"/>
         <source>This PC has a newer version (%1). Installing %2 replaces it.</source>
         <translation>本机已安装更新的版本（%1）。安装 %2 将替换它。</translation>
     </message>
     <message>
-        <location filename="../qml/setup/SetupWindow.qml" line="236"/>
+        <location filename="../qml/setup/SetupWindow.qml" line="243"/>
         <source>Your Android phone and your PC, working as one.</source>
         <translation>让你的 Android 手机与电脑合而为一。</translation>
     </message>
     <message>
-        <location filename="../qml/setup/SetupWindow.qml" line="278"/>
+        <location filename="../qml/setup/SetupWindow.qml" line="285"/>
         <source>Try again</source>
         <translation>重试</translation>
     </message>
     <message>
-        <location filename="../qml/setup/SetupWindow.qml" line="279"/>
+        <location filename="../qml/setup/SetupWindow.qml" line="286"/>
         <source>Uninstall</source>
         <translation>卸载</translation>
     </message>
     <message>
-        <location filename="../qml/setup/SetupWindow.qml" line="280"/>
+        <location filename="../qml/setup/SetupWindow.qml" line="287"/>
         <source>Update</source>
         <translation>更新</translation>
     </message>
     <message>
-        <location filename="../qml/setup/SetupWindow.qml" line="281"/>
+        <location filename="../qml/setup/SetupWindow.qml" line="288"/>
         <source>Reinstall</source>
         <translation>重新安装</translation>
     </message>
     <message>
-        <location filename="../qml/setup/SetupWindow.qml" line="282"/>
+        <location filename="../qml/setup/SetupWindow.qml" line="289"/>
         <source>Install</source>
         <translation>安装</translation>
     </message>
     <message>
-        <location filename="../qml/setup/SetupWindow.qml" line="291"/>
+        <location filename="../qml/setup/SetupWindow.qml" line="298"/>
         <source>Keep NectarLink</source>
         <translation>保留 NectarLink</translation>
     </message>
     <message>
-        <location filename="../qml/setup/SetupWindow.qml" line="349"/>
+        <location filename="../qml/setup/SetupWindow.qml" line="356"/>
         <source>Add a desktop shortcut</source>
         <translation>添加桌面快捷方式</translation>
     </message>
     <message>
-        <location filename="../qml/setup/SetupWindow.qml" line="378"/>
-        <location filename="../qml/setup/SetupWindow.qml" line="523"/>
+        <location filename="../qml/setup/SetupWindow.qml" line="389"/>
+        <source>Installs in %1</source>
+        <translation>安装位置：%1</translation>
+    </message>
+    <message>
+        <location filename="../qml/setup/SetupWindow.qml" line="398"/>
+        <source>Change</source>
+        <translation>更改</translation>
+    </message>
+    <message>
+        <location filename="../qml/setup/SetupWindow.qml" line="401"/>
+        <source>Change the install folder</source>
+        <translation>更改安装文件夹</translation>
+    </message>
+    <message>
+        <location filename="../qml/setup/SetupWindow.qml" line="436"/>
+        <location filename="../qml/setup/SetupWindow.qml" line="581"/>
         <source>What this installs</source>
         <translation>安装内容</translation>
     </message>
     <message>
-        <location filename="../qml/setup/SetupWindow.qml" line="411"/>
+        <location filename="../qml/setup/SetupWindow.qml" line="469"/>
         <source>NectarLink is uninstalled</source>
         <translation>NectarLink 已卸载</translation>
     </message>
     <message>
-        <location filename="../qml/setup/SetupWindow.qml" line="411"/>
+        <location filename="../qml/setup/SetupWindow.qml" line="469"/>
         <source>NectarLink is ready</source>
         <translation>NectarLink 已就绪</translation>
     </message>
     <message>
-        <location filename="../qml/setup/SetupWindow.qml" line="423"/>
+        <location filename="../qml/setup/SetupWindow.qml" line="481"/>
         <source>Your received files are still in %1. Thanks for giving it a try.</source>
         <translation>你收到的文件仍保留在 %1。谢谢你的试用。</translation>
     </message>
     <message>
-        <location filename="../qml/setup/SetupWindow.qml" line="424"/>
+        <location filename="../qml/setup/SetupWindow.qml" line="482"/>
         <source>Next, get the Android app. Scan this code with your phone&apos;s camera to open its download page.</source>
         <translation>接下来，获取 Android 应用。用手机相机扫描此二维码即可打开其下载页面。</translation>
     </message>
     <message>
-        <location filename="../qml/setup/SetupWindow.qml" line="445"/>
+        <location filename="../qml/setup/SetupWindow.qml" line="503"/>
         <source>QR code for the Android app download page</source>
         <translation>Android 应用下载页面的二维码</translation>
     </message>
     <message>
-        <location filename="../qml/setup/SetupWindow.qml" line="458"/>
+        <location filename="../qml/setup/SetupWindow.qml" line="516"/>
         <source>Open the Android app download page</source>
         <translation>打开 Android 应用下载页面</translation>
     </message>
     <message>
-        <location filename="../qml/setup/SetupWindow.qml" line="473"/>
+        <location filename="../qml/setup/SetupWindow.qml" line="531"/>
         <source>Open NectarLink</source>
         <translation>打开 NectarLink</translation>
     </message>
     <message>
-        <location filename="../qml/setup/SetupWindow.qml" line="533"/>
-        <source>NectarLink goes into Program Files for everyone on this PC. Setup also:</source>
-        <translation>NectarLink 将安装到 Program Files，供本机所有用户使用。安装程序还会：</translation>
+        <location filename="../qml/setup/SetupWindow.qml" line="591"/>
+        <source>NectarLink goes into Program Files, or the folder you choose, for everyone on this PC. Setup also:</source>
+        <translation>NectarLink 将安装到 Program Files 或你选择的文件夹，供本机所有用户使用。安装程序还会：</translation>
     </message>
     <message>
-        <location filename="../qml/setup/SetupWindow.qml" line="534"/>
+        <location filename="../qml/setup/SetupWindow.qml" line="593"/>
+        <source>adds a task that installs updates without an administrator prompt, where only administrators can change the folder</source>
+        <translation>在只有管理员能更改该文件夹时，添加一个无需管理员提示即可安装更新的任务</translation>
+    </message>
+    <message>
+        <source>NectarLink goes into Program Files for everyone on this PC. Setup also:</source>
+        <translation type="vanished">NectarLink 将安装到 Program Files，供本机所有用户使用。安装程序还会：</translation>
+    </message>
+    <message>
+        <location filename="../qml/setup/SetupWindow.qml" line="592"/>
         <source>allows it through Windows Firewall on private networks, so your phone can connect</source>
         <translation>在专用网络上允许其通过 Windows 防火墙，以便你的手机可以连接</translation>
     </message>
     <message>
-        <location filename="../qml/setup/SetupWindow.qml" line="535"/>
         <source>adds a task that installs updates without an administrator prompt</source>
-        <translation>添加一个无需管理员提示即可安装更新的任务</translation>
+        <translation type="vanished">添加一个无需管理员提示即可安装更新的任务</translation>
     </message>
     <message>
-        <location filename="../qml/setup/SetupWindow.qml" line="536"/>
+        <location filename="../qml/setup/SetupWindow.qml" line="594"/>
         <source>adds a Start menu shortcut, and a desktop one if you leave that ticked, and starts it with Windows (turn this off in Settings)</source>
         <translation>添加开始菜单快捷方式（勾选时也添加桌面快捷方式），并随 Windows 启动（可在设置中关闭）</translation>
     </message>
@@ -8290,17 +8358,17 @@ What it needs
         <translation type="vanished">添加开始菜单和桌面快捷方式，并随 Windows 启动（可在设置中关闭）</translation>
     </message>
     <message>
-        <location filename="../qml/setup/SetupWindow.qml" line="537"/>
+        <location filename="../qml/setup/SetupWindow.qml" line="595"/>
         <source>adds it to the Windows Share sheet</source>
         <translation>将其添加到 Windows 共享面板</translation>
     </message>
     <message>
-        <location filename="../qml/setup/SetupWindow.qml" line="538"/>
+        <location filename="../qml/setup/SetupWindow.qml" line="596"/>
         <source>It checks GitHub for updates once a day, which you can turn off in Settings. Otherwise your phone and PC only talk to each other.</source>
         <translation>它每天会检查一次 GitHub 上的更新，你可以在设置中关闭。除此之外，你的手机和电脑只会在彼此之间通信。</translation>
     </message>
     <message>
-        <location filename="../qml/setup/SetupWindow.qml" line="545"/>
+        <location filename="../qml/setup/SetupWindow.qml" line="603"/>
         <source>Privacy details</source>
         <translation>隐私详情</translation>
     </message>
@@ -8503,17 +8571,17 @@ What it needs
 <context>
     <name>Storage</name>
     <message>
-        <location filename="rust_strings.h" line="448"/>
+        <location filename="rust_strings.h" line="456"/>
         <source>%1&apos;s files aren&apos;t shared with this PC</source>
         <translation>%1 的文件未与此电脑共享</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="449"/>
+        <location filename="rust_strings.h" line="457"/>
         <source>On the phone, allow All files access for NectarLink.</source>
         <translation>请在手机上为 NectarLink 开启“所有文件访问权限”。</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="450"/>
+        <location filename="rust_strings.h" line="458"/>
         <source>On the phone, turn on Browse this phone&apos;s storage in File Explorer in NectarLink.</source>
         <translation>请在手机的 NectarLink 中打开“在文件资源管理器中浏览此手机的存储”。</translation>
     </message>
@@ -8521,147 +8589,147 @@ What it needs
 <context>
     <name>Timeline</name>
     <message>
-        <location filename="rust_strings.h" line="451"/>
+        <location filename="rust_strings.h" line="459"/>
         <source>App window #%1</source>
         <translation>应用窗口 #%1</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="452"/>
+        <location filename="rust_strings.h" line="460"/>
         <source>Clip (removed from clipboard history)</source>
         <translation>剪贴内容（已从剪贴板历史中删除）</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="453"/>
+        <location filename="rust_strings.h" line="461"/>
         <source>Copied image</source>
         <translation>已复制的图片</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="454"/>
+        <location filename="rust_strings.h" line="462"/>
         <source>Copied link to clipboard.</source>
         <translation>已将链接复制到剪贴板。</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="455"/>
+        <location filename="rust_strings.h" line="463"/>
         <source>Copied to clipboard.</source>
         <translation>已复制到剪贴板。</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="456"/>
+        <location filename="rust_strings.h" line="464"/>
         <source>From %1</source>
         <translation>来自 %1</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="457"/>
+        <location filename="rust_strings.h" line="465"/>
         <source>In progress</source>
         <translation>进行中</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="458"/>
+        <location filename="rust_strings.h" line="466"/>
         <source>No phone is paired yet.</source>
         <translation>尚未配对手机。</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="459"/>
+        <location filename="rust_strings.h" line="467"/>
         <source>Opened from %1</source>
         <translation>从 %1 打开</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="460"/>
+        <location filename="rust_strings.h" line="468"/>
         <source>Opened on %1</source>
         <translation>在 %1 上打开</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="461"/>
+        <location filename="rust_strings.h" line="469"/>
         <source>Phone microphone</source>
         <translation>手机麦克风</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="462"/>
+        <location filename="rust_strings.h" line="470"/>
         <source>Phone webcam</source>
         <translation>手机摄像头</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="463"/>
+        <location filename="rust_strings.h" line="471"/>
         <source>Recorded on %1</source>
         <translation>在 %1 上录制</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="464"/>
+        <location filename="rust_strings.h" line="472"/>
         <source>Saved from %1</source>
         <translation>从 %1 保存</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="465"/>
+        <location filename="rust_strings.h" line="473"/>
         <source>Screen mirroring</source>
         <translation>屏幕镜像</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="466"/>
+        <location filename="rust_strings.h" line="474"/>
         <source>Sending to %1…</source>
         <translation>正在发送到 %1…</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="467"/>
+        <location filename="rust_strings.h" line="475"/>
         <source>Sent clip to %1.</source>
         <translation>已将剪贴内容发送到 %1。</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="468"/>
+        <location filename="rust_strings.h" line="476"/>
         <source>Sent to %1</source>
         <translation>已发送到 %1</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="469"/>
+        <location filename="rust_strings.h" line="477"/>
         <source>Session</source>
         <translation>会话</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="470"/>
+        <location filename="rust_strings.h" line="478"/>
         <source>That clip is no longer in clipboard history.</source>
         <translation>该剪贴内容已不在剪贴板历史中。</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="471"/>
+        <location filename="rust_strings.h" line="479"/>
         <source>That entry couldn&apos;t be removed. Try again.</source>
         <translation>无法删除该条目，请重试。</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="472"/>
+        <location filename="rust_strings.h" line="480"/>
         <source>That file was moved or deleted.</source>
         <translation>该文件已被移动或删除。</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="473"/>
+        <location filename="rust_strings.h" line="481"/>
         <source>That isn&apos;t a web link.</source>
         <translation>这不是网页链接。</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="474"/>
+        <location filename="rust_strings.h" line="482"/>
         <source>That photo was moved or deleted.</source>
         <translation>该照片已被移动或删除。</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="475"/>
+        <location filename="rust_strings.h" line="483"/>
         <source>The Timeline couldn&apos;t be cleared. Try again.</source>
         <translation>无法清除时间线，请重试。</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="476"/>
+        <location filename="rust_strings.h" line="484"/>
         <source>The photo couldn&apos;t be copied to the clipboard.</source>
         <translation>无法将照片复制到剪贴板。</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="477"/>
+        <location filename="rust_strings.h" line="485"/>
         <source>Voice recording</source>
         <translation>录音</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="478"/>
+        <location filename="rust_strings.h" line="486"/>
         <source>With %1</source>
         <translation>与 %1</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="479"/>
+        <location filename="rust_strings.h" line="487"/>
         <source>device</source>
         <translation>设备</translation>
     </message>
@@ -8982,37 +9050,37 @@ What it needs
 <context>
     <name>Transfers</name>
     <message>
-        <location filename="rust_strings.h" line="480"/>
+        <location filename="rust_strings.h" line="488"/>
         <source>Accept in NectarLink to save to Downloads\Nectarlink</source>
         <translation>在 NectarLink 中接受即可保存到 Downloads\Nectarlink</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="481"/>
+        <location filename="rust_strings.h" line="489"/>
         <source>Files are turned off for that device.</source>
         <translation>已为该设备关闭文件。</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="482"/>
+        <location filename="rust_strings.h" line="490"/>
         <source>From %1, opened from Downloads\Nectarlink</source>
         <translation>来自 %1，已从 Downloads\Nectarlink 打开</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="483"/>
+        <location filename="rust_strings.h" line="491"/>
         <source>From %1, saved in Downloads\Nectarlink</source>
         <translation>来自 %1，已保存到 Downloads\Nectarlink</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="484"/>
+        <location filename="rust_strings.h" line="492"/>
         <source>Nearby device</source>
         <translation>附近的设备</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="485"/>
+        <location filename="rust_strings.h" line="493"/>
         <source>That&apos;s too many files to send at once.</source>
         <translation>文件太多，无法一次发送。</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="486"/>
+        <location filename="rust_strings.h" line="494"/>
         <source>There&apos;s nothing to send in there.</source>
         <translation>那里没有可发送的内容。</translation>
     </message>
@@ -9020,72 +9088,72 @@ What it needs
 <context>
     <name>Updater</name>
     <message>
-        <location filename="rust_strings.h" line="487"/>
+        <location filename="rust_strings.h" line="495"/>
         <source>Couldn&apos;t check for updates. Check your internet connection.</source>
         <translation>无法检查更新。请检查网络连接。</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="488"/>
+        <location filename="rust_strings.h" line="496"/>
         <source>NectarLink %1 is available</source>
         <translation>NectarLink %1 已发布</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="489"/>
+        <location filename="rust_strings.h" line="497"/>
         <source>NectarLink %1 is available.</source>
         <translation>NectarLink %1 已发布。</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="490"/>
+        <location filename="rust_strings.h" line="498"/>
         <source>NectarLink is still on the version you had. Try again from Settings.</source>
         <translation>NectarLink 仍是原来的版本。请在设置中重试。</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="491"/>
+        <location filename="rust_strings.h" line="499"/>
         <source>NectarLink is up to date.</source>
         <translation>NectarLink 已是最新版本。</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="492"/>
+        <location filename="rust_strings.h" line="500"/>
         <source>NectarLink is updated to %1</source>
         <translation>NectarLink 已更新到 %1</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="493"/>
+        <location filename="rust_strings.h" line="501"/>
         <source>The download was damaged, so it wasn&apos;t installed. Try again.</source>
         <translation>下载的文件已损坏，因此未安装。请重试。</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="494"/>
+        <location filename="rust_strings.h" line="502"/>
         <source>The update couldn&apos;t be downloaded. Check your internet connection and try again.</source>
         <translation>无法下载更新。请检查网络连接后重试。</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="495"/>
+        <location filename="rust_strings.h" line="503"/>
         <source>The update couldn&apos;t be saved. Check that there&apos;s free space and try again.</source>
         <translation>无法保存更新。请确认有足够的空间后重试。</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="496"/>
+        <location filename="rust_strings.h" line="504"/>
         <source>The update couldn&apos;t be started. Try again.</source>
         <translation>无法启动更新。请重试。</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="497"/>
+        <location filename="rust_strings.h" line="505"/>
         <source>The update didn&apos;t install</source>
         <translation>更新未安装</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="498"/>
+        <location filename="rust_strings.h" line="506"/>
         <source>The update is installed. Restart NectarLink to use it.</source>
         <translation>更新已安装。请重新启动 NectarLink 以使用新版本。</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="499"/>
+        <location filename="rust_strings.h" line="507"/>
         <source>Update now, or later from Settings.</source>
         <translation>立即更新，或稍后在设置中更新。</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="500"/>
+        <location filename="rust_strings.h" line="508"/>
         <source>Your phone reconnects on its own.</source>
         <translation>手机会自动重新连接。</translation>
     </message>
@@ -9296,12 +9364,12 @@ What it needs
 <context>
     <name>Webcam</name>
     <message>
-        <location filename="rust_strings.h" line="501"/>
+        <location filename="rust_strings.h" line="509"/>
         <source>Starting camera on %1…</source>
         <translation>正在启动 %1 上的相机…</translation>
     </message>
     <message>
-        <location filename="rust_strings.h" line="502"/>
+        <location filename="rust_strings.h" line="510"/>
         <source>Streaming %1 × %2 · %3 fps from %4</source>
         <translation>正在从 %4 传输 %1 × %2 · %3 fps</translation>
     </message>

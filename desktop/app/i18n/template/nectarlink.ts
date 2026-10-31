@@ -7796,223 +7796,283 @@ What it needs
     <name>Setup</name>
     <message>
         <location filename="../rust_strings.h" line="442"/>
-        <source>Couldn&apos;t start setup: %1</source>
+        <source>Choose a folder on a drive inside this PC, not a USB or network drive.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../rust_strings.h" line="443"/>
-        <source>Couldn&apos;t uninstall NectarLink: %1</source>
+        <source>Choose a folder on one of this PC&apos;s drives.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../rust_strings.h" line="444"/>
-        <source>Setup is taking too long. Try again after restarting the PC.</source>
+        <source>Couldn&apos;t start setup: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../rust_strings.h" line="445"/>
-        <source>Setup stopped with code %1.</source>
+        <source>Couldn&apos;t uninstall NectarLink: %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../rust_strings.h" line="446"/>
-        <source>The uninstaller is missing. Reinstall NectarLink, then uninstall it.</source>
+        <source>Setup can&apos;t use that folder. Choose another one.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../rust_strings.h" line="447"/>
+        <source>Setup is taking too long. Try again after restarting the PC.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="448"/>
+        <source>Setup stopped with code %1.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="449"/>
+        <source>That drive can&apos;t keep the app&apos;s files safe (it isn&apos;t NTFS). Choose another drive.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="450"/>
+        <source>That folder&apos;s path is too long. Choose one closer to the top of a drive.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="451"/>
+        <source>The uninstaller is missing. Reinstall NectarLink, then uninstall it.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="452"/>
+        <source>There&apos;s a file named %1 there. Choose another place.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="453"/>
+        <source>There&apos;s already a %1 folder there with files in it. Choose another place.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="454"/>
         <source>Uninstall stopped with code %1.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../rust_strings.h" line="455"/>
+        <source>Updates here will ask for your permission each time.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
     <name>SetupWindow</name>
     <message>
-        <location filename="../../qml/setup/SetupWindow.qml" line="50"/>
+        <location filename="../../qml/setup/SetupWindow.qml" line="51"/>
         <source>Uninstall NectarLink</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/setup/SetupWindow.qml" line="50"/>
+        <location filename="../../qml/setup/SetupWindow.qml" line="51"/>
         <source>NectarLink Setup</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/setup/SetupWindow.qml" line="113"/>
-        <location filename="../../qml/setup/SetupWindow.qml" line="291"/>
-        <location filename="../../qml/setup/SetupWindow.qml" line="473"/>
-        <location filename="../../qml/setup/SetupWindow.qml" line="482"/>
+        <location filename="../../qml/setup/SetupWindow.qml" line="67"/>
+        <source>Install NectarLink in</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../qml/setup/SetupWindow.qml" line="120"/>
+        <location filename="../../qml/setup/SetupWindow.qml" line="298"/>
+        <location filename="../../qml/setup/SetupWindow.qml" line="531"/>
+        <location filename="../../qml/setup/SetupWindow.qml" line="540"/>
         <source>Close</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/setup/SetupWindow.qml" line="180"/>
+        <location filename="../../qml/setup/SetupWindow.qml" line="187"/>
         <source>NectarLink</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/setup/SetupWindow.qml" line="209"/>
+        <location filename="../../qml/setup/SetupWindow.qml" line="216"/>
         <source>Couldn&apos;t uninstall NectarLink</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/setup/SetupWindow.qml" line="209"/>
+        <location filename="../../qml/setup/SetupWindow.qml" line="216"/>
         <source>Setup couldn&apos;t finish</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/setup/SetupWindow.qml" line="211"/>
+        <location filename="../../qml/setup/SetupWindow.qml" line="218"/>
         <source>Uninstalling NectarLink</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/setup/SetupWindow.qml" line="212"/>
+        <location filename="../../qml/setup/SetupWindow.qml" line="219"/>
         <source>Updating NectarLink</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/setup/SetupWindow.qml" line="213"/>
+        <location filename="../../qml/setup/SetupWindow.qml" line="220"/>
         <source>Installing NectarLink</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/setup/SetupWindow.qml" line="214"/>
+        <location filename="../../qml/setup/SetupWindow.qml" line="221"/>
         <source>Uninstall NectarLink?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/setup/SetupWindow.qml" line="229"/>
+        <location filename="../../qml/setup/SetupWindow.qml" line="236"/>
         <source>Sorry to see you go. This uninstalls NectarLink and deletes its settings and pairings on this PC. Files you received stay in %1.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/setup/SetupWindow.qml" line="231"/>
+        <location filename="../../qml/setup/SetupWindow.qml" line="238"/>
         <source>Update from %1 to %2. Your settings and pairings stay as they are.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/setup/SetupWindow.qml" line="233"/>
+        <location filename="../../qml/setup/SetupWindow.qml" line="240"/>
         <source>Version %1 is already installed. Install it again to repair it.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/setup/SetupWindow.qml" line="235"/>
+        <location filename="../../qml/setup/SetupWindow.qml" line="242"/>
         <source>This PC has a newer version (%1). Installing %2 replaces it.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/setup/SetupWindow.qml" line="236"/>
+        <location filename="../../qml/setup/SetupWindow.qml" line="243"/>
         <source>Your Android phone and your PC, working as one.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/setup/SetupWindow.qml" line="278"/>
+        <location filename="../../qml/setup/SetupWindow.qml" line="285"/>
         <source>Try again</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/setup/SetupWindow.qml" line="279"/>
+        <location filename="../../qml/setup/SetupWindow.qml" line="286"/>
         <source>Uninstall</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/setup/SetupWindow.qml" line="280"/>
+        <location filename="../../qml/setup/SetupWindow.qml" line="287"/>
         <source>Update</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/setup/SetupWindow.qml" line="281"/>
+        <location filename="../../qml/setup/SetupWindow.qml" line="288"/>
         <source>Reinstall</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/setup/SetupWindow.qml" line="282"/>
+        <location filename="../../qml/setup/SetupWindow.qml" line="289"/>
         <source>Install</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/setup/SetupWindow.qml" line="291"/>
+        <location filename="../../qml/setup/SetupWindow.qml" line="298"/>
         <source>Keep NectarLink</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/setup/SetupWindow.qml" line="349"/>
+        <location filename="../../qml/setup/SetupWindow.qml" line="356"/>
         <source>Add a desktop shortcut</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/setup/SetupWindow.qml" line="378"/>
-        <location filename="../../qml/setup/SetupWindow.qml" line="523"/>
+        <location filename="../../qml/setup/SetupWindow.qml" line="389"/>
+        <source>Installs in %1</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../qml/setup/SetupWindow.qml" line="398"/>
+        <source>Change</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../qml/setup/SetupWindow.qml" line="401"/>
+        <source>Change the install folder</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../qml/setup/SetupWindow.qml" line="436"/>
+        <location filename="../../qml/setup/SetupWindow.qml" line="581"/>
         <source>What this installs</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/setup/SetupWindow.qml" line="411"/>
+        <location filename="../../qml/setup/SetupWindow.qml" line="469"/>
         <source>NectarLink is uninstalled</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/setup/SetupWindow.qml" line="411"/>
+        <location filename="../../qml/setup/SetupWindow.qml" line="469"/>
         <source>NectarLink is ready</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/setup/SetupWindow.qml" line="423"/>
+        <location filename="../../qml/setup/SetupWindow.qml" line="481"/>
         <source>Your received files are still in %1. Thanks for giving it a try.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/setup/SetupWindow.qml" line="424"/>
+        <location filename="../../qml/setup/SetupWindow.qml" line="482"/>
         <source>Next, get the Android app. Scan this code with your phone&apos;s camera to open its download page.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/setup/SetupWindow.qml" line="445"/>
+        <location filename="../../qml/setup/SetupWindow.qml" line="503"/>
         <source>QR code for the Android app download page</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/setup/SetupWindow.qml" line="458"/>
+        <location filename="../../qml/setup/SetupWindow.qml" line="516"/>
         <source>Open the Android app download page</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/setup/SetupWindow.qml" line="473"/>
+        <location filename="../../qml/setup/SetupWindow.qml" line="531"/>
         <source>Open NectarLink</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/setup/SetupWindow.qml" line="533"/>
-        <source>NectarLink goes into Program Files for everyone on this PC. Setup also:</source>
+        <location filename="../../qml/setup/SetupWindow.qml" line="591"/>
+        <source>NectarLink goes into Program Files, or the folder you choose, for everyone on this PC. Setup also:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/setup/SetupWindow.qml" line="534"/>
+        <location filename="../../qml/setup/SetupWindow.qml" line="593"/>
+        <source>adds a task that installs updates without an administrator prompt, where only administrators can change the folder</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../../qml/setup/SetupWindow.qml" line="592"/>
         <source>allows it through Windows Firewall on private networks, so your phone can connect</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/setup/SetupWindow.qml" line="535"/>
-        <source>adds a task that installs updates without an administrator prompt</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../../qml/setup/SetupWindow.qml" line="536"/>
+        <location filename="../../qml/setup/SetupWindow.qml" line="594"/>
         <source>adds a Start menu shortcut, and a desktop one if you leave that ticked, and starts it with Windows (turn this off in Settings)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/setup/SetupWindow.qml" line="537"/>
+        <location filename="../../qml/setup/SetupWindow.qml" line="595"/>
         <source>adds it to the Windows Share sheet</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/setup/SetupWindow.qml" line="538"/>
+        <location filename="../../qml/setup/SetupWindow.qml" line="596"/>
         <source>It checks GitHub for updates once a day, which you can turn off in Settings. Otherwise your phone and PC only talk to each other.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../../qml/setup/SetupWindow.qml" line="545"/>
+        <location filename="../../qml/setup/SetupWindow.qml" line="603"/>
         <source>Privacy details</source>
         <translation type="unfinished"></translation>
     </message>
@@ -8211,17 +8271,17 @@ What it needs
 <context>
     <name>Storage</name>
     <message>
-        <location filename="../rust_strings.h" line="448"/>
+        <location filename="../rust_strings.h" line="456"/>
         <source>%1&apos;s files aren&apos;t shared with this PC</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="449"/>
+        <location filename="../rust_strings.h" line="457"/>
         <source>On the phone, allow All files access for NectarLink.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="450"/>
+        <location filename="../rust_strings.h" line="458"/>
         <source>On the phone, turn on Browse this phone&apos;s storage in File Explorer in NectarLink.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -8229,147 +8289,147 @@ What it needs
 <context>
     <name>Timeline</name>
     <message>
-        <location filename="../rust_strings.h" line="451"/>
+        <location filename="../rust_strings.h" line="459"/>
         <source>App window #%1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="452"/>
+        <location filename="../rust_strings.h" line="460"/>
         <source>Clip (removed from clipboard history)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="453"/>
+        <location filename="../rust_strings.h" line="461"/>
         <source>Copied image</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="454"/>
+        <location filename="../rust_strings.h" line="462"/>
         <source>Copied link to clipboard.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="455"/>
+        <location filename="../rust_strings.h" line="463"/>
         <source>Copied to clipboard.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="456"/>
+        <location filename="../rust_strings.h" line="464"/>
         <source>From %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="457"/>
+        <location filename="../rust_strings.h" line="465"/>
         <source>In progress</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="458"/>
+        <location filename="../rust_strings.h" line="466"/>
         <source>No phone is paired yet.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="459"/>
+        <location filename="../rust_strings.h" line="467"/>
         <source>Opened from %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="460"/>
+        <location filename="../rust_strings.h" line="468"/>
         <source>Opened on %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="461"/>
+        <location filename="../rust_strings.h" line="469"/>
         <source>Phone microphone</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="462"/>
+        <location filename="../rust_strings.h" line="470"/>
         <source>Phone webcam</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="463"/>
+        <location filename="../rust_strings.h" line="471"/>
         <source>Recorded on %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="464"/>
+        <location filename="../rust_strings.h" line="472"/>
         <source>Saved from %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="465"/>
+        <location filename="../rust_strings.h" line="473"/>
         <source>Screen mirroring</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="466"/>
+        <location filename="../rust_strings.h" line="474"/>
         <source>Sending to %1…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="467"/>
+        <location filename="../rust_strings.h" line="475"/>
         <source>Sent clip to %1.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="468"/>
+        <location filename="../rust_strings.h" line="476"/>
         <source>Sent to %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="469"/>
+        <location filename="../rust_strings.h" line="477"/>
         <source>Session</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="470"/>
+        <location filename="../rust_strings.h" line="478"/>
         <source>That clip is no longer in clipboard history.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="471"/>
+        <location filename="../rust_strings.h" line="479"/>
         <source>That entry couldn&apos;t be removed. Try again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="472"/>
+        <location filename="../rust_strings.h" line="480"/>
         <source>That file was moved or deleted.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="473"/>
+        <location filename="../rust_strings.h" line="481"/>
         <source>That isn&apos;t a web link.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="474"/>
+        <location filename="../rust_strings.h" line="482"/>
         <source>That photo was moved or deleted.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="475"/>
+        <location filename="../rust_strings.h" line="483"/>
         <source>The Timeline couldn&apos;t be cleared. Try again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="476"/>
+        <location filename="../rust_strings.h" line="484"/>
         <source>The photo couldn&apos;t be copied to the clipboard.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="477"/>
+        <location filename="../rust_strings.h" line="485"/>
         <source>Voice recording</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="478"/>
+        <location filename="../rust_strings.h" line="486"/>
         <source>With %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="479"/>
+        <location filename="../rust_strings.h" line="487"/>
         <source>device</source>
         <translation type="unfinished"></translation>
     </message>
@@ -8690,37 +8750,37 @@ What it needs
 <context>
     <name>Transfers</name>
     <message>
-        <location filename="../rust_strings.h" line="480"/>
+        <location filename="../rust_strings.h" line="488"/>
         <source>Accept in NectarLink to save to Downloads\Nectarlink</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="481"/>
+        <location filename="../rust_strings.h" line="489"/>
         <source>Files are turned off for that device.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="482"/>
+        <location filename="../rust_strings.h" line="490"/>
         <source>From %1, opened from Downloads\Nectarlink</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="483"/>
+        <location filename="../rust_strings.h" line="491"/>
         <source>From %1, saved in Downloads\Nectarlink</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="484"/>
+        <location filename="../rust_strings.h" line="492"/>
         <source>Nearby device</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="485"/>
+        <location filename="../rust_strings.h" line="493"/>
         <source>That&apos;s too many files to send at once.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="486"/>
+        <location filename="../rust_strings.h" line="494"/>
         <source>There&apos;s nothing to send in there.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -8728,72 +8788,72 @@ What it needs
 <context>
     <name>Updater</name>
     <message>
-        <location filename="../rust_strings.h" line="487"/>
+        <location filename="../rust_strings.h" line="495"/>
         <source>Couldn&apos;t check for updates. Check your internet connection.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="488"/>
+        <location filename="../rust_strings.h" line="496"/>
         <source>NectarLink %1 is available</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="489"/>
+        <location filename="../rust_strings.h" line="497"/>
         <source>NectarLink %1 is available.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="490"/>
+        <location filename="../rust_strings.h" line="498"/>
         <source>NectarLink is still on the version you had. Try again from Settings.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="491"/>
+        <location filename="../rust_strings.h" line="499"/>
         <source>NectarLink is up to date.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="492"/>
+        <location filename="../rust_strings.h" line="500"/>
         <source>NectarLink is updated to %1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="493"/>
+        <location filename="../rust_strings.h" line="501"/>
         <source>The download was damaged, so it wasn&apos;t installed. Try again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="494"/>
+        <location filename="../rust_strings.h" line="502"/>
         <source>The update couldn&apos;t be downloaded. Check your internet connection and try again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="495"/>
+        <location filename="../rust_strings.h" line="503"/>
         <source>The update couldn&apos;t be saved. Check that there&apos;s free space and try again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="496"/>
+        <location filename="../rust_strings.h" line="504"/>
         <source>The update couldn&apos;t be started. Try again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="497"/>
+        <location filename="../rust_strings.h" line="505"/>
         <source>The update didn&apos;t install</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="498"/>
+        <location filename="../rust_strings.h" line="506"/>
         <source>The update is installed. Restart NectarLink to use it.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="499"/>
+        <location filename="../rust_strings.h" line="507"/>
         <source>Update now, or later from Settings.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="500"/>
+        <location filename="../rust_strings.h" line="508"/>
         <source>Your phone reconnects on its own.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -9004,12 +9064,12 @@ What it needs
 <context>
     <name>Webcam</name>
     <message>
-        <location filename="../rust_strings.h" line="501"/>
+        <location filename="../rust_strings.h" line="509"/>
         <source>Starting camera on %1…</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../rust_strings.h" line="502"/>
+        <location filename="../rust_strings.h" line="510"/>
         <source>Streaming %1 × %2 · %3 fps from %4</source>
         <translation type="unfinished"></translation>
     </message>
