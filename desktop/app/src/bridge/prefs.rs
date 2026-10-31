@@ -205,6 +205,10 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "suggestedSyncFolder"]
         fn suggested_sync_folder(self: &Preferences, phone_folder: &QString) -> QString;
+        /// The local path of a folder the picker chose (a `file:` URL), or empty.
+        #[qinvokable]
+        #[cxx_name = "localFolder"]
+        fn local_folder(self: &Preferences, url: &QString) -> QString;
         /// Removes a folder sync rule by ID.
         #[qinvokable]
         fn remove_folder_sync_rule(self: Pin<&mut Preferences>, rule_id: &QString);
@@ -870,16 +874,9 @@ impl qobject::Preferences {
     }
 
     pub fn choose_recordings_folder(mut self: Pin<&mut Self>, url: &QString) {
-        let raw = QUrl::from(url)
-            .to_local_file()
-            .map(|p| String::from(&p))
-            .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| String::from(url));
-        let trimmed = raw.trim();
-        if trimmed.is_empty() {
+        let Some(path) = folder_from_url(url) else {
             return;
-        }
-        let path = PathBuf::from(trimmed);
+        };
         self.as_mut().rust_mut().custom_recordings_folder = Some(path.clone());
         self.as_mut().set_recordings_folder(QString::from(&path.to_string_lossy().into_owned()));
         self.as_mut().set_recordings_folder_is_default(false);
@@ -942,6 +939,10 @@ impl qobject::Preferences {
     pub fn suggested_sync_folder(&self, phone_folder: &QString) -> QString {
         let path = crate::folder_sync::suggested_pc_folder(&String::from(phone_folder));
         QString::from(&path.map(|p| p.to_string_lossy().into_owned()).unwrap_or_default())
+    }
+
+    pub fn local_folder(&self, url: &QString) -> QString {
+        QString::from(&folder_from_url(url).map(|p| p.to_string_lossy().into_owned()).unwrap_or_default())
     }
 
     pub fn remove_folder_sync_rule(mut self: Pin<&mut Self>, rule_id: &QString) {
@@ -1152,9 +1153,37 @@ fn new_rule_id<'a>(prefix: &str, taken: impl Iterator<Item = &'a str>) -> String
     }
 }
 
+/// The folder a picker's `file:` URL (or a plain path) names, with this
+/// system's separators: Qt gives `C:/x`, and a network share keeps its `//`.
+fn folder_from_url(url: &QString) -> Option<PathBuf> {
+    let raw = QUrl::from(url)
+        .to_local_file()
+        .map(|p| String::from(&p))
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| String::from(url));
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    #[cfg(windows)]
+    let trimmed = trimmed.replace('/', "\\");
+    Some(PathBuf::from(trimmed))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::new_rule_id;
+    use super::{folder_from_url, new_rule_id};
+    use cxx_qt_lib::QString;
+
+    #[cfg(windows)]
+    #[test]
+    fn a_chosen_folder_reads_as_a_windows_path() {
+        let path = |url: &str| folder_from_url(&QString::from(url)).map(|p| p.to_string_lossy().into_owned());
+        assert_eq!(path("file:///C:/Users/me/Phone%20sync").as_deref(), Some(r"C:\Users\me\Phone sync"));
+        assert_eq!(path("file://server/share/photos").as_deref(), Some(r"\\server\share\photos"));
+        assert_eq!(path("D:/plain").as_deref(), Some(r"D:\plain"));
+        assert_eq!(path("  "), None);
+    }
 
     #[test]
     fn a_new_rule_never_gets_an_id_in_use() {

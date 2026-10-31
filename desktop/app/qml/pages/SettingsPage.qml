@@ -260,8 +260,7 @@ Item {
     FolderDialog {
         id: folderSyncPcPicker
         title: qsTr("Sync into")
-        // file:///C:/x becomes C:/x on Windows, file:///home/x /home/x on Linux.
-        onAccepted: folderSyncSheet.pcFolder = decodeURIComponent(selectedFolder.toString().replace(/^file:\/\/(\/(?=[A-Za-z]:))?/, ""))
+        onAccepted: folderSyncSheet.pcFolder = Preferences.localFolder(selectedFolder.toString())
     }
 
     FolderDialog {
@@ -3453,7 +3452,7 @@ Item {
                 wrapMode: Text.WordWrap
                 role: "body"
                 muted: true
-                text: qsTr("The phone needs to let NectarLink read this folder: All files access, or this folder under Selected folders, in NectarLink's settings on the phone.")
+                text: qsTr("The phone asks once to let this PC in. NectarLink there also needs All files access, or this folder under Selected folders only.")
             }
 
             Txt { text: qsTr("Folder on the phone"); role: "label" }

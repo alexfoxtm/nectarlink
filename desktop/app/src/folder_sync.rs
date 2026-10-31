@@ -309,7 +309,11 @@ fn storable_here(name: &str) -> bool {
     !cfg!(windows) || nectarlink_core::storable_name(name) == name
 }
 
-async fn list_phone_entries(node: &Node, peer: DeviceId, base_folder: &str) -> Option<Vec<SyncEntry>> {
+async fn list_phone_entries(
+    node: &Node,
+    peer: DeviceId,
+    base_folder: &str,
+) -> nectarlink_core::Result<Vec<SyncEntry>> {
     let mut out = Vec::new();
     let mut queue = std::collections::VecDeque::new();
     queue.push_back((String::new(), 0usize));
@@ -318,7 +322,7 @@ async fn list_phone_entries(node: &Node, peer: DeviceId, base_folder: &str) -> O
         let remote_dir = join_phone_path(base_folder, &rel_dir);
         let entries = match node.storage_list(peer, &remote_dir).await {
             Ok(list) => list,
-            Err(_) if rel_dir.is_empty() => return None,
+            Err(err) if rel_dir.is_empty() => return Err(err),
             Err(_) => continue,
         };
         for entry in entries {
@@ -342,7 +346,7 @@ async fn list_phone_entries(node: &Node, peer: DeviceId, base_folder: &str) -> O
     }
 
     out.sort_by(|a, b| a.rel_path.cmp(&b.rel_path));
-    Some(out)
+    Ok(out)
 }
 
 fn temp_part_path(dest: &Path) -> Option<PathBuf> {
@@ -515,15 +519,26 @@ async fn pull_phone_file_streaming(
     Some((meta.size, meta.modified))
 }
 
-/// Runs all enabled [`FolderSyncRule`]s once against `node`, returning the
-/// number of file operations performed.
-pub async fn sync_now(node: &Node) -> usize {
+/// What one [`sync_now`] pass did.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct SyncReport {
+    /// Files copied either way.
+    pub copied: usize,
+    /// Rules whose phone said no: its "browse this phone's storage" switch
+    /// for this PC is off.
+    pub refused: usize,
+    /// Rules whose phone folder couldn't be read for another reason.
+    pub unreadable: usize,
+}
+
+/// Runs all enabled [`FolderSyncRule`]s once against `node`.
+pub async fn sync_now(node: &Node) -> SyncReport {
+    let mut report = SyncReport::default();
     let rules = settings::folder_sync_rules();
     if rules.is_empty() {
-        return 0;
+        return report;
     }
     let pc_hostname = hostname::get().ok().and_then(|h| h.into_string().ok()).unwrap_or_else(|| "PC".into());
-    let mut executed = 0usize;
 
     for rule in rules.into_iter().filter(|r| r.enabled) {
         let Ok(peer) = rule.phone_id.parse::<DeviceId>() else {
@@ -533,9 +548,17 @@ pub async fn sync_now(node: &Node) -> usize {
         if std::fs::create_dir_all(&pc_dir).is_err() {
             continue;
         }
-        let Some(phone_files) = list_phone_entries(node, peer, rule.phone_folder.trim_matches('/')).await
-        else {
-            continue;
+        let phone_files = match list_phone_entries(node, peer, rule.phone_folder.trim_matches('/')).await {
+            Ok(files) => files,
+            Err(nectarlink_core::Error::Denied) => {
+                report.refused += 1;
+                continue;
+            }
+            Err(err) => {
+                tracing::debug!(rule = %rule.id, %err, "can't list the phone folder");
+                report.unreadable += 1;
+                continue;
+            }
         };
         let pc_files = tokio::task::spawn_blocking({
             let pc_dir = pc_dir.clone();
@@ -567,7 +590,7 @@ pub async fn sync_now(node: &Node) -> usize {
                     if let Some((size, modified)) = pull_phone_file_streaming(node, peer, remote, &dest).await
                     {
                         updated_baseline.insert(rel_path, (size, modified));
-                        executed += 1;
+                        report.copied += 1;
                     }
                 }
                 SyncAction::PushToPhone { rel_path } => {
@@ -579,7 +602,7 @@ pub async fn sync_now(node: &Node) -> usize {
                     let src = pc_dir.join(&rel_path);
                     if let Ok(done) = node.storage_write(peer, remote, &src).await {
                         updated_baseline.insert(rel_path, (done.size, done.modified));
-                        executed += 1;
+                        report.copied += 1;
                     }
                 }
                 SyncAction::ConflictRenamePcAndPull { rel_path, conflict_rel_path } => {
@@ -593,7 +616,7 @@ pub async fn sync_now(node: &Node) -> usize {
                     if let Some((size, modified)) = pull_phone_file_streaming(node, peer, remote, &src).await
                     {
                         updated_baseline.insert(rel_path, (size, modified));
-                        executed += 1;
+                        report.copied += 1;
                     }
                 }
             }
@@ -602,19 +625,25 @@ pub async fn sync_now(node: &Node) -> usize {
         baselines().lock().unwrap_or_else(|e| e.into_inner()).insert(rule.id, updated_baseline);
     }
 
-    executed
+    report
 }
 
 /// Triggers an immediate folder sync pass on the core runtime.
 pub fn trigger_sync_now() {
     core_host::spawn(async {
         if let Some(node) = core_host::node() {
-            let count = sync_now(&node).await;
-            if count > 0 {
-                crate::bridge::app::show_message(tr!("FolderSync", "Synced %1 file(s).", count));
+            let report = sync_now(&node).await;
+            // A refusal comes first: it's the one the user has to act on, on the phone.
+            let message = if report.refused > 0 {
+                tr!("FolderSync", "The phone hasn't let this PC into its files yet. Allow it on the phone.")
+            } else if report.copied > 0 {
+                tr!("FolderSync", "Synced %1 file(s).", report.copied)
+            } else if report.unreadable > 0 {
+                tr!("FolderSync", "Couldn't read the folder on the phone. Check that it's connected.")
             } else {
-                crate::bridge::app::show_message(tr!("FolderSync", "Folders are up to date."));
-            }
+                tr!("FolderSync", "Folders are up to date.")
+            };
+            crate::bridge::app::show_message(message);
         }
     });
 }
