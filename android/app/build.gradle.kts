@@ -207,6 +207,9 @@ dependencies {
     // Elevated: the phone's own wireless debugging (pairing and shell).
     implementation(libs.libadb.android)
     implementation(libs.conscrypt.android)
+    // Or through Shizuku, when the user picks it (#110).
+    implementation(libs.shizuku.api)
+    implementation(libs.shizuku.provider)
     // UniFFI's Kotlin bindings call the core through JNA.
     implementation(libs.jna) { artifact { type = "aar" } }
     testImplementation(libs.junit)

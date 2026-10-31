@@ -103,6 +103,14 @@
     <string name="elevated_root_hint">Dieses Gerät ist gerootet, daher kann der erweiterte Modus stattdessen über Root starten: ohne Kopplung, und er ist nach einem Neustart oder ohne WLAN von selbst wieder da. Er erhält dieselben Berechtigungen wie beim Kabellosen Debugging.</string>
     <string name="elevated_running_root">Ein (über Root): Maus und Tastatur deines PCs funktionieren wie ein echter Touchscreen und eine echte Tastatur.</string>
     <string name="elevated_root_failed">Root-Zugriff wurde nicht gewährt oder dein Root-Manager kann den NectarLink-Helfer nicht als Shell-Benutzer starten. Du kannst ihn stattdessen über Kabelloses Debugging einrichten.</string>
+    <string name="elevated_use_shizuku">Shizuku verwenden</string>
+    <string name="elevated_shizuku_hint">Shizuku ist installiert, daher kann der erweiterte Modus stattdessen darüber starten: ohne eigene Kopplung, und er funktioniert auch ohne WLAN, solange Shizuku läuft. Er erhält dieselben Berechtigungen wie beim Kabellosen Debugging.</string>
+    <string name="elevated_running_shizuku">An, über Shizuku: Maus und Tastatur deines PCs funktionieren wie ein echter Touchscreen und eine echte Tastatur.</string>
+    <string name="elevated_shizuku_waiting">Warte auf Shizuku. Starte es in der Shizuku-App und öffne dann NectarLink.</string>
+    <string name="elevated_shizuku_not_running">Shizuku läuft nicht. Starte es in der Shizuku-App und versuche es dann erneut.</string>
+    <string name="elevated_shizuku_denied">Shizuku hat NectarLink nicht zugelassen. Erlaube es in Shizuku (und aktualisiere Shizuku, falls es alt ist) und versuche es dann erneut.</string>
+    <string name="elevated_shizuku_root">Shizuku läuft mit Root, und der erweiterte Modus startet seinen Helfer nur als Shell-Benutzer. Starte Shizuku stattdessen über das Kabellose Debugging oder verwende Root.</string>
+    <string name="elevated_open_shizuku">Shizuku öffnen</string>
     <string name="elevated_turn_off">Ausschalten</string>
     <string name="elevated_try_again">Erneut versuchen</string>
     <string name="elevated_steps_title">Kabelloses Debugging einrichten</string>

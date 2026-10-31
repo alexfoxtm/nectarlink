@@ -69,13 +69,15 @@ object Elevated {
         data class Failed(val reason: Reason) : State
     }
 
-    enum class Reason { WrongCode, NoPairingDialog, NotPaired, RootDenied, Other }
+    enum class Reason { WrongCode, NoPairingDialog, NotPaired, RootDenied, ShizukuNotRunning, ShizukuDenied, ShizukuRoot, Other }
 
     private const val TAG = "Elevated"
     private const val PREFS = "elevated"
     private const val PAIRED = "paired"
     /** Set up through root (the user chose Use root) rather than Wireless debugging. */
     private const val ROOT = "root"
+    /** Set up through Shizuku (the user chose Use Shizuku), see [ShizukuElevated]. */
+    private const val SHIZUKU = "shizuku"
     /** The shell user, which the helper runs as however it's started. */
     private const val SHELL_UID = "2000"
     /** The version [compileIfUpdated] last asked Android to compile. */
@@ -102,6 +104,10 @@ object Elevated {
     @Volatile var rootActive: Boolean = false
         private set
 
+    /** True when the running helper was started through Shizuku. */
+    @Volatile var shizukuActive: Boolean = false
+        private set
+
     val running: Boolean get() = input != null
 
     private val rootAvailableCached: Boolean by lazy {
@@ -125,6 +131,12 @@ object Elevated {
 
     /** Whether the user set Elevated up through root. */
     private fun usesRoot() = isRootAvailable() && prefs().getBoolean(ROOT, false)
+
+    /** Whether the user set Elevated up through Shizuku. */
+    fun usesShizuku(): Boolean = prefs().getBoolean(SHIZUKU, false)
+
+    /** Set up one way or another, so it should start whenever it can. */
+    private fun isSetUp() = paired() || usesRoot() || usesShizuku()
 
     private fun prefs() = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
@@ -150,11 +162,41 @@ object Elevated {
         started
     }
 
+    /**
+     * Sets Elevated up through Shizuku, as the user asked: Shizuku asks once
+     * whether NectarLink may use it, and from then on Elevated starts through
+     * it whenever Shizuku runs. The helper runs as the shell user, as through
+     * Wireless debugging; a Shizuku running as root isn't used.
+     */
+    suspend fun setUpWithShizuku(): Boolean = withContext(Dispatchers.IO) {
+        ShizukuElevated.requestPermission()?.let { problem ->
+            _state.value = State.Failed(reasonFor(problem))
+            return@withContext false
+        }
+        prefs().edit { putBoolean(SHIZUKU, true) }
+        held = false
+        val started = lock.withLock {
+            if (running && !shizukuActive) stopLocked()
+            if (running) return@withLock true
+            _state.value = State.Starting
+            tryStartWithShizukuLocked()
+        }
+        if (started) cancelRetry()
+        started
+    }
+
     fun init(context: Context) {
         this.context = context.applicationContext
         watchWirelessDebugging()
+        // Shizuku's service comes after the app on a boot, and again whenever
+        // it's restarted: start then, if Elevated goes through it.
+        runCatching {
+            ShizukuElevated.watch {
+                if (usesShizuku() && !held && !running) scope.launch { start() }
+            }
+        }.onFailure { Log.i(TAG, "can't watch for Shizuku", it) }
         scope.launch(Dispatchers.IO) {
-            if (paired() || usesRoot()) {
+            if (isSetUp()) {
                 _state.value = State.Waiting
                 start()
             }
@@ -197,10 +239,11 @@ object Elevated {
         }.onFailure { Log.i(TAG, "can't watch wireless debugging", it) }
     }
 
-    /** Tries again later, while it can still work: set up, not running, on Wi-Fi (or through root). */
+    /** Tries again later, while it can still work: set up, not running, on Wi-Fi (or through root or Shizuku). */
     private fun scheduleRetry() {
-        if (held || !(paired() || usesRoot()) || running || BankingPause.isPaused(context)) return
-        if (!usesRoot() && !onWifi()) return
+        if (held || !isSetUp() || running || BankingPause.isPaused(context)) return
+        val withoutWifi = usesRoot() || (usesShizuku() && ShizukuElevated.allowed())
+        if (!withoutWifi && !onWifi()) return
         val wait = RETRY_MS[retryAttempt.coerceAtMost(RETRY_MS.lastIndex)]
         retryAttempt++
         retryJob?.cancel()
@@ -360,10 +403,14 @@ object Elevated {
             if (usesRoot() && tryStartWithRootLocked()) {
                 return@withLock true
             }
+            if (usesShizuku() && tryStartWithShizukuLocked()) {
+                return@withLock true
+            }
             if (!paired()) {
                 // No wireless debugging set up: a PC this phone is plugged into can start it.
                 if (startOverUsbLocked()) return@withLock true
-                _state.value = State.NotSetUp
+                // Through Shizuku, the state says why it didn't start, or that it waits for Shizuku.
+                if (!usesShizuku()) _state.value = State.NotSetUp
                 return@withLock false
             }
             turnOnWirelessDebugging()
@@ -448,6 +495,43 @@ object Elevated {
         }.getOrDefault(false)
     }
 
+    /**
+     * Starts [InputServer] through Shizuku ([ShizukuElevated]). Leaves the
+     * state saying why when it can't: Shizuku not running (it waits for it),
+     * not allowed, or running as root.
+     */
+    private suspend fun tryStartWithShizukuLocked(): Boolean {
+        val token = ByteArray(24).also(SecureRandom()::nextBytes).joinToString("") { "%02x".format(it) }
+        val port = ShizukuElevated.startHelper(context, grants(), token).getOrElse { e ->
+            val problem = (e as? ShizukuElevated.ShizukuProblem)?.problem
+            if (problem == null) Log.i(TAG, "the helper didn't start through Shizuku", e)
+            _state.value = when (problem) {
+                ShizukuElevated.Problem.NotRunning -> State.Waiting
+                null -> State.Failed(Reason.Other)
+                else -> State.Failed(reasonFor(problem))
+            }
+            return false
+        }
+        return runCatching {
+            shizukuActive = true
+            connectSocketLocked(port, token)
+            Log.i(TAG, "started through Shizuku")
+            true
+        }.getOrElse {
+            Log.w(TAG, "the helper started through Shizuku didn't answer", it)
+            shizukuActive = false
+            ShizukuElevated.stop()
+            _state.value = State.Failed(Reason.Other)
+            false
+        }
+    }
+
+    private fun reasonFor(problem: ShizukuElevated.Problem) = when (problem) {
+        ShizukuElevated.Problem.NotRunning -> Reason.ShizukuNotRunning
+        ShizukuElevated.Problem.Denied -> Reason.ShizukuDenied
+        ShizukuElevated.Problem.Root -> Reason.ShizukuRoot
+    }
+
     /** Runs [command] as the shell user through `su`; its output, or null if it didn't run. */
     private fun asShell(command: String): String? = runCatching {
         val process = ProcessBuilder("su", SHELL_UID, "-c", command).redirectErrorStream(true).start()
@@ -523,7 +607,7 @@ object Elevated {
             runCatching { output.lineSequence().forEach { line -> Log.d(TAG, "helper: $line") } }
             input = null
             runCatching { socket?.close() }
-            if (_state.value == State.Running) _state.value = if (paired()) State.Waiting else State.NotSetUp
+            if (_state.value == State.Running) _state.value = if (isSetUp()) State.Waiting else State.NotSetUp
             onChange()
             scheduleRetry()
         }.start()
@@ -565,8 +649,9 @@ object Elevated {
             }
             if (socket === local) {
                 input = null
+                shizukuActive = false
                 runCatching { local.close() }
-                if (_state.value == State.Running) _state.value = if (paired()) State.Waiting else State.NotSetUp
+                if (_state.value == State.Running) _state.value = if (isSetUp()) State.Waiting else State.NotSetUp
                 onChange()
                 scheduleRetry()
             }
@@ -679,6 +764,8 @@ object Elevated {
     private fun stopLocked() {
         screenOffRequested = false
         rootActive = false
+        if (shizukuActive) ShizukuElevated.stop()
+        shizukuActive = false
         input = null
         helper = null
         runCatching { socket?.close() }
@@ -688,7 +775,7 @@ object Elevated {
         socket = null
         shell = null
         rootProcess = null
-        _state.value = if (paired() || usesRoot()) State.Waiting else State.NotSetUp
+        _state.value = if (isSetUp()) State.Waiting else State.NotSetUp
         onChange()
     }
 
@@ -700,6 +787,7 @@ object Elevated {
         prefs().edit {
             putBoolean(PAIRED, false)
             putBoolean(ROOT, false)
+            putBoolean(SHIZUKU, false)
         }
         runCatching { adb?.close() }
         adb = null

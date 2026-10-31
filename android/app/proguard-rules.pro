@@ -38,6 +38,10 @@
     public static void main(java.lang.String[]);
 }
 -keep class app.nectarlink.android.elevated.SurfaceControl { *; }
+# Shizuku creates the Elevated service by name, with a Context (ShizukuShell.kt).
+-keep class app.nectarlink.android.elevated.ShizukuShell {
+    public <init>(android.content.Context);
+}
 
 # Conscrypt (used by Elevated wireless ADB TLS handshake)
 -keep class org.conscrypt.** { *; }

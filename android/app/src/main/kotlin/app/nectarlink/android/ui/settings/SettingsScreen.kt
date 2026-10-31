@@ -74,6 +74,7 @@ import app.nectarlink.android.companion.PcCompanion
 import app.nectarlink.android.contacts.PhoneContacts
 import app.nectarlink.android.elevated.Elevated
 import app.nectarlink.android.elevated.PairingNotification
+import app.nectarlink.android.elevated.ShizukuElevated
 import app.nectarlink.android.mirror.InputService
 import app.nectarlink.android.photos.RecentPhotos
 import app.nectarlink.android.sms.PhoneSms
@@ -1075,6 +1076,13 @@ private fun openAppInfoSettings(context: Context) {
     }
 }
 
+/** Shizuku's app, where it's started and where NectarLink is allowed. */
+private fun openShizuku(context: Context) {
+    context.packageManager.getLaunchIntentForPackage(ShizukuElevated.PACKAGE)
+        ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        ?.let { runCatching { context.startActivity(it) } }
+}
+
 private fun openDeveloperOptionsSettings(context: Context) {
     val devIntent = Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -1306,6 +1314,12 @@ private fun ElevatedAccess() {
     val scope = rememberCoroutineScope()
     val state by Elevated.state.collectAsStateWithLifecycle()
     var steps by remember { mutableStateOf(false) }
+    val shizukuInstalled = remember { ShizukuElevated.installed(context) }
+    val failure = (state as? Elevated.State.Failed)?.reason
+    val shizukuFailure = failure == Elevated.Reason.ShizukuNotRunning ||
+        failure == Elevated.Reason.ShizukuDenied || failure == Elevated.Reason.ShizukuRoot
+    // Through Shizuku, the way back is in Shizuku's app, not Developer options.
+    val viaShizuku = Elevated.usesShizuku() || shizukuFailure
     Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.weight(1f).padding(end = 12.dp)) {
@@ -1314,13 +1328,20 @@ private fun ElevatedAccess() {
                     stringResource(
                         when (state) {
                             Elevated.State.NotSetUp -> R.string.elevated_not_set_up
-                            Elevated.State.Waiting -> R.string.elevated_waiting
+                            Elevated.State.Waiting ->
+                                if (Elevated.usesShizuku()) R.string.elevated_shizuku_waiting else R.string.elevated_waiting
                             Elevated.State.Starting -> R.string.elevated_starting
-                            Elevated.State.Running ->
-                                if (Elevated.rootActive) R.string.elevated_running_root else R.string.elevated_running
+                            Elevated.State.Running -> when {
+                                Elevated.rootActive -> R.string.elevated_running_root
+                                Elevated.shizukuActive -> R.string.elevated_running_shizuku
+                                else -> R.string.elevated_running
+                            }
                             is Elevated.State.Failed -> when ((state as Elevated.State.Failed).reason) {
                                 Elevated.Reason.NotPaired -> R.string.elevated_not_paired
                                 Elevated.Reason.RootDenied -> R.string.elevated_root_failed
+                                Elevated.Reason.ShizukuNotRunning -> R.string.elevated_shizuku_not_running
+                                Elevated.Reason.ShizukuDenied -> R.string.elevated_shizuku_denied
+                                Elevated.Reason.ShizukuRoot -> R.string.elevated_shizuku_root
                                 else -> R.string.elevated_failed
                             }
                         },
@@ -1335,6 +1356,10 @@ private fun ElevatedAccess() {
                 }
                 Elevated.State.Waiting -> Button(onClick = {
                     scope.launch {
+                        if (Elevated.usesShizuku()) {
+                            if (!Elevated.start() && !ShizukuElevated.running()) openShizuku(context)
+                            return@launch
+                        }
                         PairingNotification.show(context)
                         if (!Elevated.start()) {
                             openDeveloperOptionsSettings(context)
@@ -1351,11 +1376,17 @@ private fun ElevatedAccess() {
         }
         if (state == Elevated.State.Waiting || state is Elevated.State.Failed) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = {
-                    PairingNotification.show(context)
-                    openDeveloperOptionsSettings(context)
-                }) {
-                    Text(stringResource(R.string.elevated_open_developer))
+                if (viaShizuku && shizukuInstalled) {
+                    OutlinedButton(onClick = { openShizuku(context) }) {
+                        Text(stringResource(R.string.elevated_open_shizuku))
+                    }
+                } else {
+                    OutlinedButton(onClick = {
+                        PairingNotification.show(context)
+                        openDeveloperOptionsSettings(context)
+                    }) {
+                        Text(stringResource(R.string.elevated_open_developer))
+                    }
                 }
             }
         }
@@ -1370,6 +1401,23 @@ private fun ElevatedAccess() {
             )
             OutlinedButton(onClick = { scope.launch { Elevated.setUpWithRoot() } }) {
                 Text(stringResource(R.string.elevated_use_root))
+            }
+        }
+        // Shizuku too, only when the user picks it and only when its app is installed.
+        val shizukuOffered = shizukuInstalled && !Elevated.usesShizuku() &&
+            (state == Elevated.State.NotSetUp || state is Elevated.State.Failed)
+        if (shizukuOffered) {
+            Text(
+                stringResource(R.string.elevated_shizuku_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedButton(onClick = {
+                scope.launch {
+                    if (!Elevated.setUpWithShizuku() && !ShizukuElevated.running()) openShizuku(context)
+                }
+            }) {
+                Text(stringResource(R.string.elevated_use_shizuku))
             }
         }
     }

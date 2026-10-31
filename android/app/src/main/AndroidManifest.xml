@@ -218,6 +218,17 @@
             android:name=".media.PcMedia$CommandReceiver"
             android:exported="false" />
 
+        <!-- Shizuku hands NectarLink its Binder through this (Elevated through
+             Shizuku, #110). Only callers that may act across users (Shizuku,
+             the system) can reach it. -->
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:enabled="true"
+            android:exported="true"
+            android:multiprocess="false"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+
         <!-- Opening received files on Android 8–9 (later versions use MediaStore),
              and images from a PC on the clipboard. -->
         <provider

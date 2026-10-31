@@ -44,6 +44,8 @@ No. Every everyday feature works at the default `Standard` power level using nor
 
 If your phone is already rooted (Magisk, KernelSU or APatch), you can choose **Use root** when setting up Elevated instead. NectarLink then starts the same helper through root, still as the shell user with the same permissions, so it needs no pairing and comes back by itself after a restart or away from Wi-Fi. NectarLink never asks for root unless you choose this.
 
+If you already use [Shizuku](https://shizuku.rikka.app/), you can choose **Use Shizuku** instead (it shows when Shizuku's app is installed). Shizuku asks once whether NectarLink may use it; after that Elevated starts through Shizuku whenever it runs, with no pairing of its own, and keeps working away from Wi-Fi. The helper is the same and runs as the shell user. If Shizuku runs with root, NectarLink doesn't use it: start Shizuku through Wireless debugging, or choose **Use root**. After a restart, start Shizuku again, then open NectarLink once: Shizuku only tells apps it's running when they come to the front, and Elevated starts as soon as it hears.
+
 ### Why does Android 13+ gray out the Notification access or Accessibility switch ("Restricted settings")?
 
 Android 13 and newer block sideloaded APKs (apps installed outside an app store) from turning on Notification Listener or Accessibility services until you confirm in **App info**. Open **Android Settings › Apps › NectarLink**, tap the three-dot menu in the top-right corner, tap **Allow restricted settings**, verify with your fingerprint or PIN, and then return to NectarLink to turn the switch on.

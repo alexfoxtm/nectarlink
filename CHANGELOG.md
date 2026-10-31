@@ -49,6 +49,12 @@ change things that need a step from you, and its notes say so.
   (`docs/technical/tailscale.md` has the command). Thanks to
   [@waytoo-average](https://github.com/waytoo-average)
   ([#105](https://github.com/thtbee/nectarlink/pull/105)).
+- **Elevated through Shizuku.** If you use Shizuku, **Use Shizuku** in
+  Elevated's settings starts it through Shizuku instead of NectarLink's own
+  Wireless debugging pairing, so it keeps working away from Wi-Fi while
+  Shizuku runs. Shizuku asks once whether NectarLink may use it. The helper
+  still runs as the shell user, never as root
+  ([#110](https://github.com/thtbee/nectarlink/issues/110)).
 - **Pick the SIM for a call from the PC.** On a phone with two SIMs, the
   Calls page has **Call with** under the dial pad. It starts on the phone's
   default SIM for calls and remembers your pick for each phone. Before,
