@@ -42,6 +42,13 @@ change things that need a step from you, and its notes say so.
   number anywhere, open the palette with its shortcut, and Call and Text
   for that number are at the top
   ([#83](https://github.com/thtbee/nectarlink/issues/83)).
+- **Connect over Tailscale.** With Tailscale on the phone and the PC, they
+  reach each other directly through it from different networks, without
+  relays. Pair once while Tailscale is up on both. On
+  Windows, mark the Tailscale network Private so the firewall lets it in
+  (`docs/technical/tailscale.md` has the command). Thanks to
+  [@waytoo-average](https://github.com/waytoo-average)
+  ([#105](https://github.com/thtbee/nectarlink/pull/105)).
 - **Pick the SIM for a call from the PC.** On a phone with two SIMs, the
   Calls page has **Call with** under the dial pad. It starts on the phone's
   default SIM for calls and remembers your pick for each phone. Before,
