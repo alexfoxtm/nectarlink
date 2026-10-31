@@ -1172,12 +1172,13 @@ fn folder_from_url(url: &QString) -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::{folder_from_url, new_rule_id};
-    use cxx_qt_lib::QString;
+    use super::new_rule_id;
 
     #[cfg(windows)]
     #[test]
     fn a_chosen_folder_reads_as_a_windows_path() {
+        use super::folder_from_url;
+        use cxx_qt_lib::QString;
         let path = |url: &str| folder_from_url(&QString::from(url)).map(|p| p.to_string_lossy().into_owned());
         assert_eq!(path("file:///C:/Users/me/Phone%20sync").as_deref(), Some(r"C:\Users\me\Phone sync"));
         assert_eq!(path("file://server/share/photos").as_deref(), Some(r"\\server\share\photos"));
