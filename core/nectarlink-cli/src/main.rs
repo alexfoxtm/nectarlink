@@ -2123,6 +2123,21 @@ impl Platform for TerminalPlatform {
         entries.truncate(limit as usize);
         Ok(entries)
     }
+    /// Two pretend SIMs and no default, like a dual-SIM phone set to ask each
+    /// time (offer `call.sims` to use them).
+    fn call_sims(&self) -> std::result::Result<nectarlink_core::CallSims, String> {
+        Ok(nectarlink_core::CallSims {
+            sims: vec![
+                nectarlink_core::CallSim { id: "sim-1".into(), label: "SIM 1 · Test Mobile".into() },
+                nectarlink_core::CallSim { id: "sim-2".into(), label: "SIM 2 · Demo Net".into() },
+            ],
+            default: None,
+        })
+    }
+    fn call_dial_on(&self, number: &str, sim: &str) -> std::result::Result<(), String> {
+        println!("A PC asked for this call on {sim}.");
+        self.call_dial(number)
+    }
     fn call_dial(&self, number: &str) -> std::result::Result<(), String> {
         println!("A PC started a call to {number}.");
         let now = std::time::SystemTime::now()
