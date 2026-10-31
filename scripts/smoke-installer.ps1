@@ -115,6 +115,57 @@ Check "the Start menu shortcut is gone" (-not (Test-Path $shortcut))
 Check "the desktop shortcut is gone" (-not (Test-Path $desktopShortcut))
 Check "the firewall rule is gone" (-not (FirewallRule))
 Check "the update task is gone" ($null -eq (UpdateTask))
+
+# A folder the user picked (#102), with a space in it, as the setup window
+# passes it: /D last and unquoted. Its parent doesn't exist, so setup
+# creates both and locks them like Program Files.
+$top = 'C:\nl smoke'
+$custom = Join-Path $top 'Apps\Nectarlink'
+$customExe = Join-Path $custom 'nectarlink-desktop.exe'
+$reg = 'HKLM:\Software\Nectarlink'
+function Test-Locked($path) {
+    $acl = Get-Acl $path
+    $sd = New-Object System.Security.AccessControl.RawSecurityDescriptor $acl.Sddl
+    $acl.Owner -eq 'BUILTIN\Administrators' -and -not (Test-OthersMayWrite $sd)
+}
+Write-Host "Installing into $custom"
+Start-Process $Setup -ArgumentList "/S /ADMINONLY=1 /D=$custom" -Wait
+Check "the app is installed in the chosen folder" (Test-Path $customExe)
+Check "nothing went into Program Files" (-not (Test-Path $dir))
+Check "the chosen folder is locked like Program Files" (Test-Locked $custom)
+Check "the folder setup created above it is locked too" (Test-Locked $top)
+Check "an admin-only folder gets the update task" (
+    $null -ne ($task = UpdateTask) -and $task.Definition.Actions.Item(1).Path.Trim('"') -eq $customExe)
+Check "the chosen folder is remembered" ((Get-ItemProperty $reg).InstallDir -eq $custom -and (Get-ItemProperty $reg).AdminOnlyFolder -eq 1)
+Start-Process $Setup -ArgumentList '/S' -Wait
+Check "an update goes to the chosen folder" ((Test-Path $customExe) -and -not (Test-Path $dir))
+Check "an update keeps the update task" ($null -ne (UpdateTask))
+Start-Process (Join-Path $custom 'uninstall.exe') -ArgumentList '/S' -Wait
+$deadline = (Get-Date).AddSeconds(60)
+while ((Test-Path $custom) -and (Get-Date) -lt $deadline) { Start-Sleep 1 }
+Check "uninstalling removes the chosen folder" (-not (Test-Path $custom))
+Check "uninstalling removes the update task" ($null -eq (UpdateTask))
+
+# Where folders above it aren't admin-only: no task running it as SYSTEM.
+Start-Process $Setup -ArgumentList "/S /ADMINONLY=0 /D=$custom" -Wait
+Check "the app is installed there" (Test-Path $customExe)
+Check "a folder others could swap gets no update task" ($null -eq (UpdateTask))
+Check "updates there will ask" ((Get-ItemProperty $reg).AdminOnlyFolder -eq 0)
+Start-Process $Setup -ArgumentList '/S' -Wait
+Check "an update there still adds no update task" ($null -eq (UpdateTask))
+Start-Process (Join-Path $custom 'uninstall.exe') -ArgumentList '/S' -Wait
+$deadline = (Get-Date).AddSeconds(60)
+while ((Test-Path $custom) -and (Get-Date) -lt $deadline) { Start-Sleep 1 }
+Check "it uninstalls from there" (-not (Test-Path $custom))
+
+# A folder that already has files in it is refused.
+$busy = Join-Path $top 'Busy\Nectarlink'
+New-Item -ItemType Directory -Force $busy | Out-Null
+Set-Content (Join-Path $busy 'someone-elses.txt') 'x'
+$run = Start-Process $Setup -ArgumentList "/S /ADMINONLY=1 /D=$busy" -Wait -PassThru
+Check "a folder with files in it is refused" ($run.ExitCode -ne 0 -and -not (Test-Path (Join-Path $busy 'nectarlink-desktop.exe')))
+Check "a refused folder leaves no update task" ($null -eq (UpdateTask))
+Remove-Item -Recurse -Force $top
 Write-Host "Installer smoke test passed."
 # netsh reports "no rules match" with a failing exit code; that was the point.
 exit 0

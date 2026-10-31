@@ -176,9 +176,13 @@ has a Stop button. Choosing another
   or folders in Nemo (Cinnamon) or Thunar (XFCE) as well as GNOME Files,
   Dolphin and Caja, and folders now work in all of them
   ([#49](https://github.com/thtbee/nectarlink/issues/49)).
-- **Setup on Windows asks about the desktop shortcut.** Untick **Add a
-  desktop shortcut** to skip it. Updates leave it as you had it, so one
-  you deleted no longer comes back
+- **Setup on Windows asks about the desktop shortcut and the folder.**
+  Untick **Add a desktop shortcut** to skip it. Updates leave it as you
+  had it, so one you deleted no longer comes back. **Change** next to
+  **Installs in** puts NectarLink on another drive or folder instead of
+  Program Files, and updates go there too. Setup locks the folder like
+  Program Files. If a folder above it can be changed without
+  administrator rights, updates there ask for your permission each time
   ([#102](https://github.com/thtbee/nectarlink/issues/102)).
 - **Files received on Windows are marked as from another device,** the way
   a browser marks a download, so Windows checks a program with SmartScreen

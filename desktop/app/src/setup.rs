@@ -237,6 +237,15 @@ pub fn parse_event(line: &str) -> Option<Event> {
     Some(Event::Step(step))
 }
 
+/// Where setup puts the app, when the user picks a folder (Windows, #102).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Placement {
+    pub dir: PathBuf,
+    /// Only administrators can change any folder on the way to `dir`, so
+    /// updates can run without asking.
+    pub admin_only: bool,
+}
+
 /// How a run ended.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Outcome {
@@ -258,16 +267,41 @@ pub fn has_desktop_shortcut() -> bool {
     false
 }
 
-/// Installs from `installer` with administrator rights, reporting each step.
+/// Installs from `installer` with administrator rights, reporting each step:
+/// into Program Files, or where `placement` says.
 #[cfg(windows)]
-pub fn install(installer: &Path, desktop_shortcut: bool, on_event: impl FnMut(Event)) -> Outcome {
+pub fn install(
+    installer: &Path,
+    desktop_shortcut: bool,
+    placement: Option<&Placement>,
+    on_event: impl FnMut(Event),
+) -> Outcome {
     let progress = progress_file("install");
-    let params = format!("/S /DESKTOP={} /PROGRESS={}", u8::from(desktop_shortcut), progress.display());
+    let params = install_params(desktop_shortcut, placement, &progress);
     run_tracked(installer, &params, &progress, Duration::from_secs(600), true, on_event)
 }
 
+/// The installer's switches. NSIS takes `/D=` last and unquoted, spaces and all.
+#[cfg(any(windows, test))]
+fn install_params(desktop_shortcut: bool, placement: Option<&Placement>, progress: &Path) -> String {
+    let mut params = format!("/S /DESKTOP={} /PROGRESS={}", u8::from(desktop_shortcut), progress.display());
+    if let Some(placement) = placement {
+        params.push_str(&format!(
+            " /ADMINONLY={} /D={}",
+            u8::from(placement.admin_only),
+            placement.dir.display()
+        ));
+    }
+    params
+}
+
 #[cfg(target_os = "linux")]
-pub fn install(installer: &Path, _desktop_shortcut: bool, mut on_event: impl FnMut(Event)) -> Outcome {
+pub fn install(
+    installer: &Path,
+    _desktop_shortcut: bool,
+    _placement: Option<&Placement>,
+    mut on_event: impl FnMut(Event),
+) -> Outcome {
     let name = installer.file_name().and_then(|s| s.to_str()).unwrap_or_default();
     if name.ends_with(".deb") {
         on_event(Event::Step(Step::Closing));
@@ -318,7 +352,12 @@ pub fn install(installer: &Path, _desktop_shortcut: bool, mut on_event: impl FnM
 
 /// The app installs from a disk image on macOS, not through this setup.
 #[cfg(not(any(windows, target_os = "linux")))]
-pub fn install(installer: &Path, _desktop_shortcut: bool, _on_event: impl FnMut(Event)) -> Outcome {
+pub fn install(
+    installer: &Path,
+    _desktop_shortcut: bool,
+    _placement: Option<&Placement>,
+    _on_event: impl FnMut(Event),
+) -> Outcome {
     Outcome::Failed(tr!("Setup", "Couldn't start setup: %1", installer.display()))
 }
 
@@ -689,6 +728,17 @@ pub fn icon_url(size: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_chosen_folder_goes_last_for_nsis() {
+        let progress = Path::new("p.txt");
+        assert_eq!(install_params(true, None, progress), "/S /DESKTOP=1 /PROGRESS=p.txt");
+        let placement = Placement { dir: PathBuf::from(r"D:\My Apps\Nectarlink"), admin_only: false };
+        assert_eq!(
+            install_params(false, Some(&placement), progress),
+            r"/S /DESKTOP=0 /PROGRESS=p.txt /ADMINONLY=0 /D=D:\My Apps\Nectarlink"
+        );
+    }
 
     #[test]
     fn progress_lines_parse() {

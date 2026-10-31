@@ -55,14 +55,26 @@ pub fn set(enabled: bool, exe: &Path) -> windows::core::Result<()> {
     result
 }
 
-/// Whether an executable is an installed copy (under Program Files), as
-/// opposed to a build being run from its folder.
+/// Whether an executable is an installed copy (under Program Files, or in
+/// the folder setup installed it to), as opposed to a build being run from
+/// its folder.
 pub fn is_installed(exe: &Path) -> bool {
+    let installed_to = super::reg_string(
+        windows::Win32::System::Registry::HKEY_LOCAL_MACHINE,
+        r"Software\Nectarlink",
+        "InstallDir",
+    );
+    is_installed_in(exe, installed_to.as_deref())
+}
+
+fn is_installed_in(exe: &Path, installed_to: Option<&str>) -> bool {
     let exe = exe.to_string_lossy().to_lowercase();
+    let under = |dir: &str| exe.starts_with(&format!("{}\\", dir.to_lowercase().trim_end_matches('\\')));
     ["ProgramFiles", "ProgramW6432", "ProgramFiles(x86)"]
         .iter()
         .filter_map(|var| std::env::var(var).ok())
-        .any(|dir| exe.starts_with(&format!("{}\\", dir.to_lowercase().trim_end_matches('\\'))))
+        .any(|dir| under(&dir))
+        || installed_to.is_some_and(|dir| !dir.trim().is_empty() && under(dir))
 }
 
 #[cfg(test)]
@@ -85,5 +97,15 @@ mod tests {
         if let Ok(dir) = std::env::var("ProgramFiles") {
             assert!(is_installed(&Path::new(&dir).join("Nectarlink").join("nectarlink-desktop.exe")));
         }
+    }
+
+    #[test]
+    fn a_copy_in_the_folder_setup_chose_is_installed() {
+        let exe = Path::new(r"D:\Apps\Nectarlink\nectarlink-desktop.exe");
+        assert!(is_installed_in(exe, Some(r"d:\apps\nectarlink")));
+        assert!(is_installed_in(exe, Some(r"D:\Apps\Nectarlink\")));
+        assert!(!is_installed_in(exe, Some(r"D:\Apps\Nectar")));
+        assert!(!is_installed_in(exe, Some("")));
+        assert!(!is_installed_in(exe, None));
     }
 }

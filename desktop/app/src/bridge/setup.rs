@@ -42,6 +42,14 @@ pub mod qobject {
         #[qproperty(QString, android_url, cxx_name = "androidUrl")]
         /// Windows: whether setup adds a desktop shortcut.
         #[qproperty(bool, desktop_shortcut, cxx_name = "desktopShortcut")]
+        /// Windows, first installs: whether the user can pick the folder.
+        #[qproperty(bool, can_choose_dir, cxx_name = "canChooseDir")]
+        /// Where the app goes.
+        #[qproperty(QString, install_dir, cxx_name = "installDir")]
+        /// About the folder picked: that updates will ask, or why it can't be used.
+        #[qproperty(QString, dir_note, cxx_name = "dirNote")]
+        /// Whether `dir_note` says the folder can't be used.
+        #[qproperty(bool, dir_refused, cxx_name = "dirRefused")]
         type Setup = super::SetupRust;
     }
 
@@ -52,6 +60,10 @@ pub mod qobject {
         /// Install, or remove, depending on the mode.
         #[qinvokable]
         fn start(self: Pin<&mut Setup>);
+        /// Checks a folder the user picked (a `file:` URL) and uses it if it's fine.
+        #[qinvokable]
+        #[cxx_name = "chooseDir"]
+        fn choose_dir(self: Pin<&mut Setup>, url: &QString);
         #[qinvokable]
         #[cxx_name = "openApp"]
         fn open_app(self: &Setup);
@@ -80,11 +92,17 @@ pub struct SetupRust {
     qr_url: QString,
     android_url: QString,
     desktop_shortcut: bool,
+    can_choose_dir: bool,
+    install_dir: QString,
+    dir_note: QString,
+    dir_refused: bool,
 }
 
 static MODE: OnceLock<Mode> = OnceLock::new();
 /// Where the app ended up, for Open NectarLink.
 static INSTALLED_DIR: Mutex<Option<PathBuf>> = Mutex::new(None);
+/// The folder the user picked, when not Program Files.
+static PLACEMENT: Mutex<Option<setup::Placement>> = Mutex::new(None);
 
 /// Sets what the window is for, before QML loads.
 pub fn set_mode(mode: Mode) {
@@ -124,6 +142,15 @@ impl cxx_qt::Initialize for qobject::Setup {
                 self.as_mut().set_kind(QString::from(kind));
                 // A first install adds it; otherwise it stays as the user left it.
                 self.as_mut().set_desktop_shortcut(kind == "fresh" || setup::has_desktop_shortcut());
+                // An installed copy is updated where it is.
+                #[cfg(windows)]
+                {
+                    let dir = installed
+                        .as_ref()
+                        .map_or_else(crate::win::install_dir::default_dir, |i| i.dir.clone());
+                    self.as_mut().set_install_dir(QString::from(&dir.display().to_string()));
+                    self.as_mut().set_can_choose_dir(kind == "fresh");
+                }
                 self.as_mut().set_mode(QString::from("install"));
             }
         }
@@ -135,6 +162,7 @@ impl cxx_qt::Initialize for qobject::Setup {
                 self.as_mut().set_dark(theme == "dark");
             }
             if let Ok(kind) = std::env::var("NECTARLINK_SETUP_KIND") {
+                self.as_mut().set_can_choose_dir(cfg!(windows) && kind == "fresh");
                 self.as_mut().set_kind(QString::from(&kind));
                 self.as_mut().set_installed_version(QString::from("0.1.0"));
             }
@@ -168,6 +196,7 @@ impl qobject::Setup {
         self.as_mut().set_progress(0.02);
         let removing = matches!(mode, Mode::Remove { .. });
         let desktop_shortcut = *self.desktop_shortcut();
+        let placement = PLACEMENT.lock().unwrap_or_else(|e| e.into_inner()).clone();
         self.as_mut().set_step(QString::from("Waiting for permission"));
         let qt = self.qt_thread();
         std::thread::spawn(move || {
@@ -181,7 +210,9 @@ impl qobject::Setup {
                 }
             };
             let outcome = match &mode {
-                Mode::Install { installer } => setup::install(installer, desktop_shortcut, report),
+                Mode::Install { installer } => {
+                    setup::install(installer, desktop_shortcut, placement.as_ref(), report)
+                }
                 Mode::Remove { installed } => setup::remove(installed, report),
             };
             if outcome == Outcome::Done && !removing {
@@ -207,6 +238,49 @@ impl qobject::Setup {
                 }
             });
         });
+    }
+
+    pub fn choose_dir(mut self: Pin<&mut Self>, url: &QString) {
+        if !*self.can_choose_dir() {
+            return;
+        }
+        let Some(chosen) = cxx_qt_lib::QUrl::from(url).to_local_file().map(|p| String::from(&p)) else {
+            return;
+        };
+        #[cfg(windows)]
+        {
+            use crate::win::install_dir;
+            let chosen = PathBuf::from(chosen.replace('/', "\\"));
+            let default = install_dir::default_dir();
+            // Program Files: back to the installer's own default.
+            let result = if install_dir::target_dir(&chosen).as_os_str().eq_ignore_ascii_case(&default) {
+                Ok(None)
+            } else {
+                install_dir::check(&chosen).map(Some)
+            };
+            match result {
+                Ok(placement) => {
+                    let dir = placement.as_ref().map_or(&default, |p| &p.dir);
+                    self.as_mut().set_install_dir(QString::from(&dir.display().to_string()));
+                    self.as_mut().set_dir_refused(false);
+                    self.as_mut().set_dir_note(if placement.as_ref().is_none_or(|p| p.admin_only) {
+                        QString::default()
+                    } else {
+                        QString::from(&crate::i18n::tr!(
+                            "Setup",
+                            "Updates here will ask for your permission each time."
+                        ))
+                    });
+                    *PLACEMENT.lock().unwrap_or_else(|e| e.into_inner()) = placement;
+                }
+                Err(reason) => {
+                    self.as_mut().set_dir_refused(true);
+                    self.as_mut().set_dir_note(QString::from(&reason));
+                }
+            }
+        }
+        #[cfg(not(windows))]
+        let _ = (self.as_mut(), chosen);
     }
 
     pub fn open_app(&self) {

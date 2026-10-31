@@ -19,6 +19,7 @@ pub mod http;
 pub mod icon;
 pub mod image;
 pub mod input;
+pub mod install_dir;
 pub mod jumplist;
 pub mod media_sessions;
 pub mod mp4;

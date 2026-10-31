@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import QtQuick
+import QtQuick.Dialogs
 import QtQuick.Shapes
 import app.nectarlink
 
@@ -59,6 +60,12 @@ NativeWindow {
             return
         Setup.finish()
         Qt.quit()
+    }
+
+    FolderDialog {
+        id: dirPicker
+        title: qsTr("Install NectarLink in")
+        onAccepted: Setup.chooseDir(selectedFolder.toString())
     }
 
     function primary() {
@@ -366,6 +373,57 @@ NativeWindow {
                 }
             }
 
+            // Where it goes (Windows; #102). A first install can pick another folder.
+            Item { width: 1; height: placeRow.visible ? 12 : 0 }
+            Row {
+                id: placeRow
+                visible: window.phase === "welcome" && !window.removing && Setup.installDir.length > 0
+                anchors.horizontalCenter: parent.horizontalCenter
+                spacing: 8
+                Text {
+                    width: Math.min(implicitWidth, main.width - (changeDir.visible ? changeDir.implicitWidth + 8 : 0))
+                    elide: Text.ElideMiddle
+                    font.family: "Figtree"
+                    font.pixelSize: 13
+                    color: window.muted
+                    text: qsTr("Installs in %1").arg(Setup.installDir)
+                }
+                Text {
+                    id: changeDir
+                    visible: Setup.canChooseDir
+                    font.family: "Figtree"
+                    font.pixelSize: 13
+                    font.underline: changeArea.containsMouse || activeFocus
+                    color: window.honey
+                    text: qsTr("Change")
+                    activeFocusOnTab: visible
+                    Accessible.role: Accessible.Link
+                    Accessible.name: qsTr("Change the install folder")
+                    Accessible.onPressAction: dirPicker.open()
+                    Keys.onSpacePressed: dirPicker.open()
+                    Keys.onReturnPressed: dirPicker.open()
+                    MouseArea {
+                        id: changeArea
+                        anchors.fill: parent
+                        anchors.margins: -6
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: dirPicker.open()
+                    }
+                }
+            }
+            Text {
+                visible: placeRow.visible && Setup.dirNote.length > 0
+                width: parent.width
+                topPadding: 4
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.WordWrap
+                font.family: "Figtree"
+                font.pixelSize: 12
+                color: Setup.dirRefused ? window.danger : window.muted
+                text: Setup.dirNote
+            }
+
             Item { width: 1; height: shortcutChoice.visible ? 14 : 18 }
             Text {
                 id: details
@@ -530,9 +588,9 @@ NativeWindow {
                         font.pixelSize: 14
                         color: window.muted
                         textFormat: Text.StyledText
-                        text: qsTr("NectarLink goes into Program Files for everyone on this PC. Setup also:")
+                        text: qsTr("NectarLink goes into Program Files, or the folder you choose, for everyone on this PC. Setup also:")
                             + "<br>&#8226; " + qsTr("allows it through Windows Firewall on private networks, so your phone can connect")
-                            + "<br>&#8226; " + qsTr("adds a task that installs updates without an administrator prompt")
+                            + "<br>&#8226; " + qsTr("adds a task that installs updates without an administrator prompt, where only administrators can change the folder")
                             + "<br>&#8226; " + qsTr("adds a Start menu shortcut, and a desktop one if you leave that ticked, and starts it with Windows (turn this off in Settings)")
                             + "<br>&#8226; " + qsTr("adds it to the Windows Share sheet")
                             + "<br><br>" + qsTr("It checks GitHub for updates once a day, which you can turn off in Settings. Otherwise your phone and PC only talk to each other.")

@@ -439,12 +439,20 @@ static const char *const nectarlink_rust_strings[] = {
     QT_TRANSLATE_NOOP("SendTo", "Sent to %1"), // desktop/app/src/send_to.rs
     QT_TRANSLATE_NOOP("SendTo", "The transfer didn't go through."), // desktop/app/src/send_to.rs
     QT_TRANSLATE_NOOP("SendTo", "Waiting for %1…"), // desktop/app/src/send_to.rs
+    QT_TRANSLATE_NOOP("Setup", "Choose a folder on a drive inside this PC, not a USB or network drive."), // desktop/app/src/win/install_dir.rs
+    QT_TRANSLATE_NOOP("Setup", "Choose a folder on one of this PC's drives."), // desktop/app/src/win/install_dir.rs
     QT_TRANSLATE_NOOP("Setup", "Couldn't start setup: %1"), // desktop/app/src/setup.rs
     QT_TRANSLATE_NOOP("Setup", "Couldn't uninstall NectarLink: %1"), // desktop/app/src/setup.rs
+    QT_TRANSLATE_NOOP("Setup", "Setup can't use that folder. Choose another one."), // desktop/app/src/win/install_dir.rs
     QT_TRANSLATE_NOOP("Setup", "Setup is taking too long. Try again after restarting the PC."), // desktop/app/src/setup.rs
     QT_TRANSLATE_NOOP("Setup", "Setup stopped with code %1."), // desktop/app/src/setup.rs
+    QT_TRANSLATE_NOOP("Setup", "That drive can't keep the app's files safe (it isn't NTFS). Choose another drive."), // desktop/app/src/win/install_dir.rs
+    QT_TRANSLATE_NOOP("Setup", "That folder's path is too long. Choose one closer to the top of a drive."), // desktop/app/src/win/install_dir.rs
     QT_TRANSLATE_NOOP("Setup", "The uninstaller is missing. Reinstall NectarLink, then uninstall it."), // desktop/app/src/setup.rs
+    QT_TRANSLATE_NOOP("Setup", "There's a file named %1 there. Choose another place."), // desktop/app/src/win/install_dir.rs
+    QT_TRANSLATE_NOOP("Setup", "There's already a %1 folder there with files in it. Choose another place."), // desktop/app/src/win/install_dir.rs
     QT_TRANSLATE_NOOP("Setup", "Uninstall stopped with code %1."), // desktop/app/src/setup.rs
+    QT_TRANSLATE_NOOP("Setup", "Updates here will ask for your permission each time."), // desktop/app/src/bridge/setup.rs
     QT_TRANSLATE_NOOP("Storage", "%1's files aren't shared with this PC"), // desktop/app/src/storage.rs
     QT_TRANSLATE_NOOP("Storage", "On the phone, allow All files access for NectarLink."), // desktop/app/src/storage.rs
     QT_TRANSLATE_NOOP("Storage", "On the phone, turn on Browse this phone's storage in File Explorer in NectarLink."), // desktop/app/src/storage.rs

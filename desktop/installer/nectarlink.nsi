@@ -13,6 +13,15 @@
 ;   step to the file; /RUN opens the app afterwards. Without administrator
 ;   rights it asks for them (UAC) and carries on elevated.
 ;
+; The setup window can pick another folder (#102): /D=<folder> (last, as
+; NSIS wants) and /ADMINONLY=1 when only administrators can change the
+; folders above it. Updates go to the folder of the last install. The app's
+; update task runs it as SYSTEM, and installing runs the old copy to close
+; it, so that only happens where nobody else can swap the files: Program
+; Files, or a folder above which only administrators can change anything.
+; Elsewhere updates ask for permission instead. Folders setup creates
+; outside Program Files are locked like Program Files.
+;
 ; Installing for everyone lets it allow the app through Windows Firewall:
 ; otherwise Windows asks on first use, and people often say no.
 ;
@@ -68,6 +77,8 @@ Var ProgressFile
 Var AppDir
 ; Where an earlier copy was installed, if there is one.
 Var PreviousDir
+; 1 when only administrators can change $INSTDIR and the folders above it.
+Var AdminOnly
 
 !macro Progress line
   ${If} $ProgressFile != ""
@@ -105,12 +116,21 @@ Function .onInit
 
   ${If} ${Silent}
     StrCpy $Interactive 0
+    ; Without /D (an update): where the last install went. InstallDirRegKey
+    ; can't say, as it reads the 32-bit registry before SetRegView.
+    ${If} $INSTDIR == "$PROGRAMFILES64\${APP}"
+      ReadRegStr $0 HKLM "Software\${APP}" "InstallDir"
+      ${If} $0 != ""
+        StrCpy $INSTDIR $0
+      ${EndIf}
+    ${EndIf}
     ; Installing needs administrator rights: ask, and let the elevated copy
     ; do it. (The app's own updater runs as SYSTEM and has them already.)
+    ; NSIS takes /D off the command line, so it's passed on again.
     UserInfo::GetAccountType
     Pop $0
     ${If} $0 != "Admin"
-      ExecShell "runas" '"$EXEPATH"' "$R0" SW_HIDE
+      ExecShell "runas" '"$EXEPATH"' "$R0 /D=$INSTDIR" SW_HIDE
       SetErrorLevel 0
       Quit
     ${EndIf}
@@ -124,6 +144,9 @@ FunctionEnd
 Function un.onInit
   SetRegView 64
   SetShellVarContext all
+  ; The uninstaller came from the app's folder, so running the app from
+  ; there trusts nothing more than running the uninstaller did.
+  StrCpy $AdminOnly 1
   ${un.GetParameters} $R0
   ClearErrors
   ${un.GetOptions} $R0 "/PROGRESS=" $ProgressFile
@@ -136,7 +159,10 @@ FunctionEnd
 ; for it, so its files can be replaced or removed. The setup and uninstall
 ; windows run under other names, so they're left alone.
 !macro QuitRunningApp
-  ${If} ${FileExists} "$INSTDIR\${EXE}"
+  ; Only where nobody else can have replaced it: this runs with
+  ; administrator rights.
+  ${If} $AdminOnly == 1
+  ${AndIf} ${FileExists} "$INSTDIR\${EXE}"
     ExecWait '"$INSTDIR\${EXE}" --quit'
   ${EndIf}
   StrCpy $R0 0
@@ -157,6 +183,81 @@ FunctionEnd
   ${Loop}
 !macroend
 
+; Locks folder $R1 the way Program Files is: owned by administrators, which
+; SYSTEM and administrators may change and everyone else only read. Anything
+; in it before then could have been put there by someone else, so it must be
+; empty. Sets the error flag when it can't.
+Function LockFolder
+  nsExec::Exec 'icacls "$R1" /setowner *S-1-5-32-544'
+  Pop $0
+  ${If} $0 == 0
+    nsExec::Exec 'icacls "$R1" /reset'
+    Pop $0
+  ${EndIf}
+  ${If} $0 == 0
+    nsExec::Exec 'icacls "$R1" /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F *S-1-5-32-544:(OI)(CI)F *S-1-5-32-545:(OI)(CI)RX *S-1-15-2-1:(OI)(CI)RX'
+    Pop $0
+  ${EndIf}
+  StrCpy $4 0
+  ${If} $0 == 0
+    FindFirst $2 $3 "$R1\*.*"
+    ${DoWhile} $3 != ""
+      ${If} $3 != "."
+      ${AndIf} $3 != ".."
+        StrCpy $4 1
+        ${Break}
+      ${EndIf}
+      FindNext $2 $3
+    ${Loop}
+    FindClose $2
+  ${EndIf}
+  ClearErrors
+  ${If} $0 != 0
+  ${OrIf} $4 == 1
+    SetErrors
+  ${EndIf}
+FunctionEnd
+
+; Creates $INSTDIR outside Program Files one folder at a time from the
+; first one that exists, locking each (LockFolder) before going in, so
+; nobody else can put anything on the way. Sets the error flag when it can't.
+Function CreateLockedInstallDir
+  StrCpy $R0 "$INSTDIR"
+  StrCpy $R2 0
+  ${Do}
+    ${If} ${FileExists} "$R0\*.*"
+      ${Break}
+    ${EndIf}
+    Push $R0
+    IntOp $R2 $R2 + 1
+    ${GetParent} "$R0" $R0
+    ${If} $R0 == ""
+      ${Break}
+    ${EndIf}
+  ${Loop}
+  ; The folder itself already there (empty, setup checked): lock it too.
+  ${If} $R2 == 0
+    Push "$INSTDIR"
+    StrCpy $R2 1
+  ${EndIf}
+  StrCpy $R3 0
+  ${DoWhile} $R2 > 0
+    Pop $R1
+    IntOp $R2 $R2 - 1
+    ${If} $R3 == 0
+      CreateDirectory "$R1"
+      Call LockFolder
+      ${If} ${Errors}
+        StrCpy $R3 1
+      ${EndIf}
+    ${EndIf}
+  ${Loop}
+  ClearErrors
+  ${If} $R3 == 1
+    SetErrors
+  ${EndIf}
+FunctionEnd
+
 Function OpenApp
   ; Through Explorer, so the app runs as the user and not elevated.
   Exec '"$WINDIR\explorer.exe" "$INSTDIR\${EXE}"'
@@ -168,6 +269,39 @@ Section "Install"
     StrCpy $AppDir "$PLUGINSDIR\app"
   ${Else}
     ReadRegStr $PreviousDir HKLM "Software\${APP}" "InstallDir"
+    ; Program Files is admin-only. Elsewhere: the setup window's check
+    ; (/ADMINONLY), or, for an update, what the last install found.
+    StrCpy $AdminOnly 0
+    StrLen $0 "$PROGRAMFILES64\"
+    StrCpy $1 "$INSTDIR" $0
+    StrLen $0 "$PROGRAMFILES\"
+    StrCpy $2 "$INSTDIR" $0
+    ${If} $1 == "$PROGRAMFILES64\"
+    ${OrIf} $2 == "$PROGRAMFILES\"
+      StrCpy $AdminOnly 1
+    ${Else}
+      ${GetParameters} $R0
+      ClearErrors
+      ${GetOptions} $R0 "/ADMINONLY=" $R1
+      ${If} ${Errors}
+        ${If} $INSTDIR == $PreviousDir
+          ReadRegDWORD $AdminOnly HKLM "Software\${APP}" "AdminOnlyFolder"
+        ${EndIf}
+      ${ElseIf} $R1 == 1
+        StrCpy $AdminOnly 1
+      ${EndIf}
+      ${If} $AdminOnly != 1
+        StrCpy $AdminOnly 0
+      ${EndIf}
+      ${If} $INSTDIR != $PreviousDir
+        Call CreateLockedInstallDir
+        ${If} ${Errors}
+          !insertmacro Progress "error Setup couldn't make that folder safe for NectarLink. Choose another folder."
+          SetErrorLevel 2
+          Quit
+        ${EndIf}
+      ${EndIf}
+    ${EndIf}
     !insertmacro Progress "step closing"
     !insertmacro QuitRunningApp
     !insertmacro Progress "step files"
@@ -204,6 +338,11 @@ Section "Install"
   ; PowerShell, which security software can hold up without a word, leaving
   ; setup stuck at this step.
   !insertmacro Progress "step updates"
+  ${If} $AdminOnly != 1
+    ; Updates ask for permission in this folder (see the top of this file).
+    nsExec::Exec 'schtasks /Delete /TN "Nectarlink Update" /F'
+    Goto updates_done
+  ${EndIf}
   InitPluginsDir
   FileOpen $0 "$PLUGINSDIR\update-task.xml" w
   FileWriteUTF16LE /BOM $0 '<?xml version="1.0" encoding="UTF-16"?>$\r$\n'
@@ -229,6 +368,7 @@ Section "Install"
   FileWriteUTF16LE $0 '</Task>$\r$\n'
   FileClose $0
   nsExec::Exec 'schtasks /Create /TN "Nectarlink Update" /XML "$PLUGINSDIR\update-task.xml" /F'
+  updates_done:
 
   !insertmacro Progress "step shortcuts"
   CreateShortCut "$SMPROGRAMS\${DISPLAY}.lnk" "$INSTDIR\${EXE}" "" "$INSTDIR\${EXE}" 0 "" "" "Your phone, on your PC"
@@ -258,6 +398,7 @@ Section "Install"
   nsExec::Exec 'powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "try { Add-AppxPackage -Register \"$INSTDIR\AppxManifest.xml\" -ExternalLocation \"$INSTDIR\" -ErrorAction Stop } catch { $$_ | Out-File -Encoding utf8 \"$INSTDIR\sparse-package.log\" }"'
 
   WriteRegStr HKLM "Software\${APP}" "InstallDir" "$INSTDIR"
+  WriteRegDWORD HKLM "Software\${APP}" "AdminOnlyFolder" $AdminOnly
   WriteRegStr HKLM "${UNINSTALL_KEY}" "DisplayName" "${DISPLAY}"
   WriteRegStr HKLM "${UNINSTALL_KEY}" "DisplayVersion" "${DISPLAY_VERSION}"
   WriteRegStr HKLM "${UNINSTALL_KEY}" "Publisher" "The NectarLink contributors"
