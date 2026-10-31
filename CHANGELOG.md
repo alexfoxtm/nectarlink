@@ -42,6 +42,10 @@ change things that need a step from you, and its notes say so.
   number anywhere, open the palette with its shortcut, and Call and Text
   for that number are at the top
   ([#83](https://github.com/thtbee/nectarlink/issues/83)).
+- **Pick the SIM for a call from the PC.** On a phone with two SIMs, the
+  Calls page has **Call with** under the dial pad. It starts on the phone's
+  default SIM for calls and remembers your pick for each phone. Before,
+  the phone's own SIM prompt came up and the call didn't go out ([#112](https://github.com/thtbee/nectarlink/issues/112)).
 - **Battery alerts for phones that stop charging at 80%.** Settings has a
   **Full charge target**: at **80% (Protect battery)**, the PC tells you the
   phone is charged when it reaches 80% on the charger. Thanks to
@@ -200,6 +204,14 @@ has a Stop button. Choosing another
 
 ### Fixed
 
+- **Add folder in Synced folders only ever added DCIM to Pictures.** It now
+  asks which folder on the phone (with shortcuts for Camera, Screenshots,
+  Download and others), where it goes on the PC, and whether to sync one
+  way or both ways. Sync now also says when the phone hasn't let the PC
+  into its files, instead of "Folders are up to date"
+  ([#111](https://github.com/thtbee/nectarlink/issues/111)).
+- **Screen readers couldn't open a step of the first-run walkthrough** from
+  its step dots on the PC. Pressing one now goes to that step.
 - **Typing on the phone from the PC with a non-US keyboard.** Characters
   typed with AltGr (@ and € on a French or German keyboard, say) were
   dropped in the mirror window and in Type on phone. Ctrl+C, Ctrl+X and
