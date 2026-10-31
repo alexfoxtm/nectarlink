@@ -2390,6 +2390,10 @@ Item {
                         border.width: activeFocus ? 2 : 1
                         border.color: activeFocus ? Theme.primary : Theme.outlineVariant
                         activeFocusOnTab: typeOnPhoneCard.activeHere
+                        // Screen readers can find and focus the box the keys go through.
+                        Accessible.role: Accessible.EditableText
+                        Accessible.name: qsTr("Type on phone")
+                        Accessible.focusable: true
 
                         onVisibleChanged: {
                             if (visible) forceActiveFocus()

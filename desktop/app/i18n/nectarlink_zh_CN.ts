@@ -3711,7 +3711,7 @@ What it needs
     </message>
     <message>
         <location filename="../qml/pages/HomePage.qml" line="1313"/>
-        <location filename="../qml/pages/HomePage.qml" line="3595"/>
+        <location filename="../qml/pages/HomePage.qml" line="3599"/>
         <source>Send files</source>
         <translation>发送文件</translation>
     </message>
@@ -3727,7 +3727,7 @@ What it needs
     </message>
     <message>
         <location filename="../qml/pages/HomePage.qml" line="1332"/>
-        <location filename="../qml/pages/HomePage.qml" line="2874"/>
+        <location filename="../qml/pages/HomePage.qml" line="2878"/>
         <source>Clipboard history</source>
         <translation>剪贴板历史记录</translation>
     </message>
@@ -3820,13 +3820,13 @@ What it needs
         <location filename="../qml/pages/HomePage.qml" line="1562"/>
         <location filename="../qml/pages/HomePage.qml" line="2154"/>
         <location filename="../qml/pages/HomePage.qml" line="2246"/>
-        <location filename="../qml/pages/HomePage.qml" line="2717"/>
+        <location filename="../qml/pages/HomePage.qml" line="2721"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
     <message>
         <location filename="../qml/pages/HomePage.qml" line="1597"/>
-        <location filename="../qml/pages/HomePage.qml" line="2519"/>
+        <location filename="../qml/pages/HomePage.qml" line="2523"/>
         <source>Timeline</source>
         <translation>时间线</translation>
     </message>
@@ -4078,6 +4078,7 @@ What it needs
     </message>
     <message>
         <location filename="../qml/pages/HomePage.qml" line="2334"/>
+        <location filename="../qml/pages/HomePage.qml" line="2395"/>
         <source>Type on phone</source>
         <translation>在手机上输入</translation>
     </message>
@@ -4093,7 +4094,7 @@ What it needs
     </message>
     <message>
         <location filename="../qml/pages/HomePage.qml" line="2347"/>
-        <location filename="../qml/pages/HomePage.qml" line="3191"/>
+        <location filename="../qml/pages/HomePage.qml" line="3195"/>
         <source>When connected</source>
         <translation>连接后</translation>
     </message>
@@ -4103,251 +4104,251 @@ What it needs
         <translation>开始</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="2406"/>
-        <location filename="../qml/pages/HomePage.qml" line="2486"/>
+        <location filename="../qml/pages/HomePage.qml" line="2410"/>
+        <location filename="../qml/pages/HomePage.qml" line="2490"/>
         <source>Clipboard</source>
         <translation>剪贴板</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="2466"/>
+        <location filename="../qml/pages/HomePage.qml" line="2470"/>
         <source>Type here: keys go to %1</source>
         <translation>在此输入：按键将发送到 %1</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="2467"/>
+        <location filename="../qml/pages/HomePage.qml" line="2471"/>
         <source>Click to focus keyboard</source>
         <translation>点击以聚焦键盘</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="2474"/>
+        <location filename="../qml/pages/HomePage.qml" line="2478"/>
         <source>Ctrl+V pastes · Esc stops</source>
         <translation>Ctrl+V 粘贴 · Esc 停止</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="2483"/>
+        <location filename="../qml/pages/HomePage.qml" line="2487"/>
         <source>Paste</source>
         <translation>粘贴</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="2528"/>
+        <location filename="../qml/pages/HomePage.qml" line="2532"/>
         <source>View all</source>
         <translation>查看全部</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="2538"/>
+        <location filename="../qml/pages/HomePage.qml" line="2542"/>
         <source>No recent activity</source>
         <translation>没有最近活动</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="2627"/>
+        <location filename="../qml/pages/HomePage.qml" line="2631"/>
         <source>%1 notifications</source>
         <translation>%1 条通知</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="2630"/>
+        <location filename="../qml/pages/HomePage.qml" line="2634"/>
         <source>Show</source>
         <translation>显示</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="2631"/>
+        <location filename="../qml/pages/HomePage.qml" line="2635"/>
         <source>No pop-ups</source>
         <translation>不弹出提示</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="2632"/>
+        <location filename="../qml/pages/HomePage.qml" line="2636"/>
         <source>Hide</source>
         <translation>隐藏</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="2646"/>
+        <location filename="../qml/pages/HomePage.qml" line="2650"/>
         <source>Hidden on this PC.</source>
         <translation>已在本机隐藏。</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="2648"/>
+        <location filename="../qml/pages/HomePage.qml" line="2652"/>
         <source>Shown in feed without pop-ups.</source>
         <translation>在信息流中显示，但不弹出提示。</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="2650"/>
+        <location filename="../qml/pages/HomePage.qml" line="2654"/>
         <source>Shown in feed and as desktop pop-ups.</source>
         <translation>在信息流中显示，并作为桌面弹窗提示。</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="2651"/>
+        <location filename="../qml/pages/HomePage.qml" line="2655"/>
         <source>Shown in feed and as Windows pop-ups.</source>
         <translation>在信息流中显示，并作为 Windows 弹窗提示。</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="2655"/>
-        <location filename="../qml/pages/HomePage.qml" line="2851"/>
-        <location filename="../qml/pages/HomePage.qml" line="3094"/>
-        <location filename="../qml/pages/HomePage.qml" line="3672"/>
+        <location filename="../qml/pages/HomePage.qml" line="2659"/>
+        <location filename="../qml/pages/HomePage.qml" line="2855"/>
+        <location filename="../qml/pages/HomePage.qml" line="3098"/>
+        <location filename="../qml/pages/HomePage.qml" line="3676"/>
         <source>Done</source>
         <translation>完成</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="2722"/>
+        <location filename="../qml/pages/HomePage.qml" line="2726"/>
         <source>Save</source>
         <translation>保存</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="2743"/>
+        <location filename="../qml/pages/HomePage.qml" line="2747"/>
         <source>Notification history</source>
         <translation>通知历史记录</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="2751"/>
-        <location filename="../qml/pages/HomePage.qml" line="2882"/>
+        <location filename="../qml/pages/HomePage.qml" line="2755"/>
+        <location filename="../qml/pages/HomePage.qml" line="2886"/>
         <source>Clear history</source>
         <translation>清除历史记录</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="2761"/>
+        <location filename="../qml/pages/HomePage.qml" line="2765"/>
         <source>Dismissed notifications from the last 24 hours.</source>
         <translation>最近 24 小时内已忽略的通知。</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="2762"/>
+        <location filename="../qml/pages/HomePage.qml" line="2766"/>
         <source>No recent notifications.</source>
         <translation>没有最近的通知。</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="2804"/>
-        <location filename="../qml/pages/HomePage.qml" line="2810"/>
+        <location filename="../qml/pages/HomePage.qml" line="2808"/>
+        <location filename="../qml/pages/HomePage.qml" line="2814"/>
         <source>Search notification history</source>
         <translation>搜索通知历史记录</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="2847"/>
-        <location filename="../qml/pages/HomePage.qml" line="3090"/>
+        <location filename="../qml/pages/HomePage.qml" line="2851"/>
+        <location filename="../qml/pages/HomePage.qml" line="3094"/>
         <source>Nothing matches “%1”.</source>
         <translation>没有匹配“%1”的内容。</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="2892"/>
+        <location filename="../qml/pages/HomePage.qml" line="2896"/>
         <source>Last 50 shared clips.</source>
         <translation>最近 50 条共享剪贴内容。</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="2893"/>
+        <location filename="../qml/pages/HomePage.qml" line="2897"/>
         <source>No shared clips yet.</source>
         <translation>还没有共享的剪贴内容。</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="2933"/>
-        <location filename="../qml/pages/HomePage.qml" line="2939"/>
+        <location filename="../qml/pages/HomePage.qml" line="2937"/>
+        <location filename="../qml/pages/HomePage.qml" line="2943"/>
         <source>Search clipboard history</source>
         <translation>搜索剪贴板历史记录</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="2959"/>
+        <location filename="../qml/pages/HomePage.qml" line="2963"/>
         <source>From %1</source>
         <translation>来自 %1</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="2959"/>
+        <location filename="../qml/pages/HomePage.qml" line="2963"/>
         <source>From phone</source>
         <translation>来自手机</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="2960"/>
+        <location filename="../qml/pages/HomePage.qml" line="2964"/>
         <source>Sent to %1</source>
         <translation>已发送到 %1</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="2960"/>
+        <location filename="../qml/pages/HomePage.qml" line="2964"/>
         <source>From this PC</source>
         <translation>来自本机</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="2966"/>
+        <location filename="../qml/pages/HomePage.qml" line="2970"/>
         <source>Image</source>
         <translation>图片</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="3004"/>
+        <location filename="../qml/pages/HomePage.qml" line="3008"/>
         <source>Pinned</source>
         <translation>已固定</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="3048"/>
+        <location filename="../qml/pages/HomePage.qml" line="3052"/>
         <source>Open on phone</source>
         <translation>在手机上打开</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="3057"/>
+        <location filename="../qml/pages/HomePage.qml" line="3061"/>
         <source>Send to phone</source>
         <translation>发送到手机</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="3065"/>
+        <location filename="../qml/pages/HomePage.qml" line="3069"/>
         <source>Copy</source>
         <translation>复制</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="3071"/>
+        <location filename="../qml/pages/HomePage.qml" line="3075"/>
         <source>Unpin</source>
         <translation>取消固定</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="3071"/>
+        <location filename="../qml/pages/HomePage.qml" line="3075"/>
         <source>Pin</source>
         <translation>固定</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="3076"/>
+        <location filename="../qml/pages/HomePage.qml" line="3080"/>
         <source>Delete</source>
         <translation>删除</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="3364"/>
-        <location filename="../qml/pages/HomePage.qml" line="3375"/>
+        <location filename="../qml/pages/HomePage.qml" line="3368"/>
+        <location filename="../qml/pages/HomePage.qml" line="3379"/>
         <source>%1%</source>
         <translation>%1%</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="3516"/>
+        <location filename="../qml/pages/HomePage.qml" line="3520"/>
         <source>LocalSend nearby · %1</source>
         <translation>LocalSend 附近 · %1</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="3517"/>
+        <location filename="../qml/pages/HomePage.qml" line="3521"/>
         <source>LocalSend nearby</source>
         <translation>LocalSend 附近</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="3526"/>
+        <location filename="../qml/pages/HomePage.qml" line="3530"/>
         <source>Refresh</source>
         <translation>刷新</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="3537"/>
+        <location filename="../qml/pages/HomePage.qml" line="3541"/>
         <source>Listening for LocalSend devices on your Wi‑Fi network.</source>
         <translation>正在您的 Wi‑Fi 网络上监听 LocalSend 设备。</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="3538"/>
+        <location filename="../qml/pages/HomePage.qml" line="3542"/>
         <source>LocalSend port 53317 is busy on this PC (another LocalSend app may be running).</source>
         <translation>本机的 LocalSend 端口 53317 已被占用（可能正在运行另一个 LocalSend 应用）。</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="3577"/>
+        <location filename="../qml/pages/HomePage.qml" line="3581"/>
         <source>Nearby device</source>
         <translation>附近设备</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="3633"/>
+        <location filename="../qml/pages/HomePage.qml" line="3637"/>
         <source>Image preview</source>
         <translation>图片预览</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="3640"/>
+        <location filename="../qml/pages/HomePage.qml" line="3644"/>
         <source>Close</source>
         <translation>关闭</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="3668"/>
+        <location filename="../qml/pages/HomePage.qml" line="3672"/>
         <source>Open externally</source>
         <translation>用外部程序打开</translation>
     </message>
@@ -4362,12 +4363,12 @@ What it needs
         <translation>更改昵称</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="2684"/>
+        <location filename="../qml/pages/HomePage.qml" line="2688"/>
         <source>Phone nickname</source>
         <translation>手机昵称</translation>
     </message>
     <message>
-        <location filename="../qml/pages/HomePage.qml" line="2692"/>
+        <location filename="../qml/pages/HomePage.qml" line="2696"/>
         <source>Set a custom name for this phone on your PC. Leave blank to use &quot;%1&quot;.</source>
         <translation>在您的电脑上为此手机设置自定义名称。留空以使用“%1”。</translation>
     </message>
