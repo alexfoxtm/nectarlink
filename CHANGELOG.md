@@ -215,6 +215,11 @@ has a Stop button. Choosing another
 
 ### Fixed
 
+- **The build docs registered the virtual camera with `regsvr32`,** which
+  can't work. They now use the app's `--register-vcam`, and say why a
+  debug build's camera fails to start. Thanks to
+  [@Parth412100](https://github.com/Parth412100)
+  ([#117](https://github.com/thtbee/nectarlink/pull/117)).
 - **Add folder in Synced folders only ever added DCIM to Pictures.** It now
   asks which folder on the phone (with shortcuts for Camera, Screenshots,
   Download and others), where it goes on the PC, and whether to sync one
